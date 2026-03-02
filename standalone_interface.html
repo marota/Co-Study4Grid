@@ -224,20 +224,26 @@
 
         /* ===== SLD overlay delta flow visualization ===== */
         .sld-delta-positive path, .sld-delta-positive line,
-        .sld-delta-positive polyline, .sld-delta-positive rect {
+        .sld-delta-positive polyline, .sld-delta-positive rect,
+        .sld-delta-positive circle {
             stroke: #ff8c00 !important;
             stroke-width: 2px !important;
         }
         .sld-delta-negative path, .sld-delta-negative line,
-        .sld-delta-negative polyline, .sld-delta-negative rect {
+        .sld-delta-negative polyline, .sld-delta-negative rect,
+        .sld-delta-negative circle {
             stroke: #2196F3 !important;
             stroke-width: 2px !important;
         }
         .sld-delta-grey path, .sld-delta-grey line,
-        .sld-delta-grey polyline, .sld-delta-grey rect {
+        .sld-delta-grey polyline, .sld-delta-grey rect,
+        .sld-delta-grey circle {
             stroke: #999 !important;
             stroke-opacity: 0.5 !important;
         }
+        .sld-delta-positive .sld-label { fill: #ff8c00 !important; }
+        .sld-delta-negative .sld-label { fill: #2196F3 !important; }
+        .sld-delta-grey .sld-label { fill: #999 !important; fill-opacity: 0.5 !important; }
 
         /* ===== Voltage Range Slider (vertical, right sidebar) ===== */
         .voltage-sidebar {
@@ -1488,6 +1494,7 @@
 
             // Apply / clear SLD delta flow colors whenever svg, tab, or mode changes.
             // In Impacts mode lines are colored orange/blue/grey matching the NAD.
+            // Walks up to feeder groups so entire branches are colored, not just fragments.
             useEffect(() => {
                 const container = overlayBodyRef.current;
                 if (!container) return;
@@ -1495,6 +1502,12 @@
                 const SLD_CLASSES = ['sld-delta-positive', 'sld-delta-negative', 'sld-delta-grey'];
                 container.querySelectorAll(SLD_CLASSES.map(c => '.' + c).join(','))
                     .forEach(el => el.classList.remove(...SLD_CLASSES));
+
+                // Restore original text labels
+                container.querySelectorAll('[data-original-text]').forEach(el => {
+                    el.textContent = el.getAttribute('data-original-text');
+                    el.removeAttribute('data-original-text');
+                });
 
                 if (!vlOverlay?.svg || actionViewMode !== 'delta') return;
 
@@ -1509,13 +1522,51 @@
                 container.querySelectorAll('[id]').forEach(el => elMap.set(el.id, el));
 
                 for (const [lineId, delta] of Object.entries(deltas)) {
-                    let el = elMap.get(lineId);
-                    if (!el) {
-                        for (const [svgId, svgEl] of elMap) {
-                            if (svgId.includes(lineId)) { el = svgEl; break; }
+                    const cls = `sld-delta-${delta.category}`;
+
+                    // Find ALL elements whose id contains this equipment ID
+                    const matchedEls = [];
+                    for (const [svgId, svgEl] of elMap) {
+                        if (svgId === lineId || svgId.includes(lineId)) {
+                            matchedEls.push(svgEl);
                         }
                     }
-                    if (el) el.classList.add(`sld-delta-${delta.category}`);
+                    if (matchedEls.length === 0) continue;
+
+                    // Walk up to feeder groups so CSS cascades to full branch
+                    const feederGroups = new Set();
+                    for (const el of matchedEls) {
+                        let cur = el;
+                        while (cur && cur !== container) {
+                            if (cur.classList.contains('sld-top-feeder') ||
+                                cur.classList.contains('sld-bottom-feeder')) {
+                                feederGroups.add(cur);
+                                break;
+                            }
+                            cur = cur.parentElement;
+                        }
+                    }
+
+                    const targets = feederGroups.size > 0
+                        ? Array.from(feederGroups)
+                        : matchedEls;
+                    for (const t of targets) t.classList.add(cls);
+
+                    // Replace active-power text labels with delta values
+                    const deltaStr = delta.delta >= 0 ? `+${delta.delta.toFixed(1)}` : delta.delta.toFixed(1);
+                    for (const t of targets) {
+                        let labels = t.querySelectorAll('.sld-active-power .sld-label');
+                        if (labels.length === 0) labels = t.querySelectorAll('.sld-label');
+                        labels.forEach(label => {
+                            const text = (label.textContent || '').trim();
+                            if (/^-?\d+(\.\d+)?$/.test(text)) {
+                                if (!label.hasAttribute('data-original-text')) {
+                                    label.setAttribute('data-original-text', label.textContent || '');
+                                }
+                                label.textContent = `\u0394 ${deltaStr}`;
+                            }
+                        });
+                    }
                 }
             }, [vlOverlay?.svg, vlOverlay?.tab, actionViewMode, n1Diagram?.flow_deltas, actionDiagram?.flow_deltas]);
 

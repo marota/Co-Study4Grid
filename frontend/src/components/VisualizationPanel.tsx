@@ -52,8 +52,19 @@ const SldOverlay: React.FC<SldOverlayProps> = ({ vlOverlay, actionViewMode, n1Fl
 
     // Apply / clear delta flow colors on the SLD whenever svg, tab, or mode changes.
     // In Impacts mode the lines are colored orange/blue/grey by flow delta category,
-    // mirroring the NAD coloring.  In Flows mode all delta classes are removed so the
-    // diagram shows its native voltage coloring.
+    // mirroring the NAD coloring.  In Flows mode all delta classes are removed and
+    // original text values restored so the diagram shows its native voltage coloring.
+    //
+    // pypowsybl SLD SVG structure:
+    //   <g class="sld-extern-cell">
+    //     <g id="..." class="sld-top-feeder / sld-bottom-feeder">
+    //       <g class="sld-wire"><polyline .../></g>
+    //       <g class="sld-feeder-info sld-active-power"><text class="sld-label">16</text></g>
+    //       <g class="sld-feeder-info sld-reactive-power"><text class="sld-label">-43</text></g>
+    //     </g>
+    //   </g>
+    // Element IDs use internal node IDs (not equipment IDs directly), but the
+    // equipment ID typically appears as a substring.
     useEffect(() => {
         const container = overlayBodyRef.current;
         if (!container) return;
@@ -62,6 +73,12 @@ const SldOverlay: React.FC<SldOverlayProps> = ({ vlOverlay, actionViewMode, n1Fl
         const SLD_DELTA_CLASSES = ['sld-delta-positive', 'sld-delta-negative', 'sld-delta-grey'];
         container.querySelectorAll(SLD_DELTA_CLASSES.map(c => '.' + c).join(','))
             .forEach(el => el.classList.remove(...SLD_DELTA_CLASSES));
+
+        // Restore original text labels
+        container.querySelectorAll('[data-original-text]').forEach(el => {
+            el.textContent = el.getAttribute('data-original-text');
+            el.removeAttribute('data-original-text');
+        });
 
         if (!vlOverlay.svg || actionViewMode !== 'delta') return;
 
@@ -78,14 +95,54 @@ const SldOverlay: React.FC<SldOverlayProps> = ({ vlOverlay, actionViewMode, n1Fl
         container.querySelectorAll('[id]').forEach(el => elMap.set(el.id, el));
 
         for (const [lineId, delta] of Object.entries(deltas)) {
-            // Prefer exact id match; fall back to any id that contains the line id
-            let el = elMap.get(lineId);
-            if (!el) {
-                for (const [svgId, svgEl] of elMap) {
-                    if (svgId.includes(lineId)) { el = svgEl; break; }
+            const cls = `sld-delta-${delta.category}`;
+
+            // Find ALL elements whose id contains this equipment ID
+            const matchedEls: Element[] = [];
+            for (const [svgId, svgEl] of elMap) {
+                if (svgId === lineId || svgId.includes(lineId)) {
+                    matchedEls.push(svgEl);
                 }
             }
-            if (el) el.classList.add(`sld-delta-${delta.category}`);
+            if (matchedEls.length === 0) continue;
+
+            // Walk up to feeder groups (sld-top-feeder / sld-bottom-feeder) so the
+            // CSS class cascades to all child wires, symbols, and arrows.
+            const feederGroups = new Set<Element>();
+            for (const el of matchedEls) {
+                let cur: Element | null = el;
+                while (cur && cur !== container) {
+                    if (cur.classList.contains('sld-top-feeder') ||
+                        cur.classList.contains('sld-bottom-feeder')) {
+                        feederGroups.add(cur);
+                        break;
+                    }
+                    cur = cur.parentElement;
+                }
+            }
+
+            // Apply class to feeder groups if found, otherwise to matched elements
+            const targets = feederGroups.size > 0
+                ? Array.from(feederGroups)
+                : matchedEls;
+            for (const t of targets) t.classList.add(cls);
+
+            // Replace active-power text labels with delta values
+            const deltaStr = delta.delta >= 0 ? `+${delta.delta.toFixed(1)}` : delta.delta.toFixed(1);
+            for (const t of targets) {
+                // Prefer .sld-active-power labels; fall back to all .sld-label
+                let labels = t.querySelectorAll('.sld-active-power .sld-label');
+                if (labels.length === 0) labels = t.querySelectorAll('.sld-label');
+                labels.forEach(label => {
+                    const text = (label.textContent || '').trim();
+                    if (/^-?\d+(\.\d+)?$/.test(text)) {
+                        if (!label.hasAttribute('data-original-text')) {
+                            label.setAttribute('data-original-text', label.textContent || '');
+                        }
+                        label.textContent = `\u0394 ${deltaStr}`;
+                    }
+                });
+            }
         }
     }, [vlOverlay.svg, vlOverlay.tab, actionViewMode, n1FlowDeltas, actionFlowDeltas]);
 
