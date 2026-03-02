@@ -315,7 +315,9 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                 />
                                 <div className="voltage-slider-ticks">
                                     {uniqueVoltages.map(kv => (
-                                        <span key={kv} style={{ bottom: logScale(kv) + '%' }}>{kv}</span>
+                                        <span key={kv} style={{ bottom: logScale(kv) + '%' }}>
+                                            {kv === 25 ? '<25' : kv}
+                                        </span>
                                     ))}
                                 </div>
                             </div>

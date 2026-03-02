@@ -50,14 +50,50 @@ class NetworkService:
         return []
 
     def get_nominal_voltages(self):
-        """Return {vl_id: nominal_v_kv} mapping for all voltage levels."""
+        """Return {vl_id: nominal_v_kv} mapping for all voltage levels, snapped to detected grid values."""
         if not self.network:
             raise ValueError("Network not loaded")
 
         voltage_levels = self.network.get_voltage_levels()
-        if voltage_levels is not None and not voltage_levels.empty:
-            return {vl_id: float(row['nominal_v']) for vl_id, row in voltage_levels.iterrows()}
-        return {}
+        if voltage_levels is None or voltage_levels.empty:
+            return {}
+
+        # 1. Collect all unique nominal voltages
+        raw_voltages = sorted(voltage_levels['nominal_v'].unique())
+        if not raw_voltages:
+            return {}
+
+        # 2. Cluster voltages within 2% of each other
+        clusters = []
+        if raw_voltages:
+            current_cluster = [raw_voltages[0]]
+            for v in raw_voltages[1:]:
+                # If v is within 2% of the cluster average, add it
+                avg = sum(current_cluster) / len(current_cluster)
+                if abs(v - avg) / avg < 0.02:
+                    current_cluster.append(v)
+                else:
+                    clusters.append(current_cluster)
+                    current_cluster = [v]
+            clusters.append(current_cluster)
+
+        # 3. Create representative cleaned values for each cluster
+        # Map each raw voltage to its clean representative
+        raw_to_clean = {}
+        for cluster in clusters:
+            avg = sum(cluster) / len(cluster)
+            # Bucketing: anything < 25kV goes into the 25kV bucket
+            if avg < 25:
+                clean_v = 25.0
+            else:
+                # Clean representative: round to int
+                clean_v = round(avg, 0)
+            
+            for v in cluster:
+                raw_to_clean[v] = clean_v
+
+        # 4. Map each voltage level to its clean representative
+        return {vl_id: raw_to_clean[float(row['nominal_v'])] for vl_id, row in voltage_levels.iterrows()}
 
     def get_element_voltage_levels(self, element_id: str):
         """Resolve an equipment ID (line, transformer, or VL) to its voltage level IDs."""

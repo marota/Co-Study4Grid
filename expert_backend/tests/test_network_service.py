@@ -132,7 +132,7 @@ class TestGetNominalVoltages:
             "VL2": 225.0,
             "VL3": 90.0,
             "VL4": 63.0,
-            "VL5": 20.0,
+            "VL5": 25.0,
         }
 
     def test_empty_voltage_levels(self):
