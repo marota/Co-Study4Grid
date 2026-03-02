@@ -889,7 +889,7 @@ function App() {
                   <input type="number" step="0.01" min="0" max="1" value={preExistingOverloadThreshold} onChange={e => setPreExistingOverloadThreshold(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
                 </div>
                 <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-10px' }}>
-                  Pre-existing overloads excluded from N-1 & max_rho unless worsened by this fraction (default 2%)
+                  Pre-existing overloads excluded from N-1 & max loading unless worsened by this fraction (default 2%)
                 </div>
               </div>
             )}

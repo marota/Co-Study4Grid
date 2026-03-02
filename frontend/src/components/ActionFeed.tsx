@@ -317,11 +317,11 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     </div>
                     <div style={{ fontSize: '12px', background: isSelected ? '#dce8f7' : '#f8f9fa', padding: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                         <div>
-                            <div>Rho before: {renderRho(details.rho_before, id, 'n-1')}</div>
-                            <div>Rho after: {renderRho(details.rho_after, id, 'action')}</div>
+                            <div>Loading before: {renderRho(details.rho_before, id, 'n-1')}</div>
+                            <div>Loading after: {renderRho(details.rho_after, id, 'action')}</div>
                             {maxRhoPct != null && (
                                 <div style={{ marginTop: '3px' }}>
-                                    Max rho: <strong style={{ color: sc.border }}>{maxRhoPct}%</strong>
+                                    Max loading: <strong style={{ color: sc.border }}>{maxRhoPct}%</strong>
                                     {details.max_rho_line && (
                                         <span style={{ color: '#888' }}> on <button
                                             style={{ ...clickableLinkStyle, color: '#888' }}
