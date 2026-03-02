@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "expert_assist"
+version = "0.1.0"
+authors = [
+    { name="RTE", email="rte@rte-france.com" },
+]
+description = "Expert Assist interface for power grid analysis."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MPL-2.0"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "ExpertOp4Grid>=0.2.8",
+    "pypowsybl>=1.13.0",
+    "pypowsybl_jupyter",
+    "uv",
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["expert_backend*"]
+exclude = ["frontend*", "tests*", "venv*"]

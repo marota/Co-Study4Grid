@@ -1,0 +1,48 @@
+version: 2.1
+
+orbs:
+  python: circleci/python@2.1.1
+  node: circleci/node@5.1.0
+
+jobs:
+  test-backend:
+    docker:
+      - image: cimg/python:3.10
+    steps:
+      - checkout
+      - run:
+          name: Install Dependencies
+          command: |
+            python -m pip install --upgrade pip
+            pip install .
+            pip install --no-deps expert_op4grid_recommender
+      - run:
+          name: Run Pytest
+          command: pytest
+
+  test-frontend:
+    docker:
+      - image: cimg/node:20.10
+    steps:
+      - checkout
+      - run:
+          name: Install Frontend Dependencies
+          command: |
+            cd frontend
+            npm install
+      - run:
+          name: Run Frontend Tests
+          command: |
+            cd frontend
+            npm run test
+      - run:
+          name: Run Linter
+          command: |
+            cd frontend
+            npm run lint
+
+workflows:
+  test-workflow:
+    jobs:
+      - test-backend
+      - test-frontend
