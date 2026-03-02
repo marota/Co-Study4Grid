@@ -590,7 +590,10 @@ class RecommenderService:
                 are excluded unless their current increased by more than the
                 worsening threshold.
             lines_we_care_about: If provided, set of element IDs to monitor.
-                Only these elements are checked for overloads.
+                Only these elements are checked for overloads.  When None
+                (no lines-monitoring file), only elements that have a permanent
+                operational limit are monitored; elements without any permanent
+                limit are excluded from analysis.
         """
         import numpy as np
         limits = network.get_operational_limits()
@@ -600,11 +603,10 @@ class RecommenderService:
             limits = limits.reset_index()
             current_limits = limits[(limits['type'] == 'CURRENT') & (limits['acceptable_duration'] == -1)]
             limit_dict = dict(zip(current_limits['element_id'], current_limits['value']))
-        
+
         overloaded = []
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
         worsening_threshold = getattr(config, 'PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD', 0.02)
-        default_limit = 9999.0  # Same default as the recommender
 
         # Check both lines and 2-winding transformers
         for df in [network.get_lines()[['i1', 'i2']], network.get_2_windings_transformers()[['i1', 'i2']]]:
@@ -612,7 +614,12 @@ class RecommenderService:
                 # Skip elements not in the monitored set
                 if lines_we_care_about is not None and element_id not in lines_we_care_about:
                     continue
-                limit = limit_dict.get(element_id, default_limit)
+                # Skip elements without a permanent operational limit — they
+                # cannot be meaningfully checked for overloads and should not
+                # appear in analysis results.
+                if element_id not in limit_dict:
+                    continue
+                limit = limit_dict[element_id]
                 i1 = row['i1']
                 i2 = row['i2']
                 if not np.isnan(i1) and not np.isnan(i2):
