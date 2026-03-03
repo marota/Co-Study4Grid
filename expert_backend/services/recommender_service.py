@@ -709,67 +709,25 @@ class RecommenderService:
         return flows
 
     @staticmethod
-    def _branch_delta(a1, a2, b1, b2):
-        """Compute the delta for a single branch between after (a) and before (b) states.
+    def _pick_reference_terminal(a1, a2, b1, b2):
+        """Pick the entering terminal of the state with larger absolute flow.
 
         pypowsybl sign convention: positive value at a terminal means power
-        *enters* the branch from that side.  On a given branch exactly one
-        terminal is positive (entering) and the other negative (leaving),
-        with a small difference due to losses.
+        *enters* the branch from that side.
 
-        Algorithm:
-        1.  Pick a **reference direction** — the entering terminal of whichever
-            state has the larger absolute flow (so the direction is well-defined
-            even when one state is near-zero).  If magnitudes are equal, prefer
-            the 'after' state.
-        2.  Read the **magnitude** at the reference terminal in both states.
-            Magnitude is always the absolute value of the flow at that terminal.
-            If the sign at the reference terminal flipped between states, the
-            flow reversed — magnitude in the reversed state is taken as negative
-            (it now opposes the reference direction).
-        3.  delta = after_magnitude − before_magnitude.
-            positive → flow increased in the reference direction.
-            negative → flow decreased.
+        We choose the entering terminal (larger absolute value) from the
+        state with the higher overall magnitude.  This gives a stable
+        reference direction even when one state is near-zero.
+
+        Returns True for terminal 1, False for terminal 2.
         """
-        # Magnitudes: use the entering terminal (the positive one)
         after_mag = max(abs(a1), abs(a2))
         before_mag = max(abs(b1), abs(b2))
 
-        # Choose reference direction from the stronger state
         if before_mag > after_mag:
-            # Reference = before entering terminal
-            ref_terminal_val_before = b1 if abs(b1) >= abs(b2) else b2
-            # Same terminal in after state
-            ref_terminal_val_after = a1 if abs(b1) >= abs(b2) else a2
+            return abs(b1) >= abs(b2)
         else:
-            # Reference = after entering terminal
-            ref_terminal_val_after = a1 if abs(a1) >= abs(a2) else a2
-            # Same terminal in before state
-            ref_terminal_val_before = b1 if abs(a1) >= abs(a2) else b2
-
-        # Magnitude at the reference terminal, accounting for direction reversal.
-        # If the sign matches the reference direction → positive magnitude.
-        # If the sign opposes it → the flow reversed, magnitude counts as negative.
-        def signed_mag(val, ref_val):
-            mag = abs(val)
-            # Same sign as the reference direction → flow in same direction
-            if (val >= 0) == (ref_val >= 0):
-                return mag
-            else:
-                return -mag
-
-        # ref_terminal_val_after defines the positive direction for after state
-        # ref_terminal_val_before defines the positive direction for before state
-        # But we need a single reference.  Use the reference state's terminal.
-        if before_mag > after_mag:
-            ref_sign = ref_terminal_val_before
-        else:
-            ref_sign = ref_terminal_val_after
-
-        a_signed = signed_mag(ref_terminal_val_after, ref_sign)
-        b_signed = signed_mag(ref_terminal_val_before, ref_sign)
-
-        return a_signed - b_signed
+            return abs(a1) >= abs(a2)
 
     @staticmethod
     def _apply_threshold(deltas):
@@ -797,6 +755,13 @@ class RecommenderService:
     def _compute_deltas(self, after_flows, before_flows):
         """Compute per-line active AND reactive flow deltas between two flow sets.
 
+        The reference terminal is chosen once from the active power (P) flow
+        — whichever state has the stronger P picks the entering terminal.
+        Both P and Q deltas are then computed at that SAME terminal via
+        simple subtraction (after − before).  This ensures the delta matches
+        the value the user sees in the SLD, which always shows P and Q at
+        the same terminal.
+
         Returns a dict with keys:
             flow_deltas:          {line_id: {delta, category}}   (active power P)
             reactive_flow_deltas: {line_id: {delta, category}}   (reactive power Q)
@@ -811,16 +776,21 @@ class RecommenderService:
         q_raw = {}
 
         for lid in all_ids:
-            # Active power delta
-            p_raw[lid] = self._branch_delta(
-                ap1.get(lid, 0.0), ap2.get(lid, 0.0),
-                bp1.get(lid, 0.0), bp2.get(lid, 0.0),
-            )
-            # Reactive power delta (independent direction from P)
-            q_raw[lid] = self._branch_delta(
-                aq1.get(lid, 0.0), aq2.get(lid, 0.0),
-                bq1.get(lid, 0.0), bq2.get(lid, 0.0),
-            )
+            a_p1 = ap1.get(lid, 0.0)
+            a_p2 = ap2.get(lid, 0.0)
+            b_p1 = bp1.get(lid, 0.0)
+            b_p2 = bp2.get(lid, 0.0)
+
+            # Pick reference terminal from P (entering terminal of stronger state)
+            use_t1 = self._pick_reference_terminal(a_p1, a_p2, b_p1, b_p2)
+
+            # P and Q deltas at the same terminal: simple subtraction
+            if use_t1:
+                p_raw[lid] = a_p1 - b_p1
+                q_raw[lid] = aq1.get(lid, 0.0) - bq1.get(lid, 0.0)
+            else:
+                p_raw[lid] = a_p2 - b_p2
+                q_raw[lid] = aq2.get(lid, 0.0) - bq2.get(lid, 0.0)
 
         return {
             "flow_deltas": self._apply_threshold(p_raw),

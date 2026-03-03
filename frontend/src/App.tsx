@@ -464,8 +464,8 @@ function App() {
     } else if (activeTab === 'n-1') {
       initialTab = 'n-1';
     } else if (activeTab === 'action' && actionViewMode === 'delta') {
-      // Impacts mode: show N-1 as the reference state for comparison
-      initialTab = 'n-1';
+      // Impacts mode: show Action state (the variant being compared)
+      initialTab = 'action';
     } else {
       // Flows mode (action or overflow fallback): show action state
       initialTab = 'action';

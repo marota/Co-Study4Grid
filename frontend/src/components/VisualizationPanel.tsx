@@ -157,58 +157,83 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             }
         };
 
-        // --- Branch (line/transformer) deltas ---
-        for (const [equipId, delta] of Object.entries(flowDeltas ?? {})) {
-            const cellEl = findCellEl(equipId);
-            if (!cellEl) continue;
-
-            cellEl.classList.add(`sld-delta-${delta.category}`);
-
-            // Active power label (P)
-            const pStr = fmtDelta(delta.delta);
+        // Helper to apply P & Q delta text to a cell element
+        const applyPQLabels = (cellEl: Element, pStr: string, qStr: string | null) => {
             let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
             if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
             replaceFirstNumericLabel(pLabels, pStr);
 
-            // Reactive power label (Q)
-            const qDelta = reactiveDeltas?.[equipId];
-            if (qDelta !== undefined) {
-                const qStr = fmtDelta(qDelta.delta);
+            if (qStr !== null) {
                 let qLabels = cellEl.querySelectorAll('.sld-reactive-power .sld-label');
                 if (qLabels.length > 0) {
                     replaceFirstNumericLabel(qLabels, qStr);
                 } else {
-                    // Fallback: the P label has already been replaced (no longer
-                    // numeric), so the first remaining numeric label IS the Q label.
+                    // Fallback: P label already replaced (no longer numeric),
+                    // so the first remaining numeric label IS the Q label.
                     replaceFirstNumericLabel(cellEl.querySelectorAll('.sld-label'), qStr);
                 }
             }
+        };
+
+        // Iterate ALL feeders from SLD metadata so we process branches, loads,
+        // and generators — not just equipment IDs found in flow_deltas.
+        const processedEquipIds = new Set<string>();
+
+        for (const [equipId, svgId] of equipIdToSvgId) {
+            const feederEl = elMap.get(svgId);
+            if (!feederEl) continue;
+
+            // Walk up to cell ancestor
+            let cellEl: Element = feederEl;
+            let cur: Element | null = feederEl.parentElement;
+            while (cur && cur !== container) {
+                if (cur.classList.contains('sld-extern-cell') ||
+                    cur.classList.contains('sld-intern-cell') ||
+                    cur.classList.contains('sld-shunt-cell')) {
+                    cellEl = cur;
+                    break;
+                }
+                cur = cur.parentElement;
+            }
+
+            // Check branch (line/transformer) deltas first
+            const branchDelta = flowDeltas?.[equipId];
+            if (branchDelta) {
+                cellEl.classList.add(`sld-delta-${branchDelta.category}`);
+                const pStr = fmtDelta(branchDelta.delta);
+                const qDelta = reactiveDeltas?.[equipId];
+                const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
+                applyPQLabels(cellEl, pStr, qStr);
+                processedEquipIds.add(equipId);
+                continue;
+            }
+
+            // Check asset (load/generator) deltas
+            const assetDelta = assetDeltas?.[equipId];
+            if (assetDelta) {
+                cellEl.classList.add(`sld-delta-${assetDelta.category}`);
+                applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
+                processedEquipIds.add(equipId);
+            }
         }
 
-        // --- Asset (load/generator) deltas ---
-        for (const [equipId, assetDelta] of Object.entries(assetDeltas ?? {})) {
-            // Skip if already handled by flow_deltas
-            if (flowDeltas && equipId in flowDeltas) continue;
-
+        // Fallback: process any flow_deltas / asset_deltas keys not found
+        // via metadata (in case metadata was incomplete or parse failed).
+        for (const [equipId, delta] of Object.entries(flowDeltas ?? {})) {
+            if (processedEquipIds.has(equipId)) continue;
             const cellEl = findCellEl(equipId);
             if (!cellEl) continue;
-
+            cellEl.classList.add(`sld-delta-${delta.category}`);
+            const qDelta = reactiveDeltas?.[equipId];
+            applyPQLabels(cellEl, fmtDelta(delta.delta), qDelta !== undefined ? fmtDelta(qDelta.delta) : null);
+        }
+        for (const [equipId, assetDelta] of Object.entries(assetDeltas ?? {})) {
+            if (processedEquipIds.has(equipId)) continue;
+            if (flowDeltas && equipId in flowDeltas) continue;
+            const cellEl = findCellEl(equipId);
+            if (!cellEl) continue;
             cellEl.classList.add(`sld-delta-${assetDelta.category}`);
-
-            const pStr = fmtDelta(assetDelta.delta_p);
-            const qStr = fmtDelta(assetDelta.delta_q);
-
-            let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
-            if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
-            replaceFirstNumericLabel(pLabels, pStr);
-
-            // Q label: after P replacement, first remaining numeric IS the Q
-            let qLabels = cellEl.querySelectorAll('.sld-reactive-power .sld-label');
-            if (qLabels.length > 0) {
-                replaceFirstNumericLabel(qLabels, qStr);
-            } else {
-                replaceFirstNumericLabel(cellEl.querySelectorAll('.sld-label'), qStr);
-            }
+            applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
         }
     }, [vlOverlay.svg, vlOverlay.sldMetadata, vlOverlay.tab, actionViewMode,
         n1FlowDeltas, actionFlowDeltas,
