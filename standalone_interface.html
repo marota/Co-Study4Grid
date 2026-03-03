@@ -2823,7 +2823,7 @@
                                             const overlapIds = selectedEntries.filter(([id]) => manuallyAddedIds.has(id) && analysisActionIds.has(id)).map(([id]) => id).join(', ');
                                             return (
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', padding: '8px 10px', background: '#fff3cd', border: '1px solid #ffeeba', borderRadius: '6px', marginBottom: '10px', fontSize: '13px', color: '#856404' }}>
-                                                    <div>⚠️ User warning: The following manually selected actions are also recommended by the recent analysis run: {overlapIds}</div>
+                                                    <div>⚠️ User warning: The following manually selected actions were also recommended by the recent analysis run and are not being duplicated: {overlapIds}</div>
                                                     <button onClick={() => setDismissedSelectedWarning(true)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '0', fontSize: '16px', lineHeight: 1, color: '#856404' }} title="Dismiss">&times;</button>
                                                 </div>
                                             );
