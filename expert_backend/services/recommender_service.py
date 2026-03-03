@@ -799,6 +799,7 @@ class RecommenderService:
         q_t1 = {}    # terminal-1 Q delta
         q_t2 = {}    # terminal-2 Q delta
         vl_map = {}  # {lid: (vl1_id, vl2_id)}
+        flip_map = {} # {lid: bool} — whether "after" SVG arrows need flipping
 
         for lid in all_ids:
             a_p1 = ap1.get(lid, 0.0)
@@ -822,6 +823,21 @@ class RecommenderService:
             v2 = avl2.get(lid) or bvl2.get(lid, "")
             vl_map[lid] = (v1, v2)
 
+            # Arrow flip: the SVG is generated for the "after" state, so its
+            # arrows point in the after-state's flow direction.  When the
+            # "before" state is the reference (stronger) AND the flow reversed
+            # direction between the two states, the SVG arrows are opposite to
+            # the reference direction and need flipping.
+            after_mag = max(abs(a_p1), abs(a_p2))
+            before_mag = max(abs(b_p1), abs(b_p2))
+            ref_is_before = before_mag > after_mag
+            # Direction reversed when p1 changes sign between states
+            if a_p1 != 0.0 and b_p1 != 0.0:
+                direction_reversed = (a_p1 > 0) != (b_p1 > 0)
+            else:
+                direction_reversed = False
+            flip_map[lid] = bool(ref_is_before and direction_reversed)
+
         # Apply threshold based on reference P deltas (determines category)
         if p_ref:
             max_abs = max(abs(d) for d in p_ref.values())
@@ -840,6 +856,7 @@ class RecommenderService:
             else:
                 cat = "negative"
             v1, v2 = vl_map[lid]
+            flip = flip_map[lid]
             flow_deltas[lid] = {
                 "delta": round(float(p_ref[lid]), 1),
                 "delta_t1": round(float(p_t1[lid]), 1),
@@ -847,6 +864,7 @@ class RecommenderService:
                 "vl1": v1,
                 "vl2": v2,
                 "category": cat,
+                "flip_arrow": flip,
             }
             reactive_flow_deltas[lid] = {
                 "delta": round(float(q_ref[lid]), 1),
@@ -855,6 +873,7 @@ class RecommenderService:
                 "vl1": v1,
                 "vl2": v2,
                 "category": cat,
+                "flip_arrow": flip,
             }
 
         return {

@@ -83,6 +83,16 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             el.removeAttribute('data-original-text');
         });
 
+        // Restore flipped arrow directions (sld-in ↔ sld-out)
+        container.querySelectorAll('[data-arrow-flipped]').forEach(el => {
+            if (el.classList.contains('sld-in')) {
+                el.classList.replace('sld-in', 'sld-out');
+            } else if (el.classList.contains('sld-out')) {
+                el.classList.replace('sld-out', 'sld-in');
+            }
+            el.removeAttribute('data-arrow-flipped');
+        });
+
         if (!vlOverlay.svg || actionViewMode !== 'delta') return;
 
         // Choose deltas based on the SLD tab being shown
@@ -188,6 +198,24 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             }
         };
 
+        /** Flip arrow direction in a cell by swapping sld-in ↔ sld-out.
+         *  pypowsybl SLD SVGs use these classes to control which arrow
+         *  (.sld-arrow-in / .sld-arrow-out) is visible via CSS rules:
+         *    .sld-out .sld-arrow-in {visibility: hidden}
+         *    .sld-in  .sld-arrow-out {visibility: hidden}
+         */
+        const flipArrowsInCell = (cellEl: Element) => {
+            cellEl.querySelectorAll('.sld-in, .sld-out').forEach(el => {
+                if (el.hasAttribute('data-arrow-flipped')) return;
+                if (el.classList.contains('sld-in')) {
+                    el.classList.replace('sld-in', 'sld-out');
+                } else {
+                    el.classList.replace('sld-out', 'sld-in');
+                }
+                el.setAttribute('data-arrow-flipped', '1');
+            });
+        };
+
         // Iterate ALL feeders from SLD metadata so we process branches, loads,
         // and generators — not just equipment IDs found in flow_deltas.
         const processedEquipIds = new Set<string>();
@@ -217,6 +245,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                 const qDelta = reactiveDeltas?.[equipId];
                 const qStr = qDelta !== undefined ? fmtDelta(pickTerminalDelta(qDelta)) : null;
                 applyPQLabels(cellEl, pStr, qStr);
+                if (branchDelta.flip_arrow) flipArrowsInCell(cellEl);
                 processedEquipIds.add(equipId);
                 continue;
             }
@@ -239,6 +268,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             cellEl.classList.add(`sld-delta-${delta.category}`);
             const qDelta = reactiveDeltas?.[equipId];
             applyPQLabels(cellEl, fmtDelta(pickTerminalDelta(delta)), qDelta !== undefined ? fmtDelta(pickTerminalDelta(qDelta)) : null);
+            if (delta.flip_arrow) flipArrowsInCell(cellEl);
         }
         for (const [equipId, assetDelta] of Object.entries(assetDeltas ?? {})) {
             if (processedEquipIds.has(equipId)) continue;

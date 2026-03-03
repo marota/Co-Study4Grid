@@ -64,7 +64,7 @@ class TestComputeDeltas:
             assert info["delta_t2"] == 0.0
 
     def test_positive_delta_same_direction(self):
-        """Increased flow (same direction) → positive delta."""
+        """Increased flow (same direction) → positive delta, no arrow flip."""
         before = _make_flows(p1={"L": 100.0}, p2={"L": -98.0})
         after = _make_flows(p1={"L": 200.0}, p2={"L": -198.0})
         result = self.service._compute_deltas(after, before)["flow_deltas"]
@@ -72,9 +72,11 @@ class TestComputeDeltas:
         assert result["L"]["delta_t1"] == 100.0
         assert result["L"]["delta_t2"] == -100.0
         assert result["L"]["category"] == "positive"
+        # Same direction → no flip
+        assert result["L"]["flip_arrow"] is False
 
     def test_negative_delta_same_direction(self):
-        """Decreased flow (same direction) → negative delta."""
+        """Decreased flow (same direction) → negative delta, no arrow flip."""
         before = _make_flows(p1={"L": 200.0}, p2={"L": -198.0})
         after = _make_flows(p1={"L": 100.0}, p2={"L": -98.0})
         result = self.service._compute_deltas(after, before)["flow_deltas"]
@@ -82,6 +84,8 @@ class TestComputeDeltas:
         assert result["L"]["delta_t1"] == -100.0
         assert result["L"]["delta_t2"] == 100.0
         assert result["L"]["category"] == "negative"
+        # Same direction, before is stronger BUT direction didn't reverse → no flip
+        assert result["L"]["flip_arrow"] is False
 
     def test_direction_reversal(self):
         """Flow reverses direction: delta reflects the full swing."""
@@ -93,6 +97,17 @@ class TestComputeDeltas:
         assert result["L"]["delta"] == -180.0
         assert result["L"]["delta_t1"] == -180.0
         assert result["L"]["delta_t2"] == 183.0  # 85 - (-98)
+        # Before is stronger AND direction reversed → flip_arrow = True
+        assert result["L"]["flip_arrow"] is True
+
+    def test_direction_reversal_after_stronger_no_flip(self):
+        """When after is stronger and direction reversed, no flip needed
+        (SVG shows the stronger state's direction already)."""
+        before = _make_flows(p1={"L": 50.0}, p2={"L": -48.0})
+        after = _make_flows(p1={"L": -100.0}, p2={"L": 105.0})
+        result = self.service._compute_deltas(after, before)["flow_deltas"]
+        # After is stronger → reference is after → SVG already correct
+        assert result["L"]["flip_arrow"] is False
 
     def test_small_delta_below_threshold_is_grey(self):
         """Deltas below 5% of max are categorized as grey."""

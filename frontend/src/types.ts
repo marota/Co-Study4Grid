@@ -66,6 +66,7 @@ export interface FlowDelta {
     vl1?: string;
     vl2?: string;
     category: 'positive' | 'negative' | 'grey';
+    flip_arrow?: boolean;
 }
 
 export interface AssetDelta {
