@@ -1,0 +1,3115 @@
+{
+  "fb2a0db8-20cf-4ef7-940d-22dc59de7d9a": {
+    "description": "Fermeture OC 'VIELM6AT762 DJ_OC' dans le poste 'VIELMP6'(reconnection sur noeuds 1 aux 2 postes extremites)",
+    "description_unitaire": "Fermeture OC 'VIELM6AT762 DJ_OC' dans le poste 'VIELMP6'(reconnection sur noeuds 1 aux 2 postes extremites)",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VIELMY762": 1
+        },
+        "lines_ex_id": {
+          "VIELMY762": 1
+        },
+        "loads_id": {},
+        "generators_id": {},
+        "shunts_id": {}
+      },
+      "switches": {
+        "VIELMP6_VIELM6AT762 DJ_OC": false
+      }
+    },
+    "VoltageLevelId": "VIELMP6",
+    "switches": {
+      "VIELMP6_VIELM6AT762 DJ_OC": false
+    }
+  },
+  "c65483f5-b1ed-4a72-8e08-df66f323761d": {
+    "description": "Ouverture OC 'CHALO3TR631 DJ_OC' dans le poste 'CHALOP3'",
+    "description_unitaire": "Ouverture OC 'CHALO3TR631 DJ_OC' dans le poste 'CHALOP3'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOY631": -1
+        },
+        "lines_ex_id": {
+          "CHALOY631": -1
+        },
+        "loads_id": {},
+        "shunts_id": {},
+        "generators_id": {}
+      },
+      "switches": {
+        "CHALOP3_CHALO3TR631 DJ_OC": true
+      }
+    },
+    "VoltageLevelId": "CHALOP3",
+    "switches": {
+      "CHALOP3_CHALO3TR631 DJ_OC": true
+    }
+  },
+  "01c3d31d-ad19-489f-b668-011b797a0ab1": {
+    "description": "Ouverture OC 'GROSN6AT762 DJ_OC' dans le poste 'GROSNP6'",
+    "description_unitaire": "Ouverture OC 'GROSN6AT762 DJ_OC' dans le poste 'GROSNP6'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GROSNY762": -1
+        },
+        "lines_ex_id": {
+          "GROSNY762": -1
+        },
+        "loads_id": {},
+        "generators_id": {},
+        "shunts_id": {}
+      },
+      "switches": {
+        "GROSNP6_GROSN6AT762 DJ_OC": true
+      }
+    },
+    "VoltageLevelId": "GROSNP6",
+    "switches": {
+      "GROSNP6_GROSN6AT762 DJ_OC": true
+    }
+  },
+  "8d4d2a13-7dfe-4fb4-a788-4524568634a0": {
+    "description": "Ouverture OC 'LOUHA3CHALO.1 DJ_OC' dans le poste 'LOUHAP3'",
+    "description_unitaire": "Ouverture OC 'LOUHA3CHALO.1 DJ_OC' dans le poste 'LOUHAP3'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOL31LOUHA": -1
+        },
+        "lines_ex_id": {
+          "CHALOL31LOUHA": -1
+        },
+        "loads_id": {},
+        "shunts_id": {},
+        "generators_id": {}
+      },
+      "switches": {
+        "LOUHAP3_LOUHA3CHALO.1 DJ_OC": true
+      }
+    },
+    "VoltageLevelId": "LOUHAP3",
+    "switches": {
+      "LOUHAP3_LOUHA3CHALO.1 DJ_OC": true
+    }
+  },
+  "a707a8e3-1aa2-42a4-8652-32e11cc212c2": {
+    "description": "Fermeture OC 'CHALO3TR631 DJ_OC' dans le poste 'CHALOP3'(reconnection sur noeuds 1 aux 2 postes extremites)",
+    "description_unitaire": "Fermeture OC 'CHALO3TR631 DJ_OC' dans le poste 'CHALOP3'(reconnection sur noeuds 1 aux 2 postes extremites)",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOY631": 1
+        },
+        "lines_ex_id": {
+          "CHALOY631": 1
+        },
+        "loads_id": {},
+        "shunts_id": {},
+        "generators_id": {}
+      },
+      "switches": {
+        "CHALOP3_CHALO3TR631 DJ_OC": false
+      }
+    },
+    "VoltageLevelId": "CHALOP3",
+    "switches": {
+      "CHALOP3_CHALO3TR631 DJ_OC": false
+    }
+  },
+  "9874592b-f131-4525-bca1-97c508c15d64": {
+    "description": "Ouverture OC 'CHALO3TR633 DJ_OC' dans le poste 'CHALOP3'",
+    "description_unitaire": "Ouverture OC 'CHALO3TR633 DJ_OC' dans le poste 'CHALOP3'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOY633": -1
+        },
+        "lines_ex_id": {
+          "CHALOY633": -1
+        },
+        "loads_id": {},
+        "shunts_id": {},
+        "generators_id": {}
+      },
+      "switches": {
+        "CHALOP3_CHALO3TR633 DJ_OC": true
+      }
+    },
+    "VoltageLevelId": "CHALOP3",
+    "switches": {
+      "CHALOP3_CHALO3TR633 DJ_OC": true
+    }
+  },
+  "443eb893-09f7-4fd6-b5d6-f7aeafd6b3ad": {
+    "description": "Ouverture OC 'LOUHA3FRON5.1 DJ_OC' dans le poste 'LOUHAP3'",
+    "description_unitaire": "Ouverture OC 'LOUHA3FRON5.1 DJ_OC' dans le poste 'LOUHAP3'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "FRON5L31LOUHA": -1
+        },
+        "lines_ex_id": {
+          "FRON5L31LOUHA": -1
+        },
+        "loads_id": {},
+        "shunts_id": {},
+        "generators_id": {}
+      },
+      "switches": {
+        "LOUHAP3_LOUHA3FRON5.1 DJ_OC": true
+      }
+    },
+    "VoltageLevelId": "LOUHAP3",
+    "switches": {
+      "LOUHAP3_LOUHA3FRON5.1 DJ_OC": true
+    }
+  },
+  "106a8bae-e761-41d5-9903-d363c85955e0": {
+    "description": "Ouverture OC 'CHALO3TR632 DJ_OC' dans le poste 'CHALOP3'",
+    "description_unitaire": "Ouverture OC 'CHALO3TR632 DJ_OC' dans le poste 'CHALOP3'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOY632": -1
+        },
+        "lines_ex_id": {
+          "CHALOY632": -1
+        },
+        "loads_id": {},
+        "shunts_id": {},
+        "generators_id": {}
+      },
+      "switches": {
+        "CHALOP3_CHALO3TR632 DJ_OC": true
+      }
+    },
+    "VoltageLevelId": "CHALOP3",
+    "switches": {
+      "CHALOP3_CHALO3TR632 DJ_OC": true
+    }
+  },
+  "f4205550-e5d9-4d85-bcdd-504c3d8992b4": {
+    "description": " Ouverture OC 'C.SAU3MAGNY.1 DJ_OC' dans le poste 'C.SAUP3'",
+    "description_unitaire": " Ouverture OC 'C.SAU3MAGNY.1 DJ_OC' dans le poste 'C.SAUP3'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.SAUL31MAGNY": -1
+        },
+        "lines_ex_id": {
+          "C.SAUL31MAGNY": -1
+        },
+        "loads_id": {},
+        "shunts_id": {},
+        "generators_id": {}
+      },
+      "switches": {
+        "C.SAUP3_C.SAU3MAGNY.1 DJ_OC": true
+      }
+    },
+    "VoltageLevelId": "C.SAUP3",
+    "switches": {
+      "C.SAUP3_C.SAU3MAGNY.1 DJ_OC": true
+    }
+  },
+  "8ce1b409-b39c-46e7-98c7-e22d9af731b9": {
+    "description": " Fermeture OC 'C.SAU3MAGNY.1 DJ_OC' dans le poste 'C.SAUP3'(reconnection sur noeuds 1 aux 2 postes extremites)",
+    "description_unitaire": " Fermeture OC 'C.SAU3MAGNY.1 DJ_OC' dans le poste 'C.SAUP3'(reconnection sur noeuds 1 aux 2 postes extremites)",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.SAUL31MAGNY": 1
+        },
+        "lines_ex_id": {
+          "C.SAUL31MAGNY": 1
+        },
+        "loads_id": {},
+        "shunts_id": {},
+        "generators_id": {}
+      },
+      "switches": {
+        "C.SAUP3_C.SAU3MAGNY.1 DJ_OC": false
+      }
+    },
+    "VoltageLevelId": "C.SAUP3",
+    "switches": {
+      "C.SAUP3_C.SAU3MAGNY.1 DJ_OC": false
+    }
+  },
+  "eee7f6f7-68fa-4522-a63e-c913274b2b74": {
+    "description": " Fermeture OC 'GROSN6AT762 DJ_OC' dans le poste 'GROSNP6'(reconnection sur noeuds 1 aux 2 postes extremites)",
+    "description_unitaire": " Fermeture OC 'GROSN6AT762 DJ_OC' dans le poste 'GROSNP6'(reconnection sur noeuds 1 aux 2 postes extremites)",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GROSNY762": 1
+        },
+        "lines_ex_id": {
+          "GROSNY762": 1
+        },
+        "loads_id": {},
+        "generators_id": {},
+        "shunts_id": {}
+      },
+      "switches": {
+        "GROSNP6_GROSN6AT762 DJ_OC": false
+      }
+    },
+    "VoltageLevelId": "GROSNP6",
+    "switches": {
+      "GROSNP6_GROSN6AT762 DJ_OC": false
+    }
+  },
+  "623e78ac-ae42-48d7-a5a3-7ec3fca7bb9b": {
+    "description": " Ouverture OC 'CPVAN3TR631 DJ_OC' dans le poste 'CPVANP3'\n- Ouverture OC 'CPVAN3TR632 DJ_OC' dans le poste 'CPVANP3'",
+    "description_unitaire": " Ouverture OC 'CPVAN3TR631 DJ_OC' dans le poste 'CPVANP3'\n- Ouverture OC 'CPVAN3TR632 DJ_OC' dans le poste 'CPVANP3'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CPVANY631": -1,
+          "CPVANY632": -1
+        },
+        "lines_ex_id": {
+          "CPVANY631": -1,
+          "CPVANY632": -1
+        },
+        "loads_id": {},
+        "shunts_id": {},
+        "generators_id": {}
+      },
+      "switches": {
+        "CPVANP3_CPVAN3TR631 DJ_OC": true,
+        "CPVANP3_CPVAN3TR632 DJ_OC": true
+      }
+    },
+    "VoltageLevelId": "CPVANP3",
+    "switches": {
+      "CPVANP3_CPVAN3TR631 DJ_OC": true,
+      "CPVANP3_CPVAN3TR632 DJ_OC": true
+    }
+  },
+  "17f1470c-b017-4de0-8ab0-04ae464ea600": {
+    "description": " Ouverture OC 'CPVAN3TR632 DJ_OC' dans le poste 'CPVANP3'",
+    "description_unitaire": " Ouverture OC 'CPVAN3TR632 DJ_OC' dans le poste 'CPVANP3'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CPVANY632": -1
+        },
+        "lines_ex_id": {
+          "CPVANY632": -1
+        },
+        "loads_id": {},
+        "shunts_id": {},
+        "generators_id": {}
+      },
+      "switches": {
+        "CPVANP3_CPVAN3TR632 DJ_OC": true
+      }
+    },
+    "VoltageLevelId": "CPVANP3",
+    "switches": {
+      "CPVANP3_CPVAN3TR632 DJ_OC": true
+    }
+  },
+  "9514fa13-6261-41ae-9b1a-a55a11170ae9": {
+    "description": "Actions curatives :\n- Fermeture OC 'C.SAU3ZCRIM.1 DJ_OC' dans le poste 'C.SAUP3'\n",
+    "description_unitaire": "Actions curatives :\n- Fermeture OC 'C.SAU3ZCRIM.1 DJ_OC' dans le poste 'C.SAUP3'\n",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.SAUL31ZCRIM": 1
+        },
+        "lines_ex_id": {},
+        "loads_id": {},
+        "shunts_id": {},
+        "generators_id": {}
+      },
+      "switches": {
+        "C.SAUP3_C.SAU3ZCRIM.1 DJ_OC": false
+      }
+    },
+    "VoltageLevelId": "C.SAUP3",
+    "switches": {
+      "C.SAUP3_C.SAU3ZCRIM.1 DJ_OC": false
+    }
+  },
+  "180c19aa-762d-4d6f-a74c-4fd5432aa5d1_CPVANP3": {
+    "description": "Actions curatives :\n- Ouverture OC 'CPVAN3COUPL DJ_OC' dans le poste 'CPVANP3'\n",
+    "description_unitaire": "Actions curatives :\n- Ouverture OC 'CPVAN3COUPL DJ_OC' dans le poste 'CPVANP3'\n",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CPVANL31RIBAU": 1
+        },
+        "lines_ex_id": {
+          "BEON L31CPVAN": 1,
+          "CPVANY633": 1,
+          "CPVANY632": -1,
+          "CPVANY631": 1
+        },
+        "loads_id": {
+          "CPVAN3TR311": 1,
+          "CPVAN3TR312": 2,
+          "CPDIVL32CPVAN": -1,
+          "CPVANL31ZBRE6": 2,
+          "BREVAL31CPVAN": 1,
+          "ARBOIL31CPVAN": 2,
+          "CPVANL31MESNA": 2
+        },
+        "generators_id": {
+          "CPVANIN2": 2,
+          "CPVANINF": -1,
+          "CPVANING": -1
+        },
+        "shunts_id": {}
+      },
+      "switches": {
+        "CPVANP3_CPVAN3COUPL DJ_OC": true
+      }
+    },
+    "switches": {
+      "CPVANP3_CPVAN3COUPL DJ_OC": true
+    },
+    "VoltageLevelId": "CPVANP3"
+  },
+  "466f2c03-90ce-401e-a458-fa177ad45abc_C.REGP6": {
+    "description": "Ouverture OC 'C.REG6TRO.1AB DJ_OC' dans le poste 'C.REGP6'",
+    "description_unitaire": "Ouverture OC 'C.REG6TRO.1AB DJ_OC' dans le poste 'C.REGP6'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.REGL61VIELM": 2,
+          "C.REGL61ZMAGN": 1,
+          "C.REGL62VIELM": 1,
+          "C.REGY633": 1,
+          "C.REGY631": 2
+        },
+        "lines_ex_id": {},
+        "loads_id": {
+          "C.REG6TR615": 2,
+          "C.REG6TR614": 1,
+          "C.REG6TR613": 1
+        },
+        "generators_id": {
+          "C.REGIN3": 1,
+          "C.REGINF": -1,
+          "C.REGING": -1
+        },
+        "shunts_id": {}
+      },
+      "switches": {
+        "C.REGP6_C.REG6TRO.1AB DJ_OC": true
+      }
+    },
+    "switches": {
+      "C.REGP6_C.REG6TRO.1AB DJ_OC": true
+    },
+    "VoltageLevelId": "C.REGP6"
+  },
+  "463179d8-be4e-4293-b42c-b53db763272b_GEN.PP6": {
+    "description": "Ouverture OC 'GEN.P6COUPL.B DJ_OC' dans le poste 'GEN.PP6'\n- Ouverture OC 'GEN.P6TRO.2AB DJ_OC' dans le poste 'GEN.PP6'\n",
+    "description_unitaire": "Ouverture OC 'GEN.P6COUPL.B DJ_OC' dans le poste 'GEN.PP6'\n- Ouverture OC 'GEN.P6TRO.2AB DJ_OC' dans le poste 'GEN.PP6'\n",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PL61GENIS": 1,
+          "GEN.PL61IZERN": 1,
+          "GEN.PL61VOUGL": 2,
+          "GEN.PL62GENIS": -1,
+          "GEN.PL63GENIS": -1,
+          "GEN.PL64GENIS": -1,
+          "GEN.PL65GENIS": 1,
+          "GEN.PL66GENIS": 1
+        },
+        "lines_ex_id": {
+          "BOISSL61GEN.P": 1,
+          "GEN.PY761": 2,
+          "GEN.PY762": -1
+        },
+        "loads_id": {
+          "GEN.PL61SERRI": 1,
+          "CHAV6L61GEN.P": 1,
+          ".VERBL61GEN.P": -1,
+          "GEN.PL61ZCRUS": 1,
+          ".VERBL62GEN.P": 2,
+          "CORNIL62GEN.P": 1,
+          "CPNOLL61GEN.P": -1,
+          "ARLODL61GEN.P": -1
+        },
+        "generators_id": {},
+        "shunts_id": {}
+      },
+      "switches": {
+        "GEN.PP6_GEN.P6COUPL.B DJ_OC": true,
+        "GEN.PP6_GEN.P6TRO.2AB DJ_OC": true
+      }
+    },
+    "switches": {
+      "GEN.PP6_GEN.P6COUPL.B DJ_OC": true,
+      "GEN.PP6_GEN.P6TRO.2AB DJ_OC": true
+    },
+    "VoltageLevelId": "GEN.PP6"
+  },
+  "3617076a-a7f5-4f8a-9009-127ac9b85cff_CPVANP6": {
+    "description": "Ouverture OC 'CPVAN6COUPL DJ_OC' dans le poste 'CPVANP6'",
+    "description_unitaire": "Ouverture OC 'CPVAN6COUPL DJ_OC' dans le poste 'CPVANP6'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CPVANL61PYMON": 2,
+          "CPVANL61TAVAU": 1,
+          "CPVANL61ZMAGN": 2,
+          "CPVANY633": 1,
+          "CPVANY632": -1,
+          "CPVANY631": 2
+        },
+        "lines_ex_id": {
+          "CHALOL61CPVAN": 1,
+          "COUCHL61CPVAN": 1
+        },
+        "loads_id": {},
+        "generators_id": {},
+        "shunts_id": {}
+      },
+      "switches": {
+        "CPVANP6_CPVAN6COUPL DJ_OC": true
+      }
+    },
+    "switches": {
+      "CPVANP6_CPVAN6COUPL DJ_OC": true
+    },
+    "VoltageLevelId": "CPVANP6"
+  },
+  "3617076a-a7f5-4f8a-9009-127ac9b85cff_VIELMP6": {
+    "description": "Ouverture OC 'VIELM6COUPL DJ_OC' dans le poste 'VIELMP6'",
+    "description_unitaire": "Ouverture OC 'VIELM6COUPL DJ_OC' dans le poste 'VIELMP6'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VIELMY635": 1,
+          "VIELMY634": 2
+        },
+        "lines_ex_id": {
+          "C.REGL61VIELM": 1,
+          "C.REGL62VIELM": 2,
+          "COMMUL61VIELM": 2,
+          "COUCHL61VIELM": 1,
+          "VIELMY761": 2,
+          "VIELMY762": 1,
+          "VIELMY763": 2
+        },
+        "loads_id": {
+          "DARCEL61VIELM": 1,
+          "SARRYL61VIELM": 2
+        },
+        "generators_id": {},
+        "shunts_id": {}
+      },
+      "switches": {
+        "VIELMP6_VIELM6COUPL DJ_OC": true
+      }
+    },
+    "switches": {
+      "VIELMP6_VIELM6COUPL DJ_OC": true
+    },
+    "VoltageLevelId": "VIELMP6"
+  },
+  "f344b395-9908-43c2-bca0-75c5f298465e_COUCHP6": {
+    "description": "Ouverture OC 'COUCH6COUPL DJ_OC' dans le poste 'COUCHP6'",
+    "description_unitaire": "Ouverture OC 'COUCH6COUPL DJ_OC' dans le poste 'COUCHP6'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "COUCHL61CPVAN": 2,
+          "COUCHL61VIELM": 1,
+          "COUCHY631": 2,
+          "COUCHY632": 1
+        },
+        "lines_ex_id": {},
+        "loads_id": {},
+        "generators_id": {},
+        "shunts_id": {}
+      },
+      "switches": {
+        "COUCHP6_COUCH6COUPL DJ_OC": true
+      }
+    },
+    "switches": {
+      "COUCHP6_COUCH6COUPL DJ_OC": true
+    },
+    "VoltageLevelId": "COUCHP6"
+  },
+  "6ba7e0a3-2c1a-4dd5-b85c-5cf83d8c0358_GROSNP6": {
+    "description": "Ouverture OC 'GROSN6COUPL DJ_OC' dans le poste 'GROSNP6'",
+    "description_unitaire": "Ouverture OC 'GROSN6COUPL DJ_OC' dans le poste 'GROSNP6'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GROSNL61GUEUG": 1,
+          "GROSNL61MACON": 2,
+          "GROSNL61ZCUR5": 2
+        },
+        "lines_ex_id": {
+          "CHALOL61GROSN": 2,
+          "CHALOL62GROSN": 1,
+          "CURTIL61GROSN": 1,
+          "GROSNY761": 2,
+          "GROSNY762": 1
+        },
+        "loads_id": {},
+        "generators_id": {},
+        "shunts_id": {}
+      },
+      "switches": {
+        "GROSNP6_GROSN6COUPL DJ_OC": true
+      }
+    },
+    "switches": {
+      "GROSNP6_GROSN6COUPL DJ_OC": true
+    },
+    "VoltageLevelId": "GROSNP6"
+  },
+  "7a26cdec-15b8-4e98-a695-bf9cd379cbf3_PYMONP3": {
+    "description": " Ouverture OC 'PYMON3COUPL DJ_OC' dans le poste 'PYMONP3'",
+    "description_unitaire": " Ouverture OC 'PYMON3COUPL DJ_OC' dans le poste 'PYMONP3'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "PYMONL31SAISS": 2
+        },
+        "lines_ex_id": {
+          "LOUHAL31PYMON": 2,
+          "PYMONY631": 1,
+          "PYMONY632": -1
+        },
+        "loads_id": {
+          "L.SAUL31PYMON": 1,
+          "L.SAUL32PYMON": 2,
+          "L.SAUL33PYMON": 1,
+          "fict_PYMONP3_1": 1
+        },
+        "generators_id": {},
+        "shunts_id": {}
+      },
+      "switches": {
+        "PYMONP3_PYMON3COUPL DJ_OC": true
+      }
+    },
+    "switches": {
+      "PYMONP3_PYMON3COUPL DJ_OC": true
+    },
+    "VoltageLevelId": "PYMONP3"
+  },
+  "5e41ee90-d8cc-4900-800a-ebb8fe30bd20_PYMONP6": {
+    "description": " Ouverture OC 'PYMON6COUPL DJ_OC' dans le poste 'PYMONP6'",
+    "description_unitaire": " Ouverture OC 'PYMON6COUPL DJ_OC' dans le poste 'PYMONP6'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "PYMONL61VOUGL": -1,
+          "PYMONY631": 3,
+          "PYMONY632": -1
+        },
+        "lines_ex_id": {
+          "CPVANL61PYMON": 2
+        },
+        "loads_id": {
+          "PYMON6TR613.C": 1,
+          "PYMON6TR614.F": 3,
+          "PYMON6TR613.F": 1,
+          "PYMON6TR614.C": 3
+        },
+        "generators_id": {},
+        "shunts_id": {}
+      },
+      "switches": {
+        "PYMONP6_PYMON6COUPL DJ_OC": true
+      }
+    },
+    "switches": {
+      "PYMONP6_PYMON6COUPL DJ_OC": true
+    },
+    "VoltageLevelId": "PYMONP6"
+  },
+  "256668ce-2a62-46c0-ba88-8001837b497f_VOUGLP6": {
+    "description": " Ouverture OC 'VOUGL6COUPL DJ_OC' dans le poste 'VOUGLP6'",
+    "description_unitaire": " Ouverture OC 'VOUGL6COUPL DJ_OC' dans le poste 'VOUGLP6'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VOUGLY611": 2,
+          "VOUGLY612": 1,
+          "VOUGLY632": 2,
+          "VOUGLY631": 1
+        },
+        "lines_ex_id": {
+          "FLEYRL61VOUGL": 2,
+          "GEN.PL61VOUGL": 1,
+          "PYMONL61VOUGL": -1
+        },
+        "loads_id": {},
+        "generators_id": {},
+        "shunts_id": {}
+      },
+      "switches": {
+        "VOUGLP6_VOUGL6COUPL DJ_OC": true
+      }
+    },
+    "switches": {
+      "VOUGLP6_VOUGL6COUPL DJ_OC": true
+    },
+    "VoltageLevelId": "VOUGLP6"
+  },
+  "disco_AISERL31MAGNY": {
+    "description": "Disconnection of line/transformer 'AISERL31MAGNY'",
+    "description_unitaire": "Ouverture de la ligne 'AISERL31MAGNY'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "AISERL31MAGNY": -1
+        },
+        "lines_ex_id": {
+          "AISERL31MAGNY": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_AISERL31RONCI": {
+    "description": "Disconnection of line/transformer 'AISERL31RONCI'",
+    "description_unitaire": "Ouverture de la ligne 'AISERL31RONCI'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "AISERL31RONCI": -1
+        },
+        "lines_ex_id": {
+          "AISERL31RONCI": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_AUXONL31COLLO": {
+    "description": "Disconnection of line/transformer 'AUXONL31COLLO'",
+    "description_unitaire": "Ouverture de la ligne 'AUXONL31COLLO'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "AUXONL31COLLO": -1
+        },
+        "lines_ex_id": {
+          "AUXONL31COLLO": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_AUXONL31RIBAU": {
+    "description": "Disconnection of line/transformer 'AUXONL31RIBAU'",
+    "description_unitaire": "Ouverture de la ligne 'AUXONL31RIBAU'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "AUXONL31RIBAU": -1
+        },
+        "lines_ex_id": {
+          "AUXONL31RIBAU": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_AUXONL31TILLE": {
+    "description": "Disconnection of line/transformer 'AUXONL31TILLE'",
+    "description_unitaire": "Ouverture de la ligne 'AUXONL31TILLE'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "AUXONL31TILLE": -1
+        },
+        "lines_ex_id": {
+          "AUXONL31TILLE": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_B.ROCL31VELAR": {
+    "description": "Disconnection of line/transformer 'B.ROCL31VELAR'",
+    "description_unitaire": "Ouverture de la ligne 'B.ROCL31VELAR'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "B.ROCL31VELAR": -1
+        },
+        "lines_ex_id": {
+          "B.ROCL31VELAR": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_B.ROCL31VIELM": {
+    "description": "Disconnection of line/transformer 'B.ROCL31VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'B.ROCL31VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "B.ROCL31VIELM": -1
+        },
+        "lines_ex_id": {
+          "B.ROCL31VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_B.ROCL32VELAR": {
+    "description": "Disconnection of line/transformer 'B.ROCL32VELAR'",
+    "description_unitaire": "Ouverture de la ligne 'B.ROCL32VELAR'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "B.ROCL32VELAR": -1
+        },
+        "lines_ex_id": {
+          "B.ROCL32VELAR": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_B.ROCL32VIELM": {
+    "description": "Disconnection of line/transformer 'B.ROCL32VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'B.ROCL32VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "B.ROCL32VIELM": -1
+        },
+        "lines_ex_id": {
+          "B.ROCL32VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BEON L31CPVAN": {
+    "description": "Disconnection of line/transformer 'BEON L31CPVAN'",
+    "description_unitaire": "Ouverture de la ligne 'BEON L31CPVAN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BEON L31CPVAN": -1
+        },
+        "lines_ex_id": {
+          "BEON L31CPVAN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BEON L31P.SAO": {
+    "description": "Disconnection of line/transformer 'BEON L31P.SAO'",
+    "description_unitaire": "Ouverture de la ligne 'BEON L31P.SAO'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BEON L31P.SAO": -1
+        },
+        "lines_ex_id": {
+          "BEON L31P.SAO": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BOCTOL71M.SEI": {
+    "description": "Disconnection of line/transformer 'BOCTOL71M.SEI'",
+    "description_unitaire": "Ouverture de la ligne 'BOCTOL71M.SEI'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BOCTOL71M.SEI": -1
+        },
+        "lines_ex_id": {
+          "BOCTOL71M.SEI": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BOCTOL71N.SE5": {
+    "description": "Disconnection of line/transformer 'BOCTOL71N.SE5'",
+    "description_unitaire": "Ouverture de la ligne 'BOCTOL71N.SE5'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BOCTOL71N.SE5": -1
+        },
+        "lines_ex_id": {
+          "BOCTOL71N.SE5": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BOCTOL72M.SEI": {
+    "description": "Disconnection of line/transformer 'BOCTOL72M.SEI'",
+    "description_unitaire": "Ouverture de la ligne 'BOCTOL72M.SEI'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BOCTOL72M.SEI": -1
+        },
+        "lines_ex_id": {
+          "BOCTOL72M.SEI": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BOCTOL72N.SE5": {
+    "description": "Disconnection of line/transformer 'BOCTOL72N.SE5'",
+    "description_unitaire": "Ouverture de la ligne 'BOCTOL72N.SE5'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BOCTOL72N.SE5": -1
+        },
+        "lines_ex_id": {
+          "BOCTOL72N.SE5": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BOISSL61GEN.P": {
+    "description": "Disconnection of line/transformer 'BOISSL61GEN.P'",
+    "description_unitaire": "Ouverture de la ligne 'BOISSL61GEN.P'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BOISSL61GEN.P": -1
+        },
+        "lines_ex_id": {
+          "BOISSL61GEN.P": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BOISSL61ZJOUX": {
+    "description": "Disconnection of line/transformer 'BOISSL61ZJOUX'",
+    "description_unitaire": "Ouverture de la ligne 'BOISSL61ZJOUX'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BOISSL61ZJOUX": -1
+        },
+        "lines_ex_id": {
+          "BOISSL61ZJOUX": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BUGEYL72SSV.O": {
+    "description": "Disconnection of line/transformer 'BUGEYL72SSV.O'",
+    "description_unitaire": "Ouverture de la ligne 'BUGEYL72SSV.O'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BUGEYL72SSV.O": -1
+        },
+        "lines_ex_id": {
+          "BUGEYL72SSV.O": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BUGEYL73SSV.O": {
+    "description": "Disconnection of line/transformer 'BUGEYL73SSV.O'",
+    "description_unitaire": "Ouverture de la ligne 'BUGEYL73SSV.O'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BUGEYL73SSV.O": -1
+        },
+        "lines_ex_id": {
+          "BUGEYL73SSV.O": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BUGEYL74SSV.O": {
+    "description": "Disconnection of line/transformer 'BUGEYL74SSV.O'",
+    "description_unitaire": "Ouverture de la ligne 'BUGEYL74SSV.O'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BUGEYL74SSV.O": -1
+        },
+        "lines_ex_id": {
+          "BUGEYL74SSV.O": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BUGEYL75SSV.O": {
+    "description": "Disconnection of line/transformer 'BUGEYL75SSV.O'",
+    "description_unitaire": "Ouverture de la ligne 'BUGEYL75SSV.O'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BUGEYL75SSV.O": -1
+        },
+        "lines_ex_id": {
+          "BUGEYL75SSV.O": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BUGEYY712": {
+    "description": "Disconnection of line/transformer 'BUGEYY712'",
+    "description_unitaire": "Ouverture de la ligne 'BUGEYY712'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BUGEYY712": -1
+        },
+        "lines_ex_id": {
+          "BUGEYY712": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BUGEYY713": {
+    "description": "Disconnection of line/transformer 'BUGEYY713'",
+    "description_unitaire": "Ouverture de la ligne 'BUGEYY713'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BUGEYY713": -1
+        },
+        "lines_ex_id": {
+          "BUGEYY713": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BUGEYY714": {
+    "description": "Disconnection of line/transformer 'BUGEYY714'",
+    "description_unitaire": "Ouverture de la ligne 'BUGEYY714'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BUGEYY714": -1
+        },
+        "lines_ex_id": {
+          "BUGEYY714": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BUGEYY715": {
+    "description": "Disconnection of line/transformer 'BUGEYY715'",
+    "description_unitaire": "Ouverture de la ligne 'BUGEYY715'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BUGEYY715": -1
+        },
+        "lines_ex_id": {
+          "BUGEYY715": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BXNE L31BXNE5": {
+    "description": "Disconnection of line/transformer 'BXNE L31BXNE5'",
+    "description_unitaire": "Ouverture de la ligne 'BXNE L31BXNE5'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BXNE L31BXNE5": -1
+        },
+        "lines_ex_id": {
+          "BXNE L31BXNE5": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BXNE L31MTAGN": {
+    "description": "Disconnection of line/transformer 'BXNE L31MTAGN'",
+    "description_unitaire": "Ouverture de la ligne 'BXNE L31MTAGN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BXNE L31MTAGN": -1
+        },
+        "lines_ex_id": {
+          "BXNE L31MTAGN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_BXNE5L31VOSNE": {
+    "description": "Disconnection of line/transformer 'BXNE5L31VOSNE'",
+    "description_unitaire": "Ouverture de la ligne 'BXNE5L31VOSNE'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "BXNE5L31VOSNE": -1
+        },
+        "lines_ex_id": {
+          "BXNE5L31VOSNE": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_C.FOUL31MERVA": {
+    "description": "Disconnection of line/transformer 'C.FOUL31MERVA'",
+    "description_unitaire": "Ouverture de la ligne 'C.FOUL31MERVA'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.FOUL31MERVA": -1
+        },
+        "lines_ex_id": {
+          "C.FOUL31MERVA": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_C.FOUL31NAVIL": {
+    "description": "Disconnection of line/transformer 'C.FOUL31NAVIL'",
+    "description_unitaire": "Ouverture de la ligne 'C.FOUL31NAVIL'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.FOUL31NAVIL": -1
+        },
+        "lines_ex_id": {
+          "C.FOUL31NAVIL": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_C.REGL31ZCRIM": {
+    "description": "Disconnection of line/transformer 'C.REGL31ZCRIM'",
+    "description_unitaire": "Ouverture de la ligne 'C.REGL31ZCRIM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.REGL31ZCRIM": -1
+        },
+        "lines_ex_id": {
+          "C.REGL31ZCRIM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_C.REGL61VIELM": {
+    "description": "Disconnection of line/transformer 'C.REGL61VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'C.REGL61VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.REGL61VIELM": -1
+        },
+        "lines_ex_id": {
+          "C.REGL61VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_C.REGL61ZMAGN": {
+    "description": "Disconnection of line/transformer 'C.REGL61ZMAGN'",
+    "description_unitaire": "Ouverture de la ligne 'C.REGL61ZMAGN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.REGL61ZMAGN": -1
+        },
+        "lines_ex_id": {
+          "C.REGL61ZMAGN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_C.REGL62VIELM": {
+    "description": "Disconnection of line/transformer 'C.REGL62VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'C.REGL62VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.REGL62VIELM": -1
+        },
+        "lines_ex_id": {
+          "C.REGL62VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_C.REGY631": {
+    "description": "Disconnection of line/transformer 'C.REGY631'",
+    "description_unitaire": "Ouverture de la ligne 'C.REGY631'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.REGY631": -1
+        },
+        "lines_ex_id": {
+          "C.REGY631": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_C.REGY633": {
+    "description": "Disconnection of line/transformer 'C.REGY633'",
+    "description_unitaire": "Ouverture de la ligne 'C.REGY633'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.REGY633": -1
+        },
+        "lines_ex_id": {
+          "C.REGY633": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_C.SAUL31MAGNY": {
+    "description": "Disconnection of line/transformer 'C.SAUL31MAGNY'",
+    "description_unitaire": "Ouverture de la ligne 'C.SAUL31MAGNY'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.SAUL31MAGNY": -1
+        },
+        "lines_ex_id": {
+          "C.SAUL31MAGNY": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_C.SAUL31ZCRIM": {
+    "description": "Disconnection of line/transformer 'C.SAUL31ZCRIM'",
+    "description_unitaire": "Ouverture de la ligne 'C.SAUL31ZCRIM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "C.SAUL31ZCRIM": -1
+        },
+        "lines_ex_id": {
+          "C.SAUL31ZCRIM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CHAGNL31MOLLE": {
+    "description": "Disconnection of line/transformer 'CHAGNL31MOLLE'",
+    "description_unitaire": "Ouverture de la ligne 'CHAGNL31MOLLE'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHAGNL31MOLLE": -1
+        },
+        "lines_ex_id": {
+          "CHAGNL31MOLLE": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CHAGNL31MTAGN": {
+    "description": "Disconnection of line/transformer 'CHAGNL31MTAGN'",
+    "description_unitaire": "Ouverture de la ligne 'CHAGNL31MTAGN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHAGNL31MTAGN": -1
+        },
+        "lines_ex_id": {
+          "CHAGNL31MTAGN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CHAL5L31MOLLE": {
+    "description": "Disconnection of line/transformer 'CHAL5L31MOLLE'",
+    "description_unitaire": "Ouverture de la ligne 'CHAL5L31MOLLE'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHAL5L31MOLLE": -1
+        },
+        "lines_ex_id": {
+          "CHAL5L31MOLLE": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CHALOL31CHAL5": {
+    "description": "Disconnection of line/transformer 'CHALOL31CHAL5'",
+    "description_unitaire": "Ouverture de la ligne 'CHALOL31CHAL5'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOL31CHAL5": -1
+        },
+        "lines_ex_id": {
+          "CHALOL31CHAL5": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CHALOL31LOUHA": {
+    "description": "Disconnection of line/transformer 'CHALOL31LOUHA'",
+    "description_unitaire": "Ouverture de la ligne 'CHALOL31LOUHA'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOL31LOUHA": -1
+        },
+        "lines_ex_id": {
+          "CHALOL31LOUHA": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CHALOL32FTAIN": {
+    "description": "Disconnection of line/transformer 'CHALOL32FTAIN'",
+    "description_unitaire": "Ouverture de la ligne 'CHALOL32FTAIN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOL32FTAIN": -1
+        },
+        "lines_ex_id": {
+          "CHALOL32FTAIN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CHALOL61CPVAN": {
+    "description": "Disconnection of line/transformer 'CHALOL61CPVAN'",
+    "description_unitaire": "Ouverture de la ligne 'CHALOL61CPVAN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOL61CPVAN": -1
+        },
+        "lines_ex_id": {
+          "CHALOL61CPVAN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CHALOL61GROSN": {
+    "description": "Disconnection of line/transformer 'CHALOL61GROSN'",
+    "description_unitaire": "Ouverture de la ligne 'CHALOL61GROSN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOL61GROSN": -1
+        },
+        "lines_ex_id": {
+          "CHALOL61GROSN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CHALOL62GROSN": {
+    "description": "Disconnection of line/transformer 'CHALOL62GROSN'",
+    "description_unitaire": "Ouverture de la ligne 'CHALOL62GROSN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOL62GROSN": -1
+        },
+        "lines_ex_id": {
+          "CHALOL62GROSN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CHALOY631": {
+    "description": "Disconnection of line/transformer 'CHALOY631'",
+    "description_unitaire": "Ouverture de la ligne 'CHALOY631'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOY631": -1
+        },
+        "lines_ex_id": {
+          "CHALOY631": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CHALOY632": {
+    "description": "Disconnection of line/transformer 'CHALOY632'",
+    "description_unitaire": "Ouverture de la ligne 'CHALOY632'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOY632": -1
+        },
+        "lines_ex_id": {
+          "CHALOY632": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CHALOY633": {
+    "description": "Disconnection of line/transformer 'CHALOY633'",
+    "description_unitaire": "Ouverture de la ligne 'CHALOY633'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CHALOY633": -1
+        },
+        "lines_ex_id": {
+          "CHALOY633": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CIZE L61FLEYR": {
+    "description": "Disconnection of line/transformer 'CIZE L61FLEYR'",
+    "description_unitaire": "Ouverture de la ligne 'CIZE L61FLEYR'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CIZE L61FLEYR": -1
+        },
+        "lines_ex_id": {
+          "CIZE L61FLEYR": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CIZE L61IZERN": {
+    "description": "Disconnection of line/transformer 'CIZE L61IZERN'",
+    "description_unitaire": "Ouverture de la ligne 'CIZE L61IZERN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CIZE L61IZERN": -1
+        },
+        "lines_ex_id": {
+          "CIZE L61IZERN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_COLLOL31GENLI": {
+    "description": "Disconnection of line/transformer 'COLLOL31GENLI'",
+    "description_unitaire": "Ouverture de la ligne 'COLLOL31GENLI'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "COLLOL31GENLI": -1
+        },
+        "lines_ex_id": {
+          "COLLOL31GENLI": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_COMMUL61H.PAU": {
+    "description": "Disconnection of line/transformer 'COMMUL61H.PAU'",
+    "description_unitaire": "Ouverture de la ligne 'COMMUL61H.PAU'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "COMMUL61H.PAU": -1
+        },
+        "lines_ex_id": {
+          "COMMUL61H.PAU": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_COMMUL61VIELM": {
+    "description": "Disconnection of line/transformer 'COMMUL61VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'COMMUL61VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "COMMUL61VIELM": -1
+        },
+        "lines_ex_id": {
+          "COMMUL61VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CORGOL32MTAGN": {
+    "description": "Disconnection of line/transformer 'CORGOL32MTAGN'",
+    "description_unitaire": "Ouverture de la ligne 'CORGOL32MTAGN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CORGOL32MTAGN": -1
+        },
+        "lines_ex_id": {
+          "CORGOL32MTAGN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CORGOL32N.GEO": {
+    "description": "Disconnection of line/transformer 'CORGOL32N.GEO'",
+    "description_unitaire": "Ouverture de la ligne 'CORGOL32N.GEO'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CORGOL32N.GEO": -1
+        },
+        "lines_ex_id": {
+          "CORGOL32N.GEO": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_COUCHL31ROMEL": {
+    "description": "Disconnection of line/transformer 'COUCHL31ROMEL'",
+    "description_unitaire": "Ouverture de la ligne 'COUCHL31ROMEL'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "COUCHL31ROMEL": -1
+        },
+        "lines_ex_id": {
+          "COUCHL31ROMEL": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_COUCHL31VOSNE": {
+    "description": "Disconnection of line/transformer 'COUCHL31VOSNE'",
+    "description_unitaire": "Ouverture de la ligne 'COUCHL31VOSNE'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "COUCHL31VOSNE": -1
+        },
+        "lines_ex_id": {
+          "COUCHL31VOSNE": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_COUCHL32GEVRE": {
+    "description": "Disconnection of line/transformer 'COUCHL32GEVRE'",
+    "description_unitaire": "Ouverture de la ligne 'COUCHL32GEVRE'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "COUCHL32GEVRE": -1
+        },
+        "lines_ex_id": {
+          "COUCHL32GEVRE": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_COUCHL32PERRI": {
+    "description": "Disconnection of line/transformer 'COUCHL32PERRI'",
+    "description_unitaire": "Ouverture de la ligne 'COUCHL32PERRI'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "COUCHL32PERRI": -1
+        },
+        "lines_ex_id": {
+          "COUCHL32PERRI": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_COUCHL61CPVAN": {
+    "description": "Disconnection of line/transformer 'COUCHL61CPVAN'",
+    "description_unitaire": "Ouverture de la ligne 'COUCHL61CPVAN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "COUCHL61CPVAN": -1
+        },
+        "lines_ex_id": {
+          "COUCHL61CPVAN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_COUCHL61VIELM": {
+    "description": "Disconnection of line/transformer 'COUCHL61VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'COUCHL61VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "COUCHL61VIELM": -1
+        },
+        "lines_ex_id": {
+          "COUCHL61VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_COUCHY631": {
+    "description": "Disconnection of line/transformer 'COUCHY631'",
+    "description_unitaire": "Ouverture de la ligne 'COUCHY631'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "COUCHY631": -1
+        },
+        "lines_ex_id": {
+          "COUCHY631": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_COUCHY632": {
+    "description": "Disconnection of line/transformer 'COUCHY632'",
+    "description_unitaire": "Ouverture de la ligne 'COUCHY632'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "COUCHY632": -1
+        },
+        "lines_ex_id": {
+          "COUCHY632": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CPVANL31RIBAU": {
+    "description": "Disconnection of line/transformer 'CPVANL31RIBAU'",
+    "description_unitaire": "Ouverture de la ligne 'CPVANL31RIBAU'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CPVANL31RIBAU": -1
+        },
+        "lines_ex_id": {
+          "CPVANL31RIBAU": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CPVANL61PYMON": {
+    "description": "Disconnection of line/transformer 'CPVANL61PYMON'",
+    "description_unitaire": "Ouverture de la ligne 'CPVANL61PYMON'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CPVANL61PYMON": -1
+        },
+        "lines_ex_id": {
+          "CPVANL61PYMON": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CPVANL61TAVAU": {
+    "description": "Disconnection of line/transformer 'CPVANL61TAVAU'",
+    "description_unitaire": "Ouverture de la ligne 'CPVANL61TAVAU'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CPVANL61TAVAU": -1
+        },
+        "lines_ex_id": {
+          "CPVANL61TAVAU": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CPVANL61ZMAGN": {
+    "description": "Disconnection of line/transformer 'CPVANL61ZMAGN'",
+    "description_unitaire": "Ouverture de la ligne 'CPVANL61ZMAGN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CPVANL61ZMAGN": -1
+        },
+        "lines_ex_id": {
+          "CPVANL61ZMAGN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CPVANY631": {
+    "description": "Disconnection of line/transformer 'CPVANY631'",
+    "description_unitaire": "Ouverture de la ligne 'CPVANY631'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CPVANY631": -1
+        },
+        "lines_ex_id": {
+          "CPVANY631": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CPVANY632": {
+    "description": "Disconnection of line/transformer 'CPVANY632'",
+    "description_unitaire": "Ouverture de la ligne 'CPVANY632'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CPVANY632": -1
+        },
+        "lines_ex_id": {
+          "CPVANY632": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CPVANY633": {
+    "description": "Disconnection of line/transformer 'CPVANY633'",
+    "description_unitaire": "Ouverture de la ligne 'CPVANY633'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CPVANY633": -1
+        },
+        "lines_ex_id": {
+          "CPVANY633": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CRENEL71M.SEI": {
+    "description": "Disconnection of line/transformer 'CRENEL71M.SEI'",
+    "description_unitaire": "Ouverture de la ligne 'CRENEL71M.SEI'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CRENEL71M.SEI": -1
+        },
+        "lines_ex_id": {
+          "CRENEL71M.SEI": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CRENEL71VIELM": {
+    "description": "Disconnection of line/transformer 'CRENEL71VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'CRENEL71VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CRENEL71VIELM": -1
+        },
+        "lines_ex_id": {
+          "CRENEL71VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CREYSL71GEN.P": {
+    "description": "Disconnection of line/transformer 'CREYSL71GEN.P'",
+    "description_unitaire": "Ouverture de la ligne 'CREYSL71GEN.P'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CREYSL71GEN.P": -1
+        },
+        "lines_ex_id": {
+          "CREYSL71GEN.P": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CREYSL71SSV.O": {
+    "description": "Disconnection of line/transformer 'CREYSL71SSV.O'",
+    "description_unitaire": "Ouverture de la ligne 'CREYSL71SSV.O'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CREYSL71SSV.O": -1
+        },
+        "lines_ex_id": {
+          "CREYSL71SSV.O": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CREYSL72GEN.P": {
+    "description": "Disconnection of line/transformer 'CREYSL72GEN.P'",
+    "description_unitaire": "Ouverture de la ligne 'CREYSL72GEN.P'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CREYSL72GEN.P": -1
+        },
+        "lines_ex_id": {
+          "CREYSL72GEN.P": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CREYSL72SSV.O": {
+    "description": "Disconnection of line/transformer 'CREYSL72SSV.O'",
+    "description_unitaire": "Ouverture de la ligne 'CREYSL72SSV.O'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CREYSL72SSV.O": -1
+        },
+        "lines_ex_id": {
+          "CREYSL72SSV.O": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CUISEL31G.CHE": {
+    "description": "Disconnection of line/transformer 'CUISEL31G.CHE'",
+    "description_unitaire": "Ouverture de la ligne 'CUISEL31G.CHE'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CUISEL31G.CHE": -1
+        },
+        "lines_ex_id": {
+          "CUISEL31G.CHE": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CUISEL31VOUGL": {
+    "description": "Disconnection of line/transformer 'CUISEL31VOUGL'",
+    "description_unitaire": "Ouverture de la ligne 'CUISEL31VOUGL'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CUISEL31VOUGL": -1
+        },
+        "lines_ex_id": {
+          "CUISEL31VOUGL": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CURTIL61GROSN": {
+    "description": "Disconnection of line/transformer 'CURTIL61GROSN'",
+    "description_unitaire": "Ouverture de la ligne 'CURTIL61GROSN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CURTIL61GROSN": -1
+        },
+        "lines_ex_id": {
+          "CURTIL61GROSN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_CURTIL61ZCUR5": {
+    "description": "Disconnection of line/transformer 'CURTIL61ZCUR5'",
+    "description_unitaire": "Ouverture de la ligne 'CURTIL61ZCUR5'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "CURTIL61ZCUR5": -1
+        },
+        "lines_ex_id": {
+          "CURTIL61ZCUR5": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_FLEYRL61VOUGL": {
+    "description": "Disconnection of line/transformer 'FLEYRL61VOUGL'",
+    "description_unitaire": "Ouverture de la ligne 'FLEYRL61VOUGL'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "FLEYRL61VOUGL": -1
+        },
+        "lines_ex_id": {
+          "FLEYRL61VOUGL": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_FRON5L31G.CHE": {
+    "description": "Disconnection of line/transformer 'FRON5L31G.CHE'",
+    "description_unitaire": "Ouverture de la ligne 'FRON5L31G.CHE'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "FRON5L31G.CHE": -1
+        },
+        "lines_ex_id": {
+          "FRON5L31G.CHE": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_FRON5L31LOUHA": {
+    "description": "Disconnection of line/transformer 'FRON5L31LOUHA'",
+    "description_unitaire": "Ouverture de la ligne 'FRON5L31LOUHA'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "FRON5L31LOUHA": -1
+        },
+        "lines_ex_id": {
+          "FRON5L31LOUHA": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_FTAINL32MEURS": {
+    "description": "Disconnection of line/transformer 'FTAINL32MEURS'",
+    "description_unitaire": "Ouverture de la ligne 'FTAINL32MEURS'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "FTAINL32MEURS": -1
+        },
+        "lines_ex_id": {
+          "FTAINL32MEURS": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PL61GENIS": {
+    "description": "Disconnection of line/transformer 'GEN.PL61GENIS'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PL61GENIS'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PL61GENIS": -1
+        },
+        "lines_ex_id": {
+          "GEN.PL61GENIS": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PL61IZERN": {
+    "description": "Disconnection of line/transformer 'GEN.PL61IZERN'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PL61IZERN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PL61IZERN": -1
+        },
+        "lines_ex_id": {
+          "GEN.PL61IZERN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PL61VOUGL": {
+    "description": "Disconnection of line/transformer 'GEN.PL61VOUGL'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PL61VOUGL'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PL61VOUGL": -1
+        },
+        "lines_ex_id": {
+          "GEN.PL61VOUGL": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PL62GENIS": {
+    "description": "Disconnection of line/transformer 'GEN.PL62GENIS'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PL62GENIS'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PL62GENIS": -1
+        },
+        "lines_ex_id": {
+          "GEN.PL62GENIS": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PL63GENIS": {
+    "description": "Disconnection of line/transformer 'GEN.PL63GENIS'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PL63GENIS'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PL63GENIS": -1
+        },
+        "lines_ex_id": {
+          "GEN.PL63GENIS": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PL64GENIS": {
+    "description": "Disconnection of line/transformer 'GEN.PL64GENIS'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PL64GENIS'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PL64GENIS": -1
+        },
+        "lines_ex_id": {
+          "GEN.PL64GENIS": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PL65GENIS": {
+    "description": "Disconnection of line/transformer 'GEN.PL65GENIS'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PL65GENIS'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PL65GENIS": -1
+        },
+        "lines_ex_id": {
+          "GEN.PL65GENIS": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PL66GENIS": {
+    "description": "Disconnection of line/transformer 'GEN.PL66GENIS'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PL66GENIS'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PL66GENIS": -1
+        },
+        "lines_ex_id": {
+          "GEN.PL66GENIS": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PL71VIELM": {
+    "description": "Disconnection of line/transformer 'GEN.PL71VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PL71VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PL71VIELM": -1
+        },
+        "lines_ex_id": {
+          "GEN.PL71VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PL72VIELM": {
+    "description": "Disconnection of line/transformer 'GEN.PL72VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PL72VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PL72VIELM": -1
+        },
+        "lines_ex_id": {
+          "GEN.PL72VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PL73VIELM": {
+    "description": "Disconnection of line/transformer 'GEN.PL73VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PL73VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PL73VIELM": -1
+        },
+        "lines_ex_id": {
+          "GEN.PL73VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PY711": {
+    "description": "Disconnection of line/transformer 'GEN.PY711'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PY711'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PY711": -1
+        },
+        "lines_ex_id": {
+          "GEN.PY711": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PY761": {
+    "description": "Disconnection of line/transformer 'GEN.PY761'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PY761'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PY761": -1
+        },
+        "lines_ex_id": {
+          "GEN.PY761": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PY762": {
+    "description": "Disconnection of line/transformer 'GEN.PY762'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PY762'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PY762": -1
+        },
+        "lines_ex_id": {
+          "GEN.PY762": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEN.PY771": {
+    "description": "Disconnection of line/transformer 'GEN.PY771'",
+    "description_unitaire": "Ouverture de la ligne 'GEN.PY771'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEN.PY771": -1
+        },
+        "lines_ex_id": {
+          "GEN.PY771": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GENLIL31MAGNY": {
+    "description": "Disconnection of line/transformer 'GENLIL31MAGNY'",
+    "description_unitaire": "Ouverture de la ligne 'GENLIL31MAGNY'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GENLIL31MAGNY": -1
+        },
+        "lines_ex_id": {
+          "GENLIL31MAGNY": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GEVREL32N.GEO": {
+    "description": "Disconnection of line/transformer 'GEVREL32N.GEO'",
+    "description_unitaire": "Ouverture de la ligne 'GEVREL32N.GEO'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GEVREL32N.GEO": -1
+        },
+        "lines_ex_id": {
+          "GEVREL32N.GEO": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GROSNL61GUEUG": {
+    "description": "Disconnection of line/transformer 'GROSNL61GUEUG'",
+    "description_unitaire": "Ouverture de la ligne 'GROSNL61GUEUG'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GROSNL61GUEUG": -1
+        },
+        "lines_ex_id": {
+          "GROSNL61GUEUG": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GROSNL61MACON": {
+    "description": "Disconnection of line/transformer 'GROSNL61MACON'",
+    "description_unitaire": "Ouverture de la ligne 'GROSNL61MACON'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GROSNL61MACON": -1
+        },
+        "lines_ex_id": {
+          "GROSNL61MACON": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GROSNL61ZCUR5": {
+    "description": "Disconnection of line/transformer 'GROSNL61ZCUR5'",
+    "description_unitaire": "Ouverture de la ligne 'GROSNL61ZCUR5'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GROSNL61ZCUR5": -1
+        },
+        "lines_ex_id": {
+          "GROSNL61ZCUR5": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GROSNL71SSV.O": {
+    "description": "Disconnection of line/transformer 'GROSNL71SSV.O'",
+    "description_unitaire": "Ouverture de la ligne 'GROSNL71SSV.O'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GROSNL71SSV.O": -1
+        },
+        "lines_ex_id": {
+          "GROSNL71SSV.O": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GROSNL71VIELM": {
+    "description": "Disconnection of line/transformer 'GROSNL71VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'GROSNL71VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GROSNL71VIELM": -1
+        },
+        "lines_ex_id": {
+          "GROSNL71VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GROSNY711": {
+    "description": "Disconnection of line/transformer 'GROSNY711'",
+    "description_unitaire": "Ouverture de la ligne 'GROSNY711'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GROSNY711": -1
+        },
+        "lines_ex_id": {
+          "GROSNY711": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GROSNY761": {
+    "description": "Disconnection of line/transformer 'GROSNY761'",
+    "description_unitaire": "Ouverture de la ligne 'GROSNY761'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GROSNY761": -1
+        },
+        "lines_ex_id": {
+          "GROSNY761": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GROSNY762": {
+    "description": "Disconnection of line/transformer 'GROSNY762'",
+    "description_unitaire": "Ouverture de la ligne 'GROSNY762'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GROSNY762": -1
+        },
+        "lines_ex_id": {
+          "GROSNY762": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GROSNY771": {
+    "description": "Disconnection of line/transformer 'GROSNY771'",
+    "description_unitaire": "Ouverture de la ligne 'GROSNY771'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GROSNY771": -1
+        },
+        "lines_ex_id": {
+          "GROSNY771": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_GUEUGL61H.PAU": {
+    "description": "Disconnection of line/transformer 'GUEUGL61H.PAU'",
+    "description_unitaire": "Ouverture de la ligne 'GUEUGL61H.PAU'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "GUEUGL61H.PAU": -1
+        },
+        "lines_ex_id": {
+          "GUEUGL61H.PAU": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_H.PAUL61ZCUR5": {
+    "description": "Disconnection of line/transformer 'H.PAUL61ZCUR5'",
+    "description_unitaire": "Ouverture de la ligne 'H.PAUL61ZCUR5'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "H.PAUL61ZCUR5": -1
+        },
+        "lines_ex_id": {
+          "H.PAUL61ZCUR5": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_H.PAUL71SSV.O": {
+    "description": "Disconnection of line/transformer 'H.PAUL71SSV.O'",
+    "description_unitaire": "Ouverture de la ligne 'H.PAUL71SSV.O'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "H.PAUL71SSV.O": -1
+        },
+        "lines_ex_id": {
+          "H.PAUL71SSV.O": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_H.PAUL71VIELM": {
+    "description": "Disconnection of line/transformer 'H.PAUL71VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'H.PAUL71VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "H.PAUL71VIELM": -1
+        },
+        "lines_ex_id": {
+          "H.PAUL71VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_H.PAUY762": {
+    "description": "Disconnection of line/transformer 'H.PAUY762'",
+    "description_unitaire": "Ouverture de la ligne 'H.PAUY762'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "H.PAUY762": -1
+        },
+        "lines_ex_id": {
+          "H.PAUY762": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_H.PAUY772": {
+    "description": "Disconnection of line/transformer 'H.PAUY772'",
+    "description_unitaire": "Ouverture de la ligne 'H.PAUY772'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "H.PAUY772": -1
+        },
+        "lines_ex_id": {
+          "H.PAUY772": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_KIR  L31PERRI": {
+    "description": "Disconnection of line/transformer 'KIR  L31PERRI'",
+    "description_unitaire": "Ouverture de la ligne 'KIR  L31PERRI'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "KIR  L31PERRI": -1
+        },
+        "lines_ex_id": {
+          "KIR  L31PERRI": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_KIR  L31VELAR": {
+    "description": "Disconnection of line/transformer 'KIR  L31VELAR'",
+    "description_unitaire": "Ouverture de la ligne 'KIR  L31VELAR'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "KIR  L31VELAR": -1
+        },
+        "lines_ex_id": {
+          "KIR  L31VELAR": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_LOUHAL31PYMON": {
+    "description": "Disconnection of line/transformer 'LOUHAL31PYMON'",
+    "description_unitaire": "Ouverture de la ligne 'LOUHAL31PYMON'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "LOUHAL31PYMON": -1
+        },
+        "lines_ex_id": {
+          "LOUHAL31PYMON": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_LOUHAL31SSUSU": {
+    "description": "Disconnection of line/transformer 'LOUHAL31SSUSU'",
+    "description_unitaire": "Ouverture de la ligne 'LOUHAL31SSUSU'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "LOUHAL31SSUSU": -1
+        },
+        "lines_ex_id": {
+          "LOUHAL31SSUSU": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_M.SEIL71VIELM": {
+    "description": "Disconnection of line/transformer 'M.SEIL71VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'M.SEIL71VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "M.SEIL71VIELM": -1
+        },
+        "lines_ex_id": {
+          "M.SEIL71VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_M.SEIL72VIELM": {
+    "description": "Disconnection of line/transformer 'M.SEIL72VIELM'",
+    "description_unitaire": "Ouverture de la ligne 'M.SEIL72VIELM'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "M.SEIL72VIELM": -1
+        },
+        "lines_ex_id": {
+          "M.SEIL72VIELM": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_MACONL61ZJOUX": {
+    "description": "Disconnection of line/transformer 'MACONL61ZJOUX'",
+    "description_unitaire": "Ouverture de la ligne 'MACONL61ZJOUX'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "MACONL61ZJOUX": -1
+        },
+        "lines_ex_id": {
+          "MACONL61ZJOUX": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_MAGNYL61ZMAGN": {
+    "description": "Disconnection of line/transformer 'MAGNYL61ZMAGN'",
+    "description_unitaire": "Ouverture de la ligne 'MAGNYL61ZMAGN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "MAGNYL61ZMAGN": -1
+        },
+        "lines_ex_id": {
+          "MAGNYL61ZMAGN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_MAGNYY633": {
+    "description": "Disconnection of line/transformer 'MAGNYY633'",
+    "description_unitaire": "Ouverture de la ligne 'MAGNYY633'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "MAGNYY633": -1
+        },
+        "lines_ex_id": {
+          "MAGNYY633": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_MERVAL31SSUSU": {
+    "description": "Disconnection of line/transformer 'MERVAL31SSUSU'",
+    "description_unitaire": "Ouverture de la ligne 'MERVAL31SSUSU'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "MERVAL31SSUSU": -1
+        },
+        "lines_ex_id": {
+          "MERVAL31SSUSU": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_MEURSL32MTAGN": {
+    "description": "Disconnection of line/transformer 'MEURSL32MTAGN'",
+    "description_unitaire": "Ouverture de la ligne 'MEURSL32MTAGN'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "MEURSL32MTAGN": -1
+        },
+        "lines_ex_id": {
+          "MEURSL32MTAGN": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_N.SE5Y711": {
+    "description": "Disconnection of line/transformer 'N.SE5Y711'",
+    "description_unitaire": "Ouverture de la ligne 'N.SE5Y711'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "N.SE5Y711": -1
+        },
+        "lines_ex_id": {
+          "N.SE5Y711": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_N.SE5Y712": {
+    "description": "Disconnection of line/transformer 'N.SE5Y712'",
+    "description_unitaire": "Ouverture de la ligne 'N.SE5Y712'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "N.SE5Y712": -1
+        },
+        "lines_ex_id": {
+          "N.SE5Y712": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_NAVILL31P.SAO": {
+    "description": "Disconnection of line/transformer 'NAVILL31P.SAO'",
+    "description_unitaire": "Ouverture de la ligne 'NAVILL31P.SAO'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "NAVILL31P.SAO": -1
+        },
+        "lines_ex_id": {
+          "NAVILL31P.SAO": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_P.SAOL31RONCI": {
+    "description": "Disconnection of line/transformer 'P.SAOL31RONCI'",
+    "description_unitaire": "Ouverture de la ligne 'P.SAOL31RONCI'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "P.SAOL31RONCI": -1
+        },
+        "lines_ex_id": {
+          "P.SAOL31RONCI": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_PERRIL31ROMEL": {
+    "description": "Disconnection of line/transformer 'PERRIL31ROMEL'",
+    "description_unitaire": "Ouverture de la ligne 'PERRIL31ROMEL'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "PERRIL31ROMEL": -1
+        },
+        "lines_ex_id": {
+          "PERRIL31ROMEL": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_PERRIL32VELAR": {
+    "description": "Disconnection of line/transformer 'PERRIL32VELAR'",
+    "description_unitaire": "Ouverture de la ligne 'PERRIL32VELAR'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "PERRIL32VELAR": -1
+        },
+        "lines_ex_id": {
+          "PERRIL32VELAR": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_PYMONL31SAISS": {
+    "description": "Disconnection of line/transformer 'PYMONL31SAISS'",
+    "description_unitaire": "Ouverture de la ligne 'PYMONL31SAISS'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "PYMONL31SAISS": -1
+        },
+        "lines_ex_id": {
+          "PYMONL31SAISS": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_PYMONL61VOUGL": {
+    "description": "Disconnection of line/transformer 'PYMONL61VOUGL'",
+    "description_unitaire": "Ouverture de la ligne 'PYMONL61VOUGL'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "PYMONL61VOUGL": -1
+        },
+        "lines_ex_id": {
+          "PYMONL61VOUGL": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_PYMONY631": {
+    "description": "Disconnection of line/transformer 'PYMONY631'",
+    "description_unitaire": "Ouverture de la ligne 'PYMONY631'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "PYMONY631": -1
+        },
+        "lines_ex_id": {
+          "PYMONY631": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_PYMONY632": {
+    "description": "Disconnection of line/transformer 'PYMONY632'",
+    "description_unitaire": "Ouverture de la ligne 'PYMONY632'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "PYMONY632": -1
+        },
+        "lines_ex_id": {
+          "PYMONY632": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_SAISSL31VOUGL": {
+    "description": "Disconnection of line/transformer 'SAISSL31VOUGL'",
+    "description_unitaire": "Ouverture de la ligne 'SAISSL31VOUGL'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "SAISSL31VOUGL": -1
+        },
+        "lines_ex_id": {
+          "SAISSL31VOUGL": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_TAVA5Y611": {
+    "description": "Disconnection of line/transformer 'TAVA5Y611'",
+    "description_unitaire": "Ouverture de la ligne 'TAVA5Y611'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "TAVA5Y611": -1
+        },
+        "lines_ex_id": {
+          "TAVA5Y611": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_TAVA5Y612": {
+    "description": "Disconnection of line/transformer 'TAVA5Y612'",
+    "description_unitaire": "Ouverture de la ligne 'TAVA5Y612'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "TAVA5Y612": -1
+        },
+        "lines_ex_id": {
+          "TAVA5Y612": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_VIELMY634": {
+    "description": "Disconnection of line/transformer 'VIELMY634'",
+    "description_unitaire": "Ouverture de la ligne 'VIELMY634'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VIELMY634": -1
+        },
+        "lines_ex_id": {
+          "VIELMY634": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_VIELMY635": {
+    "description": "Disconnection of line/transformer 'VIELMY635'",
+    "description_unitaire": "Ouverture de la ligne 'VIELMY635'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VIELMY635": -1
+        },
+        "lines_ex_id": {
+          "VIELMY635": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_VIELMY711": {
+    "description": "Disconnection of line/transformer 'VIELMY711'",
+    "description_unitaire": "Ouverture de la ligne 'VIELMY711'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VIELMY711": -1
+        },
+        "lines_ex_id": {
+          "VIELMY711": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_VIELMY761": {
+    "description": "Disconnection of line/transformer 'VIELMY761'",
+    "description_unitaire": "Ouverture de la ligne 'VIELMY761'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VIELMY761": -1
+        },
+        "lines_ex_id": {
+          "VIELMY761": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_VIELMY762": {
+    "description": "Disconnection of line/transformer 'VIELMY762'",
+    "description_unitaire": "Ouverture de la ligne 'VIELMY762'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VIELMY762": -1
+        },
+        "lines_ex_id": {
+          "VIELMY762": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_VIELMY763": {
+    "description": "Disconnection of line/transformer 'VIELMY763'",
+    "description_unitaire": "Ouverture de la ligne 'VIELMY763'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VIELMY763": -1
+        },
+        "lines_ex_id": {
+          "VIELMY763": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_VIELMY771": {
+    "description": "Disconnection of line/transformer 'VIELMY771'",
+    "description_unitaire": "Ouverture de la ligne 'VIELMY771'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VIELMY771": -1
+        },
+        "lines_ex_id": {
+          "VIELMY771": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_VOUGLY611": {
+    "description": "Disconnection of line/transformer 'VOUGLY611'",
+    "description_unitaire": "Ouverture de la ligne 'VOUGLY611'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VOUGLY611": -1
+        },
+        "lines_ex_id": {
+          "VOUGLY611": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_VOUGLY612": {
+    "description": "Disconnection of line/transformer 'VOUGLY612'",
+    "description_unitaire": "Ouverture de la ligne 'VOUGLY612'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VOUGLY612": -1
+        },
+        "lines_ex_id": {
+          "VOUGLY612": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_VOUGLY631": {
+    "description": "Disconnection of line/transformer 'VOUGLY631'",
+    "description_unitaire": "Ouverture de la ligne 'VOUGLY631'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VOUGLY631": -1
+        },
+        "lines_ex_id": {
+          "VOUGLY631": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  },
+  "disco_VOUGLY632": {
+    "description": "Disconnection of line/transformer 'VOUGLY632'",
+    "description_unitaire": "Ouverture de la ligne 'VOUGLY632'",
+    "content": {
+      "set_bus": {
+        "lines_or_id": {
+          "VOUGLY632": -1
+        },
+        "lines_ex_id": {
+          "VOUGLY632": -1
+        },
+        "loads_id": {},
+        "generators_id": {}
+      }
+    }
+  }
+}
