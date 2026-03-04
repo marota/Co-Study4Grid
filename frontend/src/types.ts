@@ -155,4 +155,7 @@ export interface VlOverlay {
     loading: boolean;
     error: string | null;
     tab: SldTab;
+    flow_deltas?: Record<string, FlowDelta>;
+    reactive_flow_deltas?: Record<string, FlowDelta>;
+    asset_deltas?: Record<string, AssetDelta>;
 }

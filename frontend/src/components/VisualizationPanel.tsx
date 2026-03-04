@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, type RefObject } from 'react';
-import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab, FlowDelta, AssetDelta, SldFeederNode } from '../types';
+import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab, SldFeederNode } from '../types';
 
 interface VisualizationPanelProps {
     activeTab: TabId;
@@ -40,21 +40,12 @@ interface VisualizationPanelProps {
 interface SldOverlayProps {
     vlOverlay: VlOverlay;
     actionViewMode: 'network' | 'delta';
-    n1FlowDeltas: Record<string, FlowDelta> | null | undefined;
-    actionFlowDeltas: Record<string, FlowDelta> | null | undefined;
-    n1ReactiveFlowDeltas: Record<string, FlowDelta> | null | undefined;
-    actionReactiveFlowDeltas: Record<string, FlowDelta> | null | undefined;
-    n1AssetDeltas: Record<string, AssetDelta> | null | undefined;
-    actionAssetDeltas: Record<string, AssetDelta> | null | undefined;
     onOverlayClose: () => void;
     onOverlaySldTabChange: (tab: SldTab) => void;
 }
 
 const SldOverlay: React.FC<SldOverlayProps> = ({
     vlOverlay, actionViewMode,
-    n1FlowDeltas, actionFlowDeltas,
-    n1ReactiveFlowDeltas, actionReactiveFlowDeltas,
-    n1AssetDeltas, actionAssetDeltas,
     onOverlayClose, onOverlaySldTabChange,
 }) => {
     const overlayBodyRef = useRef<HTMLDivElement>(null);
@@ -97,11 +88,9 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         if (!vlOverlay.svg || actionViewMode !== 'delta') return;
 
         // Choose deltas based on the SLD tab being shown
-        const isN1 = vlOverlay.tab === 'n-1';
-        const isAction = vlOverlay.tab === 'action';
-        const flowDeltas = isN1 ? n1FlowDeltas : isAction ? actionFlowDeltas : null;
-        const reactiveDeltas = isN1 ? n1ReactiveFlowDeltas : isAction ? actionReactiveFlowDeltas : null;
-        const assetDeltas = isN1 ? n1AssetDeltas : isAction ? actionAssetDeltas : null;
+        const flowDeltas = vlOverlay.flow_deltas;
+        const reactiveDeltas = vlOverlay.reactive_flow_deltas;
+        const assetDeltas = vlOverlay.asset_deltas;
 
         if (!flowDeltas && !assetDeltas) return;
 
@@ -355,9 +344,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
         }
     }, [vlOverlay.svg, vlOverlay.sldMetadata, vlOverlay.tab, actionViewMode,
-        n1FlowDeltas, actionFlowDeltas,
-        n1ReactiveFlowDeltas, actionReactiveFlowDeltas,
-        n1AssetDeltas, actionAssetDeltas]);
+    vlOverlay.flow_deltas, vlOverlay.reactive_flow_deltas, vlOverlay.asset_deltas]);
 
     // Non-passive wheel zoom on overlay body
     useEffect(() => {
@@ -788,12 +775,6 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         key={vlOverlay.vlName}
                         vlOverlay={vlOverlay}
                         actionViewMode={actionViewMode}
-                        n1FlowDeltas={n1Diagram?.flow_deltas}
-                        actionFlowDeltas={actionDiagram?.flow_deltas}
-                        n1ReactiveFlowDeltas={n1Diagram?.reactive_flow_deltas}
-                        actionReactiveFlowDeltas={actionDiagram?.reactive_flow_deltas}
-                        n1AssetDeltas={n1Diagram?.asset_deltas}
-                        actionAssetDeltas={actionDiagram?.asset_deltas}
                         onOverlayClose={onOverlayClose}
                         onOverlaySldTabChange={onOverlaySldTabChange}
                     />

@@ -9,7 +9,7 @@ import {
   processSvg, buildMetadataIndex, applyOverloadedHighlights,
   applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight
 } from './utils/svgUtils';
-import type { ActionDetail, AnalysisResult, DiagramData, ViewBox, MetadataIndex, TabId, SettingsBackup, VlOverlay, SldTab } from './types';
+import type { ActionDetail, AnalysisResult, DiagramData, ViewBox, MetadataIndex, TabId, SettingsBackup, VlOverlay, SldTab, FlowDelta, AssetDelta } from './types';
 
 function App() {
   // ===== Configuration State =====
@@ -463,6 +463,10 @@ function App() {
     try {
       let svgData: string;
       let metaData: string | null = null;
+      let flowDeltas: Record<string, FlowDelta> | undefined;
+      let reactiveFlowDeltas: Record<string, FlowDelta> | undefined;
+      let assetDeltas: Record<string, AssetDelta> | undefined;
+
       if (sldTab === 'n') {
         const res = await api.getNSld(vlName);
         svgData = res.svg;
@@ -471,14 +475,23 @@ function App() {
         const res = await api.getN1Sld(selectedBranch, vlName);
         svgData = res.svg;
         metaData = res.sld_metadata ?? null;
+        flowDeltas = res.flow_deltas;
+        reactiveFlowDeltas = res.reactive_flow_deltas;
+        assetDeltas = res.asset_deltas;
       } else {
         const res = await api.getActionVariantSld(actionId!, vlName);
         svgData = res.svg;
         metaData = res.sld_metadata ?? null;
+        flowDeltas = res.flow_deltas;
+        reactiveFlowDeltas = res.reactive_flow_deltas;
+        assetDeltas = res.asset_deltas;
       }
       setVlOverlay(prev =>
         prev && prev.vlName === vlName && prev.tab === sldTab
-          ? { ...prev, svg: svgData, sldMetadata: metaData, loading: false }
+          ? {
+            ...prev, svg: svgData, sldMetadata: metaData, loading: false,
+            flow_deltas: flowDeltas, reactive_flow_deltas: reactiveFlowDeltas, asset_deltas: assetDeltas
+          }
           : prev
       );
     } catch (err: unknown) {

@@ -1530,7 +1530,10 @@
                     const res = await axios.post(API_BASE + endpoint, payload);
                     setVlOverlay(prev =>
                         prev && prev.vlName === vlName && prev.actionId === actionId && prev.tab === sldTab
-                            ? { ...prev, svg: res.data.svg, sldMetadata: res.data.sld_metadata ?? null, loading: false }
+                            ? {
+                                ...prev, svg: res.data.svg, sldMetadata: res.data.sld_metadata ?? null, loading: false,
+                                flow_deltas: res.data.flow_deltas, reactive_flow_deltas: res.data.reactive_flow_deltas, asset_deltas: res.data.asset_deltas
+                            }
                             : prev
                     );
                 } catch (err) {
@@ -1594,11 +1597,9 @@
 
                 if (!vlOverlay?.svg || actionViewMode !== 'delta') return;
 
-                const isN1 = vlOverlay.tab === 'n-1';
-                const isAction = vlOverlay.tab === 'action';
-                const flowDeltas = isN1 ? n1Diagram?.flow_deltas : isAction ? actionDiagram?.flow_deltas : null;
-                const reactiveDeltas = isN1 ? n1Diagram?.reactive_flow_deltas : isAction ? actionDiagram?.reactive_flow_deltas : null;
-                const assetDeltas = isN1 ? n1Diagram?.asset_deltas : isAction ? actionDiagram?.asset_deltas : null;
+                const flowDeltas = vlOverlay.flow_deltas;
+                const reactiveDeltas = vlOverlay.reactive_flow_deltas;
+                const assetDeltas = vlOverlay.asset_deltas;
 
                 if (!flowDeltas && !assetDeltas) return;
 
