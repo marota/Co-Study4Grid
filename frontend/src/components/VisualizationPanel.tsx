@@ -3,6 +3,7 @@ import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab, FlowDelta, 
 
 interface VisualizationPanelProps {
     activeTab: TabId;
+    configLoading: boolean;
     onTabChange: (tab: TabId) => void;
     nDiagram: DiagramData | null;
     n1Diagram: DiagramData | null;
@@ -479,6 +480,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
 
 const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     activeTab,
+    configLoading,
     onTabChange,
     nDiagram,
     n1Diagram,
@@ -636,7 +638,6 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                     </div>
                 )}
 
-                {/* N Container — always mounted, hidden via CSS to preserve zoom state */}
                 <div style={{
                     width: '100%', height: '100%',
                     position: 'absolute', top: 0, left: 0,
@@ -644,7 +645,11 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                     visibility: activeTab === 'n' ? 'visible' : 'hidden',
                     pointerEvents: activeTab === 'n' ? 'auto' : 'none',
                 }}>
-                    {nDiagram?.svg ? (
+                    {configLoading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
+                            Loading configuration...
+                        </div>
+                    ) : nDiagram?.svg ? (
                         <div className="svg-container" ref={nSvgContainerRef} dangerouslySetInnerHTML={{ __html: nDiagram.svg }} />
                     ) : (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>

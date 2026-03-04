@@ -74,6 +74,23 @@ function App() {
 
   const handleApplySettings = useCallback(async () => {
     try {
+      // Clear previous results to ensure consistency with new settings BEFORE fetching
+      setResult(null);
+      setPendingAnalysisResult(null);
+      setNDiagram(null);
+      setN1Diagram(null);
+      setActionDiagram(null);
+      setSelectedActionId(null);
+      setActiveTab('n');
+      setVlOverlay(null);
+      setSelectedBranch('');
+      setSelectedActionIds(new Set());
+      setManuallyAddedIds(new Set());
+      setRejectedActionIds(new Set());
+      setError('');
+      setInfoMessage('');
+      setInspectQuery('');
+
       await api.updateConfig({
         network_path: networkPath,
         action_file_path: actionPath,
@@ -100,7 +117,6 @@ function App() {
         ignoreReconnections,
         pypowsyblFastMode
       });
-      setInfoMessage('Settings applied successfully.');
       setIsSettingsOpen(false);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
@@ -182,9 +198,13 @@ function App() {
     setPendingAnalysisResult(null);
     setSelectedActionId(null);
     setSelectedActionIds(new Set());
+    setManuallyAddedIds(new Set());
     setRejectedActionIds(new Set());
     setActionDiagram(null);
     setActiveTab('n');
+    setVlOverlay(null);
+    setSelectedBranch('');
+    setInspectQuery('');
     lastZoomState.current = { query: '', branch: '' };
 
     try {
@@ -1068,6 +1088,7 @@ function App() {
         <div style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column' }}>
           <VisualizationPanel
             activeTab={activeTab}
+            configLoading={configLoading}
             onTabChange={setActiveTab}
             nDiagram={nDiagram}
             n1Diagram={n1Diagram}

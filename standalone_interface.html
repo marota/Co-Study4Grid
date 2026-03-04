@@ -1016,6 +1016,28 @@
                         return;
                     }
                 }
+
+                // Clear previous results to ensure consistency with new settings BEFORE fetching
+                setResult(null);
+                setPendingAnalysisResult(null);
+                setNDiagram(null);
+                setN1Diagram(null);
+                setActionDiagram(null);
+                setSelectedActionId(null);
+                setActiveTab('n');
+                setVlOverlay(null);
+                setSelectedBranch('');
+                setAnalysisRan(false);
+                setManualActionIds(new Set());
+                setManuallyAddedIds(new Set());
+                setRejectedActionIds(new Set());
+                setError('');
+                setInfoMessage('');
+                setDismissedSelectedWarning(false);
+                setDismissedRejectedWarning(false);
+                setShowMonitoringWarning(false);
+                setInspectQuery('');
+
                 try {
                     const configRes = await axios.post(API_BASE + '/api/config', {
                         network_path: networkPath,
@@ -1035,7 +1057,6 @@
                     if (configRes.data && configRes.data.total_lines_count !== undefined) {
                         setMonitoredLinesCount(configRes.data.monitored_lines_count);
                         setTotalLinesCount(configRes.data.total_lines_count);
-                        setShowMonitoringWarning(true);
                     }
 
                     setSettingsBackup({
@@ -1050,14 +1071,9 @@
                         ignoreReconnections,
                         pypowsyblFastMode
                     });
-                    setInfoMessage('Settings applied successfully. Please reload study or run analysis to see effects.');
+
                     setIsSettingsOpen(false);
 
-                    // Clear previous results to ensure consistency with new settings
-                    setResult(null);
-                    setPendingAnalysisResult(null);
-                    setN1Diagram(null);
-                    setActionDiagram(null);
                 } catch (err) {
                     setError('Failed to apply settings: ' + (err.response?.data?.detail || err.message));
                 }
@@ -1154,10 +1170,20 @@
                         return;
                     }
                 }
-                setConfigLoading(true); setError(''); setInfoMessage('');
+                setConfigLoading(true); setError(''); setInfoMessage(''); setShowMonitoringWarning(false);
                 setNDiagram(null); setN1Diagram(null); setResult(null);
                 setSelectedActionId(null); setActionDiagram(null);
                 setActiveTab('n');
+                setVlOverlay(null);
+                setSelectedBranch('');
+                setAnalysisRan(false);
+                setPendingAnalysisResult(null);
+                setManualActionIds(new Set());
+                setManuallyAddedIds(new Set());
+                setRejectedActionIds(new Set());
+                setDismissedSelectedWarning(false);
+                setDismissedRejectedWarning(false);
+                setInspectQuery('');
                 lastViewStateN.current = null; // Reset view state on new config
                 lastViewStateN1.current = null;
                 lastZoomState.current = { query: '', branch: '' };
@@ -1181,7 +1207,6 @@
                     if (configRes.data && configRes.data.total_lines_count !== undefined) {
                         setMonitoredLinesCount(configRes.data.monitored_lines_count);
                         setTotalLinesCount(configRes.data.total_lines_count);
-                        setShowMonitoringWarning(true);
                     }
 
                     const [branchesRes, vlRes, nomVRes] = await Promise.all([
@@ -2415,10 +2440,12 @@
                             visibility: activeTab === 'n' ? 'visible' : 'hidden',
                             pointerEvents: activeTab === 'n' ? 'auto' : 'none'
                         }}>
-                            {nDiagram?.svg ?
-                                <div className="svg-container" ref={nSvgContainerRef} dangerouslySetInnerHTML={{ __html: nDiagram.svg }} />
-                                : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Load configuration to see diagram</div>
-                            }
+                            {configLoading ?
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Loading configuration...</div>
+                                : (nDiagram?.svg ?
+                                    <div className="svg-container" ref={nSvgContainerRef} dangerouslySetInnerHTML={{ __html: nDiagram.svg }} />
+                                    : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Load configuration to see diagram</div>
+                                )}
                         </div>
 
                         {/* N-1 Container — always mounted, hidden via CSS to preserve zoom state */}
