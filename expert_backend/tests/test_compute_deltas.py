@@ -472,3 +472,13 @@ class TestComputeAssetDeltas:
     def test_empty_asset_flows(self):
         result = self.service._compute_asset_deltas({}, {})
         assert result == {}
+
+    def test_zero_delta_is_grey_when_all_zeros(self):
+        """Assets with delta_p=0 must be grey even when ALL deltas are zero (threshold=0 edge case)."""
+        flows = {"LOAD_A": {"p": 100.0, "q": 20.0}, "LOAD_B": {"p": 200.0, "q": 30.0}}
+        result = self.service._compute_asset_deltas(flows, flows)
+        # max_abs = 0.0 → threshold = 0.0 → must still categorize as grey
+        assert result["LOAD_A"]["category"] == "grey"
+        assert result["LOAD_B"]["category"] == "grey"
+        assert result["LOAD_A"]["delta_p"] == 0.0
+        assert result["LOAD_B"]["delta_p"] == 0.0

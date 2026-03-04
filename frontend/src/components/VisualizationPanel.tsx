@@ -104,14 +104,18 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
 
         if (!flowDeltas && !assetDeltas) return;
 
-        // Build equipmentId → SVG element lookup from SLD metadata (feederNodes array).
-        const equipIdToSvgId = new Map<string, string>();
+        // Build equipmentId → [svgId, ...] multimap from SLD metadata (feederNodes array).
+        // A multimap is used because bus couplers (e.g. C.REG) can appear as TWO feeder
+        // nodes sharing the same equipmentId (one per connected bus bar).
+        const equipIdToSvgIds = new Map<string, string[]>();
         if (vlOverlay.sldMetadata) {
             try {
                 const meta = JSON.parse(vlOverlay.sldMetadata) as { feederNodes?: SldFeederNode[] };
                 for (const fn of meta.feederNodes ?? []) {
                     if (fn.equipmentId && fn.id) {
-                        equipIdToSvgId.set(fn.equipmentId, fn.id);
+                        const ids = equipIdToSvgIds.get(fn.equipmentId) ?? [];
+                        ids.push(fn.id);
+                        equipIdToSvgIds.set(fn.equipmentId, ids);
                     }
                 }
             } catch {
@@ -123,6 +127,16 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         const elMap = new Map<string, Element>();
         container.querySelectorAll('[id]').forEach(el => elMap.set(el.id, el));
 
+        /**
+         * Look up an SVG element by ID, trying the exact ID first and then
+         * common sanitization variants (pypowsybl sometimes replaces dots with
+         * underscores in SVG element IDs while preserving the original in metadata).
+         */
+        const lookupById = (svgId: string): Element | undefined =>
+            elMap.get(svgId)
+            ?? elMap.get(svgId.replace(/\./g, '_'))   // dots → underscores
+            ?? elMap.get(svgId.replace(/_/g, '.'));    // underscores → dots
+
         const applyTextDelta = (label: Element, val: string) => {
             if (!label.hasAttribute('data-original-text')) {
                 label.setAttribute('data-original-text', label.textContent || '');
@@ -132,17 +146,8 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
 
         const fmtDelta = (v: number) => v >= 0 ? `+${v.toFixed(1)}` : v.toFixed(1);
 
-        /** Find feeder SVG element for a given equipment id, walk up to cell ancestor. */
-        const findCellEl = (equipId: string): Element | null => {
-            let feederEl: Element | undefined;
-            const svgId = equipIdToSvgId.get(equipId);
-            if (svgId) feederEl = elMap.get(svgId);
-            if (!feederEl) {
-                for (const [eid, el] of elMap) {
-                    if (eid.includes(equipId)) { feederEl = el; break; }
-                }
-            }
-            if (!feederEl) return null;
+        /** Walk up from a feeder element to the enclosing cell ancestor. */
+        const walkUpToCell = (feederEl: Element): Element => {
             let cellEl: Element = feederEl;
             let cur: Element | null = feederEl.parentElement;
             while (cur && cur !== container) {
@@ -155,6 +160,34 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                 cur = cur.parentElement;
             }
             return cellEl;
+        };
+
+        /**
+         * Find the cell ancestor element for a given equipment ID.
+         * Tries the metadata-based SVG IDs first (with sanitization variants),
+         * then falls back to substring matching against all element IDs.
+         */
+        const findCellEl = (equipId: string): Element | null => {
+            let feederEl: Element | undefined;
+            const svgIds = equipIdToSvgIds.get(equipId);
+            if (svgIds) {
+                for (const svgId of svgIds) {
+                    feederEl = lookupById(svgId);
+                    if (feederEl) break;
+                }
+            }
+            if (!feederEl) {
+                // Substring fallback: also try with dots replaced by underscores
+                const sanitized = equipId.replace(/\./g, '_');
+                for (const [eid, el] of elMap) {
+                    if (eid.includes(equipId) || (sanitized !== equipId && eid.includes(sanitized))) {
+                        feederEl = el;
+                        break;
+                    }
+                }
+            }
+            if (!feederEl) return null;
+            return walkUpToCell(feederEl);
         };
 
         /** Replace the first numeric label in a query result with a delta string. */
@@ -174,7 +207,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             replaceFirstNumericLabel(pLabels, pStr);
 
             if (qStr !== null) {
-                let qLabels = cellEl.querySelectorAll('.sld-reactive-power .sld-label');
+                const qLabels = cellEl.querySelectorAll('.sld-reactive-power .sld-label');
                 if (qLabels.length > 0) {
                     replaceFirstNumericLabel(qLabels, qStr);
                 } else {
@@ -207,22 +240,16 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         // and generators — not just equipment IDs found in flow_deltas.
         const processedEquipIds = new Set<string>();
 
-        for (const [equipId, svgId] of equipIdToSvgId) {
-            const feederEl = elMap.get(svgId);
+        for (const [equipId, svgIds] of equipIdToSvgIds) {
+            // Find the first matching feeder element across all SVG IDs for this equipment
+            let feederEl: Element | undefined;
+            for (const svgId of svgIds) {
+                feederEl = lookupById(svgId);
+                if (feederEl) break;
+            }
             if (!feederEl) continue;
 
-            // Walk up to cell ancestor
-            let cellEl: Element = feederEl;
-            let cur: Element | null = feederEl.parentElement;
-            while (cur && cur !== container) {
-                if (cur.classList.contains('sld-extern-cell') ||
-                    cur.classList.contains('sld-intern-cell') ||
-                    cur.classList.contains('sld-shunt-cell')) {
-                    cellEl = cur;
-                    break;
-                }
-                cur = cur.parentElement;
-            }
+            const cellEl = walkUpToCell(feederEl);
 
             // Check branch (line/transformer) deltas first
             const branchDelta = flowDeltas?.[equipId];

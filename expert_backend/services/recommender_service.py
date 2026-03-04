@@ -891,7 +891,7 @@ class RecommenderService:
         reactive_flow_deltas = {}
         for lid in all_ids:
             d = p_delta_map[lid]
-            if abs(d) < threshold:
+            if max_abs == 0.0 or abs(d) < threshold:
                 cat = "grey"
             elif d > 0:
                 cat = "positive"
@@ -939,7 +939,7 @@ class RecommenderService:
         for aid in all_ids:
             dp = raw_p[aid]
             dq = raw_q[aid]
-            if abs(dp) < threshold:
+            if max_abs == 0.0 or abs(dp) < threshold:
                 cat = "grey"
             elif dp > 0:
                 cat = "positive"
