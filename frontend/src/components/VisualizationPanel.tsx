@@ -137,6 +137,23 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             ?? elMap.get(svgId.replace(/\./g, '_'))   // dots → underscores
             ?? elMap.get(svgId.replace(/_/g, '.'));    // underscores → dots
 
+        /**
+         * Look up a key in a Record, trying the exact key first and then
+         * dot↔underscore variants.  pypowsybl may sanitize dots in equipment
+         * IDs differently between get_lines() (used for flow_deltas keys) and
+         * SLD metadata (used for equipmentId).
+         */
+        const lookupDelta = <T,>(rec: Record<string, T> | null | undefined, key: string): T | undefined => {
+            if (!rec) return undefined;
+            const exact = rec[key];
+            if (exact !== undefined) return exact;
+            const dotted = key.replace(/_/g, '.');
+            if (dotted !== key && rec[dotted] !== undefined) return rec[dotted];
+            const underscored = key.replace(/\./g, '_');
+            if (underscored !== key && rec[underscored] !== undefined) return rec[underscored];
+            return undefined;
+        };
+
         const applyTextDelta = (label: Element, val: string) => {
             if (!label.hasAttribute('data-original-text')) {
                 label.setAttribute('data-original-text', label.textContent || '');
@@ -169,7 +186,10 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
          */
         const findCellEl = (equipId: string): Element | null => {
             let feederEl: Element | undefined;
-            const svgIds = equipIdToSvgIds.get(equipId);
+            // Try exact key, then dot↔underscore variants in metadata map
+            const svgIds = equipIdToSvgIds.get(equipId)
+                ?? equipIdToSvgIds.get(equipId.replace(/\./g, '_'))
+                ?? equipIdToSvgIds.get(equipId.replace(/_/g, '.'));
             if (svgIds) {
                 for (const svgId of svgIds) {
                     feederEl = lookupById(svgId);
@@ -252,11 +272,11 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             const cellEl = walkUpToCell(feederEl);
 
             // Check branch (line/transformer) deltas first
-            const branchDelta = flowDeltas?.[equipId];
+            const branchDelta = lookupDelta(flowDeltas, equipId);
             if (branchDelta) {
                 cellEl.classList.add(`sld-delta-${branchDelta.category}`);
                 const pStr = fmtDelta(branchDelta.delta);
-                const qDelta = reactiveDeltas?.[equipId];
+                const qDelta = lookupDelta(reactiveDeltas, equipId);
                 const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
                 applyPQLabels(cellEl, pStr, qStr);
                 // Flip P and Q arrows independently
@@ -267,7 +287,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             }
 
             // Check asset (load/generator) deltas
-            const assetDelta = assetDeltas?.[equipId];
+            const assetDelta = lookupDelta(assetDeltas, equipId);
             if (assetDelta) {
                 cellEl.classList.add(`sld-delta-${assetDelta.category}`);
                 applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
@@ -275,21 +295,28 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             }
         }
 
+        // Helper: check if an equipment ID (or a dot↔underscore variant) was
+        // already processed in the metadata-based loop above.
+        const isProcessed = (id: string): boolean =>
+            processedEquipIds.has(id)
+            || processedEquipIds.has(id.replace(/\./g, '_'))
+            || processedEquipIds.has(id.replace(/_/g, '.'));
+
         // Fallback: process any flow_deltas / asset_deltas keys not found
         // via metadata (in case metadata was incomplete or parse failed).
         for (const [equipId, delta] of Object.entries(flowDeltas ?? {})) {
-            if (processedEquipIds.has(equipId)) continue;
+            if (isProcessed(equipId)) continue;
             const cellEl = findCellEl(equipId);
             if (!cellEl) continue;
             cellEl.classList.add(`sld-delta-${delta.category}`);
-            const qDelta = reactiveDeltas?.[equipId];
+            const qDelta = lookupDelta(reactiveDeltas, equipId);
             applyPQLabels(cellEl, fmtDelta(delta.delta), qDelta !== undefined ? fmtDelta(qDelta.delta) : null);
             if (delta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
             if (qDelta?.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
         }
         for (const [equipId, assetDelta] of Object.entries(assetDeltas ?? {})) {
-            if (processedEquipIds.has(equipId)) continue;
-            if (flowDeltas && equipId in flowDeltas) continue;
+            if (isProcessed(equipId)) continue;
+            if (lookupDelta(flowDeltas, equipId) !== undefined) continue;
             const cellEl = findCellEl(equipId);
             if (!cellEl) continue;
             cellEl.classList.add(`sld-delta-${assetDelta.category}`);
