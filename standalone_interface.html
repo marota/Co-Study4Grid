@@ -1493,7 +1493,7 @@
             }, [vlOverlay]);
 
             // Apply / clear SLD delta flow colors whenever svg/metadata, tab, or mode changes.
-            // Uses pypowsybl SLD metadata (feederNodes[].equipmentId → feederNodes[].id) to find
+            // Uses pypowsybl SLD metadata (nodes/feederInfos equipmentId → id) to find
             // the exact SVG element, then walks up to sld-extern-cell to color the full branch
             // including its connecting wire.
             useEffect(() => {
@@ -1530,19 +1530,46 @@
 
                 if (!flowDeltas && !assetDeltas) return;
 
-                // Build equipmentId → svgId map from SLD metadata feederNodes
-                const equipIdToSvgId = new Map();
+                // Build equipmentId → [svgId, ...] multimap from SLD metadata.
+                // pypowsybl SLD metadata uses 'nodes' (for lines, transformers, breakers,
+                // bus-bar sections) and 'feederInfos' (for ARROW_ACTIVE/ARROW_REACTIVE).
+                // Older versions may use 'feederNodes' instead.
+                const equipIdToSvgIds = new Map();
                 if (vlOverlay.sldMetadata) {
                     try {
                         const meta = JSON.parse(vlOverlay.sldMetadata);
-                        for (const fn of meta.feederNodes ?? []) {
-                            if (fn.equipmentId && fn.id) equipIdToSvgId.set(fn.equipmentId, fn.id);
+                        const sources = [
+                            ...(meta.nodes ?? []),
+                            ...(meta.feederInfos ?? []),
+                            ...(meta.feederNodes ?? []),
+                        ];
+                        for (const fn of sources) {
+                            if (fn.equipmentId && fn.id) {
+                                const ids = equipIdToSvgIds.get(fn.equipmentId) ?? [];
+                                ids.push(fn.id);
+                                equipIdToSvgIds.set(fn.equipmentId, ids);
+                            }
                         }
                     } catch { /* ignore parse errors */ }
                 }
 
                 const elMap = new Map();
                 container.querySelectorAll('[id]').forEach(el => elMap.set(el.id, el));
+
+                const lookupById = (svgId) =>
+                    elMap.get(svgId)
+                    ?? elMap.get(svgId.replace(/\./g, '_'))
+                    ?? elMap.get(svgId.replace(/_/g, '.'));
+
+                const lookupDelta = (rec, key) => {
+                    if (!rec) return undefined;
+                    if (rec[key] !== undefined) return rec[key];
+                    const dotted = key.replace(/_/g, '.');
+                    if (dotted !== key && rec[dotted] !== undefined) return rec[dotted];
+                    const underscored = key.replace(/\./g, '_');
+                    if (underscored !== key && rec[underscored] !== undefined) return rec[underscored];
+                    return undefined;
+                };
 
                 const fmtDelta = v => v >= 0 ? `+${v.toFixed(1)}` : v.toFixed(1);
 
@@ -1580,16 +1607,7 @@
                     }
                 };
 
-                const findCellEl = (equipId) => {
-                    let feederEl = null;
-                    const svgId = equipIdToSvgId.get(equipId);
-                    if (svgId) feederEl = elMap.get(svgId);
-                    if (!feederEl) {
-                        for (const [eid, el] of elMap) {
-                            if (eid.includes(equipId)) { feederEl = el; break; }
-                        }
-                    }
-                    if (!feederEl) return null;
+                const walkUpToCell = (feederEl) => {
                     let cellEl = feederEl;
                     let cur = feederEl.parentElement;
                     while (cur && cur !== container) {
@@ -1604,6 +1622,29 @@
                     return cellEl;
                 };
 
+                const findCellEl = (equipId) => {
+                    let feederEl = null;
+                    const svgIds = equipIdToSvgIds.get(equipId)
+                        ?? equipIdToSvgIds.get(equipId.replace(/\./g, '_'))
+                        ?? equipIdToSvgIds.get(equipId.replace(/_/g, '.'));
+                    if (svgIds) {
+                        for (const svgId of svgIds) {
+                            feederEl = lookupById(svgId);
+                            if (feederEl) break;
+                        }
+                    }
+                    if (!feederEl) {
+                        const sanitized = equipId.replace(/\./g, '_');
+                        for (const [eid, el] of elMap) {
+                            if (eid.includes(equipId) || (sanitized !== equipId && eid.includes(sanitized))) {
+                                feederEl = el; break;
+                            }
+                        }
+                    }
+                    if (!feederEl) return null;
+                    return walkUpToCell(feederEl);
+                };
+
                 // --- Branch (line/transformer) deltas ---
                 // Helper to apply P & Q delta text to a cell element
                 const applyPQLabels = (cellEl, pStr, qStr) => {
@@ -1612,7 +1653,7 @@
                     replaceFirstNumericLabel(pLabels, pStr);
 
                     if (qStr !== null) {
-                        let qLabels = cellEl.querySelectorAll('.sld-reactive-power .sld-label');
+                        const qLabels = cellEl.querySelectorAll('.sld-reactive-power .sld-label');
                         if (qLabels.length > 0) {
                             replaceFirstNumericLabel(qLabels, qStr);
                         } else {
@@ -1625,27 +1666,21 @@
                 // and generators — not just equipment IDs found in flow_deltas.
                 const processedEquipIds = new Set();
 
-                for (const [equipId, svgId] of equipIdToSvgId) {
-                    const feederEl = elMap.get(svgId);
+                for (const [equipId, svgIds] of equipIdToSvgIds) {
+                    let feederEl = null;
+                    for (const svgId of svgIds) {
+                        feederEl = lookupById(svgId);
+                        if (feederEl) break;
+                    }
                     if (!feederEl) continue;
 
-                    let cellEl = feederEl;
-                    let cur = feederEl.parentElement;
-                    while (cur && cur !== container) {
-                        if (cur.classList.contains('sld-extern-cell') ||
-                            cur.classList.contains('sld-intern-cell') ||
-                            cur.classList.contains('sld-shunt-cell')) {
-                            cellEl = cur;
-                            break;
-                        }
-                        cur = cur.parentElement;
-                    }
+                    const cellEl = walkUpToCell(feederEl);
 
-                    const branchDelta = flowDeltas?.[equipId];
+                    const branchDelta = lookupDelta(flowDeltas, equipId);
                     if (branchDelta) {
                         cellEl.classList.add(`sld-delta-${branchDelta.category}`);
                         const pStr = fmtDelta(branchDelta.delta);
-                        const qDelta = reactiveDeltas?.[equipId];
+                        const qDelta = lookupDelta(reactiveDeltas, equipId);
                         const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
                         applyPQLabels(cellEl, pStr, qStr);
                         // Flip P and Q arrows independently
@@ -1655,7 +1690,7 @@
                         continue;
                     }
 
-                    const assetDelta = assetDeltas?.[equipId];
+                    const assetDelta = lookupDelta(assetDeltas, equipId);
                     if (assetDelta) {
                         cellEl.classList.add(`sld-delta-${assetDelta.category}`);
                         applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
@@ -1663,20 +1698,25 @@
                     }
                 }
 
+                const isProcessed = (id) =>
+                    processedEquipIds.has(id)
+                    || processedEquipIds.has(id.replace(/\./g, '_'))
+                    || processedEquipIds.has(id.replace(/_/g, '.'));
+
                 // Fallback: process any deltas keys not found via metadata
                 for (const [equipId, delta] of Object.entries(flowDeltas ?? {})) {
-                    if (processedEquipIds.has(equipId)) continue;
+                    if (isProcessed(equipId)) continue;
                     const cellEl = findCellEl(equipId);
                     if (!cellEl) continue;
                     cellEl.classList.add(`sld-delta-${delta.category}`);
-                    const qDelta = reactiveDeltas?.[equipId];
+                    const qDelta = lookupDelta(reactiveDeltas, equipId);
                     applyPQLabels(cellEl, fmtDelta(delta.delta), qDelta !== undefined ? fmtDelta(qDelta.delta) : null);
                     if (delta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
                     if (qDelta?.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
                 }
                 for (const [equipId, assetDelta] of Object.entries(assetDeltas ?? {})) {
-                    if (processedEquipIds.has(equipId)) continue;
-                    if (flowDeltas && equipId in flowDeltas) continue;
+                    if (isProcessed(equipId)) continue;
+                    if (lookupDelta(flowDeltas, equipId) !== undefined) continue;
                     const cellEl = findCellEl(equipId);
                     if (!cellEl) continue;
                     cellEl.classList.add(`sld-delta-${assetDelta.category}`);
