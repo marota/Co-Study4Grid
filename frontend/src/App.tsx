@@ -318,7 +318,10 @@ function App() {
           if (!line.trim()) continue;
           try {
             const event = JSON.parse(line);
-            if (event.type === 'pdf') setResult(p => ({ ...p!, pdf_url: event.pdf_url } as AnalysisResult));
+            if (event.type === 'pdf') {
+              setResult(p => ({ ...p!, pdf_url: event.pdf_url } as AnalysisResult));
+              setActiveTab('overflow'); // Switch tab right as PDF comes in
+            }
             else if (event.type === 'result') {
               // Store analysis result as pending — don't merge yet
               setPendingAnalysisResult(event);
@@ -330,7 +333,6 @@ function App() {
           }
         }
       }
-      setActiveTab('overflow');
     } catch (err: unknown) {
       setError('Analysis failed: ' + (err as Error).message);
     } finally {
