@@ -9,8 +9,17 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Add Expert_op4grid_recommender local dev dir
+expert_op4_path = Path("/home/marotant/dev/Expert_op4grid_recommender")
+if expert_op4_path.exists():
+    sys.path.insert(0, str(expert_op4_path))
+
 from expert_backend.services.recommender_service import recommender_service
 from expert_op4grid_recommender import config
+
+# Force disable fast mode in tests so run_analysis matches manual simulate() exactly
+config.PYPOWSYBL_FAST_MODE = False
+
 import pypowsybl as pp
 from expert_op4grid_recommender.utils.make_env_utils import create_olf_rte_parameter
 
@@ -65,15 +74,7 @@ def test_independent_actions_simulation(scenario_data, analysis_results):
     contingency = scenario_data["contingency"]
 
     # Re-simulate N-1 matching RecommenderService.get_action_variant_diagram logic
-    n1_network = recommender_service._load_network()
-    if contingency:
-        try:
-            n1_network.disconnect(contingency)
-        except Exception:
-            pass
-    params = create_olf_rte_parameter()
-    pp.loadflow.run_ac(n1_network, params)
-    n1_flows = recommender_service._get_network_flows(n1_network)
+    n1_flows = recommender_service._get_n1_flows(contingency)
 
     # We test each action listed in the baseline independently
     for aid, baseline in scenario_data["actions"].items():
@@ -167,15 +168,7 @@ def test_vielmp6_sld_matching(scenario_data, analysis_results):
     assert target_action is not None, "No VIELMP6 action found in analysis results"
 
     # Compute flow deltas
-    n1_network = recommender_service._load_network()
-    if contingency:
-        try:
-            n1_network.disconnect(contingency)
-        except Exception:
-            pass
-    params = create_olf_rte_parameter()
-    pp.loadflow.run_ac(n1_network, params)
-    n1_flows = recommender_service._get_network_flows(n1_network)
+    n1_flows = recommender_service._get_n1_flows(contingency)
 
     obs_after = prioritized[target_action]["observation"]
     nm = obs_after._network_manager
@@ -232,6 +225,66 @@ def test_vielmp6_sld_matching(scenario_data, analysis_results):
         )
         print(f"  {branch_id}: delta={delta['delta']}, category={delta['category']}")
 
+def test_action_simulation_consistency(scenario_data, analysis_results):
+    import numpy as np
+    from expert_op4grid_recommender.pypowsybl_backend.network_manager import NetworkManager
+    from expert_op4grid_recommender.pypowsybl_backend.action_space import ActionSpace
+    from expert_op4grid_recommender.pypowsybl_backend.observation import PypowsyblObservation
+    
+    prioritized = analysis_results.get("prioritized_actions", {})
+    target_action = "f344b395-9908-43c2-bca0-75c5f298465e_COUCHP6"
+    
+    assert target_action in prioritized, f"Action {target_action} not found in prioritized list"
+    
+    # 1. Get the action object
+    action_obj = prioritized[target_action]["action"]
+    
+    # 2. Results from run_analysis
+    obs_run_analysis = prioritized[target_action]["observation"]
+    max_rho_run_analysis = prioritized[target_action]["max_rho"]
+    
+    # 3. Simulate manually from scratch using the exact same environment setup as run_analysis
+    from expert_op4grid_recommender.environment_pypowsybl import setup_environment_configs_pypowsybl
+    from expert_op4grid_recommender.main import simulate_contingency_pypowsybl
+    
+    project_root = Path(__file__).parent.parent
+    env_folder = project_root / "data"
+    env_name = "bare_env_small_grid_test"
+    
+    # Use identical configuration
+    env, obs_base, _, _, _, _, _, _ = setup_environment_configs_pypowsybl(
+        analysis_date=None,
+        env_folder=env_folder,
+        env_name=env_name
+    )
+    
+    # 3a. Disconnect the contingency line and get base N-1 state
+    contingency = scenario_data["contingency"]
+    if contingency:
+        # In bare_env there are no chronics, act_reco_maintenance is an empty action
+        act_reco_maintenance = env.action_space({})
+        obs_n1, has_converged = simulate_contingency_pypowsybl(
+            env, obs_base, [contingency], act_reco_maintenance, timestep=0, fast_mode=config.PYPOWSYBL_FAST_MODE
+        )
+        assert has_converged, "Contingency failed"
+    else:
+        obs_n1 = obs_base
+        
+    # 3b. Simulate the action on top of the N-1 state
+    obs_simulated, _, done, info = obs_n1.simulate(action_obj, fast_mode=config.PYPOWSYBL_FAST_MODE)
+    assert not done, f"Simulation failed: {info}"
+    
+    # 4. We assert that the simulation results (rho array) mirror the results from run_analysis
+    # Print out differences if they occur
+    mismatches = []
+    for i, line_name in enumerate(obs_n1.name_line):
+        diff = abs(obs_simulated.rho[i] - obs_run_analysis.rho[i])
+        if diff > 1e-5:
+            mismatches.append(f"{line_name}: manual={obs_simulated.rho[i]:.4f}, run_analysis={obs_run_analysis.rho[i]:.4f}")
+    if mismatches:
+        print("Mismatches found:", "\n".join(mismatches))
+        
+    assert np.allclose(obs_simulated.rho, obs_run_analysis.rho, atol=1e-5), "Full rho array mismatch between manual simulation and run_analysis"
 
 if __name__ == "__main__":
     pytest.main([__file__])
