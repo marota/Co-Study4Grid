@@ -23,6 +23,7 @@ interface ActionFeedProps {
     analysisLoading: boolean;
     monitoringFactor: number;
     manuallyAddedIds: Set<string>;
+    onVlDoubleClick?: (actionId: string, vlName: string) => void;
 }
 
 const ActionFeed: React.FC<ActionFeedProps> = ({
@@ -45,6 +46,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     analysisLoading,
     monitoringFactor,
     manuallyAddedIds,
+    onVlDoubleClick,
 }) => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -289,7 +291,15 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                             const vlName = nodesByEquipmentId
                                 ? getActionTargetVoltageLevel(details, id, nodesByEquipmentId)
                                 : null;
-                            if (vlName) return badgeBtn(vlName, '#d1fae5', '#065f46', `Zoom to voltage level ${vlName}`);
+                            if (vlName) return (
+                                <button key={vlName}
+                                    style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, textDecoration: 'underline dotted', flexShrink: 0, backgroundColor: '#d1fae5', color: '#065f46' }}
+                                    title={`Click: zoom to ${vlName} | Double-click: open SLD`}
+                                    onClick={(e) => { e.stopPropagation(); onAssetClick(id, vlName, 'action'); }}
+                                    onDoubleClick={(e) => { e.stopPropagation(); onVlDoubleClick?.(id, vlName); }}>
+                                    {vlName}
+                                </button>
+                            );
                             const lineNames = edgesByEquipmentId
                                 ? getActionTargetLines(details, id, edgesByEquipmentId)
                                 : Array.from(new Set([

@@ -1,6 +1,15 @@
+data/
 __pycache__/
 *.pyc
 *.pyo
+
+# Build artifacts
+build/
+*.egg-info/
+dist/
+
+# Generated outputs
+Overflow_Graph/
 
 # Virtual environments
 venv/

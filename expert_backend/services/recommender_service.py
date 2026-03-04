@@ -422,10 +422,18 @@ class RecommenderService:
             pp.loadflow.run_ac(n_base, params)
             base_flows = self._get_network_flows(n_base)
             n1_flows = self._get_network_flows(n)
-            diagram["flow_deltas"] = self._compute_deltas(n1_flows, base_flows)
+            deltas = self._compute_deltas(n1_flows, base_flows, voltage_level_ids=voltage_level_ids)
+            diagram["flow_deltas"] = deltas["flow_deltas"]
+            diagram["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
+            # Asset deltas (loads & generators)
+            base_assets = self._get_asset_flows(n_base)
+            n1_assets = self._get_asset_flows(n)
+            diagram["asset_deltas"] = self._compute_asset_deltas(n1_assets, base_assets)
         except Exception as e:
             print(f"Warning: Failed to compute N-1 flow deltas: {e}")
             diagram["flow_deltas"] = {}
+            diagram["reactive_flow_deltas"] = {}
+            diagram["asset_deltas"] = {}
 
         # Exclude pre-existing overloads (already overloaded in N) unless worsened
         n_state_currents = getattr(self, '_n_state_currents', None)
@@ -477,7 +485,8 @@ class RecommenderService:
         try:
             # Get Action flows
             action_flows = self._get_network_flows(network)
-            
+            action_assets = self._get_asset_flows(network)
+
             # Get N-1 flows (re-simulate contingency on a fresh network)
             n1_network = self._load_network()
             disconnected_element = self._last_disconnected_element
@@ -489,11 +498,17 @@ class RecommenderService:
             params = create_olf_rte_parameter()
             pp.loadflow.run_ac(n1_network, params)
             n1_flows = self._get_network_flows(n1_network)
+            n1_assets = self._get_asset_flows(n1_network)
 
-            diagram["flow_deltas"] = self._compute_deltas(action_flows, n1_flows)
+            deltas = self._compute_deltas(action_flows, n1_flows, voltage_level_ids=voltage_level_ids)
+            diagram["flow_deltas"] = deltas["flow_deltas"]
+            diagram["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
+            diagram["asset_deltas"] = self._compute_asset_deltas(action_assets, n1_assets)
         except Exception as e:
             print(f"Warning: Failed to compute flow deltas: {e}")
             diagram["flow_deltas"] = {}
+            diagram["reactive_flow_deltas"] = {}
+            diagram["asset_deltas"] = {}
 
         return diagram
 
@@ -518,14 +533,11 @@ class RecommenderService:
         network = nm.network
 
         sld = network.get_single_line_diagram(voltage_level_id)
-        try:
-            from pypowsybl_jupyter.util import _get_svg_string
-            svg = _get_svg_string(sld)
-        except Exception:
-            svg = str(sld)
+        svg, sld_metadata = self._extract_sld_svg_and_metadata(sld)
 
         return {
             "svg": svg,
+            "sld_metadata": sld_metadata,
             "action_id": action_id,
             "voltage_level_id": voltage_level_id,
         }
@@ -536,16 +548,13 @@ class RecommenderService:
         n = self._load_network()
         params = create_olf_rte_parameter()
         pp.loadflow.run_ac(n, params)
-        
+
         sld = n.get_single_line_diagram(voltage_level_id)
-        try:
-            from pypowsybl_jupyter.util import _get_svg_string
-            svg = _get_svg_string(sld)
-        except Exception:
-            svg = str(sld)
+        svg, sld_metadata = self._extract_sld_svg_and_metadata(sld)
 
         return {
             "svg": svg,
+            "sld_metadata": sld_metadata,
             "voltage_level_id": voltage_level_id,
         }
 
@@ -558,22 +567,39 @@ class RecommenderService:
                 n.disconnect(disconnected_element)
             except Exception as e:
                 print(f"Failed to disconnect element {disconnected_element} for SLD: {e}")
-        
+
         params = create_olf_rte_parameter()
         pp.loadflow.run_ac(n, params)
-        
+
         sld = n.get_single_line_diagram(voltage_level_id)
-        try:
-            from pypowsybl_jupyter.util import _get_svg_string
-            svg = _get_svg_string(sld)
-        except Exception:
-            svg = str(sld)
+        svg, sld_metadata = self._extract_sld_svg_and_metadata(sld)
 
         return {
             "svg": svg,
+            "sld_metadata": sld_metadata,
             "voltage_level_id": voltage_level_id,
             "disconnected_element": disconnected_element
         }
+
+    @staticmethod
+    def _extract_sld_svg_and_metadata(sld) -> tuple:
+        """Extract SVG string and metadata JSON from a pypowsybl SLD diagram object.
+
+        Returns (svg_str, metadata_str_or_None).
+        The metadata JSON contains 'feederNodes' with {id, equipmentId} entries
+        that map SVG element IDs back to network equipment IDs.
+        """
+        try:
+            from pypowsybl_jupyter.util import _get_svg_string, _get_svg_metadata
+            svg = _get_svg_string(sld)
+            metadata = _get_svg_metadata(sld)
+        except Exception:
+            try:
+                svg = sld._repr_svg_()
+            except Exception:
+                svg = str(sld)
+            metadata = getattr(sld, '_metadata', None)
+        return svg, metadata
 
     def _get_lines_we_care_about(self):
         """Return the set of monitored line IDs, or None if all lines are monitored."""
@@ -650,98 +676,291 @@ class RecommenderService:
         return currents
 
     def _get_network_flows(self, network):
-        """Extract p1/p2 flows for lines and transformers from a simulated network."""
+        """Extract p1/p2 and q1/q2 flows for lines and transformers from a simulated network.
+
+        Also extracts voltage_level1_id and voltage_level2_id so the frontend
+        can determine which terminal corresponds to the SLD voltage level.
+        """
         import numpy as np
-        
-        lines = network.get_lines()[['p1', 'p2']]
-        trafos = network.get_2_windings_transformers()[['p1', 'p2']]
+
+        lines = network.get_lines()[['p1', 'p2', 'q1', 'q2', 'voltage_level1_id', 'voltage_level2_id']]
+        trafos = network.get_2_windings_transformers()[['p1', 'p2', 'q1', 'q2', 'voltage_level1_id', 'voltage_level2_id']]
 
         p1 = {}
         p2 = {}
+        q1 = {}
+        q2 = {}
+        vl1 = {}
+        vl2 = {}
         for lid in lines.index:
-            v1 = lines.loc[lid, 'p1']
-            v2 = lines.loc[lid, 'p2']
-            p1[lid] = v1 if not np.isnan(v1) else 0.0
-            p2[lid] = v2 if not np.isnan(v2) else 0.0
+            p1[lid] = lines.loc[lid, 'p1'] if not np.isnan(lines.loc[lid, 'p1']) else 0.0
+            p2[lid] = lines.loc[lid, 'p2'] if not np.isnan(lines.loc[lid, 'p2']) else 0.0
+            q1[lid] = lines.loc[lid, 'q1'] if not np.isnan(lines.loc[lid, 'q1']) else 0.0
+            q2[lid] = lines.loc[lid, 'q2'] if not np.isnan(lines.loc[lid, 'q2']) else 0.0
+            vl1[lid] = lines.loc[lid, 'voltage_level1_id']
+            vl2[lid] = lines.loc[lid, 'voltage_level2_id']
         for tid in trafos.index:
-            v1 = trafos.loc[tid, 'p1']
-            v2 = trafos.loc[tid, 'p2']
-            p1[tid] = v1 if not np.isnan(v1) else 0.0
-            p2[tid] = v2 if not np.isnan(v2) else 0.0
-        
-        return {"p1": p1, "p2": p2}
+            p1[tid] = trafos.loc[tid, 'p1'] if not np.isnan(trafos.loc[tid, 'p1']) else 0.0
+            p2[tid] = trafos.loc[tid, 'p2'] if not np.isnan(trafos.loc[tid, 'p2']) else 0.0
+            q1[tid] = trafos.loc[tid, 'q1'] if not np.isnan(trafos.loc[tid, 'q1']) else 0.0
+            q2[tid] = trafos.loc[tid, 'q2'] if not np.isnan(trafos.loc[tid, 'q2']) else 0.0
+            vl1[tid] = trafos.loc[tid, 'voltage_level1_id']
+            vl2[tid] = trafos.loc[tid, 'voltage_level2_id']
 
-    def _compute_deltas(self, after_flows, before_flows):
-        """Compute per-line flow deltas between two flow sets.
+        return {"p1": p1, "p2": p2, "q1": q1, "q2": q2, "vl1": vl1, "vl2": vl2}
 
-        Returns a dict mapping line_id -> {delta, category}.
+    def _get_asset_flows(self, network):
+        """Extract p/q flows for loads and generators from a simulated network."""
+        import numpy as np
+
+        loads = network.get_loads()[['p', 'q']]
+        gens = network.get_generators()[['p', 'q']]
+
+        flows = {}
+        for lid in loads.index:
+            pv = loads.loc[lid, 'p'] if not np.isnan(loads.loc[lid, 'p']) else 0.0
+            qv = loads.loc[lid, 'q'] if not np.isnan(loads.loc[lid, 'q']) else 0.0
+            flows[lid] = {"p": pv, "q": qv}
+        for gid in gens.index:
+            pv = gens.loc[gid, 'p'] if not np.isnan(gens.loc[gid, 'p']) else 0.0
+            qv = gens.loc[gid, 'q'] if not np.isnan(gens.loc[gid, 'q']) else 0.0
+            flows[gid] = {"p": pv, "q": qv}
+
+        return flows
+
+    @staticmethod
+    def _terminal_aware_delta(after_val, before_val):
+        """Compute a direction-aware delta at a single observed terminal.
+
+        pypowsybl sign convention: positive = power *enters* at that terminal.
+
+        Algorithm:
+          1. Take absolute values of both states at the observed terminal.
+          2. Reference direction = sign (direction) of the state with the
+             strongest absolute value.
+          3. Transform each value to match the reference direction:
+             +abs(val) if same direction as reference, -abs(val) if opposite.
+          4. delta = transformed_after - transformed_before.
+          5. flip_arrow = True when the reference is the before state AND
+             the two states have different signs (direction reversed).
+
+        The delta sign is consistent with the category colour:
+          positive (orange) = flow increased
+          negative (blue)   = flow decreased
+
+        Returns (delta: float, flip_arrow: bool).
+        """
+        abs_after = abs(after_val)
+        abs_before = abs(before_val)
+
+        # Reference: the state with the strongest absolute value
+        if abs_after >= abs_before:
+            ref_positive = (after_val >= 0)
+            ref_is_before = False
+        else:
+            ref_positive = (before_val >= 0)
+            ref_is_before = True
+
+        # Transform: +abs if same direction as reference, -abs if opposite
+        def _signed(val):
+            if val == 0:
+                return 0.0
+            same_dir = (val > 0) == ref_positive
+            return abs(val) if same_dir else -abs(val)
+
+        delta = _signed(after_val) - _signed(before_val)
+
+        # flip_arrow when reference is before AND direction reversed
+        after_positive = (after_val >= 0)
+        before_positive = (before_val >= 0)
+        direction_reversed = (after_positive != before_positive)
+        flip_arrow = bool(ref_is_before and direction_reversed)
+
+        return delta, flip_arrow
+
+    @staticmethod
+    def _select_terminal_for_branch(lid, avl1, avl2, bvl1, bvl2, vl_set):
+        """Select which terminal (1 or 2) to observe for a given branch.
+
+        Picks the terminal whose voltage level is in the requested set.
+        Falls back to terminal 1 when both or neither match.
+        """
+        if not vl_set:
+            return 1
+        v1 = avl1.get(lid) or bvl1.get(lid)
+        v2 = avl2.get(lid) or bvl2.get(lid)
+        if v1 in vl_set and v2 not in vl_set:
+            return 1
+        if v2 in vl_set and v1 not in vl_set:
+            return 2
+        return 1
+
+    @staticmethod
+    def _apply_threshold(deltas):
+        """Categorise raw deltas using a 5 % threshold of the max absolute delta.
+
+        Returns {id: {delta, category}}.
+        """
+        if deltas:
+            max_abs = max(abs(d) for d in deltas.values())
+        else:
+            max_abs = 0.0
+        threshold = max_abs * 0.05
+
+        result = {}
+        for lid, delta in deltas.items():
+            if abs(delta) < threshold:
+                cat = "grey"
+            elif delta > 0:
+                cat = "positive"
+            else:
+                cat = "negative"
+            result[lid] = {"delta": round(float(delta), 1), "category": cat}
+        return result
+
+    def _compute_deltas(self, after_flows, before_flows, voltage_level_ids=None):
+        """Compute per-line active AND reactive flow deltas between two flow sets.
+
+        Terminal-aware computation: for each branch, selects the terminal
+        whose voltage level matches one of *voltage_level_ids* (the VLs
+        displayed in the diagram).  P and Q deltas are computed
+        **independently** using ``_terminal_aware_delta`` on the selected
+        terminal's values.
+
+        Algorithm per branch per variable:
+          1. Pick the terminal at the observed voltage level.
+          2. Get the value at that terminal in both states; take abs.
+          3. Reference direction = direction of the state with the
+             strongest absolute value.
+          4. Transform each value to match the reference direction.
+          5. delta = transformed_after - transformed_before.
+
+        Category is based solely on the active-power (P) delta:
+          positive (orange) = flow increased
+          negative (blue)   = flow decreased
+          grey = insignificant (< 5 % of max |deltaP|)
+
+        Returns a dict with keys:
+            flow_deltas:          {line_id: {delta, category, flip_arrow}}
+            reactive_flow_deltas: {line_id: {delta, category, flip_arrow}}
         """
         ap1, ap2 = after_flows["p1"], after_flows["p2"]
         bp1, bp2 = before_flows["p1"], before_flows["p2"]
+        aq1, aq2 = after_flows["q1"], after_flows["q2"]
+        bq1, bq2 = before_flows["q1"], before_flows["q2"]
 
-        all_line_ids = set(ap1.keys()) | set(bp1.keys())
-        deltas = {}
-        for lid in all_line_ids:
-            cur_ap1 = ap1.get(lid, 0.0)
-            cur_ap2 = ap2.get(lid, 0.0)
-            cur_bp1 = bp1.get(lid, 0.0)
-            cur_bp2 = bp2.get(lid, 0.0)
+        # VL info for terminal selection (topology doesn't change between states)
+        avl1 = after_flows.get("vl1", {})
+        avl2 = after_flows.get("vl2", {})
+        bvl1 = before_flows.get("vl1", {})
+        bvl2 = before_flows.get("vl2", {})
+        vl_set = set(voltage_level_ids) if voltage_level_ids else set()
 
-            # Determine entering terminal and value for 'After' state
-            if cur_ap1 >= cur_ap2:
-                after_idx = 1
-                after_val = cur_ap1
+        all_ids = set(ap1.keys()) | set(bp1.keys())
+
+        p_delta_map = {}
+        p_flip_map = {}
+        q_delta_map = {}
+        q_flip_map = {}
+
+        for lid in all_ids:
+            # Select which terminal to observe for this branch
+            terminal = self._select_terminal_for_branch(
+                lid, avl1, avl2, bvl1, bvl2, vl_set
+            )
+
+            if terminal == 1:
+                a_p = ap1.get(lid, 0.0)
+                b_p = bp1.get(lid, 0.0)
+                a_q = aq1.get(lid, 0.0)
+                b_q = bq1.get(lid, 0.0)
             else:
-                after_idx = 2
-                after_val = cur_ap2
-            
-            # Determine entering terminal and value for 'Before' state
-            if cur_bp1 >= cur_bp2:
-                before_idx = 1
-                before_val = cur_bp1
-            else:
-                before_idx = 2
-                before_val = cur_bp2
+                a_p = ap2.get(lid, 0.0)
+                b_p = bp2.get(lid, 0.0)
+                a_q = aq2.get(lid, 0.0)
+                b_q = bq2.get(lid, 0.0)
 
-            # Compute delta using the logic from Conversation 93d0da00:
-            # Align to the direction of the flow with highest absolute magnitude.
-            if after_idx != before_idx and before_val > after_val:
-                # Flipped & Before stronger → use Before direction
-                if before_idx == 1:
-                    delta = cur_ap1 - cur_bp1
-                else:
-                    delta = cur_ap2 - cur_bp2
-            else:
-                # Standard case: use After direction
-                if after_idx == 1:
-                    delta = cur_ap1 - cur_bp1
-                else:
-                    delta = cur_ap2 - cur_bp2
-            
-            deltas[lid] = delta
+            # P: terminal-aware delta with its own reference direction
+            pd, pf = self._terminal_aware_delta(a_p, b_p)
+            p_delta_map[lid] = pd
+            p_flip_map[lid] = pf
 
-        # Apply threshold (5% of max delta)
-        if deltas:
-            max_abs_delta = max(abs(d) for d in deltas.values())
+            # Q: terminal-aware delta with its OWN independent reference direction
+            qd, qf = self._terminal_aware_delta(a_q, b_q)
+            q_delta_map[lid] = qd
+            q_flip_map[lid] = qf
+
+        # Category threshold based on P deltas
+        if p_delta_map:
+            max_abs = max(abs(d) for d in p_delta_map.values())
         else:
-            max_abs_delta = 0.0
-        threshold = max_abs_delta * 0.05
+            max_abs = 0.0
+        threshold = max_abs * 0.05
 
         flow_deltas = {}
-        for lid, delta in deltas.items():
-            if abs(delta) < threshold:
-                category = "grey"
-            elif delta > 0:
-                category = "positive"
+        reactive_flow_deltas = {}
+        for lid in all_ids:
+            d = p_delta_map[lid]
+            if max_abs == 0.0 or abs(d) < threshold:
+                cat = "grey"
+            elif d > 0:
+                cat = "positive"
             else:
-                category = "negative"
-
+                cat = "negative"
             flow_deltas[lid] = {
-                "delta": round(float(delta), 1),
-                "category": category,
+                "delta": round(float(p_delta_map[lid]), 1),
+                "category": cat,
+                "flip_arrow": p_flip_map[lid],
+            }
+            reactive_flow_deltas[lid] = {
+                "delta": round(float(q_delta_map[lid]), 1),
+                "category": cat,
+                "flip_arrow": q_flip_map[lid],
             }
 
-        return flow_deltas
+        return {
+            "flow_deltas": flow_deltas,
+            "reactive_flow_deltas": reactive_flow_deltas,
+        }
+
+    def _compute_asset_deltas(self, after_asset_flows, before_asset_flows):
+        """Compute delta P and Q for loads and generators.
+
+        Returns {asset_id: {delta_p, delta_q, category}}.
+        Category is based on active power delta only.
+        """
+        all_ids = set(after_asset_flows.keys()) | set(before_asset_flows.keys())
+        raw_p = {}
+        raw_q = {}
+        for aid in all_ids:
+            a = after_asset_flows.get(aid, {"p": 0.0, "q": 0.0})
+            b = before_asset_flows.get(aid, {"p": 0.0, "q": 0.0})
+            raw_p[aid] = a["p"] - b["p"]
+            raw_q[aid] = a["q"] - b["q"]
+
+        # Threshold based on active power deltas
+        if raw_p:
+            max_abs = max(abs(d) for d in raw_p.values())
+        else:
+            max_abs = 0.0
+        threshold = max_abs * 0.05
+
+        result = {}
+        for aid in all_ids:
+            dp = raw_p[aid]
+            dq = raw_q[aid]
+            if max_abs == 0.0 or abs(dp) < threshold:
+                cat = "grey"
+            elif dp > 0:
+                cat = "positive"
+            else:
+                cat = "negative"
+            result[aid] = {
+                "delta_p": round(float(dp), 1),
+                "delta_q": round(float(dq), 1),
+                "category": cat,
+            }
+        return result
 
     def get_all_action_ids(self):
         """Return a list of {id, description, type} for every action in the loaded dictionary."""

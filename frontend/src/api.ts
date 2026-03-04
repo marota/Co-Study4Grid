@@ -107,4 +107,25 @@ export const api = {
         );
         return response.data.path;
     },
+    getNSld: async (voltageLevelId: string): Promise<{ svg: string; sld_metadata: string | null; voltage_level_id: string }> => {
+        const response = await axios.post<{ svg: string; sld_metadata: string | null; voltage_level_id: string }>(
+            `${API_BASE_URL}/api/n-sld`,
+            { voltage_level_id: voltageLevelId }
+        );
+        return response.data;
+    },
+    getN1Sld: async (disconnectedElement: string, voltageLevelId: string): Promise<{ svg: string; sld_metadata: string | null; voltage_level_id: string }> => {
+        const response = await axios.post<{ svg: string; sld_metadata: string | null; voltage_level_id: string }>(
+            `${API_BASE_URL}/api/n1-sld`,
+            { disconnected_element: disconnectedElement, voltage_level_id: voltageLevelId }
+        );
+        return response.data;
+    },
+    getActionVariantSld: async (actionId: string, voltageLevelId: string): Promise<{ svg: string; sld_metadata: string | null; action_id: string; voltage_level_id: string }> => {
+        const response = await axios.post<{ svg: string; sld_metadata: string | null; action_id: string; voltage_level_id: string }>(
+            `${API_BASE_URL}/api/action-variant-sld`,
+            { action_id: actionId, voltage_level_id: voltageLevelId }
+        );
+        return response.data;
+    },
 };

@@ -53,12 +53,21 @@ export interface DiagramData {
     lf_status?: string;
     action_id?: string;
     flow_deltas?: Record<string, FlowDelta>;
+    reactive_flow_deltas?: Record<string, FlowDelta>;
+    asset_deltas?: Record<string, AssetDelta>;
     originalViewBox?: ViewBox | null;
     lines_overloaded?: string[];
 }
 
 export interface FlowDelta {
     delta: number;
+    category: 'positive' | 'negative' | 'grey';
+    flip_arrow?: boolean;
+}
+
+export interface AssetDelta {
+    delta_p: number;
+    delta_q: number;
     category: 'positive' | 'negative' | 'grey';
 }
 
@@ -121,4 +130,25 @@ export interface AvailableAction {
     id: string;
     description: string;
     type?: string;
+}
+
+export type SldTab = 'n' | 'n-1' | 'action';
+
+// SLD metadata feeder node: maps SVG element IDs to network equipment IDs.
+// Comes from pypowsybl's GraphMetadata (feederNodes array).
+export interface SldFeederNode {
+    id: string;         // SVG element ID
+    equipmentId: string;
+    componentType?: string;
+    direction?: string; // 'TOP' | 'BOTTOM'
+}
+
+export interface VlOverlay {
+    vlName: string;
+    actionId: string | null;
+    svg: string | null;
+    sldMetadata: string | null;  // raw JSON string from pypowsybl GraphMetadata
+    loading: boolean;
+    error: string | null;
+    tab: SldTab;
 }

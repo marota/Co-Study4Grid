@@ -357,17 +357,25 @@ export const applyContingencyHighlight = (
 
 /**
  * Apply delta flow visualizations (coloring + text replacement) on a container.
+ * - Branch coloring is based on active power (P) delta only.
+ * - edgeInfo1 (active power / black arrow) shows P delta text.
+ * - edgeInfo2 (reactive power / blue arrow) shows Q delta text.
+ * - Load/generator assets are colored based on P delta.
  * Saves original text in data-original-text attribute for restoration.
  */
 export const applyDeltaVisuals = (
     container: HTMLElement | null,
-    diagram: { flow_deltas?: Record<string, { delta: number; category: string }> } | null,
+    diagram: {
+        flow_deltas?: Record<string, { delta: number; category: string }>;
+        reactive_flow_deltas?: Record<string, { delta: number; category: string }>;
+        asset_deltas?: Record<string, { delta_p: number; delta_q: number; category: string }>;
+    } | null,
     metaIndex: MetadataIndex | null,
     isDeltaMode: boolean,
 ) => {
     if (!container || !diagram || !metaIndex) return;
 
-    // Clear delta classes
+    // Clear delta classes on edges and nodes
     container.querySelectorAll('.nad-delta-positive').forEach(el => el.classList.remove('nad-delta-positive'));
     container.querySelectorAll('.nad-delta-negative').forEach(el => el.classList.remove('nad-delta-negative'));
     container.querySelectorAll('.nad-delta-grey').forEach(el => el.classList.remove('nad-delta-grey'));
@@ -382,37 +390,98 @@ export const applyDeltaVisuals = (
 
     const { edgesByEquipmentId } = metaIndex;
     const flowDeltas = diagram.flow_deltas;
+    const reactiveDeltas = diagram.reactive_flow_deltas || {};
+    const assetDeltas = diagram.asset_deltas || {};
     const idMap = new Map<string, Element>();
     container.querySelectorAll('[id]').forEach(el => idMap.set(el.id, el));
 
+    const classMap: Record<string, string> = {
+        positive: 'nad-delta-positive',
+        negative: 'nad-delta-negative',
+        grey: 'nad-delta-grey',
+    };
+
+    // --- Branch (edge) deltas ---
     for (const [lineId, deltaInfo] of Object.entries(flowDeltas)) {
         const edge = edgesByEquipmentId.get(lineId);
         if (!edge || !edge.svgId) continue;
 
+        // Color the edge based on active power delta
         const el = idMap.get(edge.svgId);
         if (el) {
-            const classMap: Record<string, string> = {
-                positive: 'nad-delta-positive',
-                negative: 'nad-delta-negative',
-                grey: 'nad-delta-grey',
-            };
             const cls = classMap[deltaInfo.category];
             if (cls) el.classList.add(cls);
         }
 
-        const deltaStr = deltaInfo.delta >= 0 ? `+${deltaInfo.delta.toFixed(1)}` : deltaInfo.delta.toFixed(1);
-        const edgeInfoIds = [edge.edgeInfo1?.svgId, edge.edgeInfo2?.svgId].filter(Boolean) as string[];
+        // edgeInfo1 = active power (P) arrow: show P delta text
+        const pDeltaStr = deltaInfo.delta >= 0 ? `+${deltaInfo.delta.toFixed(1)}` : deltaInfo.delta.toFixed(1);
+        if (edge.edgeInfo1?.svgId) {
+            const infoEl = idMap.get(edge.edgeInfo1.svgId);
+            if (infoEl) {
+                infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                    if (!t.hasAttribute('data-original-text')) {
+                        t.setAttribute('data-original-text', t.textContent || '');
+                    }
+                    t.textContent = `\u0394 ${pDeltaStr}`;
+                });
+            }
+        }
 
-        for (const infoSvgId of edgeInfoIds) {
-            const infoEl = idMap.get(infoSvgId);
-            if (!infoEl) continue;
-            const textTargets = infoEl.querySelectorAll('foreignObject, text');
-            textTargets.forEach(t => {
-                if (!t.hasAttribute('data-original-text')) {
-                    t.setAttribute('data-original-text', t.textContent || '');
+        // edgeInfo2 = reactive power (Q) arrow: show Q delta text
+        const qDelta = reactiveDeltas[lineId];
+        if (edge.edgeInfo2?.svgId && qDelta) {
+            const qDeltaStr = qDelta.delta >= 0 ? `+${qDelta.delta.toFixed(1)}` : qDelta.delta.toFixed(1);
+            const infoEl = idMap.get(edge.edgeInfo2.svgId);
+            if (infoEl) {
+                infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                    if (!t.hasAttribute('data-original-text')) {
+                        t.setAttribute('data-original-text', t.textContent || '');
+                    }
+                    t.textContent = `\u0394 ${qDeltaStr}`;
+                });
+            }
+        }
+    }
+
+    // --- Asset (load/generator) deltas ---
+    for (const [assetId, assetInfo] of Object.entries(assetDeltas)) {
+        // Assets appear as legend edges connected to VL nodes.
+        // Try to find them as edges first (pypowsybl maps loads/gens as short edges).
+        const edge = edgesByEquipmentId.get(assetId);
+        if (edge && edge.svgId) {
+            const el = idMap.get(edge.svgId);
+            if (el) {
+                const cls = classMap[assetInfo.category];
+                if (cls) el.classList.add(cls);
+            }
+
+            // Update P arrow text on edgeInfo1
+            const pStr = assetInfo.delta_p >= 0 ? `+${assetInfo.delta_p.toFixed(1)}` : assetInfo.delta_p.toFixed(1);
+            if (edge.edgeInfo1?.svgId) {
+                const infoEl = idMap.get(edge.edgeInfo1.svgId);
+                if (infoEl) {
+                    infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                        if (!t.hasAttribute('data-original-text')) {
+                            t.setAttribute('data-original-text', t.textContent || '');
+                        }
+                        t.textContent = `\u0394 ${pStr}`;
+                    });
                 }
-                t.textContent = `\u0394 ${deltaStr}`;
-            });
+            }
+
+            // Update Q arrow text on edgeInfo2
+            const qStr = assetInfo.delta_q >= 0 ? `+${assetInfo.delta_q.toFixed(1)}` : assetInfo.delta_q.toFixed(1);
+            if (edge.edgeInfo2?.svgId) {
+                const infoEl = idMap.get(edge.edgeInfo2.svgId);
+                if (infoEl) {
+                    infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                        if (!t.hasAttribute('data-original-text')) {
+                            t.setAttribute('data-original-text', t.textContent || '');
+                        }
+                        t.textContent = `\u0394 ${qStr}`;
+                    });
+                }
+            }
         }
     }
 };

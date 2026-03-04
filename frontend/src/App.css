@@ -138,6 +138,50 @@ circle.nad-highlight {
     stroke-opacity: 0.4 !important;
 }
 
+/* ===== SLD overlay delta flow visualization ===== */
+/* Applied to feeder group elements (sld-top-feeder / sld-bottom-feeder) inside
+   the Single Line Diagram overlay when in Impacts mode.  Cascades into child
+   wires, arrows, symbols. */
+
+.sld-delta-positive path,
+.sld-delta-positive line,
+.sld-delta-positive polyline,
+.sld-delta-positive rect,
+.sld-delta-positive circle {
+    stroke: #ff8c00 !important;
+    stroke-width: 2px !important;
+}
+
+.sld-delta-negative path,
+.sld-delta-negative line,
+.sld-delta-negative polyline,
+.sld-delta-negative rect,
+.sld-delta-negative circle {
+    stroke: #2196F3 !important;
+    stroke-width: 2px !important;
+}
+
+.sld-delta-grey path,
+.sld-delta-grey line,
+.sld-delta-grey polyline,
+.sld-delta-grey rect,
+.sld-delta-grey circle {
+    stroke: #999 !important;
+    stroke-opacity: 0.5 !important;
+}
+
+/* Delta text label styling */
+.sld-delta-positive .sld-label {
+    fill: #ff8c00 !important;
+}
+.sld-delta-negative .sld-label {
+    fill: #2196F3 !important;
+}
+.sld-delta-grey .sld-label {
+    fill: #999 !important;
+    fill-opacity: 0.5 !important;
+}
+
 /* ===== Voltage Range Slider (vertical, right sidebar) ===== */
 .voltage-sidebar {
     position: absolute;

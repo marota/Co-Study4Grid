@@ -1,5 +1,5 @@
-import React, { type RefObject } from 'react';
-import type { DiagramData, AnalysisResult, TabId } from '../types';
+import React, { useState, useEffect, useRef, type RefObject } from 'react';
+import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab, FlowDelta, AssetDelta, SldFeederNode } from '../types';
 
 interface VisualizationPanelProps {
     activeTab: TabId;
@@ -28,7 +28,434 @@ interface VisualizationPanelProps {
     onZoomOut: () => void;
     hasBranches: boolean;
     selectedBranch: string;
+    vlOverlay: VlOverlay | null;
+    onOverlayClose: () => void;
+    onOverlaySldTabChange: (tab: SldTab) => void;
 }
+
+// ===== SLD Overlay sub-component =====
+// Extracted to own component so React resets its local state (position, transform)
+// automatically via key={vlOverlay.vlName} when a new VL is selected.
+interface SldOverlayProps {
+    vlOverlay: VlOverlay;
+    actionViewMode: 'network' | 'delta';
+    n1FlowDeltas: Record<string, FlowDelta> | null | undefined;
+    actionFlowDeltas: Record<string, FlowDelta> | null | undefined;
+    n1ReactiveFlowDeltas: Record<string, FlowDelta> | null | undefined;
+    actionReactiveFlowDeltas: Record<string, FlowDelta> | null | undefined;
+    n1AssetDeltas: Record<string, AssetDelta> | null | undefined;
+    actionAssetDeltas: Record<string, AssetDelta> | null | undefined;
+    onOverlayClose: () => void;
+    onOverlaySldTabChange: (tab: SldTab) => void;
+}
+
+const SldOverlay: React.FC<SldOverlayProps> = ({
+    vlOverlay, actionViewMode,
+    n1FlowDeltas, actionFlowDeltas,
+    n1ReactiveFlowDeltas, actionReactiveFlowDeltas,
+    n1AssetDeltas, actionAssetDeltas,
+    onOverlayClose, onOverlaySldTabChange,
+}) => {
+    const overlayBodyRef = useRef<HTMLDivElement>(null);
+    const [overlayPos, setOverlayPos] = useState({ x: 16, y: 16 });
+    const [overlayTransform, setOverlayTransform] = useState({ scale: 1, tx: 0, ty: 0 });
+
+    // Apply / clear delta flow colors on the SLD whenever svg/metadata, tab, or mode changes.
+    //
+    // pypowsybl SLD SVG structure (GraphMetadata):
+    //   feederNodes[].id         → SVG element ID of the feeder <g> (sld-top-feeder / sld-bottom-feeder)
+    //   feederNodes[].equipmentId → network equipment ID (matches flow_deltas keys)
+    //
+    // The cell ancestor (sld-extern-cell) wraps BOTH the feeder symbol AND the connecting
+    // wire (sld-wire), so we must apply the delta class one level up to color the full branch.
+    useEffect(() => {
+        const container = overlayBodyRef.current;
+        if (!container) return;
+
+        // Clear any previously applied SLD delta classes
+        const SLD_DELTA_CLASSES = ['sld-delta-positive', 'sld-delta-negative', 'sld-delta-grey'];
+        container.querySelectorAll(SLD_DELTA_CLASSES.map(c => '.' + c).join(','))
+            .forEach(el => el.classList.remove(...SLD_DELTA_CLASSES));
+
+        // Restore original text labels
+        container.querySelectorAll('[data-original-text]').forEach(el => {
+            el.textContent = el.getAttribute('data-original-text');
+            el.removeAttribute('data-original-text');
+        });
+
+        // Restore flipped arrow directions (sld-in ↔ sld-out)
+        container.querySelectorAll('[data-arrow-flipped]').forEach(el => {
+            if (el.classList.contains('sld-in')) {
+                el.classList.replace('sld-in', 'sld-out');
+            } else if (el.classList.contains('sld-out')) {
+                el.classList.replace('sld-out', 'sld-in');
+            }
+            el.removeAttribute('data-arrow-flipped');
+        });
+
+        if (!vlOverlay.svg || actionViewMode !== 'delta') return;
+
+        // Choose deltas based on the SLD tab being shown
+        const isN1 = vlOverlay.tab === 'n-1';
+        const isAction = vlOverlay.tab === 'action';
+        const flowDeltas = isN1 ? n1FlowDeltas : isAction ? actionFlowDeltas : null;
+        const reactiveDeltas = isN1 ? n1ReactiveFlowDeltas : isAction ? actionReactiveFlowDeltas : null;
+        const assetDeltas = isN1 ? n1AssetDeltas : isAction ? actionAssetDeltas : null;
+
+        if (!flowDeltas && !assetDeltas) return;
+
+        // Build equipmentId → [svgId, ...] multimap from SLD metadata.
+        // pypowsybl SLD metadata uses 'nodes' (for lines, transformers, breakers,
+        // bus-bar sections) and 'feederInfos' (for ARROW_ACTIVE/ARROW_REACTIVE).
+        // Older versions may use 'feederNodes' instead.
+        const equipIdToSvgIds = new Map<string, string[]>();
+        if (vlOverlay.sldMetadata) {
+            try {
+                const meta = JSON.parse(vlOverlay.sldMetadata) as {
+                    nodes?: SldFeederNode[];
+                    feederInfos?: SldFeederNode[];
+                    feederNodes?: SldFeederNode[];
+                };
+                // Collect entries from all possible metadata arrays
+                const sources = [
+                    ...(meta.nodes ?? []),
+                    ...(meta.feederInfos ?? []),
+                    ...(meta.feederNodes ?? []),
+                ];
+                for (const fn of sources) {
+                    if (fn.equipmentId && fn.id) {
+                        const ids = equipIdToSvgIds.get(fn.equipmentId) ?? [];
+                        ids.push(fn.id);
+                        equipIdToSvgIds.set(fn.equipmentId, ids);
+                    }
+                }
+            } catch {
+                // metadata parse failed — fall through to substring fallback
+            }
+        }
+
+        // Quick lookup of all elements by SVG id
+        const elMap = new Map<string, Element>();
+        container.querySelectorAll('[id]').forEach(el => elMap.set(el.id, el));
+
+        /**
+         * Look up an SVG element by ID, trying the exact ID first and then
+         * common sanitization variants (pypowsybl sometimes replaces dots with
+         * underscores in SVG element IDs while preserving the original in metadata).
+         */
+        const lookupById = (svgId: string): Element | undefined =>
+            elMap.get(svgId)
+            ?? elMap.get(svgId.replace(/\./g, '_'))   // dots → underscores
+            ?? elMap.get(svgId.replace(/_/g, '.'));    // underscores → dots
+
+        /**
+         * Look up a key in a Record, trying the exact key first and then
+         * dot↔underscore variants.  pypowsybl may sanitize dots in equipment
+         * IDs differently between get_lines() (used for flow_deltas keys) and
+         * SLD metadata (used for equipmentId).
+         */
+        const lookupDelta = <T,>(rec: Record<string, T> | null | undefined, key: string): T | undefined => {
+            if (!rec) return undefined;
+            const exact = rec[key];
+            if (exact !== undefined) return exact;
+            const dotted = key.replace(/_/g, '.');
+            if (dotted !== key && rec[dotted] !== undefined) return rec[dotted];
+            const underscored = key.replace(/\./g, '_');
+            if (underscored !== key && rec[underscored] !== undefined) return rec[underscored];
+            return undefined;
+        };
+
+        const applyTextDelta = (label: Element, val: string) => {
+            if (!label.hasAttribute('data-original-text')) {
+                label.setAttribute('data-original-text', label.textContent || '');
+            }
+            label.textContent = `\u0394 ${val}`;
+        };
+
+        const fmtDelta = (v: number) => v >= 0 ? `+${v.toFixed(1)}` : v.toFixed(1);
+
+        /** Walk up from a feeder element to the enclosing cell ancestor. */
+        const walkUpToCell = (feederEl: Element): Element => {
+            let cellEl: Element = feederEl;
+            let cur: Element | null = feederEl.parentElement;
+            while (cur && cur !== container) {
+                if (cur.classList.contains('sld-extern-cell') ||
+                    cur.classList.contains('sld-intern-cell') ||
+                    cur.classList.contains('sld-shunt-cell')) {
+                    cellEl = cur;
+                    break;
+                }
+                cur = cur.parentElement;
+            }
+            return cellEl;
+        };
+
+        /**
+         * Find the cell ancestor element for a given equipment ID.
+         * Tries the metadata-based SVG IDs first (with sanitization variants),
+         * then falls back to substring matching against all element IDs.
+         */
+        const findCellEl = (equipId: string): Element | null => {
+            let feederEl: Element | undefined;
+            // Try exact key, then dot↔underscore variants in metadata map
+            const svgIds = equipIdToSvgIds.get(equipId)
+                ?? equipIdToSvgIds.get(equipId.replace(/\./g, '_'))
+                ?? equipIdToSvgIds.get(equipId.replace(/_/g, '.'));
+            if (svgIds) {
+                for (const svgId of svgIds) {
+                    feederEl = lookupById(svgId);
+                    if (feederEl) break;
+                }
+            }
+            if (!feederEl) {
+                // Substring fallback: also try with dots replaced by underscores
+                const sanitized = equipId.replace(/\./g, '_');
+                for (const [eid, el] of elMap) {
+                    if (eid.includes(equipId) || (sanitized !== equipId && eid.includes(sanitized))) {
+                        feederEl = el;
+                        break;
+                    }
+                }
+            }
+            if (!feederEl) return null;
+            return walkUpToCell(feederEl);
+        };
+
+        /** Replace the first numeric label in a query result with a delta string. */
+        const replaceFirstNumericLabel = (labels: NodeListOf<Element>, val: string) => {
+            for (const label of Array.from(labels)) {
+                if (/^-?\d+(\.\d+)?$/.test((label.textContent || '').trim())) {
+                    applyTextDelta(label, val);
+                    return;
+                }
+            }
+        };
+
+        // Helper to apply P & Q delta text to a cell element
+        const applyPQLabels = (cellEl: Element, pStr: string, qStr: string | null) => {
+            let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
+            if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
+            replaceFirstNumericLabel(pLabels, pStr);
+
+            if (qStr !== null) {
+                const qLabels = cellEl.querySelectorAll('.sld-reactive-power .sld-label');
+                if (qLabels.length > 0) {
+                    replaceFirstNumericLabel(qLabels, qStr);
+                } else {
+                    // Fallback: P label already replaced (no longer numeric),
+                    // so the first remaining numeric label IS the Q label.
+                    replaceFirstNumericLabel(cellEl.querySelectorAll('.sld-label'), qStr);
+                }
+            }
+        };
+
+        /** Flip arrow direction within a specific power-type scope.
+         *  pypowsybl SLD SVGs use .sld-in / .sld-out classes to control
+         *  which arrow (.sld-arrow-in / .sld-arrow-out) is visible.
+         *  P and Q arrows are flipped independently by scoping to
+         *  .sld-active-power or .sld-reactive-power. */
+        const flipArrows = (cellEl: Element, scopeClass: string) => {
+            const sel = `.${scopeClass} .sld-in, .${scopeClass} .sld-out, .${scopeClass}.sld-in, .${scopeClass}.sld-out`;
+            cellEl.querySelectorAll(sel).forEach(el => {
+                if (el.hasAttribute('data-arrow-flipped')) return;
+                if (el.classList.contains('sld-in')) {
+                    el.classList.replace('sld-in', 'sld-out');
+                } else {
+                    el.classList.replace('sld-out', 'sld-in');
+                }
+                el.setAttribute('data-arrow-flipped', '1');
+            });
+        };
+
+        // Iterate ALL feeders from SLD metadata so we process branches, loads,
+        // and generators — not just equipment IDs found in flow_deltas.
+        const processedEquipIds = new Set<string>();
+
+        for (const [equipId, svgIds] of equipIdToSvgIds) {
+            // Find the first matching feeder element across all SVG IDs for this equipment
+            let feederEl: Element | undefined;
+            for (const svgId of svgIds) {
+                feederEl = lookupById(svgId);
+                if (feederEl) break;
+            }
+            if (!feederEl) continue;
+
+            const cellEl = walkUpToCell(feederEl);
+
+            // Check branch (line/transformer) deltas first
+            const branchDelta = lookupDelta(flowDeltas, equipId);
+            if (branchDelta) {
+                cellEl.classList.add(`sld-delta-${branchDelta.category}`);
+                const pStr = fmtDelta(branchDelta.delta);
+                const qDelta = lookupDelta(reactiveDeltas, equipId);
+                const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
+                applyPQLabels(cellEl, pStr, qStr);
+                // Flip P and Q arrows independently
+                if (branchDelta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
+                if (qDelta?.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
+                processedEquipIds.add(equipId);
+                continue;
+            }
+
+            // Check asset (load/generator) deltas
+            const assetDelta = lookupDelta(assetDeltas, equipId);
+            if (assetDelta) {
+                cellEl.classList.add(`sld-delta-${assetDelta.category}`);
+                applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
+                processedEquipIds.add(equipId);
+            }
+        }
+
+        // Helper: check if an equipment ID (or a dot↔underscore variant) was
+        // already processed in the metadata-based loop above.
+        const isProcessed = (id: string): boolean =>
+            processedEquipIds.has(id)
+            || processedEquipIds.has(id.replace(/\./g, '_'))
+            || processedEquipIds.has(id.replace(/_/g, '.'));
+
+        // Fallback: process any flow_deltas / asset_deltas keys not found
+        // via metadata (in case metadata was incomplete or parse failed).
+        for (const [equipId, delta] of Object.entries(flowDeltas ?? {})) {
+            if (isProcessed(equipId)) continue;
+            const cellEl = findCellEl(equipId);
+            if (!cellEl) continue;
+            cellEl.classList.add(`sld-delta-${delta.category}`);
+            const qDelta = lookupDelta(reactiveDeltas, equipId);
+            applyPQLabels(cellEl, fmtDelta(delta.delta), qDelta !== undefined ? fmtDelta(qDelta.delta) : null);
+            if (delta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
+            if (qDelta?.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
+        }
+        for (const [equipId, assetDelta] of Object.entries(assetDeltas ?? {})) {
+            if (isProcessed(equipId)) continue;
+            if (lookupDelta(flowDeltas, equipId) !== undefined) continue;
+            const cellEl = findCellEl(equipId);
+            if (!cellEl) continue;
+            cellEl.classList.add(`sld-delta-${assetDelta.category}`);
+            applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
+        }
+    }, [vlOverlay.svg, vlOverlay.sldMetadata, vlOverlay.tab, actionViewMode,
+        n1FlowDeltas, actionFlowDeltas,
+        n1ReactiveFlowDeltas, actionReactiveFlowDeltas,
+        n1AssetDeltas, actionAssetDeltas]);
+
+    // Non-passive wheel zoom on overlay body
+    useEffect(() => {
+        const el = overlayBodyRef.current;
+        if (!el) return;
+        const onWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            const rect = el.getBoundingClientRect();
+            const cx = e.clientX - rect.left;
+            const cy = e.clientY - rect.top;
+            setOverlayTransform(prev => {
+                const s = Math.max(0.1, Math.min(10, prev.scale * factor));
+                return { scale: s, tx: cx - (cx - prev.tx) * (s / prev.scale), ty: cy - (cy - prev.ty) * (s / prev.scale) };
+            });
+        };
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+    }, []);
+
+    const startOverlayDrag = (e: React.MouseEvent) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const x0 = e.clientX, y0 = e.clientY;
+        const px0 = overlayPos.x, py0 = overlayPos.y;
+        const onMove = (ev: MouseEvent) => setOverlayPos({ x: px0 + ev.clientX - x0, y: py0 + ev.clientY - y0 });
+        const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    };
+
+    const startOverlayPan = (e: React.MouseEvent) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const x0 = e.clientX, y0 = e.clientY;
+        const tx0 = overlayTransform.tx, ty0 = overlayTransform.ty;
+        const onMove = (ev: MouseEvent) => setOverlayTransform(prev => ({ ...prev, tx: tx0 + ev.clientX - x0, ty: ty0 + ev.clientY - y0 }));
+        const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    };
+
+    return (
+        <div style={{
+            position: 'absolute', top: overlayPos.y + 'px', left: overlayPos.x + 'px',
+            width: '440px', height: '420px', minWidth: '220px', minHeight: '150px',
+            background: 'white', border: '1px solid #ccc', borderRadius: '8px',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.22)', zIndex: 45,
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            resize: 'both', boxSizing: 'border-box',
+        }}>
+            {/* Header — drag handle */}
+            <div
+                onMouseDown={startOverlayDrag}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: '#f0faf4', borderBottom: '1px solid #d1fae5', flexShrink: 0, cursor: 'move', userSelect: 'none' }}
+            >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#065f46' }}>{vlOverlay.vlName}</span>
+                        {/* Mode indicator — shows which Flow vs Impact mode was active when overlay opened */}
+                        <span style={{
+                            fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px',
+                            background: actionViewMode === 'delta' ? '#dbeafe' : '#f3f4f6',
+                            color: actionViewMode === 'delta' ? '#1d4ed8' : '#374151',
+                        }}>
+                            {actionViewMode === 'delta' ? 'Impacts' : 'Flows'}
+                        </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                        {(['n', 'n-1', 'action'] as SldTab[]).map(tabMode => (
+                            <button
+                                key={tabMode}
+                                onMouseDown={e => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); onOverlaySldTabChange(tabMode); }}
+                                style={{
+                                    background: vlOverlay.tab === tabMode ? '#059669' : '#e5e7eb',
+                                    color: vlOverlay.tab === tabMode ? 'white' : '#374151',
+                                    border: 'none', borderRadius: '4px', padding: '2px 8px',
+                                    fontSize: '11px', fontWeight: vlOverlay.tab === tabMode ? 'bold' : 'normal',
+                                    cursor: vlOverlay.loading ? 'wait' : 'pointer',
+                                }}
+                            >
+                                {tabMode.toUpperCase()}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <button
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onOverlayClose(); }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#666', lineHeight: 1, padding: '0 2px' }}
+                    title="Close"
+                >✕</button>
+            </div>
+            {/* Body — pan/zoom canvas */}
+            <div
+                ref={overlayBodyRef}
+                style={{ flex: 1, overflow: 'hidden', minHeight: 0, cursor: 'grab', userSelect: 'none' }}
+                onMouseDown={startOverlayPan}
+            >
+                {vlOverlay.loading && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999', fontSize: '13px' }}>
+                        Generating diagram…
+                    </div>
+                )}
+                {vlOverlay.error && (
+                    <div style={{ padding: '12px', color: '#dc3545', fontSize: '12px' }}>{vlOverlay.error}</div>
+                )}
+                {vlOverlay.svg && (
+                    <div style={{
+                        transformOrigin: '0 0',
+                        transform: `translate(${overlayTransform.tx}px,${overlayTransform.ty}px) scale(${overlayTransform.scale})`,
+                        padding: '4px',
+                    }} dangerouslySetInnerHTML={{ __html: vlOverlay.svg }} />
+                )}
+            </div>
+        </div>
+    );
+};
 
 const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     activeTab,
@@ -57,6 +484,9 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onZoomOut,
     hasBranches,
     selectedBranch,
+    vlOverlay,
+    onOverlayClose,
+    onOverlaySldTabChange,
 }) => {
     const showViewModeToggle = activeTab !== 'overflow' && (
         (activeTab === 'n' && !!nDiagram?.svg) ||
@@ -324,6 +754,25 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         </div>
                     );
                 })()}
+
+                {/* SLD Overlay — floating panel for voltage-level Single Line Diagram.
+                    key={vlOverlay.vlName} ensures position/zoom resets automatically
+                    when a different VL is selected. */}
+                {vlOverlay && (
+                    <SldOverlay
+                        key={vlOverlay.vlName}
+                        vlOverlay={vlOverlay}
+                        actionViewMode={actionViewMode}
+                        n1FlowDeltas={n1Diagram?.flow_deltas}
+                        actionFlowDeltas={actionDiagram?.flow_deltas}
+                        n1ReactiveFlowDeltas={n1Diagram?.reactive_flow_deltas}
+                        actionReactiveFlowDeltas={actionDiagram?.reactive_flow_deltas}
+                        n1AssetDeltas={n1Diagram?.asset_deltas}
+                        actionAssetDeltas={actionDiagram?.asset_deltas}
+                        onOverlayClose={onOverlayClose}
+                        onOverlaySldTabChange={onOverlaySldTabChange}
+                    />
+                )}
 
                 {/* Bottom-left overlay: Zoom + Inspect */}
                 {activeTab !== 'overflow' && (

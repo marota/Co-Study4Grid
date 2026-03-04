@@ -32,6 +32,9 @@ const createDefaultProps = (overrides: Record<string, unknown> = {}) => ({
     onZoomOut: vi.fn(),
     hasBranches: false,
     selectedBranch: '',
+    vlOverlay: null,
+    onOverlayClose: vi.fn(),
+    onOverlaySldTabChange: vi.fn(),
     ...overrides,
 });
 
