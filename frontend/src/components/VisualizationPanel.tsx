@@ -276,23 +276,30 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             const branchDelta = lookupDelta(flowDeltas, equipId);
             if (branchDelta) {
                 cellEl.classList.add(`sld-delta-${branchDelta.category}`);
-                const pStr = fmtDelta(branchDelta.delta);
+
+                if (branchDelta.category !== 'grey') {
+                    const pStr = fmtDelta(branchDelta.delta);
+                    const qDelta = lookupDelta(reactiveDeltas, equipId);
+                    const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
+                    applyPQLabels(cellEl, pStr, qStr);
+
+                    // Apply specific category classes to the labels instead of the cell
+                    let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
+                    if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
+                    pLabels.forEach(l => l.classList.add(`sld-delta-text-${branchDelta.category}`));
+
+                    if (qDelta) {
+                        cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
+                    }
+                }
+
+                // Flip P and Q arrows independently (regardless of category)
                 const qDelta = lookupDelta(reactiveDeltas, equipId);
-                const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
-                applyPQLabels(cellEl, pStr, qStr);
-
-                // Apply specific category classes to the labels instead of the cell
-                let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
-                if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
-                pLabels.forEach(l => l.classList.add(`sld-delta-text-${branchDelta.category}`));
-
-                // Flip P and Q arrows independently
                 if (branchDelta.flip_arrow) {
                     flipArrows(cellEl, 'sld-active-power');
                 }
-                if (qDelta) {
-                    if (qDelta.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
-                    cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
+                if (qDelta && qDelta.flip_arrow) {
+                    flipArrows(cellEl, 'sld-reactive-power');
                 }
                 processedEquipIds.add(equipId);
                 continue;
@@ -302,7 +309,9 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             const assetDelta = lookupDelta(assetDeltas, equipId);
             if (assetDelta) {
                 cellEl.classList.add(`sld-delta-${assetDelta.category}`);
-                applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
+                if (assetDelta.category !== 'grey') {
+                    applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
+                }
                 processedEquipIds.add(equipId);
             }
         }
@@ -320,28 +329,32 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             if (isProcessed(equipId)) continue;
             const cellEl = findCellEl(equipId);
             if (!cellEl) continue;
-            cellEl.classList.add(`sld-delta-${delta.category}`);
-            const qDelta = lookupDelta(reactiveDeltas, equipId);
-            applyPQLabels(cellEl, fmtDelta(delta.delta), qDelta !== undefined ? fmtDelta(qDelta.delta) : null);
+            if (delta.category !== 'grey') {
+                const qDelta = lookupDelta(reactiveDeltas, equipId);
+                applyPQLabels(cellEl, fmtDelta(delta.delta), qDelta !== undefined ? fmtDelta(qDelta.delta) : null);
 
-            let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
-            if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
-            pLabels.forEach(l => l.classList.add(`sld-delta-text-${delta.category}`));
+                let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
+                if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
+                pLabels.forEach(l => l.classList.add(`sld-delta-text-${delta.category}`));
+
+                if (qDelta) {
+                    cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
+                }
+            }
 
             if (delta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
-            if (qDelta) {
-                if (qDelta.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
-                cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
-            }
+            const qDeltaForFlip = lookupDelta(reactiveDeltas, equipId);
+            if (qDeltaForFlip && qDeltaForFlip.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
         }
         for (const [equipId, assetDelta] of Object.entries(assetDeltas ?? {})) {
             if (isProcessed(equipId)) continue;
             if (lookupDelta(flowDeltas, equipId) !== undefined) continue;
             const cellEl = findCellEl(equipId);
             if (!cellEl) continue;
-            cellEl.classList.add(`sld-delta-${assetDelta.category}`);
-            applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
-            cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
+            if (assetDelta.category !== 'grey') {
+                applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
+                cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
+            }
         }
     }, [vlOverlay.svg, vlOverlay.sldMetadata, vlOverlay.tab, actionViewMode,
     vlOverlay.flow_deltas, vlOverlay.reactive_flow_deltas, vlOverlay.asset_deltas]);
