@@ -50,6 +50,10 @@ def analysis_results(scenario_data):
 
     recommender_service.update_config(Settings(network_path, action_file_path))
 
+    # Import network_service and load the network
+    from expert_backend.services.network_service import network_service
+    network_service.load_network(str(network_path))
+
     # Run analysis once for the contingency
     iterator = recommender_service.run_analysis(contingency)
     for _ in iterator: pass

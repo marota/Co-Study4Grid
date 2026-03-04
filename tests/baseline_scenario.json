@@ -4,46 +4,46 @@
     "node_merging_PYMONP3": {
       "target_voltage_level": "PYMONP3",
       "flow_deltas": {
-        "LOUHAL31PYMON": {
-          "delta": 12.4,
-          "category": "positive",
-          "flip_arrow": false
-        },
-        "PYMONY631": {
-          "delta": 30.6,
-          "category": "positive",
-          "flip_arrow": false
-        },
         "PYMONL31SAISS": {
-          "delta": -18.2,
+          "delta": -18.6,
           "category": "negative",
           "flip_arrow": true
+        },
+        "LOUHAL31PYMON": {
+          "delta": 12.3,
+          "category": "positive",
+          "flip_arrow": false
         },
         "PYMONY632": {
           "delta": 0.0,
           "category": "grey",
           "flip_arrow": false
+        },
+        "PYMONY631": {
+          "delta": 30.9,
+          "category": "positive",
+          "flip_arrow": false
         }
       },
       "reactive_flow_deltas": {
-        "LOUHAL31PYMON": {
-          "delta": -0.6,
-          "category": "positive",
-          "flip_arrow": false
-        },
-        "PYMONY631": {
-          "delta": -0.7,
-          "category": "positive",
-          "flip_arrow": false
-        },
         "PYMONL31SAISS": {
           "delta": -0.2,
           "category": "negative",
           "flip_arrow": false
         },
+        "LOUHAL31PYMON": {
+          "delta": -0.5,
+          "category": "positive",
+          "flip_arrow": false
+        },
         "PYMONY632": {
           "delta": 0.0,
           "category": "grey",
+          "flip_arrow": false
+        },
+        "PYMONY631": {
+          "delta": -0.7,
+          "category": "positive",
           "flip_arrow": false
         }
       }
@@ -52,142 +52,45 @@
       "target_voltage_level": "COUCHP6",
       "flow_deltas": {
         "COUCHL61CPVAN": {
-          "delta": -83.9,
+          "delta": -84.4,
           "category": "negative",
           "flip_arrow": false
         },
         "COUCHL61VIELM": {
-          "delta": -89.1,
+          "delta": -89.5,
           "category": "negative",
-          "flip_arrow": false
-        },
-        "COUCHY632": {
-          "delta": 22.5,
-          "category": "positive",
           "flip_arrow": false
         },
         "COUCHY631": {
-          "delta": -27.8,
+          "delta": -27.3,
           "category": "negative",
           "flip_arrow": true
+        },
+        "COUCHY632": {
+          "delta": 22.2,
+          "category": "positive",
+          "flip_arrow": false
         }
       },
       "reactive_flow_deltas": {
         "COUCHL61CPVAN": {
-          "delta": -2.0,
+          "delta": -2.3,
           "category": "negative",
           "flip_arrow": false
         },
         "COUCHL61VIELM": {
-          "delta": 1.7,
+          "delta": 0.9,
+          "category": "negative",
+          "flip_arrow": false
+        },
+        "COUCHY631": {
+          "delta": -1.4,
           "category": "negative",
           "flip_arrow": false
         },
         "COUCHY632": {
-          "delta": 2.1,
+          "delta": 1.8,
           "category": "positive",
-          "flip_arrow": false
-        },
-        "COUCHY631": {
-          "delta": -1.5,
-          "category": "negative",
-          "flip_arrow": false
-        }
-      }
-    },
-    "3617076a-a7f5-4f8a-9009-127ac9b85cff_VIELMP6": {
-      "target_voltage_level": "VIELMP6",
-      "flow_deltas": {
-        "C.REGL61VIELM": {
-          "delta": -38.8,
-          "category": "negative",
-          "flip_arrow": false
-        },
-        "C.REGL62VIELM": {
-          "delta": 43.8,
-          "category": "positive",
-          "flip_arrow": false
-        },
-        "COMMUL61VIELM": {
-          "delta": 15.1,
-          "category": "positive",
-          "flip_arrow": false
-        },
-        "COUCHL61VIELM": {
-          "delta": -16.0,
-          "category": "negative",
-          "flip_arrow": false
-        },
-        "VIELMY761": {
-          "delta": -24.3,
-          "category": "negative",
-          "flip_arrow": false
-        },
-        "VIELMY762": {
-          "delta": 51.7,
-          "category": "positive",
-          "flip_arrow": false
-        },
-        "VIELMY763": {
-          "delta": -21.8,
-          "category": "negative",
-          "flip_arrow": false
-        },
-        "VIELMY634": {
-          "delta": 8.1,
-          "category": "positive",
-          "flip_arrow": false
-        },
-        "VIELMY635": {
-          "delta": -6.5,
-          "category": "negative",
-          "flip_arrow": true
-        }
-      },
-      "reactive_flow_deltas": {
-        "C.REGL61VIELM": {
-          "delta": -21.4,
-          "category": "negative",
-          "flip_arrow": true
-        },
-        "C.REGL62VIELM": {
-          "delta": 22.7,
-          "category": "positive",
-          "flip_arrow": false
-        },
-        "COMMUL61VIELM": {
-          "delta": 6.9,
-          "category": "positive",
-          "flip_arrow": false
-        },
-        "COUCHL61VIELM": {
-          "delta": 7.5,
-          "category": "negative",
-          "flip_arrow": false
-        },
-        "VIELMY761": {
-          "delta": -9.9,
-          "category": "negative",
-          "flip_arrow": false
-        },
-        "VIELMY762": {
-          "delta": -19.7,
-          "category": "positive",
-          "flip_arrow": true
-        },
-        "VIELMY763": {
-          "delta": 8.4,
-          "category": "negative",
-          "flip_arrow": false
-        },
-        "VIELMY634": {
-          "delta": 11.6,
-          "category": "positive",
-          "flip_arrow": false
-        },
-        "VIELMY635": {
-          "delta": -11.0,
-          "category": "negative",
           "flip_arrow": false
         }
       }

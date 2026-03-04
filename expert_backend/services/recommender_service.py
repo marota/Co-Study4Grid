@@ -770,11 +770,11 @@ class RecommenderService:
 
         delta = _signed(after_val) - _signed(before_val)
 
-        # flip_arrow when reference is before AND direction reversed
+        # flip_arrow when the Action SVG visual arrow (which points based on after_val's sign)
+        # is geometrically opposite to the Reference state visual arrow (which points based on ref_positive).
+        # Since pypowsybl draws IN/OUT based purely on positive/negative value:
         after_positive = (after_val >= 0)
-        before_positive = (before_val >= 0)
-        direction_reversed = (after_positive != before_positive)
-        flip_arrow = bool(ref_is_before and direction_reversed)
+        flip_arrow = bool(after_positive != ref_positive)
 
         return delta, flip_arrow
 
