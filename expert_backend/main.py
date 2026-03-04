@@ -35,6 +35,8 @@ class ConfigRequest(BaseModel):
     lines_monitoring_path: str | None = None
     monitoring_factor: float = 0.95
     pre_existing_overload_threshold: float = 0.02
+    ignore_reconnections: bool = False
+    pypowsybl_fast_mode: bool = True
 
 class AnalysisRequest(BaseModel):
     disconnected_element: str

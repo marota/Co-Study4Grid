@@ -9,6 +9,8 @@ export interface ConfigRequest {
     lines_monitoring_path?: string;
     monitoring_factor: number;
     pre_existing_overload_threshold?: number;
+    ignore_reconnections?: boolean;
+    pypowsybl_fast_mode?: boolean;
 }
 
 export interface AnalysisRequest {
@@ -124,6 +126,8 @@ export interface SettingsBackup {
     linesMonitoringPath: string;
     monitoringFactor: number;
     preExistingOverloadThreshold: number;
+    ignoreReconnections?: boolean;
+    pypowsyblFastMode?: boolean;
 }
 
 export interface AvailableAction {

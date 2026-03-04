@@ -337,6 +337,8 @@ class TestPydanticModels:
             assert config.n_prioritized_actions == 10
             assert config.monitoring_factor == 0.95
             assert config.pre_existing_overload_threshold == 0.02
+            assert config.ignore_reconnections is False
+            assert config.pypowsybl_fast_mode is True
             assert config.lines_monitoring_path is None
 
     def test_analysis_request_validation(self):

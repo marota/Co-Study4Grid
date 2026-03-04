@@ -34,6 +34,8 @@ function App() {
   const [linesMonitoringPath, setLinesMonitoringPath] = useState<string>('');
   const [monitoringFactor, setMonitoringFactor] = useState<number>(0.95);
   const [preExistingOverloadThreshold, setPreExistingOverloadThreshold] = useState<number>(0.02);
+  const [ignoreReconnections, setIgnoreReconnections] = useState<boolean>(false);
+  const [pypowsyblFastMode, setPypowsyblFastMode] = useState<boolean>(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'recommender' | 'configurations'>('recommender');
   const [settingsBackup, setSettingsBackup] = useState<SettingsBackup | null>(null);
@@ -47,10 +49,12 @@ function App() {
       nPrioritizedActions,
       linesMonitoringPath,
       monitoringFactor,
-      preExistingOverloadThreshold
+      preExistingOverloadThreshold,
+      ignoreReconnections,
+      pypowsyblFastMode
     });
     setIsSettingsOpen(true);
-  }, [minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold]);
+  }, [minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
 
   const handleCloseSettings = useCallback(() => {
     if (settingsBackup) {
@@ -62,6 +66,8 @@ function App() {
       setLinesMonitoringPath(settingsBackup.linesMonitoringPath);
       setMonitoringFactor(settingsBackup.monitoringFactor);
       setPreExistingOverloadThreshold(settingsBackup.preExistingOverloadThreshold);
+      setIgnoreReconnections(settingsBackup.ignoreReconnections ?? false);
+      setPypowsyblFastMode(settingsBackup.pypowsyblFastMode ?? true);
     }
     setIsSettingsOpen(false);
   }, [settingsBackup]);
@@ -79,6 +85,8 @@ function App() {
         lines_monitoring_path: linesMonitoringPath,
         monitoring_factor: monitoringFactor,
         pre_existing_overload_threshold: preExistingOverloadThreshold,
+        ignore_reconnections: ignoreReconnections,
+        pypowsybl_fast_mode: pypowsyblFastMode,
       });
       setSettingsBackup({
         minLineReconnections,
@@ -88,7 +96,9 @@ function App() {
         nPrioritizedActions,
         linesMonitoringPath,
         monitoringFactor,
-        preExistingOverloadThreshold
+        preExistingOverloadThreshold,
+        ignoreReconnections,
+        pypowsyblFastMode
       });
       setInfoMessage('Settings applied successfully.');
       setIsSettingsOpen(false);
@@ -96,7 +106,7 @@ function App() {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
       setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
     }
-  }, [networkPath, actionPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold]);
+  }, [networkPath, actionPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
 
   const pickSettingsPath = async (type: 'file' | 'dir', setter: (path: string) => void) => {
     try {
@@ -189,6 +199,8 @@ function App() {
         lines_monitoring_path: linesMonitoringPath,
         monitoring_factor: monitoringFactor,
         pre_existing_overload_threshold: preExistingOverloadThreshold,
+        ignore_reconnections: ignoreReconnections,
+        pypowsybl_fast_mode: pypowsyblFastMode,
       });
 
       const [branchesList, vlRes, nomVRes] = await Promise.all([
@@ -216,7 +228,7 @@ function App() {
     } finally {
       setConfigLoading(false);
     }
-  }, [networkPath, actionPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, monitoringFactor, linesMonitoringPath, preExistingOverloadThreshold]);
+  }, [networkPath, actionPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, monitoringFactor, linesMonitoringPath, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
 
   const fetchBaseDiagram = async (vlCount: number) => {
     try {
@@ -952,6 +964,21 @@ function App() {
                 </div>
                 <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-10px' }}>
                   Pre-existing overloads excluded from N-1 & max loading unless worsened by this fraction (default 2%)
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #eee' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input type="checkbox" id="ignoreRec" checked={ignoreReconnections} onChange={e => setIgnoreReconnections(e.target.checked)} style={{ width: '16px', height: '16px' }} />
+                    <label htmlFor="ignoreRec" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Ignore Reconnections</label>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <input type="checkbox" id="fastMode" checked={pypowsyblFastMode} onChange={e => setPypowsyblFastMode(e.target.checked)} style={{ width: '16px', height: '16px' }} />
+                      <label htmlFor="fastMode" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Pypowsybl Fast Mode</label>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#666', fontStyle: 'italic', marginLeft: '26px' }}>
+                      Disable voltage control in pypowsybl for faster simulations (may affect convergence)
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

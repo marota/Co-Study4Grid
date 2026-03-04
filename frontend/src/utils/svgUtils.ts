@@ -1,4 +1,4 @@
-import type { ViewBox, MetadataIndex, NodeMeta, EdgeMeta, ActionDetail } from '../types';
+import type { AssetDelta, ViewBox, MetadataIndex, NodeMeta, EdgeMeta, ActionDetail } from '../types';
 
 /**
  * Scale SVG elements for large grids so text, nodes, and flow values
@@ -368,7 +368,7 @@ export const applyDeltaVisuals = (
     diagram: {
         flow_deltas?: Record<string, { delta: number; category: string }>;
         reactive_flow_deltas?: Record<string, { delta: number; category: string }>;
-        asset_deltas?: Record<string, { delta_p: number; delta_q: number; category: string }>;
+        asset_deltas?: Record<string, AssetDelta>;
     } | null,
     metaIndex: MetadataIndex | null,
     isDeltaMode: boolean,

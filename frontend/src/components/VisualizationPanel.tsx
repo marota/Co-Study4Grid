@@ -290,9 +290,20 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                 const qDelta = lookupDelta(reactiveDeltas, equipId);
                 const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
                 applyPQLabels(cellEl, pStr, qStr);
+
+                // Apply specific category classes to the labels instead of the cell
+                let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
+                if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
+                pLabels.forEach(l => l.classList.add(`sld-delta-text-${branchDelta.category}`));
+
                 // Flip P and Q arrows independently
-                if (branchDelta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
-                if (qDelta?.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
+                if (branchDelta.flip_arrow) {
+                    flipArrows(cellEl, 'sld-active-power');
+                }
+                if (qDelta) {
+                    if (qDelta.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
+                    cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
+                }
                 processedEquipIds.add(equipId);
                 continue;
             }
@@ -322,8 +333,16 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             cellEl.classList.add(`sld-delta-${delta.category}`);
             const qDelta = lookupDelta(reactiveDeltas, equipId);
             applyPQLabels(cellEl, fmtDelta(delta.delta), qDelta !== undefined ? fmtDelta(qDelta.delta) : null);
+
+            let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
+            if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
+            pLabels.forEach(l => l.classList.add(`sld-delta-text-${delta.category}`));
+
             if (delta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
-            if (qDelta?.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
+            if (qDelta) {
+                if (qDelta.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
+                cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
+            }
         }
         for (const [equipId, assetDelta] of Object.entries(assetDeltas ?? {})) {
             if (isProcessed(equipId)) continue;
@@ -332,6 +351,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             if (!cellEl) continue;
             cellEl.classList.add(`sld-delta-${assetDelta.category}`);
             applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
+            cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
         }
     }, [vlOverlay.svg, vlOverlay.sldMetadata, vlOverlay.tab, actionViewMode,
         n1FlowDeltas, actionFlowDeltas,

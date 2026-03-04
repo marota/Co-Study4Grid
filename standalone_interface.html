@@ -223,27 +223,45 @@
         }
 
         /* ===== SLD overlay delta flow visualization ===== */
-        .sld-delta-positive path, .sld-delta-positive line,
-        .sld-delta-positive polyline, .sld-delta-positive rect,
+        .sld-delta-positive path,
+        .sld-delta-positive line,
+        .sld-delta-positive polyline,
+        .sld-delta-positive rect,
         .sld-delta-positive circle {
             stroke: #ff8c00 !important;
             stroke-width: 2px !important;
         }
-        .sld-delta-negative path, .sld-delta-negative line,
-        .sld-delta-negative polyline, .sld-delta-negative rect,
+
+        .sld-delta-negative path,
+        .sld-delta-negative line,
+        .sld-delta-negative polyline,
+        .sld-delta-negative rect,
         .sld-delta-negative circle {
             stroke: #2196F3 !important;
             stroke-width: 2px !important;
         }
-        .sld-delta-grey path, .sld-delta-grey line,
-        .sld-delta-grey polyline, .sld-delta-grey rect,
+
+        .sld-delta-grey path,
+        .sld-delta-grey line,
+        .sld-delta-grey polyline,
+        .sld-delta-grey rect,
         .sld-delta-grey circle {
             stroke: #999 !important;
             stroke-opacity: 0.5 !important;
         }
-        .sld-delta-positive .sld-label { fill: #ff8c00 !important; }
-        .sld-delta-negative .sld-label { fill: #2196F3 !important; }
-        .sld-delta-grey .sld-label { fill: #999 !important; fill-opacity: 0.5 !important; }
+
+        .sld-delta-text-positive {
+            fill: #ff8c00 !important;
+        }
+
+        .sld-delta-text-negative {
+            fill: #2196F3 !important;
+        }
+
+        .sld-delta-text-grey {
+            fill: #999 !important;
+            fill-opacity: 0.5 !important;
+        }
 
         /* ===== Voltage Range Slider (vertical, right sidebar) ===== */
         .voltage-sidebar {
@@ -941,6 +959,8 @@
             const [nPrioritizedActions, setNPrioritizedActions] = useState(10);
             const [monitoringFactor, setMonitoringFactor] = useState(0.95);
             const [preExistingOverloadThreshold, setPreExistingOverloadThreshold] = useState(0.02);
+            const [ignoreReconnections, setIgnoreReconnections] = useState(localStorage.getItem('ignoreReconnections') === 'true');
+            const [pypowsyblFastMode, setPypowsyblFastMode] = useState(localStorage.getItem('pypowsyblFastMode') === null ? true : localStorage.getItem('pypowsyblFastMode') === 'true');
             const [monitoredLinesCount, setMonitoredLinesCount] = useState(0);
             const [totalLinesCount, setTotalLinesCount] = useState(0);
             const [showMonitoringWarning, setShowMonitoringWarning] = useState(false);
@@ -967,7 +987,9 @@
                     nPrioritizedActions,
                     linesMonitoringPath,
                     monitoringFactor,
-                    preExistingOverloadThreshold
+                    preExistingOverloadThreshold,
+                    ignoreReconnections,
+                    pypowsyblFastMode
                 });
                 setIsSettingsOpen(true);
             };
@@ -982,6 +1004,8 @@
                     setLinesMonitoringPath(settingsBackup.linesMonitoringPath);
                     setMonitoringFactor(settingsBackup.monitoringFactor);
                     setPreExistingOverloadThreshold(settingsBackup.preExistingOverloadThreshold);
+                    setIgnoreReconnections(settingsBackup.ignoreReconnections ?? false);
+                    setPypowsyblFastMode(settingsBackup.pypowsyblFastMode ?? true);
                 }
                 setIsSettingsOpen(false);
             };
@@ -1003,7 +1027,9 @@
                         n_prioritized_actions: nPrioritizedActions,
                         lines_monitoring_path: linesMonitoringPath,
                         monitoring_factor: monitoringFactor,
-                        pre_existing_overload_threshold: preExistingOverloadThreshold
+                        pre_existing_overload_threshold: preExistingOverloadThreshold,
+                        ignore_reconnections: ignoreReconnections,
+                        pypowsybl_fast_mode: pypowsyblFastMode
                     });
 
                     if (configRes.data && configRes.data.total_lines_count !== undefined) {
@@ -1020,7 +1046,9 @@
                         nPrioritizedActions,
                         linesMonitoringPath,
                         monitoringFactor,
-                        preExistingOverloadThreshold
+                        preExistingOverloadThreshold,
+                        ignoreReconnections,
+                        pypowsyblFastMode
                     });
                     setInfoMessage('Settings applied successfully. Please reload study or run analysis to see effects.');
                     setIsSettingsOpen(false);
@@ -1110,6 +1138,8 @@
             useEffect(() => { localStorage.setItem('networkPath', networkPath); }, [networkPath]);
             useEffect(() => { localStorage.setItem('actionPath', actionPath); }, [actionPath]);
             useEffect(() => { localStorage.setItem('linesMonitoringPath', linesMonitoringPath); }, [linesMonitoringPath]);
+            useEffect(() => { localStorage.setItem('ignoreReconnections', ignoreReconnections); }, [ignoreReconnections]);
+            useEffect(() => { localStorage.setItem('pypowsyblFastMode', pypowsyblFastMode); }, [pypowsyblFastMode]);
 
             const pickPath = async (type, setter) => {
                 try {
@@ -1143,7 +1173,9 @@
                         n_prioritized_actions: nPrioritizedActions,
                         lines_monitoring_path: linesMonitoringPath,
                         monitoring_factor: monitoringFactor,
-                        pre_existing_overload_threshold: preExistingOverloadThreshold
+                        pre_existing_overload_threshold: preExistingOverloadThreshold,
+                        ignore_reconnections: ignoreReconnections,
+                        pypowsybl_fast_mode: pypowsyblFastMode
                     });
 
                     if (configRes.data && configRes.data.total_lines_count !== undefined) {
@@ -1696,9 +1728,20 @@
                         const qDelta = lookupDelta(reactiveDeltas, equipId);
                         const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
                         applyPQLabels(cellEl, pStr, qStr);
+
+                        // Apply specific category classes to the labels instead of the cell
+                        let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
+                        if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
+                        pLabels.forEach(l => l.classList.add(`sld-delta-text-${branchDelta.category}`));
+
                         // Flip P and Q arrows independently
-                        if (branchDelta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
-                        if (qDelta?.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
+                        if (branchDelta.flip_arrow) {
+                            flipArrows(cellEl, 'sld-active-power');
+                        }
+                        if (qDelta) {
+                            if (qDelta.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
+                            cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
+                        }
                         processedEquipIds.add(equipId);
                         continue;
                     }
@@ -1707,6 +1750,7 @@
                     if (assetDelta) {
                         cellEl.classList.add(`sld-delta-${assetDelta.category}`);
                         applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
+                        cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
                         processedEquipIds.add(equipId);
                     }
                 }
@@ -1724,8 +1768,16 @@
                     cellEl.classList.add(`sld-delta-${delta.category}`);
                     const qDelta = lookupDelta(reactiveDeltas, equipId);
                     applyPQLabels(cellEl, fmtDelta(delta.delta), qDelta !== undefined ? fmtDelta(qDelta.delta) : null);
+
+                    let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
+                    if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
+                    pLabels.forEach(l => l.classList.add(`sld-delta-text-${delta.category}`));
+
                     if (delta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
-                    if (qDelta?.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
+                    if (qDelta) {
+                        if (qDelta.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
+                        cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
+                    }
                 }
                 for (const [equipId, assetDelta] of Object.entries(assetDeltas ?? {})) {
                     if (isProcessed(equipId)) continue;
@@ -1734,11 +1786,12 @@
                     if (!cellEl) continue;
                     cellEl.classList.add(`sld-delta-${assetDelta.category}`);
                     applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
+                    cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
                 }
             }, [vlOverlay?.svg, vlOverlay?.sldMetadata, vlOverlay?.tab, actionViewMode,
-                n1Diagram?.flow_deltas, actionDiagram?.flow_deltas,
-                n1Diagram?.reactive_flow_deltas, actionDiagram?.reactive_flow_deltas,
-                n1Diagram?.asset_deltas, actionDiagram?.asset_deltas]);
+            n1Diagram?.flow_deltas, actionDiagram?.flow_deltas,
+            n1Diagram?.reactive_flow_deltas, actionDiagram?.reactive_flow_deltas,
+            n1Diagram?.asset_deltas, actionDiagram?.asset_deltas]);
 
             // Mouse pan inside overlay body
             const startOverlayPan = (e) => {
@@ -2847,6 +2900,22 @@
                                             </div>
                                             <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-10px' }}>
                                                 Pre-existing overloads excluded from N-1 & max loading unless worsened by this fraction (default 2%)
+                                            </div>
+
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #eee' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                    <input type="checkbox" id="ignoreRecStandalone" checked={ignoreReconnections} onChange={e => setIgnoreReconnections(e.target.checked)} style={{ width: '16px', height: '16px' }} />
+                                                    <label htmlFor="ignoreRecStandalone" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Ignore Reconnections</label>
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                        <input type="checkbox" id="fastModeStandalone" checked={pypowsyblFastMode} onChange={e => setPypowsyblFastMode(e.target.checked)} style={{ width: '16px', height: '16px' }} />
+                                                        <label htmlFor="fastModeStandalone" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Pypowsybl Fast Mode</label>
+                                                    </div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#666', fontStyle: 'italic', marginLeft: '26px' }}>
+                                                        Disable voltage control in pypowsybl for faster simulations (may affect convergence)
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     )}

@@ -21,6 +21,9 @@ describe('api client', () => {
                 min_line_disconnections: 3.0,
                 n_prioritized_actions: 10,
                 monitoring_factor: 0.95,
+                pre_existing_overload_threshold: 0.02,
+                ignore_reconnections: false,
+                pypowsybl_fast_mode: true
             };
             mockedAxios.post.mockResolvedValue({ data: { status: 'success' } });
 

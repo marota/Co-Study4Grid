@@ -56,6 +56,10 @@ class RecommenderService:
             config.MONITORING_FACTOR_THERMAL_LIMITS = settings.monitoring_factor
         if hasattr(settings, 'pre_existing_overload_threshold') and settings.pre_existing_overload_threshold is not None:
             config.PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD = settings.pre_existing_overload_threshold
+        if hasattr(settings, 'ignore_reconnections') and settings.ignore_reconnections is not None:
+            config.IGNORE_RECONNECTIONS = settings.ignore_reconnections
+        if hasattr(settings, 'pypowsybl_fast_mode') and settings.pypowsybl_fast_mode is not None:
+            config.PYPOWSYBL_FAST_MODE = settings.pypowsybl_fast_mode
 
         # Force the requested global flags
         config.MAX_RHO_BOTH_EXTREMITIES = True
@@ -770,11 +774,11 @@ class RecommenderService:
 
         delta = _signed(after_val) - _signed(before_val)
 
-        # flip_arrow when reference is before AND direction reversed
+        # flip_arrow when the Action SVG visual arrow (which points based on after_val's sign)
+        # is geometrically opposite to the Reference state visual arrow (which points based on ref_positive).
+        # Since pypowsybl draws IN/OUT based purely on positive/negative value:
         after_positive = (after_val >= 0)
-        before_positive = (before_val >= 0)
-        direction_reversed = (after_positive != before_positive)
-        flip_arrow = bool(ref_is_before and direction_reversed)
+        flip_arrow = bool(after_positive != ref_positive)
 
         return delta, flip_arrow
 
