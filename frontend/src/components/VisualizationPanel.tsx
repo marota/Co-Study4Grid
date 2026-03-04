@@ -277,24 +277,25 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             if (branchDelta) {
                 cellEl.classList.add(`sld-delta-${branchDelta.category}`);
 
-                if (branchDelta.category !== 'grey') {
-                    const pStr = fmtDelta(branchDelta.delta);
-                    const qDelta = lookupDelta(reactiveDeltas, equipId);
-                    const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
+                const pStr = fmtDelta(branchDelta.delta);
+                const qDelta = lookupDelta(reactiveDeltas, equipId);
+                const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
+
+                // Show labels if at least one (P or Q) is non-zero
+                if (pStr !== "+0.0" || (qStr && qStr !== "+0.0")) {
                     applyPQLabels(cellEl, pStr, qStr);
+                }
 
-                    // Apply specific category classes to the labels instead of the cell
-                    let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
-                    if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
-                    pLabels.forEach(l => l.classList.add(`sld-delta-text-${branchDelta.category}`));
+                // Apply specific category classes to the labels instead of the cell
+                let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
+                if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
+                pLabels.forEach(l => l.classList.add(`sld-delta-text-${branchDelta.category}`));
 
-                    if (qDelta) {
-                        cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
-                    }
+                if (qDelta) {
+                    cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
                 }
 
                 // Flip P and Q arrows independently (regardless of category)
-                const qDelta = lookupDelta(reactiveDeltas, equipId);
                 if (branchDelta.flip_arrow) {
                     flipArrows(cellEl, 'sld-active-power');
                 }
@@ -309,8 +310,10 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             const assetDelta = lookupDelta(assetDeltas, equipId);
             if (assetDelta) {
                 cellEl.classList.add(`sld-delta-${assetDelta.category}`);
-                if (assetDelta.category !== 'grey') {
-                    applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
+                const pStr = fmtDelta(assetDelta.delta_p);
+                const qStr = fmtDelta(assetDelta.delta_q);
+                if (pStr !== "+0.0" || qStr !== "+0.0") {
+                    applyPQLabels(cellEl, pStr, qStr);
                 }
                 processedEquipIds.add(equipId);
             }
@@ -329,17 +332,20 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             if (isProcessed(equipId)) continue;
             const cellEl = findCellEl(equipId);
             if (!cellEl) continue;
-            if (delta.category !== 'grey') {
-                const qDelta = lookupDelta(reactiveDeltas, equipId);
-                applyPQLabels(cellEl, fmtDelta(delta.delta), qDelta !== undefined ? fmtDelta(qDelta.delta) : null);
+            const pStr = fmtDelta(delta.delta);
+            const qDelta = lookupDelta(reactiveDeltas, equipId);
+            const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
 
-                let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
-                if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
-                pLabels.forEach(l => l.classList.add(`sld-delta-text-${delta.category}`));
+            if (pStr !== "+0.0" || (qStr && qStr !== "+0.0")) {
+                applyPQLabels(cellEl, pStr, qStr);
+            }
 
-                if (qDelta) {
-                    cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
-                }
+            let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
+            if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
+            pLabels.forEach(l => l.classList.add(`sld-delta-text-${delta.category}`));
+
+            if (qDelta) {
+                cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
             }
 
             if (delta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
@@ -352,7 +358,11 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             const cellEl = findCellEl(equipId);
             if (!cellEl) continue;
             if (assetDelta.category !== 'grey') {
-                applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
+                const pStr = fmtDelta(assetDelta.delta_p);
+                const qStr = fmtDelta(assetDelta.delta_q);
+                if (pStr !== "+0.0" || qStr !== "+0.0") {
+                    applyPQLabels(cellEl, pStr, qStr);
+                }
                 cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
             }
         }

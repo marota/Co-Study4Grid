@@ -527,19 +527,21 @@ class RecommenderService:
 
         # Include flow deltas vs base (N) state
         try:
+            # IMPORTANT: Extract N-1 flows while N-1 variant is STILL ACTIVE on 'n'
+            n1_flows = self._get_network_flows(n)
+            n1_assets = self._get_asset_flows(n)
+
             n_base = self._get_base_network()
             original_variant_base = n_base.get_working_variant_id()
             n_variant_id_base = self._get_n_variant()
             n_base.set_working_variant(n_variant_id_base)
 
             base_flows = self._get_network_flows(n_base)
-            n1_flows = self._get_network_flows(n)
+            base_assets = self._get_asset_flows(n_base)
+
             deltas = self._compute_deltas(n1_flows, base_flows, voltage_level_ids=voltage_level_ids)
             diagram["flow_deltas"] = deltas["flow_deltas"]
             diagram["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
-            # Asset deltas (loads & generators)
-            base_assets = self._get_asset_flows(n_base)
-            n1_assets = self._get_asset_flows(n)
             diagram["asset_deltas"] = self._compute_asset_deltas(n1_assets, base_assets)
             
             n_base.set_working_variant(original_variant_base) # Restore original variant for base network
@@ -638,21 +640,50 @@ class RecommenderService:
         if action_id not in actions:
             raise ValueError(f"Action '{action_id}' not found in last analysis result.")
 
+        # Get original action variant and the base N-1 variant 
         obs = actions[action_id]["observation"]
-        variant_id = obs._variant_id
+        action_variant_id = obs._variant_id
         nm = obs._network_manager
-        nm.set_working_variant(variant_id)
+        
+        # Switch to action variant to generate SLD and get flows
+        nm.set_working_variant(action_variant_id)
         network = nm.network
-
         sld = network.get_single_line_diagram(voltage_level_id)
         svg, sld_metadata = self._extract_sld_svg_and_metadata(sld)
-
-        return {
+        
+        result = {
             "svg": svg,
             "sld_metadata": sld_metadata,
             "action_id": action_id,
             "voltage_level_id": voltage_level_id,
         }
+        
+        try:
+            # We already have action flows from the network
+            action_flows = self._get_network_flows(network)
+            action_assets = self._get_asset_flows(network)
+            
+            # Switch back to N-1 variant to get reference flows for the deltas
+            n1_flows = self._get_n1_flows(self._last_disconnected_element)
+            
+            n1_network = self._get_base_network()
+            original_variant_n1 = n1_network.get_working_variant_id()
+            n1_variant_id_n1 = self._get_n1_variant(self._last_disconnected_element)
+            n1_network.set_working_variant(n1_variant_id_n1)
+            n1_assets = self._get_asset_flows(n1_network)
+            n1_network.set_working_variant(original_variant_n1)
+
+            deltas = self._compute_deltas(action_flows, n1_flows, voltage_level_ids=[voltage_level_id])
+            result["flow_deltas"] = deltas["flow_deltas"]
+            result["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
+            result["asset_deltas"] = self._compute_asset_deltas(action_assets, n1_assets)
+        except Exception as e:
+            print(f"Warning: Failed to compute SLD flow deltas for manual action: {e}")
+            result["flow_deltas"] = {}
+            result["reactive_flow_deltas"] = {}
+            result["asset_deltas"] = {}
+            
+        return result
 
     def get_n_sld(self, voltage_level_id: str) -> dict:
         """Generate a Single Line Diagram (SLD) in the base N state."""
@@ -681,13 +712,40 @@ class RecommenderService:
         sld = n.get_single_line_diagram(voltage_level_id)
         svg, sld_metadata = self._extract_sld_svg_and_metadata(sld)
 
-        n.set_working_variant(original_variant) # Restore original variant
-        return {
+        result = {
             "svg": svg,
             "sld_metadata": sld_metadata,
             "voltage_level_id": voltage_level_id,
             "disconnected_element": disconnected_element
         }
+        
+        try:
+            # IMPORTANT: Extract N-1 flows while N-1 variant is STILL ACTIVE on 'n'
+            n1_flows = self._get_network_flows(n)
+            n1_assets = self._get_asset_flows(n)
+
+            n_base = self._get_base_network()
+            original_variant_base = n_base.get_working_variant_id()
+            n_variant_id_base = self._get_n_variant()
+            n_base.set_working_variant(n_variant_id_base)
+
+            base_flows = self._get_network_flows(n_base)
+            base_assets = self._get_asset_flows(n_base)
+
+            deltas = self._compute_deltas(n1_flows, base_flows, voltage_level_ids=[voltage_level_id])
+            result["flow_deltas"] = deltas["flow_deltas"]
+            result["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
+            result["asset_deltas"] = self._compute_asset_deltas(n1_assets, base_assets)
+            
+            n_base.set_working_variant(original_variant_base) # Restore original variant for base network
+        except Exception as e:
+            print(f"Warning: Failed to compute SLD flow deltas for N-1: {e}")
+            result["flow_deltas"] = {}
+            result["reactive_flow_deltas"] = {}
+            result["asset_deltas"] = {}
+
+        n.set_working_variant(original_variant) # Restore original variant
+        return result
 
     @staticmethod
     def _extract_sld_svg_and_metadata(sld) -> tuple:

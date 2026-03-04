@@ -413,26 +413,26 @@ export const applyDeltaVisuals = (
             if (cls) el.classList.add(cls);
         }
 
-        // Only update text labels if significant delta (category != 'grey')
-        if (deltaInfo.category !== 'grey') {
-            // edgeInfo1 = active power (P) arrow: show P delta text
-            const pDeltaStr = deltaInfo.delta >= 0 ? `+${deltaInfo.delta.toFixed(1)}` : deltaInfo.delta.toFixed(1);
-            if (edge.edgeInfo1?.svgId) {
-                const infoEl = idMap.get(edge.edgeInfo1.svgId);
-                if (infoEl) {
-                    infoEl.querySelectorAll('foreignObject, text').forEach(t => {
-                        if (!t.hasAttribute('data-original-text')) {
-                            t.setAttribute('data-original-text', t.textContent || '');
-                        }
-                        t.textContent = `\u0394 ${pDeltaStr}`;
-                    });
-                }
+        // Apply delta text labels for ANY significant numerical change (non-zero rounded)
+        // edgeInfo1 = active power (P) arrow: show P delta text
+        const pDeltaStr = deltaInfo.delta >= 0 ? `+${deltaInfo.delta.toFixed(1)}` : deltaInfo.delta.toFixed(1);
+        if (pDeltaStr !== "+0.0" && pDeltaStr !== "-0.0" && edge.edgeInfo1?.svgId) {
+            const infoEl = idMap.get(edge.edgeInfo1.svgId);
+            if (infoEl) {
+                infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                    if (!t.hasAttribute('data-original-text')) {
+                        t.setAttribute('data-original-text', t.textContent || '');
+                    }
+                    t.textContent = `\u0394 ${pDeltaStr}`;
+                });
             }
+        }
 
-            // edgeInfo2 = reactive power (Q) arrow: show Q delta text
-            const qDelta = reactiveDeltas[lineId];
-            if (edge.edgeInfo2?.svgId && qDelta) {
-                const qDeltaStr = qDelta.delta >= 0 ? `+${qDelta.delta.toFixed(1)}` : qDelta.delta.toFixed(1);
+        // edgeInfo2 = reactive power (Q) arrow: show Q delta text
+        const qDelta = reactiveDeltas[lineId];
+        if (qDelta) {
+            const qDeltaStr = qDelta.delta >= 0 ? `+${qDelta.delta.toFixed(1)}` : qDelta.delta.toFixed(1);
+            if (qDeltaStr !== "+0.0" && qDeltaStr !== "-0.0" && edge.edgeInfo2?.svgId) {
                 const infoEl = idMap.get(edge.edgeInfo2.svgId);
                 if (infoEl) {
                     infoEl.querySelectorAll('foreignObject, text').forEach(t => {
@@ -458,34 +458,31 @@ export const applyDeltaVisuals = (
                 if (cls) el.classList.add(cls);
             }
 
-            // Only update text labels if significant delta (category != 'grey')
-            if (assetInfo.category !== 'grey') {
-                // Update P arrow text on edgeInfo1
-                const pStr = assetInfo.delta_p >= 0 ? `+${assetInfo.delta_p.toFixed(1)}` : assetInfo.delta_p.toFixed(1);
-                if (edge.edgeInfo1?.svgId) {
-                    const infoEl = idMap.get(edge.edgeInfo1.svgId);
-                    if (infoEl) {
-                        infoEl.querySelectorAll('foreignObject, text').forEach(t => {
-                            if (!t.hasAttribute('data-original-text')) {
-                                t.setAttribute('data-original-text', t.textContent || '');
-                            }
-                            t.textContent = `\u0394 ${pStr}`;
-                        });
-                    }
+            // Update P arrow text on edgeInfo1 if non-zero
+            const pStr = assetInfo.delta_p >= 0 ? `+${assetInfo.delta_p.toFixed(1)}` : assetInfo.delta_p.toFixed(1);
+            if (pStr !== "+0.0" && pStr !== "-0.0" && edge.edgeInfo1?.svgId) {
+                const infoEl = idMap.get(edge.edgeInfo1.svgId);
+                if (infoEl) {
+                    infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                        if (!t.hasAttribute('data-original-text')) {
+                            t.setAttribute('data-original-text', t.textContent || '');
+                        }
+                        t.textContent = `\u0394 ${pStr}`;
+                    });
                 }
+            }
 
-                // Update Q arrow text on edgeInfo2
-                const qStr = assetInfo.delta_q >= 0 ? `+${assetInfo.delta_q.toFixed(1)}` : assetInfo.delta_q.toFixed(1);
-                if (edge.edgeInfo2?.svgId) {
-                    const infoEl = idMap.get(edge.edgeInfo2.svgId);
-                    if (infoEl) {
-                        infoEl.querySelectorAll('foreignObject, text').forEach(t => {
-                            if (!t.hasAttribute('data-original-text')) {
-                                t.setAttribute('data-original-text', t.textContent || '');
-                            }
-                            t.textContent = `\u0394 ${qStr}`;
-                        });
-                    }
+            // Update Q arrow text on edgeInfo2 if non-zero
+            const qStr = assetInfo.delta_q >= 0 ? `+${assetInfo.delta_q.toFixed(1)}` : assetInfo.delta_q.toFixed(1);
+            if (qStr !== "+0.0" && qStr !== "-0.0" && edge.edgeInfo2?.svgId) {
+                const infoEl = idMap.get(edge.edgeInfo2.svgId);
+                if (infoEl) {
+                    infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                        if (!t.hasAttribute('data-original-text')) {
+                            t.setAttribute('data-original-text', t.textContent || '');
+                        }
+                        t.textContent = `\u0394 ${qStr}`;
+                    });
                 }
             }
         }
