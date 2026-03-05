@@ -1186,6 +1186,13 @@ class RecommenderService:
         n.set_working_variant(n1_variant_id)
         obs_simu_defaut = env.get_obs()
         
+        # FIX: Explicitly tell the observation which variant it's currently modeling
+        # so that obs_simu_defaut.simulate() branches from N-1 and not the base network.
+        obs_simu_defaut._variant_id = n1_variant_id
+        
+        # Store globally so downstream diagram functions know what to compare against
+        self._last_disconnected_element = disconnected_element
+        
         # Get monitoring parameters and filtering logic
         lines_we_care_about, branches_with_limits = self._get_monitoring_parameters(obs_simu_defaut)
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
