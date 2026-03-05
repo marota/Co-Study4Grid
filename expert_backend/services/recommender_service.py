@@ -1121,9 +1121,9 @@ class RecommenderService:
     def _compute_asset_deltas(self, after_asset_flows, before_asset_flows):
         """Compute delta P and Q for loads and generators.
 
-        Returns {asset_id: {delta_p, delta_q, category}}.
-        Category is calculated based on active power delta, except when P is zero
-        and Q changes significantly.
+        Returns {asset_id: {delta_p, delta_q, category, category_p, category_q}}.
+        Category colors for P and Q are calculated independently.
+        The legacy 'category' key follows the P delta.
         """
         all_ids = set(after_asset_flows.keys()) | set(before_asset_flows.keys())
         raw_p = {}
@@ -1153,23 +1153,28 @@ class RecommenderService:
             dp = raw_p[aid]
             dq = raw_q[aid]
             
-            if max_abs_p > 0.0 and abs(dp) >= threshold_p:
-                if dp > 0:
-                    cat = "positive"
-                else:
-                    cat = "negative"
-            elif max_abs_q > 0.0 and abs(dq) >= threshold_q:
-                if dq > 0:
-                    cat = "positive"
-                else:
-                    cat = "negative"
+            # P category
+            if max_abs_p == 0.0 or abs(dp) < threshold_p:
+                cat_p = "grey"
+            elif dp > 0:
+                cat_p = "positive"
             else:
-                cat = "grey"
+                cat_p = "negative"
+                
+            # Q category
+            if max_abs_q == 0.0 or abs(dq) < threshold_q:
+                cat_q = "grey"
+            elif dq > 0:
+                cat_q = "positive"
+            else:
+                cat_q = "negative"
                 
             result[aid] = {
                 "delta_p": round(float(dp), 1),
                 "delta_q": round(float(dq), 1),
-                "category": cat,
+                "category": cat_p,
+                "category_p": cat_p,
+                "category_q": cat_q,
             }
 
         return result

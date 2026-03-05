@@ -71,6 +71,8 @@ export interface AssetDelta {
     delta_p: number;
     delta_q: number;
     category: 'positive' | 'negative' | 'grey';
+    category_p?: 'positive' | 'negative' | 'grey';
+    category_q?: 'positive' | 'negative' | 'grey';
 }
 
 export interface ViewBox {

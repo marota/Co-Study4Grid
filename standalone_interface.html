@@ -1788,7 +1788,13 @@
                         const qStr = fmtDelta(assetDelta.delta_q);
                         // Always apply labels to ensure original flows are replaced
                         applyPQLabels(cellEl, pStr, qStr);
-                        cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
+
+                        const catP = assetDelta.category_p || assetDelta.category;
+                        const catQ = assetDelta.category_q || assetDelta.category;
+
+                        cellEl.querySelectorAll('.sld-active-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catP}`));
+                        cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catQ}`));
+
                         processedEquipIds.add(equipId);
                     }
                 }
@@ -1827,12 +1833,20 @@
                     if (lookupDelta(flowDeltas, equipId) !== undefined) continue;
                     const cellEl = findCellEl(equipId);
                     if (!cellEl) continue;
-                    cellEl.classList.add(`sld-delta-${assetDelta.category}`);
-                    const pStr = fmtDelta(assetDelta.delta_p);
-                    const qStr = fmtDelta(assetDelta.delta_q);
-                    // Always apply labels to ensure original flows are replaced
-                    applyPQLabels(cellEl, pStr, qStr);
-                    cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
+
+                    if (assetDelta.category !== 'grey' || (assetDelta.category_q && assetDelta.category_q !== 'grey')) {
+                        cellEl.classList.add(`sld-delta-${assetDelta.category}`);
+                        const pStr = fmtDelta(assetDelta.delta_p);
+                        const qStr = fmtDelta(assetDelta.delta_q);
+                        // Always apply labels to ensure original flows are replaced
+                        applyPQLabels(cellEl, pStr, qStr);
+
+                        const catP = assetDelta.category_p || assetDelta.category;
+                        const catQ = assetDelta.category_q || assetDelta.category;
+
+                        cellEl.querySelectorAll('.sld-active-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catP}`));
+                        cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catQ}`));
+                    }
                 }
             }, [vlOverlay?.svg, vlOverlay?.sldMetadata, vlOverlay?.tab, actionViewMode,
             vlOverlay?.flow_deltas, vlOverlay?.reactive_flow_deltas, vlOverlay?.asset_deltas]);

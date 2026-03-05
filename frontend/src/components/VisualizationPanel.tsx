@@ -312,6 +312,14 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                 const qStr = fmtDelta(assetDelta.delta_q);
                 // Always apply labels to ensure original flows are replaced
                 applyPQLabels(cellEl, pStr, qStr);
+
+                // Use independent categories for labels if available
+                const catP = assetDelta.category_p || assetDelta.category;
+                const catQ = assetDelta.category_q || assetDelta.category;
+
+                cellEl.querySelectorAll('.sld-active-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catP}`));
+                cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catQ}`));
+
                 processedEquipIds.add(equipId);
             }
         }
@@ -353,12 +361,17 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             if (lookupDelta(flowDeltas, equipId) !== undefined) continue;
             const cellEl = findCellEl(equipId);
             if (!cellEl) continue;
-            if (assetDelta.category !== 'grey') {
+            if (assetDelta.category !== 'grey' || (assetDelta.category_q && assetDelta.category_q !== 'grey')) {
                 const pStr = fmtDelta(assetDelta.delta_p);
                 const qStr = fmtDelta(assetDelta.delta_q);
                 // Always apply labels to ensure original flows are replaced
                 applyPQLabels(cellEl, pStr, qStr);
-                cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
+
+                const catP = assetDelta.category_p || assetDelta.category;
+                const catQ = assetDelta.category_q || assetDelta.category;
+
+                cellEl.querySelectorAll('.sld-active-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catP}`));
+                cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catQ}`));
             }
         }
     }, [vlOverlay.svg, vlOverlay.sldMetadata, vlOverlay.tab, actionViewMode,
