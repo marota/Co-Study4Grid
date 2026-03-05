@@ -1754,22 +1754,13 @@
                         cellEl.classList.add(`sld-delta-${branchDelta.category}`);
                         const pDeltaVal = branchDelta.delta;
                         const pStr = fmtDelta(pDeltaVal);
-                        const qDelta = lookupDelta(reactiveDeltas, equipId);
-                        const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
-
-                        // Show labels if at least one (P or Q) is non-zero
-                        if (pStr !== "+0.0" || (qStr && qStr !== "+0.0")) {
-                            applyPQLabels(cellEl, pStr, qStr);
-                        }
+                        // Always apply labels to ensure original flows are replaced
+                        applyPQLabels(cellEl, pStr, null);
 
                         // Apply specific category classes to the labels instead of the cell
                         let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
                         if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
                         pLabels.forEach(l => l.classList.add(`sld-delta-text-${branchDelta.category}`));
-
-                        if (qDelta) {
-                            cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
-                        }
                         processedEquipIds.add(equipId);
                         continue;
                     }
@@ -1779,9 +1770,8 @@
                         cellEl.classList.add(`sld-delta-${assetDelta.category}`);
                         const pStr = fmtDelta(assetDelta.delta_p);
                         const qStr = fmtDelta(assetDelta.delta_q);
-                        if (pStr !== "+0.0" || qStr !== "+0.0") {
-                            applyPQLabels(cellEl, pStr, qStr);
-                        }
+                        // Always apply labels to ensure original flows are replaced
+                        applyPQLabels(cellEl, pStr, qStr);
                         cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
                         processedEquipIds.add(equipId);
                     }
@@ -1801,9 +1791,8 @@
                     const qDelta = lookupDelta(reactiveDeltas, equipId);
                     const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
 
-                    if (pStr !== "+0.0" || (qStr && qStr !== "+0.0")) {
-                        applyPQLabels(cellEl, pStr, qStr);
-                    }
+                    // Always apply labels to ensure original flows are replaced
+                    applyPQLabels(cellEl, pStr, qStr);
 
                     let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
                     if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
@@ -1825,9 +1814,8 @@
                     cellEl.classList.add(`sld-delta-${assetDelta.category}`);
                     const pStr = fmtDelta(assetDelta.delta_p);
                     const qStr = fmtDelta(assetDelta.delta_q);
-                    if (pStr !== "+0.0" || qStr !== "+0.0") {
-                        applyPQLabels(cellEl, pStr, qStr);
-                    }
+                    // Always apply labels to ensure original flows are replaced
+                    applyPQLabels(cellEl, pStr, qStr);
                     cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
                 }
             }, [vlOverlay?.svg, vlOverlay?.sldMetadata, vlOverlay?.tab, actionViewMode,
@@ -2100,9 +2088,12 @@
                                 if (cls) el.classList.add(cls);
                             }
 
-                            // edgeInfo1 = active power (P) arrow: show P delta text if non-zero
+                            // In NADs, both edgeInfo1 and edgeInfo2 represent Active Power (P) at the two terminals.
+                            // We do NOT use reactiveDeltas here. We apply the P delta to both terminals.
                             const pDeltaStr = deltaInfo.delta >= 0 ? `+${deltaInfo.delta.toFixed(1)}` : deltaInfo.delta.toFixed(1);
-                            if (pDeltaStr !== "+0.0" && pDeltaStr !== "-0.0" && edge.edgeInfo1?.svgId) {
+
+                            // Apply to Terminal 1 (edgeInfo1)
+                            if (edge.edgeInfo1?.svgId) {
                                 const infoEl = idMap.get(edge.edgeInfo1.svgId);
                                 if (infoEl) {
                                     infoEl.querySelectorAll('foreignObject, text').forEach(t => {
@@ -2114,20 +2105,16 @@
                                 }
                             }
 
-                            // edgeInfo2 = reactive power (Q) arrow: show Q delta text if non-zero
-                            const qDelta = reactiveDeltas[lineId];
-                            if (qDelta) {
-                                const qDeltaStr = qDelta.delta >= 0 ? `+${qDelta.delta.toFixed(1)}` : qDelta.delta.toFixed(1);
-                                if (qDeltaStr !== "+0.0" && qDeltaStr !== "-0.0" && edge.edgeInfo2?.svgId) {
-                                    const infoEl = idMap.get(edge.edgeInfo2.svgId);
-                                    if (infoEl) {
-                                        infoEl.querySelectorAll('foreignObject, text').forEach(t => {
-                                            if (!t.hasAttribute('data-original-text')) {
-                                                t.setAttribute('data-original-text', t.textContent);
-                                            }
-                                            t.textContent = `Δ ${qDeltaStr}`;
-                                        });
-                                    }
+                            // Apply to Terminal 2 (edgeInfo2)
+                            if (edge.edgeInfo2?.svgId) {
+                                const infoEl = idMap.get(edge.edgeInfo2.svgId);
+                                if (infoEl) {
+                                    infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                                        if (!t.hasAttribute('data-original-text')) {
+                                            t.setAttribute('data-original-text', t.textContent);
+                                        }
+                                        t.textContent = `Δ ${pDeltaStr}`;
+                                    });
                                 }
                             }
                         }
@@ -2142,9 +2129,9 @@
                                     if (cls) el.classList.add(cls);
                                 }
 
-                                // Update P arrow text on edgeInfo1 if non-zero
+                                // Update P arrow text on edgeInfo1
                                 const pStr = assetInfo.delta_p >= 0 ? `+${assetInfo.delta_p.toFixed(1)}` : assetInfo.delta_p.toFixed(1);
-                                if (pStr !== "+0.0" && pStr !== "-0.0" && edge.edgeInfo1?.svgId) {
+                                if (edge.edgeInfo1?.svgId) {
                                     const infoEl = idMap.get(edge.edgeInfo1.svgId);
                                     if (infoEl) {
                                         infoEl.querySelectorAll('foreignObject, text').forEach(t => {
@@ -2156,9 +2143,9 @@
                                     }
                                 }
 
-                                // Update Q arrow text on edgeInfo2 if non-zero
+                                // Update Q arrow text on edgeInfo2
                                 const qStr = assetInfo.delta_q >= 0 ? `+${assetInfo.delta_q.toFixed(1)}` : assetInfo.delta_q.toFixed(1);
-                                if (qStr !== "+0.0" && qStr !== "-0.0" && edge.edgeInfo2?.svgId) {
+                                if (edge.edgeInfo2?.svgId) {
                                     const infoEl = idMap.get(edge.edgeInfo2.svgId);
                                     if (infoEl) {
                                         infoEl.querySelectorAll('foreignObject, text').forEach(t => {

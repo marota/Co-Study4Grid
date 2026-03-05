@@ -390,7 +390,6 @@ export const applyDeltaVisuals = (
 
     const { edgesByEquipmentId } = metaIndex;
     const flowDeltas = diagram.flow_deltas;
-    const reactiveDeltas = diagram.reactive_flow_deltas || {};
     const assetDeltas = diagram.asset_deltas || {};
     const idMap = new Map<string, Element>();
     container.querySelectorAll('[id]').forEach(el => idMap.set(el.id, el));
@@ -413,10 +412,11 @@ export const applyDeltaVisuals = (
             if (cls) el.classList.add(cls);
         }
 
-        // Apply delta text labels for ANY significant numerical change (non-zero rounded)
-        // edgeInfo1 = active power (P) arrow: show P delta text
+        // Apply delta text labels to both Terminal 1 and Terminal 2 (edgeInfo1 and edgeInfo2 represent P flow at terminals in NADs)
         const pDeltaStr = deltaInfo.delta >= 0 ? `+${deltaInfo.delta.toFixed(1)}` : deltaInfo.delta.toFixed(1);
-        if (pDeltaStr !== "+0.0" && pDeltaStr !== "-0.0" && edge.edgeInfo1?.svgId) {
+
+        // edgeInfo1 = Terminal 1 active power (P)
+        if (edge.edgeInfo1?.svgId) {
             const infoEl = idMap.get(edge.edgeInfo1.svgId);
             if (infoEl) {
                 infoEl.querySelectorAll('foreignObject, text').forEach(t => {
@@ -428,20 +428,16 @@ export const applyDeltaVisuals = (
             }
         }
 
-        // edgeInfo2 = reactive power (Q) arrow: show Q delta text
-        const qDelta = reactiveDeltas[lineId];
-        if (qDelta) {
-            const qDeltaStr = qDelta.delta >= 0 ? `+${qDelta.delta.toFixed(1)}` : qDelta.delta.toFixed(1);
-            if (qDeltaStr !== "+0.0" && qDeltaStr !== "-0.0" && edge.edgeInfo2?.svgId) {
-                const infoEl = idMap.get(edge.edgeInfo2.svgId);
-                if (infoEl) {
-                    infoEl.querySelectorAll('foreignObject, text').forEach(t => {
-                        if (!t.hasAttribute('data-original-text')) {
-                            t.setAttribute('data-original-text', t.textContent || '');
-                        }
-                        t.textContent = `\u0394 ${qDeltaStr}`;
-                    });
-                }
+        // edgeInfo2 = Terminal 2 active power (P) (Note: NOT reactive power in NADs)
+        if (edge.edgeInfo2?.svgId) {
+            const infoEl = idMap.get(edge.edgeInfo2.svgId);
+            if (infoEl) {
+                infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                    if (!t.hasAttribute('data-original-text')) {
+                        t.setAttribute('data-original-text', t.textContent || '');
+                    }
+                    t.textContent = `\u0394 ${pDeltaStr}`;
+                });
             }
         }
     }
@@ -458,9 +454,9 @@ export const applyDeltaVisuals = (
                 if (cls) el.classList.add(cls);
             }
 
-            // Update P arrow text on edgeInfo1 if non-zero
+            // Update P arrow text on edgeInfo1
             const pStr = assetInfo.delta_p >= 0 ? `+${assetInfo.delta_p.toFixed(1)}` : assetInfo.delta_p.toFixed(1);
-            if (pStr !== "+0.0" && pStr !== "-0.0" && edge.edgeInfo1?.svgId) {
+            if (edge.edgeInfo1?.svgId) {
                 const infoEl = idMap.get(edge.edgeInfo1.svgId);
                 if (infoEl) {
                     infoEl.querySelectorAll('foreignObject, text').forEach(t => {
@@ -472,9 +468,9 @@ export const applyDeltaVisuals = (
                 }
             }
 
-            // Update Q arrow text on edgeInfo2 if non-zero
+            // Update Q arrow text on edgeInfo2
             const qStr = assetInfo.delta_q >= 0 ? `+${assetInfo.delta_q.toFixed(1)}` : assetInfo.delta_q.toFixed(1);
-            if (qStr !== "+0.0" && qStr !== "-0.0" && edge.edgeInfo2?.svgId) {
+            if (edge.edgeInfo2?.svgId) {
                 const infoEl = idMap.get(edge.edgeInfo2.svgId);
                 if (infoEl) {
                     infoEl.querySelectorAll('foreignObject, text').forEach(t => {

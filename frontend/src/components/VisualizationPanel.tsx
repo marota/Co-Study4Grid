@@ -281,10 +281,8 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                 const qDelta = lookupDelta(reactiveDeltas, equipId);
                 const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
 
-                // Show labels if at least one (P or Q) is non-zero
-                if (pStr !== "+0.0" || (qStr && qStr !== "+0.0")) {
-                    applyPQLabels(cellEl, pStr, qStr);
-                }
+                // Always apply labels to ensure original flows are replaced
+                applyPQLabels(cellEl, pStr, qStr);
 
                 // Apply specific category classes to the labels instead of the cell
                 let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
@@ -312,9 +310,8 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                 cellEl.classList.add(`sld-delta-${assetDelta.category}`);
                 const pStr = fmtDelta(assetDelta.delta_p);
                 const qStr = fmtDelta(assetDelta.delta_q);
-                if (pStr !== "+0.0" || qStr !== "+0.0") {
-                    applyPQLabels(cellEl, pStr, qStr);
-                }
+                // Always apply labels to ensure original flows are replaced
+                applyPQLabels(cellEl, pStr, qStr);
                 processedEquipIds.add(equipId);
             }
         }
@@ -336,9 +333,8 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             const qDelta = lookupDelta(reactiveDeltas, equipId);
             const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
 
-            if (pStr !== "+0.0" || (qStr && qStr !== "+0.0")) {
-                applyPQLabels(cellEl, pStr, qStr);
-            }
+            // Always apply labels to ensure original flows are replaced
+            applyPQLabels(cellEl, pStr, qStr);
 
             let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
             if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
@@ -360,9 +356,8 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             if (assetDelta.category !== 'grey') {
                 const pStr = fmtDelta(assetDelta.delta_p);
                 const qStr = fmtDelta(assetDelta.delta_q);
-                if (pStr !== "+0.0" || qStr !== "+0.0") {
-                    applyPQLabels(cellEl, pStr, qStr);
-                }
+                // Always apply labels to ensure original flows are replaced
+                applyPQLabels(cellEl, pStr, qStr);
                 cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
             }
         }
