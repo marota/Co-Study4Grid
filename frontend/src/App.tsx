@@ -9,7 +9,7 @@ import {
   processSvg, buildMetadataIndex, applyOverloadedHighlights,
   applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight
 } from './utils/svgUtils';
-import type { ActionDetail, AnalysisResult, DiagramData, ViewBox, MetadataIndex, TabId, SettingsBackup, VlOverlay, SldTab } from './types';
+import type { ActionDetail, AnalysisResult, DiagramData, ViewBox, MetadataIndex, TabId, SettingsBackup, VlOverlay, SldTab, FlowDelta, AssetDelta } from './types';
 
 function App() {
   // ===== Configuration State =====
@@ -31,8 +31,11 @@ function App() {
   const [minOpenCoupling, setMinOpenCoupling] = useState<number>(2.0);
   const [minLineDisconnections, setMinLineDisconnections] = useState<number>(3.0);
   const [nPrioritizedActions, setNPrioritizedActions] = useState<number>(10);
-  const [linesMonitoringPath, setLinesMonitoringPath] = useState<string>('');
-  const [monitoringFactor, setMonitoringFactor] = useState<number>(0.95);
+  const [linesMonitoringPath, setLinesMonitoringPath] = useState('');
+  const [monitoredLinesCount, setMonitoredLinesCount] = useState(0);
+  const [totalLinesCount, setTotalLinesCount] = useState(0);
+  const [showMonitoringWarning, setShowMonitoringWarning] = useState(false);
+  const [monitoringFactor, setMonitoringFactor] = useState(0.95);
   const [preExistingOverloadThreshold, setPreExistingOverloadThreshold] = useState<number>(0.02);
   const [ignoreReconnections, setIgnoreReconnections] = useState<boolean>(false);
   const [pypowsyblFastMode, setPypowsyblFastMode] = useState<boolean>(true);
@@ -74,7 +77,25 @@ function App() {
 
   const handleApplySettings = useCallback(async () => {
     try {
-      await api.updateConfig({
+      // Clear previous results to ensure consistency with new settings BEFORE fetching
+      setResult(null);
+      setPendingAnalysisResult(null);
+      setNDiagram(null);
+      setN1Diagram(null);
+      setActionDiagram(null);
+      setSelectedActionId(null);
+      setActiveTab('n');
+      setVlOverlay(null);
+      setSelectedBranch('');
+      setSelectedActionIds(new Set());
+      setManuallyAddedIds(new Set());
+      setRejectedActionIds(new Set());
+      setError('');
+      setInfoMessage('');
+      setInspectQuery('');
+      setShowMonitoringWarning(false); // Clear warning on new settings application
+
+      const configRes = await api.updateConfig({
         network_path: networkPath,
         action_file_path: actionPath,
         min_line_reconnections: minLineReconnections,
@@ -88,6 +109,15 @@ function App() {
         ignore_reconnections: ignoreReconnections,
         pypowsybl_fast_mode: pypowsyblFastMode,
       });
+
+      if (configRes && configRes.total_lines_count !== undefined) {
+        setMonitoredLinesCount(configRes.monitored_lines_count);
+        setTotalLinesCount(configRes.total_lines_count);
+        if (configRes.monitored_lines_count < configRes.total_lines_count) {
+          setShowMonitoringWarning(true);
+        }
+      }
+
       setSettingsBackup({
         minLineReconnections,
         minCloseCoupling,
@@ -100,7 +130,6 @@ function App() {
         ignoreReconnections,
         pypowsyblFastMode
       });
-      setInfoMessage('Settings applied successfully.');
       setIsSettingsOpen(false);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
@@ -182,13 +211,18 @@ function App() {
     setPendingAnalysisResult(null);
     setSelectedActionId(null);
     setSelectedActionIds(new Set());
+    setManuallyAddedIds(new Set());
     setRejectedActionIds(new Set());
     setActionDiagram(null);
     setActiveTab('n');
+    setVlOverlay(null);
+    setSelectedBranch('');
+    setInspectQuery('');
     lastZoomState.current = { query: '', branch: '' };
+    setShowMonitoringWarning(false); // Clear warning on new config load
 
     try {
-      await api.updateConfig({
+      const configRes = await api.updateConfig({
         network_path: networkPath,
         action_file_path: actionPath,
         min_line_reconnections: minLineReconnections,
@@ -202,6 +236,14 @@ function App() {
         ignore_reconnections: ignoreReconnections,
         pypowsybl_fast_mode: pypowsyblFastMode,
       });
+
+      if (configRes && configRes.total_lines_count !== undefined) {
+        setMonitoredLinesCount(configRes.monitored_lines_count);
+        setTotalLinesCount(configRes.total_lines_count);
+        if (configRes.monitored_lines_count < configRes.total_lines_count) {
+          setShowMonitoringWarning(true);
+        }
+      }
 
       const [branchesList, vlRes, nomVRes] = await Promise.all([
         api.getBranches(),
@@ -277,7 +319,6 @@ function App() {
     setSelectedActionId(null);
     setActionDiagram(null);
     setPendingAnalysisResult(null);
-    setActiveTab('overflow');
 
     try {
       const response = await fetch('http://localhost:8000/api/run-analysis', {
@@ -299,7 +340,10 @@ function App() {
           if (!line.trim()) continue;
           try {
             const event = JSON.parse(line);
-            if (event.type === 'pdf') setResult(p => ({ ...p!, pdf_url: event.pdf_url } as AnalysisResult));
+            if (event.type === 'pdf') {
+              setResult(p => ({ ...p!, pdf_url: event.pdf_url } as AnalysisResult));
+              setActiveTab('overflow'); // Switch tab right as PDF comes in
+            }
             else if (event.type === 'result') {
               // Store analysis result as pending — don't merge yet
               setPendingAnalysisResult(event);
@@ -441,6 +485,10 @@ function App() {
     try {
       let svgData: string;
       let metaData: string | null = null;
+      let flowDeltas: Record<string, FlowDelta> | undefined;
+      let reactiveFlowDeltas: Record<string, FlowDelta> | undefined;
+      let assetDeltas: Record<string, AssetDelta> | undefined;
+
       if (sldTab === 'n') {
         const res = await api.getNSld(vlName);
         svgData = res.svg;
@@ -449,14 +497,23 @@ function App() {
         const res = await api.getN1Sld(selectedBranch, vlName);
         svgData = res.svg;
         metaData = res.sld_metadata ?? null;
+        flowDeltas = res.flow_deltas;
+        reactiveFlowDeltas = res.reactive_flow_deltas;
+        assetDeltas = res.asset_deltas;
       } else {
         const res = await api.getActionVariantSld(actionId!, vlName);
         svgData = res.svg;
         metaData = res.sld_metadata ?? null;
+        flowDeltas = res.flow_deltas;
+        reactiveFlowDeltas = res.reactive_flow_deltas;
+        assetDeltas = res.asset_deltas;
       }
       setVlOverlay(prev =>
         prev && prev.vlName === vlName && prev.tab === sldTab
-          ? { ...prev, svg: svgData, sldMetadata: metaData, loading: false }
+          ? {
+            ...prev, svg: svgData, sldMetadata: metaData, loading: false,
+            flow_deltas: flowDeltas, reactive_flow_deltas: reactiveFlowDeltas, asset_deltas: assetDeltas
+          }
           : prev
       );
     } catch (err: unknown) {
@@ -830,6 +887,7 @@ function App() {
     [branches, voltageLevels]
   );
 
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <header style={{
@@ -1033,11 +1091,46 @@ function App() {
             </div>
           )}
 
+          {showMonitoringWarning && totalLinesCount > 0 && (
+            <div style={{
+              margin: '0 15px 10px 15px',
+              padding: '8px 12px',
+              background: '#fff3cd',
+              border: '1px solid #ffeeba',
+              borderRadius: '4px',
+              color: '#856404',
+              fontSize: '0.8rem',
+              position: 'relative',
+              zIndex: 11
+            }}>
+              ⚠️ <strong>{monitoredLinesCount}</strong> out of <strong>{totalLinesCount}</strong> lines monitored ({totalLinesCount - (monitoredLinesCount || 0)} without permanent limits). Monitoring factor: {Math.round((monitoringFactor || 0.95) * 100)}%. {Math.round((preExistingOverloadThreshold || 0.02) * 100)}% loading increase threshold for considerando worsened overload in N.
+              <button
+                onClick={() => { setIsSettingsOpen(true); setSettingsTab('configurations'); }}
+                style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: '0 0 0 5px', fontSize: 'inherit' }}
+              >
+                Change in settings
+              </button>
+              <button
+                onClick={() => setShowMonitoringWarning(false)}
+                style={{ float: 'right', background: 'none', border: 'none', fontSize: '16px', lineHeight: 1, color: '#856404', cursor: 'pointer' }}
+                title="Dismiss"
+              >
+                &times;
+              </button>
+            </div>
+          )}
           <div style={{ flexShrink: 0 }}>
             <OverloadPanel
               nOverloads={nDiagram?.lines_overloaded || []}
               n1Overloads={n1Diagram?.lines_overloaded || []}
               onAssetClick={handleAssetClick as (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void}
+              showMonitoringWarning={showMonitoringWarning}
+              monitoredLinesCount={monitoredLinesCount}
+              totalLinesCount={totalLinesCount}
+              monitoringFactor={monitoringFactor}
+              preExistingOverloadThreshold={preExistingOverloadThreshold}
+              onDismissWarning={() => setShowMonitoringWarning(false)}
+              onOpenSettings={() => { setIsSettingsOpen(true); setSettingsTab('configurations'); }}
             />
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -1068,6 +1161,7 @@ function App() {
         <div style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column' }}>
           <VisualizationPanel
             activeTab={activeTab}
+            configLoading={configLoading}
             onTabChange={setActiveTab}
             nDiagram={nDiagram}
             n1Diagram={n1Diagram}

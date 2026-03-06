@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { ConfigRequest, AnalysisResult, BranchResponse, DiagramData } from './types';
+import type { ConfigRequest, AnalysisResult, BranchResponse, DiagramData, FlowDelta, AssetDelta } from './types';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -114,15 +114,15 @@ export const api = {
         );
         return response.data;
     },
-    getN1Sld: async (disconnectedElement: string, voltageLevelId: string): Promise<{ svg: string; sld_metadata: string | null; voltage_level_id: string }> => {
-        const response = await axios.post<{ svg: string; sld_metadata: string | null; voltage_level_id: string }>(
+    getN1Sld: async (disconnectedElement: string, voltageLevelId: string): Promise<{ svg: string; sld_metadata: string | null; voltage_level_id: string; flow_deltas?: Record<string, FlowDelta>; reactive_flow_deltas?: Record<string, FlowDelta>; asset_deltas?: Record<string, AssetDelta> }> => {
+        const response = await axios.post<{ svg: string; sld_metadata: string | null; voltage_level_id: string; flow_deltas?: Record<string, FlowDelta>; reactive_flow_deltas?: Record<string, FlowDelta>; asset_deltas?: Record<string, AssetDelta> }>(
             `${API_BASE_URL}/api/n1-sld`,
             { disconnected_element: disconnectedElement, voltage_level_id: voltageLevelId }
         );
         return response.data;
     },
-    getActionVariantSld: async (actionId: string, voltageLevelId: string): Promise<{ svg: string; sld_metadata: string | null; action_id: string; voltage_level_id: string }> => {
-        const response = await axios.post<{ svg: string; sld_metadata: string | null; action_id: string; voltage_level_id: string }>(
+    getActionVariantSld: async (actionId: string, voltageLevelId: string): Promise<{ svg: string; sld_metadata: string | null; action_id: string; voltage_level_id: string; flow_deltas?: Record<string, FlowDelta>; reactive_flow_deltas?: Record<string, FlowDelta>; asset_deltas?: Record<string, AssetDelta> }> => {
+        const response = await axios.post<{ svg: string; sld_metadata: string | null; action_id: string; voltage_level_id: string; flow_deltas?: Record<string, FlowDelta>; reactive_flow_deltas?: Record<string, FlowDelta>; asset_deltas?: Record<string, AssetDelta> }>(
             `${API_BASE_URL}/api/action-variant-sld`,
             { action_id: actionId, voltage_level_id: voltageLevelId }
         );

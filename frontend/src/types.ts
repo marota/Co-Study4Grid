@@ -71,6 +71,8 @@ export interface AssetDelta {
     delta_p: number;
     delta_q: number;
     category: 'positive' | 'negative' | 'grey';
+    category_p?: 'positive' | 'negative' | 'grey';
+    category_q?: 'positive' | 'negative' | 'grey';
 }
 
 export interface ViewBox {
@@ -155,4 +157,7 @@ export interface VlOverlay {
     loading: boolean;
     error: string | null;
     tab: SldTab;
+    flow_deltas?: Record<string, FlowDelta>;
+    reactive_flow_deltas?: Record<string, FlowDelta>;
+    asset_deltas?: Record<string, AssetDelta>;
 }

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, type RefObject } from 'react';
-import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab, FlowDelta, AssetDelta, SldFeederNode } from '../types';
+import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab, SldFeederNode } from '../types';
 
 interface VisualizationPanelProps {
     activeTab: TabId;
+    configLoading: boolean;
     onTabChange: (tab: TabId) => void;
     nDiagram: DiagramData | null;
     n1Diagram: DiagramData | null;
@@ -39,21 +40,12 @@ interface VisualizationPanelProps {
 interface SldOverlayProps {
     vlOverlay: VlOverlay;
     actionViewMode: 'network' | 'delta';
-    n1FlowDeltas: Record<string, FlowDelta> | null | undefined;
-    actionFlowDeltas: Record<string, FlowDelta> | null | undefined;
-    n1ReactiveFlowDeltas: Record<string, FlowDelta> | null | undefined;
-    actionReactiveFlowDeltas: Record<string, FlowDelta> | null | undefined;
-    n1AssetDeltas: Record<string, AssetDelta> | null | undefined;
-    actionAssetDeltas: Record<string, AssetDelta> | null | undefined;
     onOverlayClose: () => void;
     onOverlaySldTabChange: (tab: SldTab) => void;
 }
 
 const SldOverlay: React.FC<SldOverlayProps> = ({
     vlOverlay, actionViewMode,
-    n1FlowDeltas, actionFlowDeltas,
-    n1ReactiveFlowDeltas, actionReactiveFlowDeltas,
-    n1AssetDeltas, actionAssetDeltas,
     onOverlayClose, onOverlaySldTabChange,
 }) => {
     const overlayBodyRef = useRef<HTMLDivElement>(null);
@@ -73,7 +65,10 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         if (!container) return;
 
         // Clear any previously applied SLD delta classes
-        const SLD_DELTA_CLASSES = ['sld-delta-positive', 'sld-delta-negative', 'sld-delta-grey'];
+        const SLD_DELTA_CLASSES = [
+            'sld-delta-positive', 'sld-delta-negative', 'sld-delta-grey',
+            'sld-delta-text-positive', 'sld-delta-text-negative', 'sld-delta-text-grey'
+        ];
         container.querySelectorAll(SLD_DELTA_CLASSES.map(c => '.' + c).join(','))
             .forEach(el => el.classList.remove(...SLD_DELTA_CLASSES));
 
@@ -96,11 +91,9 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         if (!vlOverlay.svg || actionViewMode !== 'delta') return;
 
         // Choose deltas based on the SLD tab being shown
-        const isN1 = vlOverlay.tab === 'n-1';
-        const isAction = vlOverlay.tab === 'action';
-        const flowDeltas = isN1 ? n1FlowDeltas : isAction ? actionFlowDeltas : null;
-        const reactiveDeltas = isN1 ? n1ReactiveFlowDeltas : isAction ? actionReactiveFlowDeltas : null;
-        const assetDeltas = isN1 ? n1AssetDeltas : isAction ? actionAssetDeltas : null;
+        const flowDeltas = vlOverlay.flow_deltas;
+        const reactiveDeltas = vlOverlay.reactive_flow_deltas;
+        const assetDeltas = vlOverlay.asset_deltas;
 
         if (!flowDeltas && !assetDeltas) return;
 
@@ -286,9 +279,12 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             const branchDelta = lookupDelta(flowDeltas, equipId);
             if (branchDelta) {
                 cellEl.classList.add(`sld-delta-${branchDelta.category}`);
+
                 const pStr = fmtDelta(branchDelta.delta);
                 const qDelta = lookupDelta(reactiveDeltas, equipId);
                 const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
+
+                // Always apply labels to ensure original flows are replaced
                 applyPQLabels(cellEl, pStr, qStr);
 
                 // Apply specific category classes to the labels instead of the cell
@@ -296,13 +292,16 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                 if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
                 pLabels.forEach(l => l.classList.add(`sld-delta-text-${branchDelta.category}`));
 
-                // Flip P and Q arrows independently
+                if (qDelta) {
+                    cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
+                }
+
+                // Flip P and Q arrows independently (regardless of category)
                 if (branchDelta.flip_arrow) {
                     flipArrows(cellEl, 'sld-active-power');
                 }
-                if (qDelta) {
-                    if (qDelta.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
-                    cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
+                if (qDelta && qDelta.flip_arrow) {
+                    flipArrows(cellEl, 'sld-reactive-power');
                 }
                 processedEquipIds.add(equipId);
                 continue;
@@ -312,7 +311,18 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             const assetDelta = lookupDelta(assetDeltas, equipId);
             if (assetDelta) {
                 cellEl.classList.add(`sld-delta-${assetDelta.category}`);
-                applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
+                const pStr = fmtDelta(assetDelta.delta_p);
+                const qStr = fmtDelta(assetDelta.delta_q);
+                // Always apply labels to ensure original flows are replaced
+                applyPQLabels(cellEl, pStr, qStr);
+
+                // Use independent categories for labels if available
+                const catP = assetDelta.category_p || assetDelta.category;
+                const catQ = assetDelta.category_q || assetDelta.category;
+
+                cellEl.querySelectorAll('.sld-active-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catP}`));
+                cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catQ}`));
+
                 processedEquipIds.add(equipId);
             }
         }
@@ -330,33 +340,45 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             if (isProcessed(equipId)) continue;
             const cellEl = findCellEl(equipId);
             if (!cellEl) continue;
-            cellEl.classList.add(`sld-delta-${delta.category}`);
+            const pStr = fmtDelta(delta.delta);
             const qDelta = lookupDelta(reactiveDeltas, equipId);
-            applyPQLabels(cellEl, fmtDelta(delta.delta), qDelta !== undefined ? fmtDelta(qDelta.delta) : null);
+            const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
+
+            // Always apply labels to ensure original flows are replaced
+            applyPQLabels(cellEl, pStr, qStr);
 
             let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
             if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
             pLabels.forEach(l => l.classList.add(`sld-delta-text-${delta.category}`));
 
-            if (delta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
             if (qDelta) {
-                if (qDelta.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
                 cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
             }
+
+            if (delta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
+            const qDeltaForFlip = lookupDelta(reactiveDeltas, equipId);
+            if (qDeltaForFlip && qDeltaForFlip.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
         }
         for (const [equipId, assetDelta] of Object.entries(assetDeltas ?? {})) {
             if (isProcessed(equipId)) continue;
             if (lookupDelta(flowDeltas, equipId) !== undefined) continue;
             const cellEl = findCellEl(equipId);
             if (!cellEl) continue;
-            cellEl.classList.add(`sld-delta-${assetDelta.category}`);
-            applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
-            cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
+            if (assetDelta.category !== 'grey' || (assetDelta.category_q && assetDelta.category_q !== 'grey')) {
+                const pStr = fmtDelta(assetDelta.delta_p);
+                const qStr = fmtDelta(assetDelta.delta_q);
+                // Always apply labels to ensure original flows are replaced
+                applyPQLabels(cellEl, pStr, qStr);
+
+                const catP = assetDelta.category_p || assetDelta.category;
+                const catQ = assetDelta.category_q || assetDelta.category;
+
+                cellEl.querySelectorAll('.sld-active-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catP}`));
+                cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catQ}`));
+            }
         }
     }, [vlOverlay.svg, vlOverlay.sldMetadata, vlOverlay.tab, actionViewMode,
-        n1FlowDeltas, actionFlowDeltas,
-        n1ReactiveFlowDeltas, actionReactiveFlowDeltas,
-        n1AssetDeltas, actionAssetDeltas]);
+    vlOverlay.flow_deltas, vlOverlay.reactive_flow_deltas, vlOverlay.asset_deltas]);
 
     // Non-passive wheel zoom on overlay body
     useEffect(() => {
@@ -479,6 +501,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
 
 const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     activeTab,
+    configLoading,
     onTabChange,
     nDiagram,
     n1Diagram,
@@ -636,7 +659,6 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                     </div>
                 )}
 
-                {/* N Container — always mounted, hidden via CSS to preserve zoom state */}
                 <div style={{
                     width: '100%', height: '100%',
                     position: 'absolute', top: 0, left: 0,
@@ -644,7 +666,11 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                     visibility: activeTab === 'n' ? 'visible' : 'hidden',
                     pointerEvents: activeTab === 'n' ? 'auto' : 'none',
                 }}>
-                    {nDiagram?.svg ? (
+                    {configLoading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
+                            Loading configuration...
+                        </div>
+                    ) : nDiagram?.svg ? (
                         <div className="svg-container" ref={nSvgContainerRef} dangerouslySetInnerHTML={{ __html: nDiagram.svg }} />
                     ) : (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
@@ -783,12 +809,6 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         key={vlOverlay.vlName}
                         vlOverlay={vlOverlay}
                         actionViewMode={actionViewMode}
-                        n1FlowDeltas={n1Diagram?.flow_deltas}
-                        actionFlowDeltas={actionDiagram?.flow_deltas}
-                        n1ReactiveFlowDeltas={n1Diagram?.reactive_flow_deltas}
-                        actionReactiveFlowDeltas={actionDiagram?.reactive_flow_deltas}
-                        n1AssetDeltas={n1Diagram?.asset_deltas}
-                        actionAssetDeltas={actionDiagram?.asset_deltas}
                         onOverlayClose={onOverlayClose}
                         onOverlaySldTabChange={onOverlaySldTabChange}
                     />

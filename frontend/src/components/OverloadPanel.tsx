@@ -4,12 +4,26 @@ interface OverloadPanelProps {
     nOverloads: string[];
     n1Overloads: string[];
     onAssetClick: (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void;
+    showMonitoringWarning?: boolean;
+    monitoredLinesCount?: number;
+    totalLinesCount?: number;
+    monitoringFactor?: number;
+    preExistingOverloadThreshold?: number;
+    onDismissWarning?: () => void;
+    onOpenSettings?: () => void;
 }
 
 const OverloadPanel: React.FC<OverloadPanelProps> = ({
     nOverloads,
     n1Overloads,
     onAssetClick,
+    showMonitoringWarning,
+    monitoredLinesCount,
+    totalLinesCount,
+    monitoringFactor,
+    preExistingOverloadThreshold,
+    onDismissWarning,
+    onOpenSettings,
 }) => {
     const clickableLinkStyle: React.CSSProperties = {
         background: 'none',
@@ -49,6 +63,36 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
             <h3 style={{ margin: '0 0 8px 0', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ color: '#e74c3c' }}>⚠️</span> Overloads
             </h3>
+
+            {showMonitoringWarning && totalLinesCount && totalLinesCount > 0 && (
+                <div style={{
+                    marginBottom: '10px',
+                    padding: '8px 12px',
+                    background: '#fff3cd',
+                    border: '1px solid #ffeeba',
+                    borderRadius: '4px',
+                    color: '#856404',
+                    fontSize: '0.8rem',
+                    position: 'relative'
+                }}>
+                    ⚠️ <strong>{monitoredLinesCount}</strong> out of <strong>{totalLinesCount}</strong> lines monitored ({totalLinesCount - (monitoredLinesCount || 0)} without permanent limits). Monitoring factor: {Math.round((monitoringFactor || 0.95) * 100)}%. {Math.round((preExistingOverloadThreshold || 0.02) * 100)}% loading increase threshold for considering worsened overload in N.
+                    <button
+                        onClick={onOpenSettings}
+                        style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: '0 0 0 5px', fontSize: 'inherit' }}
+                    >
+                        Change in settings
+                    </button>
+                    {onDismissWarning && (
+                        <button
+                            onClick={onDismissWarning}
+                            style={{ float: 'right', background: 'none', border: 'none', fontSize: '16px', lineHeight: 1, color: '#856404', cursor: 'pointer' }}
+                            title="Dismiss"
+                        >
+                            &times;
+                        </button>
+                    )}
+                </div>
+            )}
 
             <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{

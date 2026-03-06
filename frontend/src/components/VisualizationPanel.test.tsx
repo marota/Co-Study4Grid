@@ -7,6 +7,7 @@ import type { DiagramData, AnalysisResult, TabId } from '../types';
 
 const createDefaultProps = (overrides: Record<string, unknown> = {}) => ({
     activeTab: 'n' as TabId,
+    configLoading: false,
     onTabChange: vi.fn(),
     nDiagram: null as DiagramData | null,
     n1Diagram: null as DiagramData | null,
@@ -178,5 +179,36 @@ describe('VisualizationPanel', () => {
             analysisLoading: true,
         })} />);
         expect(screen.getByText('Processing Analysis...')).toBeInTheDocument();
+    });
+
+    describe('SLD Overlay Delta Class Cleanup', () => {
+        it('clears sld-delta-text-* classes from the rendered SVG', () => {
+            const svgContent = '<svg><text id="test-text" class="sld-delta-text-positive some-other-class">100</text></svg>';
+            const vlOverlay = {
+                vlName: 'test-node',
+                actionId: null,
+                svg: svgContent,
+                sldMetadata: null, // Bypasses applyDeltaVisuals, leaving only the cleanup effect
+                loading: false,
+                error: null,
+                tab: 'n' as TabId,
+            };
+
+            const props = createDefaultProps({
+                vlOverlay,
+                actionViewMode: 'network', // Doesn't matter which mode, cleanup runs first always
+                activeTab: 'n',
+            });
+
+            const { container } = render(<VisualizationPanel {...props} />);
+            
+            const textEl = container.querySelector('#test-text');
+            expect(textEl).toBeInTheDocument();
+            
+            // The cleanup effect strips out sld-delta-text-* classes immediately on mount or update
+            expect(textEl).not.toHaveClass('sld-delta-text-positive');
+            // But it preserves unrelated classes
+            expect(textEl).toHaveClass('some-other-class');
+        });
     });
 });

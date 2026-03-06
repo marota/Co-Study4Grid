@@ -34,6 +34,10 @@ def sanitize_for_json(obj):
 class RecommenderService:
     def __init__(self):
         self._last_result = None
+        self._is_running = False
+        self._generator = None
+        self._base_network = None
+        self._simulation_env = None
         self._last_disconnected_element = None
         self._dict_action = None
 
@@ -313,8 +317,28 @@ class RecommenderService:
             "dc_fallback": dc_fallback_used
         }
 
-    def _load_network(self):
-        """Load and return a pypowsybl network from config path."""
+    def _run_ac_with_fallback(self, network, params):
+        import pypowsybl.loadflow as lf
+        
+        is_fast_mode = getattr(config, 'PYPOWSYBL_FAST_MODE', False)
+        if is_fast_mode:
+            fast_params = lf.Parameters.from_json(params.to_json())
+            fast_params.transformer_voltage_control_on = False
+            fast_params.shunt_compensator_voltage_control_on = False
+            try:
+                results = lf.run_ac(network, parameters=fast_params)
+                if results and results[0].status == lf.ComponentStatus.CONVERGED:
+                    return results
+            except Exception as e:
+                print(f"Warning: Fast mode AC load flow failed ({e}). Retrying in slow mode...")
+                
+        return lf.run_ac(network, parameters=params)
+
+    def _get_base_network(self):
+        """Load and return the base pypowsybl network from config path, caching it."""
+        if self._base_network is not None:
+            return self._base_network
+
         import pypowsybl as pp
 
         network_file = config.ENV_PATH / "grid.xiidm"
@@ -323,8 +347,88 @@ class RecommenderService:
             if xiidm_files:
                 network_file = xiidm_files[0]
             else:
-                raise FileNotFoundError(f"Network file not found in {config.ENV_PATH}")
-        return pp.network.load(str(network_file))
+                raise FileNotFoundError(f"No .xiidm file found in {config.ENV_PATH}")
+        
+        self._base_network = pp.network.load(str(network_file))
+        return self._base_network
+
+    def _get_n_variant(self):
+        """Return the variant ID for the N state, creating and simulating it if necessary."""
+        n = self._get_base_network()
+        variant_id = "N_state_cached"
+        if variant_id not in n.get_variant_ids():
+            original_variant = n.get_working_variant_id()
+            n.clone_variant(original_variant, variant_id)
+            n.set_working_variant(variant_id)
+            params = create_olf_rte_parameter()
+            self._run_ac_with_fallback(n, params)
+            n.set_working_variant(original_variant)
+        return variant_id
+
+    def _get_n1_variant(self, contingency: str):
+        """Return the variant ID for the N-1 state, creating and simulating it if necessary."""
+        n = self._get_base_network()
+        safe_cont = contingency.replace(" ", "_").replace("-", "_") if contingency else "none"
+        variant_id = f"N_1_state_{safe_cont}"
+        
+        if variant_id not in n.get_variant_ids():
+            original_variant = n.get_working_variant_id()
+            n.clone_variant(original_variant, variant_id)
+            n.set_working_variant(variant_id)
+            if contingency:
+                try:
+                    n.disconnect(contingency)
+                except Exception as e:
+                    print(f"Failed to disconnect {contingency} for N-1 variant: {e}")
+            params = create_olf_rte_parameter()
+            self._run_ac_with_fallback(n, params)
+            n.set_working_variant(original_variant)
+        return variant_id
+
+    def _get_simulation_env(self):
+        """Return a SimulationEnvironment instance, caching it."""
+        if self._simulation_env is not None:
+            return self._simulation_env
+
+        from expert_op4grid_recommender.pypowsybl_backend.simulation_env import SimulationEnvironment
+        
+        n = self._get_base_network()
+        monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
+        
+        # Initialize SimulationEnvironment with the pre-loaded network
+        self._simulation_env = SimulationEnvironment(
+            network=n,
+            threshold_thermal_limit=monitoring_factor
+        )
+        return self._simulation_env
+
+    def _get_monitoring_parameters(self, obs):
+        """Get monitoring parameters (lines_we_care_about, branches_with_limits)."""
+        # 1. Identify branches with permanent limits
+        try:
+            n_grid = obs._network_manager.network
+            limits = n_grid.get_operational_limits()
+            if not limits.empty:
+                perm_limits = limits[(limits['type'] == 'CURRENT') & (limits['acceptable_duration'] == -1)]
+                branches_with_limits = set(perm_limits['element_id'].unique())
+            else:
+                branches_with_limits = set()
+        except Exception as e:
+            print(f"Warning: Failed to identify branches with limits: {e}")
+            branches_with_limits = set(obs.name_line)
+
+        # 2. Get lines we care about from config
+        if not getattr(config, 'IGNORE_LINES_MONITORING', True) and getattr(config, 'LINES_MONITORING_FILE', None):
+            try:
+                from expert_op4grid_recommender.environment import load_interesting_lines
+                lines_we_care_about = list(load_interesting_lines(file_name=config.LINES_MONITORING_FILE))
+            except Exception as e:
+                print(f"Failed to load lines_we_care_about: {e}")
+                lines_we_care_about = list(obs.name_line)
+        else:
+            lines_we_care_about = list(obs.name_line)
+
+        return lines_we_care_about, branches_with_limits
 
     def _load_layout(self):
         """Load layout DataFrame from grid_layout.json if available."""
@@ -386,31 +490,32 @@ class RecommenderService:
 
     def get_network_diagram(self, voltage_level_ids=None, depth=0):
         import pypowsybl as pp
-        n = self._load_network()
-        # Ensure flows are up-to-date
-        params = create_olf_rte_parameter()
-        pp.loadflow.run_ac(n, params)
+        n = self._get_base_network()
+        original_variant = n.get_working_variant_id()
+        n_variant_id = self._get_n_variant()
+        n.set_working_variant(n_variant_id)
+
         diagram = self._generate_diagram(n, voltage_level_ids=voltage_level_ids, depth=depth)
         diagram["lines_overloaded"] = self._get_overloaded_lines(n, lines_we_care_about=self._get_lines_we_care_about())
         # Cache N-state element currents for N-1 comparison
         self._n_state_currents = self._get_element_max_currents(n)
+        
+        n.set_working_variant(original_variant) # Restore original variant
         return diagram
 
     def get_n1_diagram(self, disconnected_element: str, voltage_level_ids=None, depth=0):
         import pypowsybl as pp
 
-        n = self._load_network()
-
-        try:
-            n.disconnect(disconnected_element)
-        except Exception as e:
-            raise ValueError(f"Failed to disconnect element {disconnected_element}: {e}")
-
-        params = create_olf_rte_parameter()#pp.loadflow.Parameters()
-        results = pp.loadflow.run_ac(n, params)
+        n = self._get_base_network()
+        original_variant = n.get_working_variant_id()
+        n1_variant_id = self._get_n1_variant(disconnected_element)
+        n.set_working_variant(n1_variant_id)
 
         # Check convergence — partial AC results are still better than DC
         # (DC only computes angles/power, not voltage magnitudes).
+        # We need to re-run AC to get the results object for status
+        params = create_olf_rte_parameter()
+        results = self._run_ac_with_fallback(n, params)
         converged = any(r.status.name == 'CONVERGED' for r in results)
         lf_status = results[0].status.name if results else "UNKNOWN"
         if not converged:
@@ -422,17 +527,24 @@ class RecommenderService:
 
         # Include flow deltas vs base (N) state
         try:
-            n_base = self._load_network()
-            pp.loadflow.run_ac(n_base, params)
-            base_flows = self._get_network_flows(n_base)
+            # IMPORTANT: Extract N-1 flows while N-1 variant is STILL ACTIVE on 'n'
             n1_flows = self._get_network_flows(n)
+            n1_assets = self._get_asset_flows(n)
+
+            n_base = self._get_base_network()
+            original_variant_base = n_base.get_working_variant_id()
+            n_variant_id_base = self._get_n_variant()
+            n_base.set_working_variant(n_variant_id_base)
+
+            base_flows = self._get_network_flows(n_base)
+            base_assets = self._get_asset_flows(n_base)
+
             deltas = self._compute_deltas(n1_flows, base_flows, voltage_level_ids=voltage_level_ids)
             diagram["flow_deltas"] = deltas["flow_deltas"]
             diagram["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
-            # Asset deltas (loads & generators)
-            base_assets = self._get_asset_flows(n_base)
-            n1_assets = self._get_asset_flows(n)
             diagram["asset_deltas"] = self._compute_asset_deltas(n1_assets, base_assets)
+            
+            n_base.set_working_variant(original_variant_base) # Restore original variant for base network
         except Exception as e:
             print(f"Warning: Failed to compute N-1 flow deltas: {e}")
             diagram["flow_deltas"] = {}
@@ -444,7 +556,8 @@ class RecommenderService:
         diagram["lines_overloaded"] = self._get_overloaded_lines(
             n, n_state_currents=n_state_currents, lines_we_care_about=self._get_lines_we_care_about()
         )
-
+        
+        n.set_working_variant(original_variant) # Restore original variant
         return diagram
 
     def get_action_variant_diagram(self, action_id, voltage_level_ids=None, depth=0, mode="network"):
@@ -492,17 +605,14 @@ class RecommenderService:
             action_assets = self._get_asset_flows(network)
 
             # Get N-1 flows (re-simulate contingency on a fresh network)
-            n1_network = self._load_network()
-            disconnected_element = self._last_disconnected_element
-            if disconnected_element:
-                try:
-                    n1_network.disconnect(disconnected_element)
-                except Exception:
-                    pass
-            params = create_olf_rte_parameter()
-            pp.loadflow.run_ac(n1_network, params)
-            n1_flows = self._get_network_flows(n1_network)
+            n1_flows = self._get_n1_flows(self._last_disconnected_element)
+            
+            n1_network = self._get_base_network() # Need a network object to get assets
+            original_variant_n1 = n1_network.get_working_variant_id()
+            n1_variant_id_n1 = self._get_n1_variant(self._last_disconnected_element)
+            n1_network.set_working_variant(n1_variant_id_n1)
             n1_assets = self._get_asset_flows(n1_network)
+            n1_network.set_working_variant(original_variant_n1)
 
             deltas = self._compute_deltas(action_flows, n1_flows, voltage_level_ids=voltage_level_ids)
             diagram["flow_deltas"] = deltas["flow_deltas"]
@@ -530,32 +640,62 @@ class RecommenderService:
         if action_id not in actions:
             raise ValueError(f"Action '{action_id}' not found in last analysis result.")
 
+        # Get original action variant and the base N-1 variant 
         obs = actions[action_id]["observation"]
-        variant_id = obs._variant_id
+        action_variant_id = obs._variant_id
         nm = obs._network_manager
-        nm.set_working_variant(variant_id)
+        
+        # Switch to action variant to generate SLD and get flows
+        nm.set_working_variant(action_variant_id)
         network = nm.network
-
         sld = network.get_single_line_diagram(voltage_level_id)
         svg, sld_metadata = self._extract_sld_svg_and_metadata(sld)
-
-        return {
+        
+        result = {
             "svg": svg,
             "sld_metadata": sld_metadata,
             "action_id": action_id,
             "voltage_level_id": voltage_level_id,
         }
+        
+        try:
+            # We already have action flows from the network
+            action_flows = self._get_network_flows(network)
+            action_assets = self._get_asset_flows(network)
+            
+            # Switch back to N-1 variant to get reference flows for the deltas
+            n1_flows = self._get_n1_flows(self._last_disconnected_element)
+            
+            n1_network = self._get_base_network()
+            original_variant_n1 = n1_network.get_working_variant_id()
+            n1_variant_id_n1 = self._get_n1_variant(self._last_disconnected_element)
+            n1_network.set_working_variant(n1_variant_id_n1)
+            n1_assets = self._get_asset_flows(n1_network)
+            n1_network.set_working_variant(original_variant_n1)
+
+            deltas = self._compute_deltas(action_flows, n1_flows, voltage_level_ids=[voltage_level_id])
+            result["flow_deltas"] = deltas["flow_deltas"]
+            result["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
+            result["asset_deltas"] = self._compute_asset_deltas(action_assets, n1_assets)
+        except Exception as e:
+            print(f"Warning: Failed to compute SLD flow deltas for manual action: {e}")
+            result["flow_deltas"] = {}
+            result["reactive_flow_deltas"] = {}
+            result["asset_deltas"] = {}
+            
+        return result
 
     def get_n_sld(self, voltage_level_id: str) -> dict:
         """Generate a Single Line Diagram (SLD) in the base N state."""
-        import pypowsybl as pp
-        n = self._load_network()
-        params = create_olf_rte_parameter()
-        pp.loadflow.run_ac(n, params)
+        n = self._get_base_network()
+        original_variant = n.get_working_variant_id()
+        n_variant_id = self._get_n_variant()
+        n.set_working_variant(n_variant_id)
 
         sld = n.get_single_line_diagram(voltage_level_id)
         svg, sld_metadata = self._extract_sld_svg_and_metadata(sld)
 
+        n.set_working_variant(original_variant) # Restore original variant
         return {
             "svg": svg,
             "sld_metadata": sld_metadata,
@@ -564,26 +704,48 @@ class RecommenderService:
 
     def get_n1_sld(self, disconnected_element: str, voltage_level_id: str) -> dict:
         """Generate a Single Line Diagram (SLD) in the N-1 state."""
-        import pypowsybl as pp
-        n = self._load_network()
-        if disconnected_element:
-            try:
-                n.disconnect(disconnected_element)
-            except Exception as e:
-                print(f"Failed to disconnect element {disconnected_element} for SLD: {e}")
-
-        params = create_olf_rte_parameter()
-        pp.loadflow.run_ac(n, params)
+        n = self._get_base_network()
+        original_variant = n.get_working_variant_id()
+        n1_variant_id = self._get_n1_variant(disconnected_element)
+        n.set_working_variant(n1_variant_id)
 
         sld = n.get_single_line_diagram(voltage_level_id)
         svg, sld_metadata = self._extract_sld_svg_and_metadata(sld)
 
-        return {
+        result = {
             "svg": svg,
             "sld_metadata": sld_metadata,
             "voltage_level_id": voltage_level_id,
             "disconnected_element": disconnected_element
         }
+        
+        try:
+            # IMPORTANT: Extract N-1 flows while N-1 variant is STILL ACTIVE on 'n'
+            n1_flows = self._get_network_flows(n)
+            n1_assets = self._get_asset_flows(n)
+
+            n_base = self._get_base_network()
+            original_variant_base = n_base.get_working_variant_id()
+            n_variant_id_base = self._get_n_variant()
+            n_base.set_working_variant(n_variant_id_base)
+
+            base_flows = self._get_network_flows(n_base)
+            base_assets = self._get_asset_flows(n_base)
+
+            deltas = self._compute_deltas(n1_flows, base_flows, voltage_level_ids=[voltage_level_id])
+            result["flow_deltas"] = deltas["flow_deltas"]
+            result["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
+            result["asset_deltas"] = self._compute_asset_deltas(n1_assets, base_assets)
+            
+            n_base.set_working_variant(original_variant_base) # Restore original variant for base network
+        except Exception as e:
+            print(f"Warning: Failed to compute SLD flow deltas for N-1: {e}")
+            result["flow_deltas"] = {}
+            result["reactive_flow_deltas"] = {}
+            result["asset_deltas"] = {}
+
+        n.set_working_variant(original_variant) # Restore original variant
+        return result
 
     @staticmethod
     def _extract_sld_svg_and_metadata(sld) -> tuple:
@@ -678,6 +840,17 @@ class RecommenderService:
                 if not np.isnan(i1) and not np.isnan(i2):
                     currents[element_id] = max(abs(i1), abs(i2))
         return currents
+
+    def _get_n1_flows(self, contingency: str) -> dict:
+        """Retrieve the branch flows of the network in the N-1 state using a cached variant."""
+        n = self._get_base_network()
+        var_id = self._get_n1_variant(contingency)
+        original_variant = n.get_working_variant_id()
+        
+        n.set_working_variant(var_id)
+        flows = self._get_network_flows(n)
+        n.set_working_variant(original_variant)
+        return flows
 
     def _get_network_flows(self, network):
         """Extract p1/p2 and q1/q2 flows for lines and transformers from a simulated network.
@@ -839,10 +1012,10 @@ class RecommenderService:
           4. Transform each value to match the reference direction.
           5. delta = transformed_after - transformed_before.
 
-        Category is based solely on the active-power (P) delta:
+        Category is calculated independently for active (P) and reactive (Q) power:
           positive (orange) = flow increased
           negative (blue)   = flow decreased
-          grey = insignificant (< 5 % of max |deltaP|)
+          grey = insignificant (< 5 % of max |delta|)
 
         Returns a dict with keys:
             flow_deltas:          {line_id: {delta, category, flip_arrow}}
@@ -896,29 +1069,47 @@ class RecommenderService:
 
         # Category threshold based on P deltas
         if p_delta_map:
-            max_abs = max(abs(d) for d in p_delta_map.values())
+            max_abs_p = max(abs(d) for d in p_delta_map.values())
         else:
-            max_abs = 0.0
-        threshold = max_abs * 0.05
+            max_abs_p = 0.0
+        threshold_p = max_abs_p * 0.05
+
+        # Category threshold based on Q deltas independently
+        if q_delta_map:
+            max_abs_q = max(abs(d) for d in q_delta_map.values())
+        else:
+            max_abs_q = 0.0
+        threshold_q = max_abs_q * 0.05
 
         flow_deltas = {}
         reactive_flow_deltas = {}
         for lid in all_ids:
-            d = p_delta_map[lid]
-            if max_abs == 0.0 or abs(d) < threshold:
-                cat = "grey"
-            elif d > 0:
-                cat = "positive"
+            # P category
+            dp = p_delta_map[lid]
+            if max_abs_p == 0.0 or abs(dp) < threshold_p:
+                cat_p = "grey"
+            elif dp > 0:
+                cat_p = "positive"
             else:
-                cat = "negative"
+                cat_p = "negative"
+                
+            # Q category
+            dq = q_delta_map[lid]
+            if max_abs_q == 0.0 or abs(dq) < threshold_q:
+                cat_q = "grey"
+            elif dq > 0:
+                cat_q = "positive"
+            else:
+                cat_q = "negative"
+
             flow_deltas[lid] = {
-                "delta": round(float(p_delta_map[lid]), 1),
-                "category": cat,
+                "delta": round(float(dp), 1),
+                "category": cat_p,
                 "flip_arrow": p_flip_map[lid],
             }
             reactive_flow_deltas[lid] = {
-                "delta": round(float(q_delta_map[lid]), 1),
-                "category": cat,
+                "delta": round(float(dq), 1),
+                "category": cat_q,
                 "flip_arrow": q_flip_map[lid],
             }
 
@@ -930,8 +1121,9 @@ class RecommenderService:
     def _compute_asset_deltas(self, after_asset_flows, before_asset_flows):
         """Compute delta P and Q for loads and generators.
 
-        Returns {asset_id: {delta_p, delta_q, category}}.
-        Category is based on active power delta only.
+        Returns {asset_id: {delta_p, delta_q, category, category_p, category_q}}.
+        Category colors for P and Q are calculated independently.
+        The legacy 'category' key follows the P delta.
         """
         all_ids = set(after_asset_flows.keys()) | set(before_asset_flows.keys())
         raw_p = {}
@@ -944,26 +1136,47 @@ class RecommenderService:
 
         # Threshold based on active power deltas
         if raw_p:
-            max_abs = max(abs(d) for d in raw_p.values())
+            max_abs_p = max(abs(d) for d in raw_p.values())
         else:
-            max_abs = 0.0
-        threshold = max_abs * 0.05
+            max_abs_p = 0.0
+        threshold_p = max_abs_p * 0.05
+        
+        # Threshold based on reactive power deltas
+        if raw_q:
+            max_abs_q = max(abs(d) for d in raw_q.values())
+        else:
+            max_abs_q = 0.0
+        threshold_q = max_abs_q * 0.05
 
         result = {}
         for aid in all_ids:
             dp = raw_p[aid]
             dq = raw_q[aid]
-            if max_abs == 0.0 or abs(dp) < threshold:
-                cat = "grey"
+            
+            # P category
+            if max_abs_p == 0.0 or abs(dp) < threshold_p:
+                cat_p = "grey"
             elif dp > 0:
-                cat = "positive"
+                cat_p = "positive"
             else:
-                cat = "negative"
+                cat_p = "negative"
+                
+            # Q category
+            if max_abs_q == 0.0 or abs(dq) < threshold_q:
+                cat_q = "grey"
+            elif dq > 0:
+                cat_q = "positive"
+            else:
+                cat_q = "negative"
+                
             result[aid] = {
                 "delta_p": round(float(dp), 1),
                 "delta_q": round(float(dq), 1),
-                "category": cat,
+                "category": cat_p,
+                "category_p": cat_p,
+                "category_q": cat_q,
             }
+
         return result
 
     def get_all_action_ids(self):
@@ -987,8 +1200,8 @@ class RecommenderService:
     def simulate_manual_action(self, action_id: str, disconnected_element: str):
         """Simulate a single action from the loaded dictionary and return its impact.
 
-        Reuses the environment/simulation setup from the last analysis when possible.
-        Falls back to creating a fresh environment if no prior analysis exists.
+        Reuses the network variants from the last analysis when possible.
+        Starting from the converged N-1 state for faster and more consistent results.
         """
         if not self._dict_action:
             raise ValueError("No action dictionary loaded. Load a config first.")
@@ -997,74 +1210,40 @@ class RecommenderService:
 
         action_desc = self._dict_action[action_id]
 
-        # Setup environment (lightweight – same logic as run_analysis init)
-        from expert_op4grid_recommender.environment_pypowsybl import (
-            get_env_first_obs_pypowsybl,
-        )
-        from expert_op4grid_recommender.utils.simulation_pypowsybl import (
-            create_default_action,
-            simulate_contingency,
-            compute_baseline_simulation,
-        )
-
-        env, obs, _ = get_env_first_obs_pypowsybl(
-            config.ENV_FOLDER, config.ENV_NAME, is_DC=config.USE_DC_LOAD_FLOW
-        )
-
-        # Fix thermal limits if needed (same as in run_analysis)
-        is_limit_scaled = False
-        if np.mean(env.get_thermal_limit()) >= 10 ** 4:
-            from expert_op4grid_recommender.main import set_thermal_limits
-            n_grid = env.network_manager.network
-            mf = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
-            env = set_thermal_limits(n_grid, env, thresold_thermal_limit=mf)
-            obs = env.get_obs()
-            is_limit_scaled = True
-
-        # Simulate the N-1 contingency
-        act_reco_maintenance = env.action_space({})
-        obs_simu_defaut, has_converged = simulate_contingency(
-            env, obs, [disconnected_element], act_reco_maintenance, 0
-        )
-        if not has_converged:
-            raise RuntimeError(f"Contingency simulation for '{disconnected_element}' failed.")
-
-        if not getattr(config, 'IGNORE_LINES_MONITORING', True) and getattr(config, 'LINES_MONITORING_FILE', None):
-            try:
-                from expert_op4grid_recommender.environment import load_interesting_lines
-                lines_we_care_about = list(load_interesting_lines(file_name=config.LINES_MONITORING_FILE))
-            except Exception as e:
-                print(f"Failed to load lines_we_care_about in simulate_manual_action: {e}")
-                lines_we_care_about = list(obs.name_line)
-        else:
-            lines_we_care_about = list(obs.name_line)
-        # Identify branches with permanent limits in this environment
-        try:
-            from expert_backend.services.network_service import network_service
-            # network_service.network is actually different from env.network_manager.network
-            # but they should represent the same grid structure. 
-            # To be safe, we calculate it from the env's network.
-            n_grid_env = env.network_manager.network
-            limits_env = n_grid_env.get_operational_limits()
-            if not limits_env.empty:
-                perm_limits_env = limits_env[(limits_env['type'] == 'CURRENT') & (limits_env['acceptable_duration'] == -1)]
-                branches_with_limits = set(perm_limits_env['element_id'].unique())
-            else:
-                branches_with_limits = set()
-        except Exception as e:
-            print(f"Warning: Failed to identify branches with limits in simulate_manual_action: {e}")
-            branches_with_limits = set(obs_simu_defaut.name_line) # Fallback to all
-
+        # Use cached environment
+        env = self._get_simulation_env()
+        nm = env.network_manager
+        n = nm.network
+        
+        # Get base observation (N state)
+        original_variant = n.get_working_variant_id()
+        n_variant_id = self._get_n_variant()
+        n.set_working_variant(n_variant_id)
+        obs = env.get_obs()
+        
+        # Get N-1 observation (contingency state)
+        n1_variant_id = self._get_n1_variant(disconnected_element)
+        n.set_working_variant(n1_variant_id)
+        obs_simu_defaut = env.get_obs()
+        
+        # FIX: Explicitly tell the observation which variant it's currently modeling
+        # so that obs_simu_defaut.simulate() branches from N-1 and not the base network.
+        obs_simu_defaut._variant_id = n1_variant_id
+        
+        # Store globally so downstream diagram functions know what to compare against
+        self._last_disconnected_element = disconnected_element
+        
+        # Get monitoring parameters and filtering logic
+        lines_we_care_about, branches_with_limits = self._get_monitoring_parameters(obs_simu_defaut)
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
         worsening_threshold = getattr(config, 'PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD', 0.02)
+        
         lines_overloaded_ids = []
         for i, l in enumerate(obs_simu_defaut.name_line):
             if l not in lines_we_care_about:
                 continue
-            # Exclude branches with no permanent limits
             if l not in branches_with_limits:
                 continue
-                
             if obs_simu_defaut.rho[i] < monitoring_factor:
                 continue
             # Exclude pre-existing N overloads unless worsened
@@ -1074,59 +1253,55 @@ class RecommenderService:
             lines_overloaded_ids.append(i)
         lines_overloaded_names = [obs_simu_defaut.name_line[i] for i in lines_overloaded_ids]
 
-        # Build the action object from its content
+        # Build the action object
         try:
             action = env.action_space(action_desc["content"])
         except Exception as e:
             raise ValueError(f"Could not create action from description: {e}")
 
-        # Create contingency action and compute baseline rho
-        act_defaut = create_default_action(env.action_space, [disconnected_element])
-        baseline_rho, _ = compute_baseline_simulation(
-            obs, 0, act_defaut, act_reco_maintenance, lines_overloaded_ids
-        )
-
-        # Simulate contingency + candidate action
-        obs_simu_action, _, _, info_action = obs.simulate(
-            action + act_defaut + act_reco_maintenance,
+        # Simulate action starting from the N-1 converged state
+        actual_fast_mode = getattr(config, 'PYPOWSYBL_FAST_MODE', False)
+        obs_simu_action, _, _, info_action = obs_simu_defaut.simulate(
+            action,
             time_step=0,
             keep_variant=True,
+            fast_mode=actual_fast_mode
         )
 
-        # Scale rho values by monitoring_factor to match run_analysis behavior
-        # (run_analysis always applies this scaling — see lines 266-268)
-        mf = monitoring_factor  # already fetched above
+        n.set_working_variant(original_variant) # Restore variant
 
-        rho_before = (baseline_rho * mf).tolist() if baseline_rho is not None else None
+        # Post-process results
+        description_unitaire = action_desc.get(
+            "description_unitaire", action_desc.get("description", "No description")
+        )
+        
+        rho_before = (obs_simu_defaut.rho[lines_overloaded_ids] * monitoring_factor).tolist() if lines_overloaded_ids else []
         rho_after = None
         max_rho = 0.0
         max_rho_line = "N/A"
         is_rho_reduction = False
-        description_unitaire = action_desc.get(
-            "description_unitaire", action_desc.get("description", "No description")
-        )
 
         if not info_action["exception"]:
-            rho_after = (obs_simu_action.rho[lines_overloaded_ids] * mf).tolist()
-            if rho_before is not None:
+            rho_after = (obs_simu_action.rho[lines_overloaded_ids] * monitoring_factor).tolist()
+            if rho_before:
                 is_rho_reduction = bool(np.all(np.array(rho_after) + 0.01 < np.array(rho_before)))
-            if lines_we_care_about is not None and len(lines_we_care_about) > 0:
-                care_mask = np.isin(obs_simu_action.name_line, lines_we_care_about)
-                # Exclude pre-existing N overloads (same logic as lines_overloaded_ids)
-                for i in range(len(obs_simu_action.name_line)):
-                    l = obs_simu_action.name_line[i]
-                    if care_mask[i]:
-                        # Filter by permanent limits
-                        if l not in branches_with_limits:
+            
+            # Re-fetch care_mask for max_rho computation
+            care_mask = np.isin(obs_simu_action.name_line, lines_we_care_about)
+            for i in range(len(obs_simu_action.name_line)):
+                l = obs_simu_action.name_line[i]
+                if care_mask[i]:
+                    if l not in branches_with_limits:
+                        care_mask[i] = False
+                    elif obs.rho[i] >= monitoring_factor:
+                        if obs_simu_action.rho[i] <= obs.rho[i] * (1 + worsening_threshold):
                             care_mask[i] = False
-                        elif obs.rho[i] >= monitoring_factor:
-                            if obs_simu_action.rho[i] <= obs.rho[i] * (1 + worsening_threshold):
-                                care_mask[i] = False
-                if np.any(care_mask):
-                    rhos_of_interest = obs_simu_action.rho[care_mask] * mf
-                    max_rho = float(np.max(rhos_of_interest))
-                    valid_line_names = np.array(obs_simu_action.name_line)[care_mask]
-                    max_rho_line = valid_line_names[np.argmax(rhos_of_interest)]
+            
+            if np.any(care_mask):
+                rhos_of_interest = obs_simu_action.rho[care_mask] * monitoring_factor
+                max_rho = float(np.max(rhos_of_interest))
+                valid_line_names = np.array(obs_simu_action.name_line)[care_mask]
+                max_rho_line = valid_line_names[np.argmax(rhos_of_interest)]
 
         # Store the observation so get_action_variant_diagram can generate the NAD
         if not info_action["exception"] and obs_simu_action is not None:
@@ -1134,9 +1309,23 @@ class RecommenderService:
                 self._last_result = {"prioritized_actions": {}}
             if "prioritized_actions" not in self._last_result:
                 self._last_result["prioritized_actions"] = {}
+            
+            # Fetch topo
+            topo = {}
+            for field in ("lines_ex_bus", "lines_or_bus", "gens_bus", "loads_bus"):
+                val = getattr(action, field, None)
+                topo[field] = sanitize_for_json(val) if val else {}
+
             self._last_result["prioritized_actions"][action_id] = {
                 "observation": obs_simu_action,
                 "description_unitaire": description_unitaire,
+                "action": action,
+                "action_topology": topo,
+                "rho_before": rho_before,
+                "rho_after": rho_after,
+                "max_rho": max_rho,
+                "max_rho_line": max_rho_line,
+                "is_rho_reduction": is_rho_reduction
             }
 
         return {

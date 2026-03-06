@@ -1016,6 +1016,28 @@
                         return;
                     }
                 }
+
+                // Clear previous results to ensure consistency with new settings BEFORE fetching
+                setResult(null);
+                setPendingAnalysisResult(null);
+                setNDiagram(null);
+                setN1Diagram(null);
+                setActionDiagram(null);
+                setSelectedActionId(null);
+                setActiveTab('n');
+                setVlOverlay(null);
+                setSelectedBranch('');
+                setAnalysisRan(false);
+                setManualActionIds(new Set());
+                setManuallyAddedIds(new Set());
+                setRejectedActionIds(new Set());
+                setError('');
+                setInfoMessage('');
+                setDismissedSelectedWarning(false);
+                setDismissedRejectedWarning(false);
+                setShowMonitoringWarning(false);
+                setInspectQuery('');
+
                 try {
                     const configRes = await axios.post(API_BASE + '/api/config', {
                         network_path: networkPath,
@@ -1035,7 +1057,9 @@
                     if (configRes.data && configRes.data.total_lines_count !== undefined) {
                         setMonitoredLinesCount(configRes.data.monitored_lines_count);
                         setTotalLinesCount(configRes.data.total_lines_count);
-                        setShowMonitoringWarning(true);
+                        if (configRes.data.monitored_lines_count < configRes.data.total_lines_count) {
+                            setShowMonitoringWarning(true);
+                        }
                     }
 
                     setSettingsBackup({
@@ -1050,14 +1074,9 @@
                         ignoreReconnections,
                         pypowsyblFastMode
                     });
-                    setInfoMessage('Settings applied successfully. Please reload study or run analysis to see effects.');
+
                     setIsSettingsOpen(false);
 
-                    // Clear previous results to ensure consistency with new settings
-                    setResult(null);
-                    setPendingAnalysisResult(null);
-                    setN1Diagram(null);
-                    setActionDiagram(null);
                 } catch (err) {
                     setError('Failed to apply settings: ' + (err.response?.data?.detail || err.message));
                 }
@@ -1154,10 +1173,20 @@
                         return;
                     }
                 }
-                setConfigLoading(true); setError(''); setInfoMessage('');
+                setConfigLoading(true); setError(''); setInfoMessage(''); setShowMonitoringWarning(false);
                 setNDiagram(null); setN1Diagram(null); setResult(null);
                 setSelectedActionId(null); setActionDiagram(null);
                 setActiveTab('n');
+                setVlOverlay(null);
+                setSelectedBranch('');
+                setAnalysisRan(false);
+                setPendingAnalysisResult(null);
+                setManualActionIds(new Set());
+                setManuallyAddedIds(new Set());
+                setRejectedActionIds(new Set());
+                setDismissedSelectedWarning(false);
+                setDismissedRejectedWarning(false);
+                setInspectQuery('');
                 lastViewStateN.current = null; // Reset view state on new config
                 lastViewStateN1.current = null;
                 lastZoomState.current = { query: '', branch: '' };
@@ -1181,7 +1210,9 @@
                     if (configRes.data && configRes.data.total_lines_count !== undefined) {
                         setMonitoredLinesCount(configRes.data.monitored_lines_count);
                         setTotalLinesCount(configRes.data.total_lines_count);
-                        setShowMonitoringWarning(true);
+                        if (configRes.data.monitored_lines_count < configRes.data.total_lines_count) {
+                            setShowMonitoringWarning(true);
+                        }
                     }
 
                     const [branchesRes, vlRes, nomVRes] = await Promise.all([
@@ -1325,7 +1356,6 @@
                 setAnalysisRan(false);
                 setPendingAnalysisResult(null);
                 // Keep result (manual actions) intact — don't clear it
-                setActiveTab('overflow');
 
                 try {
                     const response = await fetch(API_BASE + '/api/run-analysis', {
@@ -1347,7 +1377,10 @@
                             if (!line.trim()) continue;
                             try {
                                 const event = JSON.parse(line);
-                                if (event.type === 'pdf') setResult(p => ({ ...p, pdf_url: event.pdf_url }));
+                                if (event.type === 'pdf') {
+                                    setResult(p => ({ ...p, pdf_url: event.pdf_url }));
+                                    setActiveTab('overflow'); // Switch tab right as PDF comes in
+                                }
                                 else if (event.type === 'result') {
                                     // Store analysis result as pending — don't merge yet
                                     setPendingAnalysisResult(event);
@@ -1503,7 +1536,10 @@
                     const res = await axios.post(API_BASE + endpoint, payload);
                     setVlOverlay(prev =>
                         prev && prev.vlName === vlName && prev.actionId === actionId && prev.tab === sldTab
-                            ? { ...prev, svg: res.data.svg, sldMetadata: res.data.sld_metadata ?? null, loading: false }
+                            ? {
+                                ...prev, svg: res.data.svg, sldMetadata: res.data.sld_metadata ?? null, loading: false,
+                                flow_deltas: res.data.flow_deltas, reactive_flow_deltas: res.data.reactive_flow_deltas, asset_deltas: res.data.asset_deltas
+                            }
                             : prev
                     );
                 } catch (err) {
@@ -1545,9 +1581,13 @@
                 const container = overlayBodyRef.current;
                 if (!container) return;
 
-                const SLD_CLASSES = ['sld-delta-positive', 'sld-delta-negative', 'sld-delta-grey'];
-                container.querySelectorAll(SLD_CLASSES.map(c => '.' + c).join(','))
-                    .forEach(el => el.classList.remove(...SLD_CLASSES));
+                // Clear any previously applied SLD delta classes
+                const SLD_DELTA_CLASSES = [
+                    'sld-delta-positive', 'sld-delta-negative', 'sld-delta-grey',
+                    'sld-delta-text-positive', 'sld-delta-text-negative', 'sld-delta-text-grey'
+                ];
+                container.querySelectorAll(SLD_DELTA_CLASSES.map(c => '.' + c).join(','))
+                    .forEach(el => el.classList.remove(...SLD_DELTA_CLASSES));
 
                 // Restore original text labels
                 container.querySelectorAll('[data-original-text]').forEach(el => {
@@ -1567,11 +1607,9 @@
 
                 if (!vlOverlay?.svg || actionViewMode !== 'delta') return;
 
-                const isN1 = vlOverlay.tab === 'n-1';
-                const isAction = vlOverlay.tab === 'action';
-                const flowDeltas = isN1 ? n1Diagram?.flow_deltas : isAction ? actionDiagram?.flow_deltas : null;
-                const reactiveDeltas = isN1 ? n1Diagram?.reactive_flow_deltas : isAction ? actionDiagram?.reactive_flow_deltas : null;
-                const assetDeltas = isN1 ? n1Diagram?.asset_deltas : isAction ? actionDiagram?.asset_deltas : null;
+                const flowDeltas = vlOverlay.flow_deltas;
+                const reactiveDeltas = vlOverlay.reactive_flow_deltas;
+                const assetDeltas = vlOverlay.asset_deltas;
 
                 if (!flowDeltas && !assetDeltas) return;
 
@@ -1724,9 +1762,13 @@
                     const branchDelta = lookupDelta(flowDeltas, equipId);
                     if (branchDelta) {
                         cellEl.classList.add(`sld-delta-${branchDelta.category}`);
-                        const pStr = fmtDelta(branchDelta.delta);
+                        const pDeltaVal = branchDelta.delta;
+                        const pStr = fmtDelta(pDeltaVal);
+
                         const qDelta = lookupDelta(reactiveDeltas, equipId);
                         const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
+
+                        // Always apply labels to ensure original flows are replaced
                         applyPQLabels(cellEl, pStr, qStr);
 
                         // Apply specific category classes to the labels instead of the cell
@@ -1734,13 +1776,16 @@
                         if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
                         pLabels.forEach(l => l.classList.add(`sld-delta-text-${branchDelta.category}`));
 
-                        // Flip P and Q arrows independently
+                        if (qDelta) {
+                            cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
+                        }
+
+                        // Flip P and Q arrows independently (regardless of category)
                         if (branchDelta.flip_arrow) {
                             flipArrows(cellEl, 'sld-active-power');
                         }
-                        if (qDelta) {
-                            if (qDelta.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
-                            cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
+                        if (qDelta && qDelta.flip_arrow) {
+                            flipArrows(cellEl, 'sld-reactive-power');
                         }
                         processedEquipIds.add(equipId);
                         continue;
@@ -1749,8 +1794,17 @@
                     const assetDelta = lookupDelta(assetDeltas, equipId);
                     if (assetDelta) {
                         cellEl.classList.add(`sld-delta-${assetDelta.category}`);
-                        applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
-                        cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
+                        const pStr = fmtDelta(assetDelta.delta_p);
+                        const qStr = fmtDelta(assetDelta.delta_q);
+                        // Always apply labels to ensure original flows are replaced
+                        applyPQLabels(cellEl, pStr, qStr);
+
+                        const catP = assetDelta.category_p || assetDelta.category;
+                        const catQ = assetDelta.category_q || assetDelta.category;
+
+                        cellEl.querySelectorAll('.sld-active-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catP}`));
+                        cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catQ}`));
+
                         processedEquipIds.add(equipId);
                     }
                 }
@@ -1765,33 +1819,47 @@
                     if (isProcessed(equipId)) continue;
                     const cellEl = findCellEl(equipId);
                     if (!cellEl) continue;
-                    cellEl.classList.add(`sld-delta-${delta.category}`);
+                    const pStr = fmtDelta(delta.delta);
                     const qDelta = lookupDelta(reactiveDeltas, equipId);
-                    applyPQLabels(cellEl, fmtDelta(delta.delta), qDelta !== undefined ? fmtDelta(qDelta.delta) : null);
+                    const qStr = qDelta !== undefined ? fmtDelta(qDelta.delta) : null;
+
+                    // Always apply labels to ensure original flows are replaced
+                    applyPQLabels(cellEl, pStr, qStr);
 
                     let pLabels = cellEl.querySelectorAll('.sld-active-power .sld-label');
                     if (pLabels.length === 0) pLabels = cellEl.querySelectorAll('.sld-label');
                     pLabels.forEach(l => l.classList.add(`sld-delta-text-${delta.category}`));
 
-                    if (delta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
                     if (qDelta) {
-                        if (qDelta.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
                         cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${qDelta.category}`));
                     }
+
+                    if (delta.flip_arrow) flipArrows(cellEl, 'sld-active-power');
+                    const qDeltaForFlip = lookupDelta(reactiveDeltas, equipId);
+                    if (qDeltaForFlip && qDeltaForFlip.flip_arrow) flipArrows(cellEl, 'sld-reactive-power');
                 }
                 for (const [equipId, assetDelta] of Object.entries(assetDeltas ?? {})) {
                     if (isProcessed(equipId)) continue;
                     if (lookupDelta(flowDeltas, equipId) !== undefined) continue;
                     const cellEl = findCellEl(equipId);
                     if (!cellEl) continue;
-                    cellEl.classList.add(`sld-delta-${assetDelta.category}`);
-                    applyPQLabels(cellEl, fmtDelta(assetDelta.delta_p), fmtDelta(assetDelta.delta_q));
-                    cellEl.querySelectorAll('.sld-label').forEach(l => l.classList.add(`sld-delta-text-${assetDelta.category}`));
+
+                    if (assetDelta.category !== 'grey' || (assetDelta.category_q && assetDelta.category_q !== 'grey')) {
+                        cellEl.classList.add(`sld-delta-${assetDelta.category}`);
+                        const pStr = fmtDelta(assetDelta.delta_p);
+                        const qStr = fmtDelta(assetDelta.delta_q);
+                        // Always apply labels to ensure original flows are replaced
+                        applyPQLabels(cellEl, pStr, qStr);
+
+                        const catP = assetDelta.category_p || assetDelta.category;
+                        const catQ = assetDelta.category_q || assetDelta.category;
+
+                        cellEl.querySelectorAll('.sld-active-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catP}`));
+                        cellEl.querySelectorAll('.sld-reactive-power .sld-label').forEach(l => l.classList.add(`sld-delta-text-${catQ}`));
+                    }
                 }
             }, [vlOverlay?.svg, vlOverlay?.sldMetadata, vlOverlay?.tab, actionViewMode,
-            n1Diagram?.flow_deltas, actionDiagram?.flow_deltas,
-            n1Diagram?.reactive_flow_deltas, actionDiagram?.reactive_flow_deltas,
-            n1Diagram?.asset_deltas, actionDiagram?.asset_deltas]);
+            vlOverlay?.flow_deltas, vlOverlay?.reactive_flow_deltas, vlOverlay?.asset_deltas]);
 
             // Mouse pan inside overlay body
             const startOverlayPan = (e) => {
@@ -2060,8 +2128,11 @@
                                 if (cls) el.classList.add(cls);
                             }
 
-                            // edgeInfo1 = active power (P) arrow: show P delta text
+                            // In NADs, both edgeInfo1 and edgeInfo2 represent Active Power (P) at the two terminals.
+                            // We do NOT use reactiveDeltas here. We apply the P delta to both terminals.
                             const pDeltaStr = deltaInfo.delta >= 0 ? `+${deltaInfo.delta.toFixed(1)}` : deltaInfo.delta.toFixed(1);
+
+                            // Apply to Terminal 1 (edgeInfo1)
                             if (edge.edgeInfo1?.svgId) {
                                 const infoEl = idMap.get(edge.edgeInfo1.svgId);
                                 if (infoEl) {
@@ -2074,17 +2145,15 @@
                                 }
                             }
 
-                            // edgeInfo2 = reactive power (Q) arrow: show Q delta text
-                            const qDelta = reactiveDeltas[lineId];
-                            if (edge.edgeInfo2?.svgId && qDelta) {
-                                const qDeltaStr = qDelta.delta >= 0 ? `+${qDelta.delta.toFixed(1)}` : qDelta.delta.toFixed(1);
+                            // Apply to Terminal 2 (edgeInfo2)
+                            if (edge.edgeInfo2?.svgId) {
                                 const infoEl = idMap.get(edge.edgeInfo2.svgId);
                                 if (infoEl) {
                                     infoEl.querySelectorAll('foreignObject, text').forEach(t => {
                                         if (!t.hasAttribute('data-original-text')) {
                                             t.setAttribute('data-original-text', t.textContent);
                                         }
-                                        t.textContent = `Δ ${qDeltaStr}`;
+                                        t.textContent = `Δ ${pDeltaStr}`;
                                     });
                                 }
                             }
@@ -2415,10 +2484,12 @@
                             visibility: activeTab === 'n' ? 'visible' : 'hidden',
                             pointerEvents: activeTab === 'n' ? 'auto' : 'none'
                         }}>
-                            {nDiagram?.svg ?
-                                <div className="svg-container" ref={nSvgContainerRef} dangerouslySetInnerHTML={{ __html: nDiagram.svg }} />
-                                : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Load configuration to see diagram</div>
-                            }
+                            {configLoading ?
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Loading configuration...</div>
+                                : (nDiagram?.svg ?
+                                    <div className="svg-container" ref={nSvgContainerRef} dangerouslySetInnerHTML={{ __html: nDiagram.svg }} />
+                                    : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Load configuration to see diagram</div>
+                                )}
                         </div>
 
                         {/* N-1 Container — always mounted, hidden via CSS to preserve zoom state */}
