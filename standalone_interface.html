@@ -1057,6 +1057,9 @@
                     if (configRes.data && configRes.data.total_lines_count !== undefined) {
                         setMonitoredLinesCount(configRes.data.monitored_lines_count);
                         setTotalLinesCount(configRes.data.total_lines_count);
+                        if (configRes.data.monitored_lines_count < configRes.data.total_lines_count) {
+                            setShowMonitoringWarning(true);
+                        }
                     }
 
                     setSettingsBackup({
@@ -1207,6 +1210,9 @@
                     if (configRes.data && configRes.data.total_lines_count !== undefined) {
                         setMonitoredLinesCount(configRes.data.monitored_lines_count);
                         setTotalLinesCount(configRes.data.total_lines_count);
+                        if (configRes.data.monitored_lines_count < configRes.data.total_lines_count) {
+                            setShowMonitoringWarning(true);
+                        }
                     }
 
                     const [branchesRes, vlRes, nomVRes] = await Promise.all([
@@ -1575,9 +1581,13 @@
                 const container = overlayBodyRef.current;
                 if (!container) return;
 
-                const SLD_CLASSES = ['sld-delta-positive', 'sld-delta-negative', 'sld-delta-grey'];
-                container.querySelectorAll(SLD_CLASSES.map(c => '.' + c).join(','))
-                    .forEach(el => el.classList.remove(...SLD_CLASSES));
+                // Clear any previously applied SLD delta classes
+                const SLD_DELTA_CLASSES = [
+                    'sld-delta-positive', 'sld-delta-negative', 'sld-delta-grey',
+                    'sld-delta-text-positive', 'sld-delta-text-negative', 'sld-delta-text-grey'
+                ];
+                container.querySelectorAll(SLD_DELTA_CLASSES.map(c => '.' + c).join(','))
+                    .forEach(el => el.classList.remove(...SLD_DELTA_CLASSES));
 
                 // Restore original text labels
                 container.querySelectorAll('[data-original-text]').forEach(el => {

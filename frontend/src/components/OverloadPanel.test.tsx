@@ -90,4 +90,79 @@ describe('OverloadPanel', () => {
         expect(screen.getByText('N Overloads:')).toBeInTheDocument();
         expect(screen.getByText('N-1 Overloads:')).toBeInTheDocument();
     });
+
+    describe('Monitoring Warning', () => {
+        it('renders warning banner when showMonitoringWarning is true and totalLinesCount > 0', () => {
+            render(
+                <OverloadPanel
+                    {...defaultProps}
+                    showMonitoringWarning={true}
+                    monitoredLinesCount={130}
+                    totalLinesCount={150}
+                    monitoringFactor={0.95}
+                    preExistingOverloadThreshold={0.02}
+                />
+            );
+            expect(screen.getByText(/lines monitored/i)).toBeInTheDocument();
+            expect(screen.getByText('130')).toBeInTheDocument();
+            expect(screen.getByText('150')).toBeInTheDocument();
+            expect(screen.getByText(/20.*without permanent limits/i)).toBeInTheDocument();
+        });
+
+        it('does not render warning banner when showMonitoringWarning is false', () => {
+            render(
+                <OverloadPanel
+                    {...defaultProps}
+                    showMonitoringWarning={false}
+                    monitoredLinesCount={130}
+                    totalLinesCount={150}
+                />
+            );
+            expect(screen.queryByText(/out of/i)).not.toBeInTheDocument();
+        });
+
+        it('does not render warning banner when totalLinesCount is 0', () => {
+            render(
+                <OverloadPanel
+                    {...defaultProps}
+                    showMonitoringWarning={true}
+                    monitoredLinesCount={0}
+                    totalLinesCount={0}
+                />
+            );
+            expect(screen.queryByText(/out of/i)).not.toBeInTheDocument();
+        });
+
+        it('calls onOpenSettings when "Change in settings" is clicked', async () => {
+            const user = userEvent.setup();
+            const onOpenSettings = vi.fn();
+            render(
+                <OverloadPanel
+                    {...defaultProps}
+                    showMonitoringWarning={true}
+                    totalLinesCount={10}
+                    onOpenSettings={onOpenSettings}
+                />
+            );
+            
+            await user.click(screen.getByText('Change in settings'));
+            expect(onOpenSettings).toHaveBeenCalled();
+        });
+
+        it('calls onDismissWarning when dismiss button is clicked', async () => {
+            const user = userEvent.setup();
+            const onDismissWarning = vi.fn();
+            render(
+                <OverloadPanel
+                    {...defaultProps}
+                    showMonitoringWarning={true}
+                    totalLinesCount={10}
+                    onDismissWarning={onDismissWarning}
+                />
+            );
+            
+            await user.click(screen.getByTitle('Dismiss'));
+            expect(onDismissWarning).toHaveBeenCalled();
+        });
+    });
 });

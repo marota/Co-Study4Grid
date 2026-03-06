@@ -65,7 +65,10 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         if (!container) return;
 
         // Clear any previously applied SLD delta classes
-        const SLD_DELTA_CLASSES = ['sld-delta-positive', 'sld-delta-negative', 'sld-delta-grey'];
+        const SLD_DELTA_CLASSES = [
+            'sld-delta-positive', 'sld-delta-negative', 'sld-delta-grey',
+            'sld-delta-text-positive', 'sld-delta-text-negative', 'sld-delta-text-grey'
+        ];
         container.querySelectorAll(SLD_DELTA_CLASSES.map(c => '.' + c).join(','))
             .forEach(el => el.classList.remove(...SLD_DELTA_CLASSES));
 

@@ -31,8 +31,11 @@ function App() {
   const [minOpenCoupling, setMinOpenCoupling] = useState<number>(2.0);
   const [minLineDisconnections, setMinLineDisconnections] = useState<number>(3.0);
   const [nPrioritizedActions, setNPrioritizedActions] = useState<number>(10);
-  const [linesMonitoringPath, setLinesMonitoringPath] = useState<string>('');
-  const [monitoringFactor, setMonitoringFactor] = useState<number>(0.95);
+  const [linesMonitoringPath, setLinesMonitoringPath] = useState('');
+  const [monitoredLinesCount, setMonitoredLinesCount] = useState(0);
+  const [totalLinesCount, setTotalLinesCount] = useState(0);
+  const [showMonitoringWarning, setShowMonitoringWarning] = useState(false);
+  const [monitoringFactor, setMonitoringFactor] = useState(0.95);
   const [preExistingOverloadThreshold, setPreExistingOverloadThreshold] = useState<number>(0.02);
   const [ignoreReconnections, setIgnoreReconnections] = useState<boolean>(false);
   const [pypowsyblFastMode, setPypowsyblFastMode] = useState<boolean>(true);
@@ -90,8 +93,9 @@ function App() {
       setError('');
       setInfoMessage('');
       setInspectQuery('');
+      setShowMonitoringWarning(false); // Clear warning on new settings application
 
-      await api.updateConfig({
+      const configRes = await api.updateConfig({
         network_path: networkPath,
         action_file_path: actionPath,
         min_line_reconnections: minLineReconnections,
@@ -105,6 +109,15 @@ function App() {
         ignore_reconnections: ignoreReconnections,
         pypowsybl_fast_mode: pypowsyblFastMode,
       });
+
+      if (configRes && configRes.total_lines_count !== undefined) {
+        setMonitoredLinesCount(configRes.monitored_lines_count);
+        setTotalLinesCount(configRes.total_lines_count);
+        if (configRes.monitored_lines_count < configRes.total_lines_count) {
+          setShowMonitoringWarning(true);
+        }
+      }
+
       setSettingsBackup({
         minLineReconnections,
         minCloseCoupling,
@@ -206,9 +219,10 @@ function App() {
     setSelectedBranch('');
     setInspectQuery('');
     lastZoomState.current = { query: '', branch: '' };
+    setShowMonitoringWarning(false); // Clear warning on new config load
 
     try {
-      await api.updateConfig({
+      const configRes = await api.updateConfig({
         network_path: networkPath,
         action_file_path: actionPath,
         min_line_reconnections: minLineReconnections,
@@ -222,6 +236,14 @@ function App() {
         ignore_reconnections: ignoreReconnections,
         pypowsybl_fast_mode: pypowsyblFastMode,
       });
+
+      if (configRes && configRes.total_lines_count !== undefined) {
+        setMonitoredLinesCount(configRes.monitored_lines_count);
+        setTotalLinesCount(configRes.total_lines_count);
+        if (configRes.monitored_lines_count < configRes.total_lines_count) {
+          setShowMonitoringWarning(true);
+        }
+      }
 
       const [branchesList, vlRes, nomVRes] = await Promise.all([
         api.getBranches(),
@@ -865,6 +887,7 @@ function App() {
     [branches, voltageLevels]
   );
 
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <header style={{
@@ -1068,11 +1091,46 @@ function App() {
             </div>
           )}
 
+          {showMonitoringWarning && totalLinesCount > 0 && (
+            <div style={{
+              margin: '0 15px 10px 15px',
+              padding: '8px 12px',
+              background: '#fff3cd',
+              border: '1px solid #ffeeba',
+              borderRadius: '4px',
+              color: '#856404',
+              fontSize: '0.8rem',
+              position: 'relative',
+              zIndex: 11
+            }}>
+              ⚠️ <strong>{monitoredLinesCount}</strong> out of <strong>{totalLinesCount}</strong> lines monitored ({totalLinesCount - (monitoredLinesCount || 0)} without permanent limits). Monitoring factor: {Math.round((monitoringFactor || 0.95) * 100)}%. {Math.round((preExistingOverloadThreshold || 0.02) * 100)}% loading increase threshold for considerando worsened overload in N.
+              <button
+                onClick={() => { setIsSettingsOpen(true); setSettingsTab('configurations'); }}
+                style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: '0 0 0 5px', fontSize: 'inherit' }}
+              >
+                Change in settings
+              </button>
+              <button
+                onClick={() => setShowMonitoringWarning(false)}
+                style={{ float: 'right', background: 'none', border: 'none', fontSize: '16px', lineHeight: 1, color: '#856404', cursor: 'pointer' }}
+                title="Dismiss"
+              >
+                &times;
+              </button>
+            </div>
+          )}
           <div style={{ flexShrink: 0 }}>
             <OverloadPanel
               nOverloads={nDiagram?.lines_overloaded || []}
               n1Overloads={n1Diagram?.lines_overloaded || []}
               onAssetClick={handleAssetClick as (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void}
+              showMonitoringWarning={showMonitoringWarning}
+              monitoredLinesCount={monitoredLinesCount}
+              totalLinesCount={totalLinesCount}
+              monitoringFactor={monitoringFactor}
+              preExistingOverloadThreshold={preExistingOverloadThreshold}
+              onDismissWarning={() => setShowMonitoringWarning(false)}
+              onOpenSettings={() => { setIsSettingsOpen(true); setSettingsTab('configurations'); }}
             />
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
