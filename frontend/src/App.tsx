@@ -79,7 +79,6 @@ function App() {
     try {
       // Clear previous results to ensure consistency with new settings BEFORE fetching
       setResult(null);
-      setPendingAnalysisResult(null);
       setNDiagram(null);
       setN1Diagram(null);
       setActionDiagram(null);
@@ -153,12 +152,15 @@ function App() {
 
   // ===== Analysis State =====
   const [result, setResult] = useState<AnalysisResult | null>(null);
-  const [pendingAnalysisResult, setPendingAnalysisResult] = useState<AnalysisResult | null>(null);
   const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
   const [manuallyAddedIds, setManuallyAddedIds] = useState<Set<string>>(new Set());
   const [rejectedActionIds, setRejectedActionIds] = useState<Set<string>>(new Set());
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [infoMessage, setInfoMessage] = useState('');
+  
+  // ===== Analysis Flow State =====
+  const [selectedOverloads, setSelectedOverloads] = useState<Set<string>>(new Set());
+  const [monitorDeselected, setMonitorDeselected] = useState(false);
 
   // ===== Visualization State =====
   const [activeTab, setActiveTab] = useState<TabId>('n');
@@ -208,7 +210,6 @@ function App() {
     setNDiagram(null);
     setN1Diagram(null);
     setResult(null);
-    setPendingAnalysisResult(null);
     setSelectedActionId(null);
     setSelectedActionIds(new Set());
     setManuallyAddedIds(new Set());
@@ -311,23 +312,74 @@ function App() {
   }, [selectedBranch, branches, voltageLevels.length]);
 
   // ===== Analysis =====
-  const handleRunAnalysis = useCallback(async () => {
+  // Sync available overloads from N-1 diagram for pre-selection
+  useEffect(() => {
+    if (n1Diagram && n1Diagram.lines_overloaded) {
+      setSelectedOverloads(new Set(n1Diagram.lines_overloaded));
+    } else {
+      setSelectedOverloads(new Set());
+    }
+  }, [n1Diagram]);
+
+  const handleRunAnalysis = async () => {
     if (!selectedBranch) return;
     setAnalysisLoading(true);
     setError('');
     setInfoMessage('');
     setSelectedActionId(null);
     setActionDiagram(null);
-    setPendingAnalysisResult(null);
+    setResult(null);
 
     try {
-      const response = await fetch('http://localhost:8000/api/run-analysis', {
+      // Step 1: Detection
+      const res1 = await api.runAnalysisStep1(selectedBranch);
+      if (!res1.can_proceed) {
+        setError(res1.message || 'Analysis cannot proceed.');
+        if (res1.message) setInfoMessage(res1.message);
+        setAnalysisLoading(false);
+        return;
+      }
+
+      const detected = res1.lines_overloaded || [];
+      
+      // Resolve: selected overloads focus the analysis. If monitorDeselected, also pass unselected ones.
+      let primaryOverloads: string[] = [];
+      if (selectedOverloads.size > 0) {
+        const stillRelevant = detected.filter(name => selectedOverloads.has(name));
+        if (stillRelevant.length > 0) {
+          primaryOverloads = stillRelevant;
+        } else {
+          setSelectedOverloads(new Set(detected));
+          primaryOverloads = detected;
+        }
+      } else {
+        setSelectedOverloads(new Set(detected));
+        primaryOverloads = detected;
+      }
+
+      // The backend knows which ones to monitor via the monitor_deselected flag.
+      // selected_overloads MUST only contain the ones we actually want to resolve.
+      const toResolve = primaryOverloads;
+
+      if (detected.length === 0) {
+        setInfoMessage(res1.message || "No overloads detected.");
+        setAnalysisLoading(false);
+        return;
+      }
+
+      // Step 2: Resolution
+      const response2 = await fetch('http://localhost:8000/api/run-analysis-step2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disconnected_element: selectedBranch }),
+        body: JSON.stringify({ 
+            selected_overloads: toResolve,
+            all_overloads: detected,
+            monitor_deselected: monitorDeselected,
+          }),
       });
-      if (!response.ok) throw new Error('Analysis failed');
-      const reader = response.body!.getReader();
+      if (!response2.ok) throw new Error('Analysis Resolution failed');
+      
+      const reader = response2.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       while (true) {
@@ -341,46 +393,50 @@ function App() {
           try {
             const event = JSON.parse(line);
             if (event.type === 'pdf') {
-              setResult(p => ({ ...p!, pdf_url: event.pdf_url } as AnalysisResult));
-              setActiveTab('overflow'); // Switch tab right as PDF comes in
-            }
-            else if (event.type === 'result') {
-              // Store analysis result as pending — don't merge yet
-              setPendingAnalysisResult(event);
+              setResult((p: AnalysisResult | null) => ({ ...p!, pdf_url: event.pdf_url } as AnalysisResult));
+              setActiveTab('overflow');
+            } else if (event.type === 'result') {
+              setResult((prev: AnalysisResult | null) => {
+                const manualActionsData: Record<string, ActionDetail> = {};
+                if (prev?.actions) {
+                  for (const [id, data] of Object.entries(prev.actions)) {
+                    if (manuallyAddedIds.has(id)) {
+                      manualActionsData[id] = data;
+                    }
+                  }
+                }
+                return {
+                  ...event,
+                  // Preserve pdf_url set by the earlier 'pdf' event
+                  pdf_url: prev?.pdf_url || event.pdf_url,
+                  actions: { ...event.actions, ...manualActionsData }
+                } as AnalysisResult;
+              });
               if (event.message) setInfoMessage(event.message);
+            } else if (event.type === 'error') {
+              setError('Analysis failed: ' + event.message);
             }
-            else if (event.type === 'error') setError('Analysis failed: ' + event.message);
           } catch (e) {
             console.error('Stream error:', e);
           }
         }
       }
     } catch (err: unknown) {
-      setError('Analysis failed: ' + (err as Error).message);
+      const e = err as { response?: { data?: { detail?: string } }; message?: string };
+      setError('Analysis failed: ' + (e.response?.data?.detail || e.message));
     } finally {
       setAnalysisLoading(false);
     }
-  }, [selectedBranch]);
+  };
 
-  const handleDisplayPrioritizedActions = useCallback(() => {
-    if (!pendingAnalysisResult) return;
-    setResult(prev => {
-      // Preserve manually added / selected actions
-      const manualActionsData: Record<string, ActionDetail> = {};
-      if (prev?.actions) {
-        for (const [id, data] of Object.entries(prev.actions)) {
-          if (selectedActionIds.has(id)) {
-            manualActionsData[id] = data;
-          }
-        }
-      }
-      return {
-        ...pendingAnalysisResult,
-        actions: { ...pendingAnalysisResult.actions, ...manualActionsData },
-      };
+  const handleToggleOverload = useCallback((overload: string) => {
+    setSelectedOverloads((prev: Set<string>) => {
+      const next = new Set(prev);
+      if (next.has(overload)) next.delete(overload);
+      else next.add(overload);
+      return next;
     });
-    setPendingAnalysisResult(null);
-  }, [pendingAnalysisResult, selectedActionIds]);
+  }, []);
 
   // ===== Action Selection =====
   const handleActionSelect = useCallback(async (actionId: string | null) => {
@@ -1081,44 +1137,27 @@ function App() {
               <datalist id="contingencies">
                 {branches.map(b => <option key={b} value={b} />)}
               </datalist>
-              <button
-                onClick={handleRunAnalysis}
-                disabled={!selectedBranch || analysisLoading}
-                style={{ marginTop: '8px', width: '100%', padding: '8px', background: (!selectedBranch || analysisLoading) ? '#95a5a6' : '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
-              >
-                {analysisLoading ? '⚙️ Running...' : '🚀 Run Analysis'}
-              </button>
+                <button
+                  onClick={handleRunAnalysis}
+                  disabled={!selectedBranch || analysisLoading}
+                  style={{
+                    marginTop: '8px',
+                    width: '100%',
+                    padding: '8px',
+                    background: (!selectedBranch || analysisLoading) ? '#95a5a6' : '#27ae60',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer',
+                    fontWeight: 'bold',
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  {analysisLoading ? '⚙️ Running...' : '🚀 Run Analysis'}
+                </button>
             </div>
           )}
 
-          {showMonitoringWarning && totalLinesCount > 0 && (
-            <div style={{
-              margin: '0 15px 10px 15px',
-              padding: '8px 12px',
-              background: '#fff3cd',
-              border: '1px solid #ffeeba',
-              borderRadius: '4px',
-              color: '#856404',
-              fontSize: '0.8rem',
-              position: 'relative',
-              zIndex: 11
-            }}>
-              ⚠️ <strong>{monitoredLinesCount}</strong> out of <strong>{totalLinesCount}</strong> lines monitored ({totalLinesCount - (monitoredLinesCount || 0)} without permanent limits). Monitoring factor: {Math.round((monitoringFactor || 0.95) * 100)}%. {Math.round((preExistingOverloadThreshold || 0.02) * 100)}% loading increase threshold for considerando worsened overload in N.
-              <button
-                onClick={() => { setIsSettingsOpen(true); setSettingsTab('configurations'); }}
-                style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: '0 0 0 5px', fontSize: 'inherit' }}
-              >
-                Change in settings
-              </button>
-              <button
-                onClick={() => setShowMonitoringWarning(false)}
-                style={{ float: 'right', background: 'none', border: 'none', fontSize: '16px', lineHeight: 1, color: '#856404', cursor: 'pointer' }}
-                title="Dismiss"
-              >
-                &times;
-              </button>
-            </div>
-          )}
           <div style={{ flexShrink: 0 }}>
             <OverloadPanel
               nOverloads={nDiagram?.lines_overloaded || []}
@@ -1131,6 +1170,10 @@ function App() {
               preExistingOverloadThreshold={preExistingOverloadThreshold}
               onDismissWarning={() => setShowMonitoringWarning(false)}
               onOpenSettings={() => { setIsSettingsOpen(true); setSettingsTab('configurations'); }}
+              selectedOverloads={selectedOverloads}
+              onToggleOverload={handleToggleOverload}
+              monitorDeselected={monitorDeselected}
+              onToggleMonitorDeselected={() => setMonitorDeselected(prev => !prev)}
             />
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -1142,7 +1185,6 @@ function App() {
               selectedActionIds={selectedActionIds}
               rejectedActionIds={rejectedActionIds}
               manuallyAddedIds={manuallyAddedIds}
-              pendingAnalysisResult={pendingAnalysisResult}
               onActionSelect={handleActionSelect}
               onActionFavorite={handleActionFavorite}
               onActionReject={handleActionReject}
@@ -1151,7 +1193,6 @@ function App() {
               edgesByEquipmentId={nMetaIndex?.edgesByEquipmentId ?? null}
               disconnectedElement={selectedBranch || null}
               onManualActionAdded={handleManualActionAdded}
-              onDisplayPrioritizedActions={handleDisplayPrioritizedActions}
               analysisLoading={analysisLoading}
               monitoringFactor={monitoringFactor}
               onVlDoubleClick={handleVlDoubleClick}

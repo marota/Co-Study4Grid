@@ -41,6 +41,11 @@ class ConfigRequest(BaseModel):
 class AnalysisRequest(BaseModel):
     disconnected_element: str
 
+class AnalysisStep2Request(BaseModel):
+    selected_overloads: list[str]
+    all_overloads: list[str] = []
+    monitor_deselected: bool = False
+
 class FocusedDiagramRequest(BaseModel):
     element_id: str
     depth: int = 1
@@ -142,12 +147,41 @@ if path:
 
 from fastapi.responses import StreamingResponse
 import json
-
 @app.post("/api/run-analysis")
 async def run_analysis(request: AnalysisRequest):
     def event_generator():
         try:
             for event in recommender_service.run_analysis(request.disconnected_element):
+                if event.get("pdf_path"):
+                    filename = os.path.basename(event["pdf_path"])
+                    event["pdf_url"] = f"/results/pdf/{filename}"
+                
+                # Yield JSON line
+                yield json.dumps(event) + "\n"
+        except Exception as e:
+            yield json.dumps({"type": "error", "message": str(e)}) + "\n"
+
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+
+@app.post("/api/run-analysis-step1")
+async def run_analysis_step1(request: AnalysisRequest):
+    try:
+        result = recommender_service.run_analysis_step1(request.disconnected_element)
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/run-analysis-step2")
+async def run_analysis_step2(request: AnalysisStep2Request):
+    def event_generator():
+        try:
+            for event in recommender_service.run_analysis_step2(
+                request.selected_overloads,
+                all_overloads=request.all_overloads,
+                monitor_deselected=request.monitor_deselected
+            ):
                 if event.get("pdf_path"):
                     filename = os.path.basename(event["pdf_path"])
                     event["pdf_url"] = f"/results/pdf/{filename}"

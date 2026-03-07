@@ -128,4 +128,45 @@ export const api = {
         );
         return response.data;
     },
+    runAnalysisStep1: async (disconnected_element: string): Promise<{ lines_overloaded: string[]; message: string; can_proceed: boolean }> => {
+        const response = await axios.post(`${API_BASE_URL}/api/run-analysis-step1`, { disconnected_element });
+        return response.data;
+    },
+    runAnalysisStep2: async (selected_overloads: string[]): Promise<AnalysisResult> => {
+        const response = await fetch(`${API_BASE_URL}/api/run-analysis-step2`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ selected_overloads }),
+        });
+        if (!response.ok) {
+            throw new Error(`Analysis failed: ${response.statusText}`);
+        }
+
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let result: Partial<AnalysisResult> = {};
+
+        for (; ;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop()!;
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                const event = JSON.parse(line);
+                if (event.type === 'pdf') {
+                    result.pdf_url = event.pdf_url;
+                    result.pdf_path = event.pdf_path;
+                } else if (event.type === 'result') {
+                    result = { ...result, ...event };
+                } else if (event.type === 'error') {
+                    throw new Error(event.message);
+                }
+            }
+        }
+
+        return result as AnalysisResult;
+    },
 };

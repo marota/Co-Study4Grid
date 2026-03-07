@@ -1086,6 +1086,12 @@
             const [infoMessage, setInfoMessage] = useState('');
             const [inspectQuery, setInspectQuery] = useState('');
 
+            // Analysis Flow State
+            const [availableOverloads, setAvailableOverloads] = useState([]);
+            const [selectedOverloads, setSelectedOverloads] = useState(new Set());
+            const [monitorDeselected, setMonitorDeselected] = useState(false);
+            const [analysisStep, setAnalysisStep] = useState('idle');
+
             // Visualization State
             const [activeTab, setActiveTab] = useState('n'); // 'n', 'n-1', 'overflow'
             const activeTabRef = useRef(activeTab);
@@ -1350,21 +1356,80 @@
             }, [selectedBranch, branches]);
 
             // Auto-switch to overflow tab when analysis runs
+            // Sync available overloads from N-1 diagram for pre-selection
+            useEffect(() => {
+                if (n1Diagram && n1Diagram.lines_overloaded) {
+                    setAvailableOverloads(n1Diagram.lines_overloaded);
+                    setSelectedOverloads(new Set(n1Diagram.lines_overloaded));
+                } else {
+                    setAvailableOverloads([]);
+                    setSelectedOverloads(new Set());
+                }
+            }, [n1Diagram]);
+
             const handleRunAnalysis = async () => {
                 if (!selectedBranch) return;
-                setAnalysisLoading(true); setError(''); setInfoMessage('');
+                setAnalysisLoading(true); 
+                setError(''); 
+                setInfoMessage('');
                 setAnalysisRan(false);
                 setPendingAnalysisResult(null);
-                // Keep result (manual actions) intact — don't clear it
+                setResult(null);
 
                 try {
-                    const response = await fetch(API_BASE + '/api/run-analysis', {
+                    // Step 1: Detection
+                    const response1 = await axios.post(API_BASE + '/api/run-analysis-step1', {
+                        disconnected_element: selectedBranch
+                    });
+                    const res1 = response1.data;
+                    
+                    if (!res1.can_proceed) {
+                        setError(res1.message || 'Analysis cannot proceed.');
+                        if (res1.message) setInfoMessage(res1.message);
+                        setAnalysisLoading(false);
+                        return;
+                    }
+
+                    const detected = res1.lines_overloaded || [];
+                    setAvailableOverloads(detected);
+                    
+                    // Resolve: selected overloads focus the analysis.
+                    let primaryOverloads = detected;
+                    if (selectedOverloads.size > 0) {
+                        const stillRelevant = detected.filter(name => selectedOverloads.has(name));
+                        if (stillRelevant.length > 0) {
+                            primaryOverloads = stillRelevant;
+                        } else {
+                            setSelectedOverloads(new Set(detected));
+                        }
+                    } else {
+                        setSelectedOverloads(new Set(detected));
+                    }
+
+                    // The backend knows which ones to monitor via the monitor_deselected flag.
+                    // selected_overloads MUST only contain the ones we actually want to resolve.
+                    const toResolve = primaryOverloads;
+
+                    if (detected.length === 0) {
+                        setInfoMessage(res1.message || "No overloads detected.");
+                        setAnalysisRan(true);
+                        setAnalysisLoading(false);
+                        return;
+                    }
+
+                    // Step 2: Resolution
+                    const response2 = await fetch(API_BASE + '/api/run-analysis-step2', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ disconnected_element: selectedBranch })
+                        body: JSON.stringify({ 
+                            selected_overloads: toResolve,
+                            all_overloads: detected,
+                            monitor_deselected: monitorDeselected,
+                        })
                     });
-                    if (!response.ok) throw new Error('Analysis failed');
-                    const reader = response.body.getReader();
+                    if (!response2.ok) throw new Error('Analysis Resolution failed');
+
+                    const reader = response2.body.getReader();
                     const decoder = new TextDecoder();
                     let buffer = '';
                     while (true) {
@@ -1372,18 +1437,32 @@
                         if (done) break;
                         buffer += decoder.decode(value, { stream: true });
                         const lines = buffer.split('\n');
-                        buffer = lines.pop(); // Keep incomplete line in buffer
+                        buffer = lines.pop();
                         for (const line of lines) {
                             if (!line.trim()) continue;
                             try {
                                 const event = JSON.parse(line);
                                 if (event.type === 'pdf') {
                                     setResult(p => ({ ...p, pdf_url: event.pdf_url }));
-                                    setActiveTab('overflow'); // Switch tab right as PDF comes in
+                                    setActiveTab('overflow');
                                 }
                                 else if (event.type === 'result') {
-                                    // Store analysis result as pending — don't merge yet
-                                    setPendingAnalysisResult(event);
+                                    setResult(prev => {
+                                        const manualActionsData = {};
+                                        if (prev?.actions) {
+                                            for (const [id, data] of Object.entries(prev.actions)) {
+                                                if (manualActionIds.has(id)) {
+                                                    manualActionsData[id] = data;
+                                                }
+                                            }
+                                        }
+                                        return {
+                                            ...event,
+                                            // Preserve pdf_url set by the earlier 'pdf' event
+                                            pdf_url: prev?.pdf_url || event.pdf_url,
+                                            actions: { ...event.actions, ...manualActionsData }
+                                        };
+                                    });
                                     if (event.message) setInfoMessage(event.message);
                                 }
                                 else if (event.type === 'error') setError('Analysis failed: ' + event.message);
@@ -1392,8 +1471,12 @@
                             }
                         }
                     }
-                } catch (err) { setError('Analysis failed: ' + err.message); }
-                finally { setAnalysisLoading(false); setAnalysisRan(true); }
+                    setAnalysisRan(true);
+                } catch (err) {
+                    setError('Analysis failed: ' + (err.response?.data?.detail || err.message));
+                } finally {
+                    setAnalysisLoading(false);
+                }
             };
 
             // Merge pending analysis result with existing manual actions
@@ -3012,30 +3095,43 @@
                                     <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
                                     <input list="contingencies" value={selectedBranch} onChange={e => setSelectedBranch(e.target.value)} placeholder="Search line/bus..." style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }} />
                                     <datalist id="contingencies">{branches.map(b => <option key={b} value={b} />)}</datalist>
-                                    <button onClick={handleRunAnalysis} disabled={!selectedBranch || analysisLoading} style={{ marginTop: '8px', width: '100%', padding: '8px', background: (!selectedBranch || analysisLoading) ? '#95a5a6' : '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                                    <button
+                                        onClick={handleRunAnalysis}
+                                        disabled={!selectedBranch || analysisLoading}
+                                        style={{ marginTop: '8px', width: '100%', padding: '8px', background: (!selectedBranch || analysisLoading) ? '#95a5a6' : '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                                    >
                                         {analysisLoading ? '⚙️ Running...' : '🚀 Run Analysis'}
                                     </button>
                                 </div>
                             )}
+
                             <div style={{ marginBottom: '15px', padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                <h3 style={{ margin: '0 0 8px 0', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <span style={{ color: '#e74c3c' }}>⚠️</span> Overloads
-                                </h3>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                    <h3 style={{ margin: '0 0 8px 0', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{ color: '#e74c3c' }}>⚠️</span> Overloads
+                                    </h3>
+                                </div>
 
                                 {showMonitoringWarning && totalLinesCount > 0 && (
-                                    <div style={{ marginBottom: '10px', padding: '8px 10px', background: '#fff3cd', border: '1px solid #ffeeba', borderRadius: '4px', color: '#856404', fontSize: '0.85rem' }}>
-                                        ⚠️ {monitoredLinesCount} out of {totalLinesCount} lines monitored ({totalLinesCount - monitoredLinesCount} without permanent limits). Monitoring factor applied: {Math.round(monitoringFactor * 100)}%. {Math.round(preExistingOverloadThreshold * 100)}% loading increase threshold for considering worsened overload in N.
-                                        <button onClick={() => { handleOpenSettings(); setSettingsTab('configurations'); }} style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: '0 0 0 5px' }}>Change in settings</button>
+                                    <div style={{ marginBottom: '8px', padding: '8px 12px', background: '#fff3cd', border: '1px solid #ffeeba', borderRadius: '4px', color: '#856404', fontSize: '0.8rem' }}>
+                                        ⚠️ {(() => {
+                                            const deselCount = (n1Diagram && n1Diagram.lines_overloaded && !monitorDeselected) ? n1Diagram.lines_overloaded.filter(name => !selectedOverloads.has(name)).length : 0;
+                                            const effectiveMonitored = monitoredLinesCount - deselCount;
+                                            const effectiveUnmonitored = totalLinesCount - effectiveMonitored;
+                                            const unmonitoredStatic = totalLinesCount - monitoredLinesCount;
+                                            return <React.Fragment>{effectiveMonitored} out of {totalLinesCount} lines monitored ({unmonitoredStatic} without permanent limits{deselCount > 0 && !monitorDeselected ? `, and ${deselCount} deselected` : ''}). Monitoring factor applied: {Math.round(monitoringFactor * 100)}%. {Math.round(preExistingOverloadThreshold * 100)}% loading increase threshold for considering worsened overload in N.</React.Fragment>;
+                                        })()}
+                                        <button onClick={() => { handleOpenSettings(); setSettingsTab('configurations'); }} style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: '0 0 0 5px', fontSize: '0.8rem' }}>Change in settings</button>
                                         <button onClick={() => setShowMonitoringWarning(false)} style={{ float: 'right', background: 'none', border: 'none', fontSize: '16px', lineHeight: 1, color: '#856404', cursor: 'pointer' }} title="Dismiss">&times;</button>
                                     </div>
                                 )}
 
-                                <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                     <div style={{
                                         display: 'flex',
                                         alignItems: 'baseline',
                                         gap: '8px',
-                                        padding: '6px',
+                                        padding: '4px 6px',
                                         background: nDiagram && nDiagram.lines_overloaded && nDiagram.lines_overloaded.length > 0 ? '#ffe0cc' : 'transparent',
                                         borderLeft: nDiagram && nDiagram.lines_overloaded && nDiagram.lines_overloaded.length > 0 ? '3px solid #ff8c00' : '3px solid transparent',
                                         borderBottom: '1px solid #eee'
@@ -3056,27 +3152,96 @@
                                     </div>
 
                                     <div style={{
-                                        display: 'flex',
-                                        alignItems: 'baseline',
-                                        gap: '8px',
-                                        padding: '6px',
+                                        padding: '4px 6px',
                                         background: n1Diagram && n1Diagram.lines_overloaded && n1Diagram.lines_overloaded.length > 0 ? '#f8d7da' : 'transparent',
                                         borderLeft: n1Diagram && n1Diagram.lines_overloaded && n1Diagram.lines_overloaded.length > 0 ? '3px solid #dc3545' : '3px solid transparent',
-                                        borderBottom: '1px solid #eee'
+                                        borderBottom: '1px solid #eee',
+                                        lineHeight: '1.6'
                                     }}>
-                                        <strong style={{ whiteSpace: 'nowrap' }}>N-1 Overloads:</strong>
-                                        <div style={{ display: 'inline', wordBreak: 'break-word' }}>
+                                        <strong style={{ whiteSpace: 'nowrap', marginRight: '4px' }}>N-1 Overloads:</strong>
+                                        <span 
+                                            title="Double-click on an overload name to toggle its inclusion in the analysis. Selected overloads are blue; unselected are light grey." 
+                                            style={{ 
+                                                display: 'inline-flex', 
+                                                alignItems: 'center', 
+                                                justifyContent: 'center', 
+                                                width: '14px', 
+                                                height: '14px', 
+                                                borderRadius: '50%', 
+                                                background: '#6c757d', 
+                                                color: 'white', 
+                                                fontSize: '10px', 
+                                                cursor: 'help',
+                                                verticalAlign: 'middle',
+                                                marginRight: '4px'
+                                            }}
+                                        >
+                                            ?
+                                        </span>
+                                        {n1Diagram && n1Diagram.lines_overloaded && n1Diagram.lines_overloaded.some(name => !selectedOverloads.has(name)) && (
+                                            <label
+                                                style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '3px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '10px',
+                                                    color: monitorDeselected ? '#0056b3' : '#6c757d',
+                                                    fontWeight: monitorDeselected ? 600 : 400,
+                                                    whiteSpace: 'nowrap',
+                                                    marginRight: '6px',
+                                                    verticalAlign: 'middle'
+                                                }}
+                                                title="When checked, deselected overloads are still included in the analysis monitoring scope"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={monitorDeselected}
+                                                    onChange={() => setMonitorDeselected(v => !v)}
+                                                    style={{ margin: 0, cursor: 'pointer', width: '11px', height: '11px' }}
+                                                    onClick={e => e.stopPropagation()}
+                                                />
+                                                monitor deselected
+                                            </label>
+                                        )}
+                                        <span style={{ wordBreak: 'break-word' }}>
                                             {n1Diagram && n1Diagram.lines_overloaded && n1Diagram.lines_overloaded.length > 0 ? (
-                                                n1Diagram.lines_overloaded.map((lvl, i) => (
-                                                    <React.Fragment key={lvl}>
-                                                        {i > 0 && ', '}
-                                                        <button onClick={() => handleAssetClick(null, lvl, 'n-1')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted' }}>{lvl}</button>
-                                                    </React.Fragment>
-                                                ))
+                                                n1Diagram.lines_overloaded.map((lvl, i) => {
+                                                    const isSelected = selectedOverloads.has(lvl);
+                                                    return (
+                                                        <React.Fragment key={lvl}>
+                                                            {i > 0 && ', '}
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); handleAssetClick(null, lvl, 'n-1'); }}
+                                                                onDoubleClick={(e) => { 
+                                                                    e.stopPropagation(); 
+                                                                    const next = new Set(selectedOverloads);
+                                                                    if (next.has(lvl)) next.delete(lvl);
+                                                                    else next.add(lvl);
+                                                                    setSelectedOverloads(next);
+                                                                }}
+                                                                style={{ 
+                                                                    background: 'none', 
+                                                                    border: 'none', 
+                                                                    cursor: 'pointer', 
+                                                                    padding: 0, 
+                                                                    fontSize: 'inherit', 
+                                                                    color: isSelected ? '#1e40af' : '#bdc3c7', 
+                                                                    fontWeight: isSelected ? 600 : 400, 
+                                                                    textDecoration: isSelected ? 'underline dotted' : 'none', 
+                                                                    display: 'inline'
+                                                                }}
+                                                                title={isSelected ? `Zoom to ${lvl} (Double-click to unselect)` : `Zoom to ${lvl} (Double-click to select)`}
+                                                            >
+                                                                {lvl}
+                                                            </button>
+                                                        </React.Fragment>
+                                                    );
+                                                })
                                             ) : (
-                                                <span style={{ color: '#888', fontStyle: 'italic' }}>None</span>
+                                                <span style={{ color: '#888', fontStyle: 'italic', fontSize: '0.75rem' }}>None</span>
                                             )}
-                                        </div>
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -3356,38 +3521,15 @@
                                     >Rejected Actions {rejectedEntries.length > 0 && <span style={{ background: suggestedTab === 'rejected' ? '#fdecea' : '#f8f9fa', color: suggestedTab === 'rejected' ? '#e74c3c' : '#6c757d', fontSize: '11px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>{rejectedEntries.length}</span>}</button>
                                 </div>
 
-                                {/* Display prioritized actions button inside Suggested Actions section */}
-                                {pendingAnalysisResult && !analysisLoading && (
-                                    <button
-                                        onClick={handleDisplayPrioritizedActions}
-                                        style={{
-                                            width: '100%',
-                                            padding: '10px 16px',
-                                            margin: '0 0 10px 0',
-                                            background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
-                                            color: 'white',
-                                            border: 'none',
-                                            borderRadius: '8px',
-                                            cursor: 'pointer',
-                                            fontSize: '14px',
-                                            fontWeight: 700,
-                                            boxShadow: '0 2px 8px rgba(39,174,96,0.3)',
-                                            transition: 'transform 0.1s',
-                                        }}
-                                        onMouseEnter={(e) => e.target.style.transform = 'scale(1.02)'}
-                                        onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
-                                    >
-                                        📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
-                                    </button>
-                                )}
+                                {/* Suggestions area - results appear here naturally after analysis */}
 
                                 {suggestedTab === 'prioritized' && (
                                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
-                                        !analysisLoading && !pendingAnalysisResult ? (
-                                            <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0', textAlign: 'center' }}>Run analysis to get action suggestions.</p>
-                                        ) : (!analysisLoading && pendingAnalysisResult ? (
-                                            <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0', textAlign: 'center' }}>No suggested actions available.</p>
-                                        ) : null)
+                                        !analysisLoading ? (
+                                            <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0', textAlign: 'center' }}>
+                                                {analysisRan ? 'No suggested actions available.' : 'Run analysis to get action suggestions.'}
+                                            </p>
+                                        ) : null
                                     )
                                 )}
                                 {suggestedTab === 'rejected' && (

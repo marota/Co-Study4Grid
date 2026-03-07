@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { ActionDetail, NodeMeta, EdgeMeta, AnalysisResult, AvailableAction } from '../types';
+import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction } from '../types';
 import { api } from '../api';
 import { getActionTargetVoltageLevel, getActionTargetLines } from '../utils/svgUtils';
 
@@ -10,8 +10,6 @@ interface ActionFeedProps {
     selectedActionId: string | null;
     selectedActionIds: Set<string>;
     rejectedActionIds: Set<string>;
-    pendingAnalysisResult: AnalysisResult | null;
-    onDisplayPrioritizedActions: () => void;
     onActionSelect: (actionId: string | null) => void;
     onActionFavorite: (actionId: string) => void;
     onActionReject: (actionId: string) => void;
@@ -33,8 +31,6 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     selectedActionId,
     selectedActionIds,
     rejectedActionIds,
-    pendingAnalysisResult,
-    onDisplayPrioritizedActions,
     onActionSelect,
     onActionFavorite,
     onActionReject,
@@ -616,30 +612,6 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     >Rejected Actions {rejectedEntries.length > 0 && <span style={{ background: suggestedTab === 'rejected' ? '#fdecea' : '#f8f9fa', color: suggestedTab === 'rejected' ? '#e74c3c' : '#6c757d', fontSize: '11px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>{rejectedEntries.length}</span>}</button>
                 </div>
 
-                {/* Display prioritized actions button inside Suggested Actions section */}
-                {pendingAnalysisResult && !analysisLoading && (
-                    <button
-                        onClick={onDisplayPrioritizedActions}
-                        style={{
-                            width: '100%',
-                            padding: '10px 16px',
-                            margin: '0 0 10px 0',
-                            background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            fontWeight: 700,
-                            boxShadow: '0 2px 8px rgba(39,174,96,0.3)',
-                            transition: 'transform 0.1s',
-                        }}
-                        onMouseEnter={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'}
-                        onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
-                    >
-                        📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
-                    </button>
-                )}
 
                 {/* Loading indicator shown below existing cards during analysis */}
                 {analysisLoading && (
@@ -654,11 +626,11 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
 
                 {suggestedTab === 'prioritized' && (
                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
-                        !analysisLoading && !pendingAnalysisResult ? (
-                            <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0', textAlign: 'center' }}>Run analysis to get action suggestions.</p>
-                        ) : (!analysisLoading && pendingAnalysisResult ? (
-                            <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0', textAlign: 'center' }}>No suggested actions available.</p>
-                        ) : null)
+                        !analysisLoading ? (
+                            <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0', textAlign: 'center' }}>
+                                {Object.keys(actions).length > 0 ? 'No suggested actions available.' : 'Run analysis to get action suggestions.'}
+                            </p>
+                        ) : null
                     )
                 )}
                 {suggestedTab === 'rejected' && (

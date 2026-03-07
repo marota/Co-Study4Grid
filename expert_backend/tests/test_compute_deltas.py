@@ -442,6 +442,53 @@ class TestComputeDeltas:
         assert result["A"]["category"] == "positive"
         assert result["B"]["category"] == "grey"
 
+    def test_independent_q_category_positive(self):
+        """Branch Q gets 'positive' while P gets 'negative'."""
+        # P: 200 -> 100 (delta -100, negative)
+        # Q: 10 -> 20 (delta +10, positive)
+        # Note: _make_flows requires p1, p2, q1, q2
+        before = _make_flows(p1={"L": 200.0}, p2={"L": -198.0}, q1={"L": 10.0}, q2={"L": -8.0})
+        after = _make_flows(p1={"L": 100.0}, p2={"L": -98.0}, q1={"L": 20.0}, q2={"L": -18.0})
+        
+        result = self.service._compute_deltas(after, before)
+        assert result["flow_deltas"]["L"]["category"] == "negative"
+        assert result["reactive_flow_deltas"]["L"]["category"] == "positive"
+
+    def test_independent_q_category_grey(self):
+        """Branch Q gets 'grey' independently of a large P delta."""
+        # A: P delta 100 (max), Q delta 1 (threshold_q = 5% of max_q)
+        # B: P delta 1, Q delta 10 (max_q)
+        before = _make_flows(
+            p1={"A": 100.0, "B": 100.0},
+            p2={"A": -98.0, "B": -98.0},
+            q1={"A": 10.0, "B": 10.0},
+            q2={"A": -8.0, "B": -8.0}
+        )
+        after = _make_flows(
+            p1={"A": 200.0, "B": 101.0},
+            p2={"A": -198.0, "B": -99.0},
+            q1={"A": 11.0, "B": 20.0},
+            q2={"A": -9.0, "B": -18.0}
+        )
+        result = self.service._compute_deltas(after, before)
+        
+        # P max_abs=100 -> thresh=5. A=100 (pos), B=1 (grey)
+        assert result["flow_deltas"]["A"]["category"] == "positive"
+        assert result["flow_deltas"]["B"]["category"] == "grey"
+        
+        # Q max_abs=10 (for B) -> thresh=0.5. A=1 (pos), B=10 (pos)
+        # Wait, if Q max_abs is 10, then A delta 1 > 0.5 -> positive.
+        # Let's make A delta Q even smaller to be grey.
+        after_v2 = _make_flows(
+            p1={"A": 200.0, "B": 101.0},
+            p2={"A": -198.0, "B": -99.0},
+            q1={"A": 10.1, "B": 20.0}
+        )
+        result_v2 = self.service._compute_deltas(after_v2, before)
+        # Q max_abs=10 -> thresh=0.5. A delta=0.1 < 0.5 -> grey
+        assert result_v2["reactive_flow_deltas"]["A"]["category"] == "grey"
+        assert result_v2["reactive_flow_deltas"]["B"]["category"] == "positive"
+
 
 class TestComputeAssetDeltas:
     """Tests for load/generator asset delta computation."""
@@ -482,3 +529,38 @@ class TestComputeAssetDeltas:
         assert result["LOAD_B"]["category"] == "grey"
         assert result["LOAD_A"]["delta_p"] == 0.0
         assert result["LOAD_B"]["delta_p"] == 0.0
+
+    def test_asset_categories_independent_p_and_q(self):
+        """Assets return category_p, category_q, and legacy category tracking P."""
+        before = {"GEN_A": {"p": 100.0, "q": 100.0}}
+        after = {"GEN_A": {"p": 50.0, "q": 150.0}} # P -50 (neg), Q +50 (pos)
+        
+        result = self.service._compute_asset_deltas(after, before)
+        res = result["GEN_A"]
+        
+        assert res["delta_p"] == -50.0
+        assert res["delta_q"] == 50.0
+        assert res["category_p"] == "negative"
+        assert res["category_q"] == "positive"
+        assert res["category"] == "negative" # Legacy field follows P
+
+    def test_asset_q_category_positive_with_p_negative(self):
+        """Asset independent colors where Q is positive and P is negative."""
+        before = {
+            "GEN_A": {"p": 100.0, "q": 10.0},
+            "GEN_B": {"p": 10.0, "q": 100.0}
+        }
+        after = {
+            "GEN_A": {"p": 50.0, "q": 15.0},  # P delta -50, Q delta +5
+            "GEN_B": {"p": 15.0, "q": 50.0}   # P delta +5, Q delta -50
+        }
+        result = self.service._compute_asset_deltas(after, before)
+        
+        # GEN_A: P is major delta (-50), Q is minor (+5)
+        # thresholds: P=50*0.05=2.5, Q=50*0.05=2.5
+        assert result["GEN_A"]["category_p"] == "negative"
+        assert result["GEN_A"]["category_q"] == "positive"
+        
+        # GEN_B: P is minor (+5), Q is major (-50)
+        assert result["GEN_B"]["category_p"] == "positive"
+        assert result["GEN_B"]["category_q"] == "negative"

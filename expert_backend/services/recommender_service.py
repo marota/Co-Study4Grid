@@ -1,7 +1,7 @@
 import expert_op4grid_recommender
 from expert_op4grid_recommender import config
-from expert_op4grid_recommender.main import Backend, run_analysis
-from expert_op4grid_recommender.data_loader import load_actions
+from expert_op4grid_recommender.main import Backend, run_analysis, run_analysis_step1, run_analysis_step2
+from expert_op4grid_recommender.data_loader import load_actions, enrich_actions_lazy
 from expert_op4grid_recommender.utils.make_env_utils import create_olf_rte_parameter
 import os
 import glob
@@ -24,9 +24,11 @@ def sanitize_for_json(obj):
     else:
         # Fallback for unknown objects
         try:
-            # Try to get dict representation
             if hasattr(obj, "to_dict"):
-                return sanitize_for_json(obj.to_dict())
+                d = obj.to_dict()
+                if isinstance(d, dict):
+                    return sanitize_for_json(d)
+                return str(obj)
             return sanitize_for_json(vars(obj))
         except TypeError:
             return str(obj)
@@ -40,6 +42,7 @@ class RecommenderService:
         self._simulation_env = None
         self._last_disconnected_element = None
         self._dict_action = None
+        self._analysis_context = None
 
     def update_config(self, settings):
         # Update the global config of the package
@@ -99,34 +102,30 @@ class RecommenderService:
         # Load and cache the action dictionary immediately if path changed or not loaded
         new_action_path = Path(settings.action_file_path)
         if getattr(self, '_last_action_path', None) != new_action_path or self._dict_action is None:
-            self._dict_action = load_actions(config.ACTION_FILE_PATH)
+            raw_dict_action = load_actions(config.ACTION_FILE_PATH)
             self._last_action_path = new_action_path
 
-            # Auto-generate disco actions if none exist
-            has_disco = any(k.startswith("disco_") for k in self._dict_action)
+            # Auto-generate disco actions if none exist in the file
+            has_disco = any(k.startswith("disco_") for k in raw_dict_action)
             if not has_disco:
                 from expert_backend.services.network_service import network_service
                 branches = network_service.get_disconnectable_elements()
                 for branch in branches:
                     action_id = f"disco_{branch}"
-                    self._dict_action[action_id] = {
+                    raw_dict_action[action_id] = {
                         "description": f"Disconnection of line/transformer '{branch}'",
                         "description_unitaire": f"Ouverture de la ligne '{branch}'",
-                        "content": {
-                            "set_bus": {
-                                "lines_or_id": {branch: -1},
-                                "lines_ex_id": {branch: -1},
-                                "loads_id": {},
-                                "generators_id": {},
-                            }
-                        },
                     }
                 print(f"[RecommenderService] Auto-generated {len(branches)} disco_ actions")
-                
-                # Save the updated dictionary back to file so the core analysis engine can load it
+
+                # Save the raw entries (without content) so the core analysis engine can read them
                 import json
                 with open(config.ACTION_FILE_PATH, 'w') as f:
-                    json.dump(self._dict_action, f, indent=2)
+                    json.dump(raw_dict_action, f, indent=2)
+
+            # Wrap with LazyActionDict so 'content' is computed on demand from 'switches'
+            from expert_backend.services.network_service import network_service
+            self._dict_action = enrich_actions_lazy(raw_dict_action, network_service.network)
         else:
             print("Action dictionary already loaded, skipping reload.")
 
@@ -140,6 +139,147 @@ class RecommenderService:
         config.SAVE_FOLDER_VISUALIZATION = Path(os.getcwd()) / "Overflow_Graph"
         if not config.SAVE_FOLDER_VISUALIZATION.exists():
             config.SAVE_FOLDER_VISUALIZATION.mkdir(parents=True, exist_ok=True)
+
+    def _get_latest_pdf_path(self, analysis_start_time=None):
+        """Finds the latest PDF generated in the SAVE_FOLDER_VISUALIZATION."""
+        save_folder = config.SAVE_FOLDER_VISUALIZATION
+        pdfs = glob.glob(os.path.join(save_folder, "*.pdf"))
+        if not pdfs: return None
+        
+        if analysis_start_time:
+            # Only consider PDFs modified after we started
+            # Use a tiny offset (1s) to be safe against filesystem drift
+            recent_pdfs = [p for p in pdfs if os.path.getmtime(p) >= (analysis_start_time - 1.0)]
+            if not recent_pdfs: return None
+            return max(recent_pdfs, key=os.path.getmtime)
+        else:
+            # If no start time, just get the absolute latest
+            return max(pdfs, key=os.path.getmtime)
+
+    def run_analysis_step1(self, disconnected_element: str):
+        """Runs the first step of analysis: contingency simulation and overload detection."""
+        try:
+            res_step1, context = run_analysis_step1(
+                analysis_date=config.DATE,
+                current_timestep=config.TIMESTEP,
+                current_lines_defaut=[disconnected_element],
+                backend=Backend.PYPOWSYBL,
+                fast_mode=getattr(config, 'PYPOWSYBL_FAST_MODE', True)
+            )
+            
+            self._last_disconnected_element = disconnected_element
+            
+            if res_step1 is not None:
+                # No overloads or grid broken apart
+                self._analysis_context = None
+                return {
+                    "lines_overloaded": res_step1.get("lines_overloaded_names", []),
+                    "message": "No overloads detected or grid broken apart.",
+                    "can_proceed": False
+                }
+            
+            self._analysis_context = context
+            return {
+                "lines_overloaded": context["lines_overloaded_names"],
+                "message": f"Detected {len(context['lines_overloaded_names'])} overloads.",
+                "can_proceed": True
+            }
+        except Exception as e:
+            self._analysis_context = None
+            raise e
+
+    def run_analysis_step2(self, selected_overloads: list[str], all_overloads: list[str] = None, monitor_deselected: bool = False):
+        """Runs the second step of analysis: graph generation and action discovery."""
+        if not self._analysis_context:
+            raise ValueError("Analysis context not found. Run step 1 first.")
+        
+        context = self._analysis_context
+        
+        # Filter overloads in context based on user selection
+        all_names = context["lines_overloaded_names"]
+        selected_indices = [i for i, name in enumerate(all_names) if name in selected_overloads]
+        
+        # Update IDs
+        original_ids = context["lines_overloaded_ids"]
+        new_ids = [original_ids[i] for i in selected_indices]
+        context["lines_overloaded_ids"] = new_ids
+        
+        # Update kept IDs (subset of original_ids that were also in kept)
+        original_kept = set(context["lines_overloaded_ids_kept"])
+        new_kept = [idx for idx in new_ids if idx in original_kept]
+        context["lines_overloaded_ids_kept"] = new_kept
+        
+        # Update names
+        context["lines_overloaded_names"] = [all_names[i] for i in selected_indices]
+
+        # When not monitoring deselected overloads, remove them from lines_we_care_about
+        # so they don't appear in max_rho_line calculation for action cards.
+        if not monitor_deselected and all_overloads:
+            deselected = set(all_overloads) - set(selected_overloads)
+            if deselected and context.get("lines_we_care_about") is not None:
+                care = context["lines_we_care_about"]
+                before_count = len(care)
+                if isinstance(care, set):
+                    context["lines_we_care_about"] = care - deselected
+                elif isinstance(care, (list, tuple)):
+                    context["lines_we_care_about"] = [n for n in care if n not in deselected]
+                else:
+                    # Fallback: convert to set and subtract
+                    context["lines_we_care_about"] = set(care) - deselected
+                after_count = len(context["lines_we_care_about"])
+                print(f"[Step2] Excluded {before_count - after_count} deselected overloads from monitoring: {deselected}")
+                print(f"[Step2] lines_we_care_about: {before_count} -> {after_count}")
+        else:
+            print(f"[Step2] monitor_deselected={monitor_deselected}, all_overloads={all_overloads} -> NOT filtering lines_we_care_about")
+
+        results = run_analysis_step2(context)
+        self._last_result = results # Store for diagram generation
+        
+        # Yield PDF event (graph is generated in Step 2)
+        yield {"type": "pdf", "pdf_path": self._get_latest_pdf_path()}
+
+        # Build enriched actions the same way as run_analysis - with monitoring_factor applied and topology
+        monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
+        enriched_actions = {}
+        for action_id, action_data in results["prioritized_actions"].items():
+            rho_before_raw = action_data.get("rho_before")
+            rho_after_raw = action_data.get("rho_after")
+            max_rho_raw = action_data.get("max_rho")
+
+            rho_before = [r * monitoring_factor for r in rho_before_raw] if rho_before_raw is not None else None
+            rho_after = [r * monitoring_factor for r in rho_after_raw] if rho_after_raw is not None else None
+            max_rho = (max_rho_raw * monitoring_factor) if max_rho_raw is not None else None
+
+            enriched_actions[action_id] = {
+                "description_unitaire": action_data.get("description_unitaire") or "No description available",
+                "rho_before": sanitize_for_json(rho_before),
+                "rho_after": sanitize_for_json(rho_after),
+                "max_rho": sanitize_for_json(max_rho),
+                "max_rho_line": action_data.get("max_rho_line", ""),
+                "is_rho_reduction": bool(action_data.get("is_rho_reduction", False)),
+            }
+
+            # Extract topology from the underlying action object
+            action_obj = action_data.get("action")
+            if action_obj is not None:
+                topo = {}
+                for field in ("lines_ex_bus", "lines_or_bus", "gens_bus", "loads_bus"):
+                    val = getattr(action_obj, field, None)
+                    if val is None and isinstance(action_obj, dict):
+                        val = action_obj.get(field)
+                    topo[field] = sanitize_for_json(val) if val else {}
+                enriched_actions[action_id]["action_topology"] = topo
+
+        # Yield result
+        yield {
+            "type": "result",
+            "actions": enriched_actions,
+            "action_scores": sanitize_for_json(results["action_scores"]),
+            "lines_overloaded": results["lines_overloaded_names"],
+            "pre_existing_overloads": results.get("pre_existing_overloads", []),
+            "message": "Analysis completed",
+            "dc_fallback": False,
+        }
 
     def run_analysis(self, disconnected_element: str):
         import io
@@ -349,7 +489,10 @@ class RecommenderService:
             else:
                 raise FileNotFoundError(f"No .xiidm file found in {config.ENV_PATH}")
         
-        self._base_network = pp.network.load(str(network_file))
+        n = pp.network.load(str(network_file))
+        # Convenience method not in pypowsybl API: return line IDs as a list
+        n.get_line_ids = lambda: n.get_lines().index.tolist()
+        self._base_network = n
         return self._base_network
 
     def _get_n_variant(self):

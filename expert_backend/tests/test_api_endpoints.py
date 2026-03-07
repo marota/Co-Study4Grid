@@ -185,6 +185,105 @@ class TestRunAnalysis:
         assert error_event["type"] == "error"
 
 
+class TestRunAnalysisStep1:
+    def test_success(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.run_analysis_step1.return_value = {
+            "lines_overloaded": ["LINE_1", "LINE_2"],
+            "message": "Detected 2 overloads.",
+            "can_proceed": True,
+        }
+
+        response = client.post(
+            "/api/run-analysis-step1",
+            json={"disconnected_element": "LINE_A"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["lines_overloaded"] == ["LINE_1", "LINE_2"]
+        assert data["can_proceed"] is True
+
+    def test_error_in_service(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.run_analysis_step1.side_effect = Exception("Step 1 failed")
+
+        response = client.post(
+            "/api/run-analysis-step1",
+            json={"disconnected_element": "LINE_A"},
+        )
+        assert response.status_code == 400
+        assert "Step 1 failed" in response.json()["detail"]
+
+
+class TestRunAnalysisStep2:
+    def test_streaming_response_success(self, client, mock_services):
+        _, mock_rs = mock_services
+
+        def fake_analysis_step2(selected_overloads, all_overloads=None, monitor_deselected=False):
+            yield {"type": "pdf", "pdf_path": "/tmp/graph.pdf"}
+            yield {
+                "type": "result",
+                "actions": {},
+                "action_scores": {},
+                "lines_overloaded": ["LINE_1"],
+                "message": "Analysis completed",
+                "dc_fallback": False,
+            }
+
+        mock_rs.run_analysis_step2.side_effect = fake_analysis_step2
+
+        response = client.post(
+            "/api/run-analysis-step2",
+            json={
+                "selected_overloads": ["LINE_1"],
+                "all_overloads": ["LINE_1", "LINE_2"],
+                "monitor_deselected": True,
+            },
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/x-ndjson"
+
+        # Parse NDJSON lines
+        lines = [
+            line for line in response.text.strip().split("\n") if line.strip()
+        ]
+        assert len(lines) == 2
+        pdf_event = json.loads(lines[0])
+        result_event = json.loads(lines[1])
+        
+        assert pdf_event["type"] == "pdf"
+        assert pdf_event["pdf_url"] == "/results/pdf/graph.pdf"
+        assert result_event["type"] == "result"
+        assert result_event["lines_overloaded"] == ["LINE_1"]
+
+        # Verify service call parameters
+        mock_rs.run_analysis_step2.assert_called_once_with(
+            ["LINE_1"],
+            all_overloads=["LINE_1", "LINE_2"],
+            monitor_deselected=True
+        )
+
+    def test_error_in_streaming(self, client, mock_services):
+        _, mock_rs = mock_services
+
+        def failing_analysis_step2(*args, **kwargs):
+            raise RuntimeError("Step 2 exploded")
+
+        mock_rs.run_analysis_step2.side_effect = failing_analysis_step2
+
+        response = client.post(
+            "/api/run-analysis-step2",
+            json={"selected_overloads": ["LINE_1"]},
+        )
+        assert response.status_code == 200  # Streaming response
+        lines = [
+            line for line in response.text.strip().split("\n") if line.strip()
+        ]
+        error_event = json.loads(lines[0])
+        assert error_event["type"] == "error"
+        assert "Step 2 exploded" in error_event["message"]
+
+
 class TestActionVariantDiagram:
     def test_success(self, client, mock_services):
         _, mock_rs = mock_services

@@ -11,6 +11,10 @@ interface OverloadPanelProps {
     preExistingOverloadThreshold?: number;
     onDismissWarning?: () => void;
     onOpenSettings?: () => void;
+    selectedOverloads?: Set<string>;
+    onToggleOverload?: (overload: string) => void;
+    monitorDeselected?: boolean;
+    onToggleMonitorDeselected?: () => void;
 }
 
 const OverloadPanel: React.FC<OverloadPanelProps> = ({
@@ -24,6 +28,10 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
     preExistingOverloadThreshold,
     onDismissWarning,
     onOpenSettings,
+    selectedOverloads,
+    onToggleOverload,
+    monitorDeselected = false,
+    onToggleMonitorDeselected,
 }) => {
     const clickableLinkStyle: React.CSSProperties = {
         background: 'none',
@@ -34,39 +42,60 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
         color: '#1e40af',
         fontWeight: 600,
         textDecoration: 'underline dotted',
+        textAlign: 'left',
+        display: 'inline',
     };
 
     const renderLinks = (lines: string[], tab: 'n' | 'n-1') => {
         if (!lines || lines.length === 0) return <span style={{ color: '#888', fontStyle: 'italic' }}>None</span>;
-        return lines.map((lineName, i) => (
-            <React.Fragment key={i}>
-                {i > 0 && ', '}
-                <button
-                    style={clickableLinkStyle}
-                    title={`Zoom to ${lineName}`}
-                    onClick={(e) => { e.stopPropagation(); onAssetClick('', lineName, tab); }}
-                >
-                    {lineName}
-                </button>
-            </React.Fragment>
-        ));
+        return lines.map((lineName, i) => {
+            const isSelected = tab === 'n-1' ? (selectedOverloads?.has(lineName) ?? true) : true;
+            return (
+                <React.Fragment key={i}>
+                    {i > 0 && ', '}
+                    <button
+                        style={{
+                            ...clickableLinkStyle,
+                            color: isSelected ? '#1e40af' : '#bdc3c7',
+                            fontWeight: isSelected ? 600 : 400,
+                            textDecoration: isSelected ? 'underline dotted' : 'none'
+                        }}
+                        title={tab === 'n-1' 
+                            ? (isSelected ? `Zoom to ${lineName} (Double-click to unselect)` : `Zoom to ${lineName} (Double-click to select)`)
+                            : `Zoom to ${lineName}`}
+                        onClick={(e) => { e.stopPropagation(); onAssetClick('', lineName, tab); }}
+                        onDoubleClick={(e) => { 
+                            if (tab === 'n-1') {
+                                e.stopPropagation(); 
+                                onToggleOverload?.(lineName); 
+                            }
+                        }}
+                    >
+                        {lineName}
+                    </button>
+                </React.Fragment>
+            );
+        });
     };
+
+    const hasDeselected = n1Overloads.some(name => !(selectedOverloads?.has(name) ?? true));
+    const deselectedCount = hasDeselected && selectedOverloads ? n1Overloads.filter(name => !selectedOverloads.has(name)).length : 0;
 
     return (
         <div style={{
             background: 'white',
             borderBottom: '1px solid #ccc',
-            padding: '10px 15px',
+            padding: '8px 12px',
             boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
             zIndex: 10
         }}>
-            <h3 style={{ margin: '0 0 8px 0', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <h3 style={{ margin: '0 0 6px 0', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ color: '#e74c3c' }}>⚠️</span> Overloads
             </h3>
 
             {showMonitoringWarning && totalLinesCount && totalLinesCount > 0 && (
                 <div style={{
-                    marginBottom: '10px',
+                    marginBottom: '8px',
                     padding: '8px 12px',
                     background: '#fff3cd',
                     border: '1px solid #ffeeba',
@@ -75,7 +104,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                     fontSize: '0.8rem',
                     position: 'relative'
                 }}>
-                    ⚠️ <strong>{monitoredLinesCount}</strong> out of <strong>{totalLinesCount}</strong> lines monitored ({totalLinesCount - (monitoredLinesCount || 0)} without permanent limits). Monitoring factor: {Math.round((monitoringFactor || 0.95) * 100)}%. {Math.round((preExistingOverloadThreshold || 0.02) * 100)}% loading increase threshold for considering worsened overload in N.
+                    ⚠️ <strong>{monitorDeselected ? (monitoredLinesCount || 0) : (monitoredLinesCount || 0) - (hasDeselected ? deselectedCount : 0)}</strong> out of <strong>{totalLinesCount}</strong> lines monitored ({totalLinesCount - (monitoredLinesCount || 0)} without permanent limits{hasDeselected && !monitorDeselected ? `, and ${deselectedCount} deselected` : ''}). Monitoring factor: {Math.round((monitoringFactor || 0.95) * 100)}%. {Math.round((preExistingOverloadThreshold || 0.02) * 100)}% loading increase threshold for considering worsened overload in N.
                     <button
                         onClick={onOpenSettings}
                         style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: '0 0 0 5px', fontSize: 'inherit' }}
@@ -94,12 +123,12 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                 </div>
             )}
 
-            <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <div style={{
                     display: 'flex',
                     alignItems: 'baseline',
                     gap: '8px',
-                    padding: '6px',
+                    padding: '4px 6px',
                     background: nOverloads.length > 0 ? '#fff3cd' : 'transparent',
                     borderLeft: nOverloads.length > 0 ? '3px solid #ffc107' : '3px solid transparent',
                     borderBottom: '1px solid #eee'
@@ -111,18 +140,61 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                 </div>
 
                 <div style={{
-                    display: 'flex',
-                    alignItems: 'baseline',
-                    gap: '8px',
-                    padding: '6px',
+                    padding: '4px 6px',
                     background: n1Overloads.length > 0 ? '#f8d7da' : 'transparent',
                     borderLeft: n1Overloads.length > 0 ? '3px solid #dc3545' : '3px solid transparent',
-                    borderBottom: '1px solid #eee'
+                    borderBottom: '1px solid #eee',
+                    lineHeight: '1.6',
                 }}>
-                    <strong style={{ whiteSpace: 'nowrap' }}>N-1 Overloads:</strong>
-                    <div style={{ display: 'inline', wordBreak: 'break-word' }}>
+                    <strong style={{ whiteSpace: 'nowrap', marginRight: '4px' }}>N-1 Overloads:</strong>
+                    <span 
+                        title="Double-click on an overload name to toggle its inclusion in the analysis. Selected overloads are blue; unselected are light grey." 
+                        style={{ 
+                            display: 'inline-flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center', 
+                            width: '14px', 
+                            height: '14px', 
+                            borderRadius: '50%', 
+                            background: '#6c757d', 
+                            color: 'white', 
+                            fontSize: '10px', 
+                            cursor: 'help',
+                            verticalAlign: 'middle',
+                            marginRight: '4px',
+                        }}
+                    >
+                        ?
+                    </span>
+                    {hasDeselected && onToggleMonitorDeselected && (
+                        <label
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                color: monitorDeselected ? '#0056b3' : '#6c757d',
+                                fontWeight: monitorDeselected ? 600 : 400,
+                                whiteSpace: 'nowrap',
+                                marginRight: '6px',
+                                verticalAlign: 'middle',
+                            }}
+                            title="When checked, deselected overloads are still included in the analysis monitoring scope"
+                        >
+                            <input
+                                type="checkbox"
+                                checked={monitorDeselected}
+                                onChange={onToggleMonitorDeselected}
+                                style={{ margin: 0, cursor: 'pointer', width: '11px', height: '11px' }}
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                            monitor deselected
+                        </label>
+                    )}
+                    <span style={{ wordBreak: 'break-word' }}>
                         {renderLinks(n1Overloads, 'n-1')}
-                    </div>
+                    </span>
                 </div>
             </div>
         </div>
