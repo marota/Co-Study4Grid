@@ -421,8 +421,9 @@ function App() {
           }
         }
       }
-    } catch (err: any) {
-      setError('Analysis failed: ' + (err.response?.data?.detail || err.message));
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } }; message?: string };
+      setError('Analysis failed: ' + (e.response?.data?.detail || e.message));
     } finally {
       setAnalysisLoading(false);
     }
