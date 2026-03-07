@@ -104,7 +104,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                     fontSize: '0.8rem',
                     position: 'relative'
                 }}>
-                    ⚠️ <strong>{(monitoredLinesCount || 0) - (hasDeselected && !monitorDeselected ? deselectedCount : 0)}</strong> out of <strong>{totalLinesCount}</strong> lines monitored ({totalLinesCount - (monitoredLinesCount || 0) + (hasDeselected && !monitorDeselected ? deselectedCount : 0)} without permanent limits{hasDeselected && !monitorDeselected ? `, incl. ${deselectedCount} deselected` : ''}). Monitoring factor: {Math.round((monitoringFactor || 0.95) * 100)}%. {Math.round((preExistingOverloadThreshold || 0.02) * 100)}% loading increase threshold for considering worsened overload in N.
+                    ⚠️ <strong>{monitorDeselected ? (monitoredLinesCount || 0) : (monitoredLinesCount || 0) - (hasDeselected ? deselectedCount : 0)}</strong> out of <strong>{totalLinesCount}</strong> lines monitored ({totalLinesCount - (monitoredLinesCount || 0)} without permanent limits{hasDeselected && !monitorDeselected ? `, and ${deselectedCount} deselected` : ''}). Monitoring factor: {Math.round((monitoringFactor || 0.95) * 100)}%. {Math.round((preExistingOverloadThreshold || 0.02) * 100)}% loading increase threshold for considering worsened overload in N.
                     <button
                         onClick={onOpenSettings}
                         style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: '0 0 0 5px', fontSize: 'inherit' }}
