@@ -7,10 +7,11 @@ from expert_backend.main import ConfigRequest
 from expert_op4grid_recommender import config
 
 class TestRecommenderService:
+    @patch("expert_backend.services.recommender_service.enrich_actions_lazy")
     @patch("expert_backend.services.recommender_service.load_actions")
     @patch("expert_backend.services.network_service.network_service")
     @patch("builtins.open", new_callable=mock_open)
-    def test_update_config_applies_settings(self, mock_file, mock_network_service, mock_load_actions):
+    def test_update_config_applies_settings(self, mock_file, mock_network_service, mock_load_actions, mock_enrich):
         # Set up mocks
         mock_load_actions.return_value = {"existing_action": {}}
         mock_network_service.get_disconnectable_elements.return_value = ["line1", "line2"]
@@ -65,6 +66,7 @@ class TestRecommenderService:
     def test_update_config_defaults(self):
         # We also want to verify that default settings work as expected
         with patch("expert_backend.services.recommender_service.load_actions") as mock_load, \
+             patch("expert_backend.services.recommender_service.enrich_actions_lazy") as mock_enrich, \
              patch("expert_backend.services.network_service.network_service") as mock_ns, \
              patch("builtins.open", mock_open()):
             

@@ -1,7 +1,7 @@
 import expert_op4grid_recommender
 from expert_op4grid_recommender import config
 from expert_op4grid_recommender.main import Backend, run_analysis, run_analysis_step1, run_analysis_step2
-from expert_op4grid_recommender.data_loader import load_actions
+from expert_op4grid_recommender.data_loader import load_actions, enrich_actions_lazy
 from expert_op4grid_recommender.utils.make_env_utils import create_olf_rte_parameter
 import os
 import glob
@@ -100,34 +100,30 @@ class RecommenderService:
         # Load and cache the action dictionary immediately if path changed or not loaded
         new_action_path = Path(settings.action_file_path)
         if getattr(self, '_last_action_path', None) != new_action_path or self._dict_action is None:
-            self._dict_action = load_actions(config.ACTION_FILE_PATH)
+            raw_dict_action = load_actions(config.ACTION_FILE_PATH)
             self._last_action_path = new_action_path
 
-            # Auto-generate disco actions if none exist
-            has_disco = any(k.startswith("disco_") for k in self._dict_action)
+            # Auto-generate disco actions if none exist in the file
+            has_disco = any(k.startswith("disco_") for k in raw_dict_action)
             if not has_disco:
                 from expert_backend.services.network_service import network_service
                 branches = network_service.get_disconnectable_elements()
                 for branch in branches:
                     action_id = f"disco_{branch}"
-                    self._dict_action[action_id] = {
+                    raw_dict_action[action_id] = {
                         "description": f"Disconnection of line/transformer '{branch}'",
                         "description_unitaire": f"Ouverture de la ligne '{branch}'",
-                        "content": {
-                            "set_bus": {
-                                "lines_or_id": {branch: -1},
-                                "lines_ex_id": {branch: -1},
-                                "loads_id": {},
-                                "generators_id": {},
-                            }
-                        },
                     }
                 print(f"[RecommenderService] Auto-generated {len(branches)} disco_ actions")
-                
-                # Save the updated dictionary back to file so the core analysis engine can load it
+
+                # Save the raw entries (without content) so the core analysis engine can read them
                 import json
                 with open(config.ACTION_FILE_PATH, 'w') as f:
-                    json.dump(self._dict_action, f, indent=2)
+                    json.dump(raw_dict_action, f, indent=2)
+
+            # Wrap with LazyActionDict so 'content' is computed on demand from 'switches'
+            from expert_backend.services.network_service import network_service
+            self._dict_action = enrich_actions_lazy(raw_dict_action, network_service.network)
         else:
             print("Action dictionary already loaded, skipping reload.")
 
