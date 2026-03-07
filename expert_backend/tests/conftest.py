@@ -4,13 +4,20 @@ The domain-specific packages (pypowsybl, expert_op4grid_recommender) are not
 available in CI/test environments.  We install lightweight mocks into
 ``sys.modules`` *before* any production module is imported so that collection
 and import succeed without the real packages.
+
+When the real packages *are* installed (e.g. local development), we prefer
+them over mocks so that integration-style tests (TestRecommenderSimulationRealData)
+can run against the real implementations.
 """
 
 import sys
+import importlib
 from unittest.mock import MagicMock
 
 # ---------------------------------------------------------------------------
-# Mock heavy domain packages that are not available in test environments
+# Mock heavy domain packages that are not available in test environments.
+# Try to import each package first; only install a mock when the real package
+# cannot be found.
 # ---------------------------------------------------------------------------
 _MOCK_MODULES = [
     "pypowsybl",
@@ -35,7 +42,10 @@ _MOCK_MODULES = [
 
 for mod_name in _MOCK_MODULES:
     if mod_name not in sys.modules:
-        sys.modules[mod_name] = MagicMock()
+        try:
+            importlib.import_module(mod_name)
+        except (ImportError, ModuleNotFoundError):
+            sys.modules[mod_name] = MagicMock()
 
 # ---------------------------------------------------------------------------
 # Now it is safe to import production code

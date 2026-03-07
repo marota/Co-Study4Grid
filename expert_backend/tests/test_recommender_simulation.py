@@ -161,7 +161,9 @@ class TestRecommenderSimulationRealData:
 
                 # Check that after the second call, the observation was tagged with the N-1 variant ID
                 # In the actual code: obs_simu_defaut._variant_id = n1_variant_id
-                assert mock_get_obs.return_value._variant_id == f"N_1_state_{target_line}"
+                # env.get_obs() uses side_effect=wrapped_get_obs which returns mock_obs;
+                # mock_get_obs.return_value is a separate auto-generated mock, not mock_obs.
+                assert mock_obs._variant_id == f"N_1_state_{target_line}"
 
                 # Check that _last_disconnected_element was updated
                 assert self.service._last_disconnected_element == target_line

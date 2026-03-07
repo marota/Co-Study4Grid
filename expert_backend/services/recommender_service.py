@@ -24,9 +24,11 @@ def sanitize_for_json(obj):
     else:
         # Fallback for unknown objects
         try:
-            # Try to get dict representation
             if hasattr(obj, "to_dict"):
-                return sanitize_for_json(obj.to_dict())
+                d = obj.to_dict()
+                if isinstance(d, dict):
+                    return sanitize_for_json(d)
+                return str(obj)
             return sanitize_for_json(vars(obj))
         except TypeError:
             return str(obj)
@@ -487,7 +489,10 @@ class RecommenderService:
             else:
                 raise FileNotFoundError(f"No .xiidm file found in {config.ENV_PATH}")
         
-        self._base_network = pp.network.load(str(network_file))
+        n = pp.network.load(str(network_file))
+        # Convenience method not in pypowsybl API: return line IDs as a list
+        n.get_line_ids = lambda: n.get_lines().index.tolist()
+        self._base_network = n
         return self._base_network
 
     def _get_n_variant(self):
