@@ -16,6 +16,8 @@ def sanitize_for_json(obj):
     if isinstance(obj, (np.integer, int)):
         return int(obj)
     elif isinstance(obj, (np.floating, float)):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
         return float(obj)
     elif isinstance(obj, np.ndarray):
         return sanitize_for_json(obj.tolist())
@@ -34,7 +36,7 @@ def sanitize_for_json(obj):
                     return sanitize_for_json(d)
                 return str(obj)
             return sanitize_for_json(vars(obj))
-        except TypeError:
+        except (TypeError, ValueError):
             return str(obj)
 
 class RecommenderService:
@@ -47,6 +49,43 @@ class RecommenderService:
         self._last_disconnected_element = None
         self._dict_action = None
         self._analysis_context = None
+
+    def _enrich_actions(self, prioritized_actions_dict):
+        """Helper to convert raw prioritized actions into enriched dict for JSON response."""
+        monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
+        enriched_actions = {}
+        
+        for action_id, action_data in prioritized_actions_dict.items():
+            rho_before_raw = action_data.get("rho_before")
+            rho_after_raw = action_data.get("rho_after")
+            max_rho_raw = action_data.get("max_rho")
+
+            rho_before = [r * monitoring_factor for r in rho_before_raw] if rho_before_raw is not None else None
+            rho_after = [r * monitoring_factor for r in rho_after_raw] if rho_after_raw is not None else None
+            max_rho = (max_rho_raw * monitoring_factor) if max_rho_raw is not None else None
+
+            enriched_actions[action_id] = {
+                "description_unitaire": action_data.get("description_unitaire") or "No description available",
+                "rho_before": sanitize_for_json(rho_before),
+                "rho_after": sanitize_for_json(rho_after),
+                "max_rho": sanitize_for_json(max_rho),
+                "max_rho_line": action_data.get("max_rho_line", ""),
+                "is_rho_reduction": bool(action_data.get("is_rho_reduction", False)),
+            }
+
+            # Extract topology from the underlying action object
+            action_obj = action_data.get("action")
+            if action_obj is not None:
+                topo = {}
+                # pypowsybl Actions use these fields
+                for field in ("lines_ex_bus", "lines_or_bus", "gens_bus", "loads_bus", "substations", "switches"):
+                    val = getattr(action_obj, field, None)
+                    if val is None and isinstance(action_obj, dict):
+                        val = action_obj.get(field)
+                    topo[field] = sanitize_for_json(val) if val else {}
+                enriched_actions[action_id]["action_topology"] = topo
+                
+        return enriched_actions
 
     def update_config(self, settings):
         # Update the global config of the package
@@ -248,47 +287,18 @@ class RecommenderService:
         self._last_result = results # Store for diagram generation
 
         # Build enriched actions the same way as run_analysis - with monitoring_factor applied and topology
-        monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
-        enriched_actions = {}
-        for action_id, action_data in results["prioritized_actions"].items():
-            rho_before_raw = action_data.get("rho_before")
-            rho_after_raw = action_data.get("rho_after")
-            max_rho_raw = action_data.get("max_rho")
-
-            rho_before = [r * monitoring_factor for r in rho_before_raw] if rho_before_raw is not None else None
-            rho_after = [r * monitoring_factor for r in rho_after_raw] if rho_after_raw is not None else None
-            max_rho = (max_rho_raw * monitoring_factor) if max_rho_raw is not None else None
-
-            enriched_actions[action_id] = {
-                "description_unitaire": action_data.get("description_unitaire") or "No description available",
-                "rho_before": sanitize_for_json(rho_before),
-                "rho_after": sanitize_for_json(rho_after),
-                "max_rho": sanitize_for_json(max_rho),
-                "max_rho_line": action_data.get("max_rho_line", ""),
-                "is_rho_reduction": bool(action_data.get("is_rho_reduction", False)),
-            }
-
-            # Extract topology from the underlying action object
-            action_obj = action_data.get("action")
-            if action_obj is not None:
-                topo = {}
-                for field in ("lines_ex_bus", "lines_or_bus", "gens_bus", "loads_bus"):
-                    val = getattr(action_obj, field, None)
-                    if val is None and isinstance(action_obj, dict):
-                        val = action_obj.get(field)
-                    topo[field] = sanitize_for_json(val) if val else {}
-                enriched_actions[action_id]["action_topology"] = topo
+        enriched_actions = self._enrich_actions(results["prioritized_actions"])
 
         # Yield result
-        yield {
+        yield sanitize_for_json({
             "type": "result",
             "actions": enriched_actions,
-            "action_scores": sanitize_for_json(results["action_scores"]),
+            "action_scores": results["action_scores"],
             "lines_overloaded": results["lines_overloaded_names"],
             "pre_existing_overloads": results.get("pre_existing_overloads", []),
             "message": "Analysis completed",
             "dc_fallback": False,
-        }
+        })
 
     def run_analysis(self, disconnected_element: str):
         import io
@@ -413,35 +423,7 @@ class RecommenderService:
 
             monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
 
-            enriched_actions = {}
-            for action_id, action_data in prioritized.items():
-                rho_before_raw = action_data.get("rho_before")
-                rho_after_raw = action_data.get("rho_after")
-                max_rho_raw = action_data.get("max_rho")
-                
-                rho_before = [r * monitoring_factor for r in rho_before_raw] if rho_before_raw else None
-                rho_after = [r * monitoring_factor for r in rho_after_raw] if rho_after_raw else None
-                max_rho = (max_rho_raw * monitoring_factor) if max_rho_raw is not None else None
-
-                enriched_actions[action_id] = {
-                    "description_unitaire": action_data.get("description_unitaire") or "No description available",
-                    "rho_before": sanitize_for_json(rho_before),
-                    "rho_after": sanitize_for_json(rho_after),
-                    "max_rho": sanitize_for_json(max_rho),
-                    "max_rho_line": action_data.get("max_rho_line", ""),
-                    "is_rho_reduction": bool(action_data.get("is_rho_reduction", False)),
-                }
-
-                # Extract topology from the underlying action object
-                action_obj = action_data.get("action")
-                if action_obj is not None:
-                    topo = {}
-                    for field in ("lines_ex_bus", "lines_or_bus", "gens_bus", "loads_bus"):
-                        val = getattr(action_obj, field, None)
-                        if val is None and isinstance(action_obj, dict):
-                            val = action_obj.get(field)
-                        topo[field] = sanitize_for_json(val) if val else {}
-                    enriched_actions[action_id]["action_topology"] = topo
+            enriched_actions = self._enrich_actions(prioritized)
 
         from expert_backend.services.network_service import network_service
         total_branches = len(network_service.get_disconnectable_elements())
@@ -455,15 +437,15 @@ class RecommenderService:
         else:
             analysis_message = info_msg
 
-        yield {
+        yield sanitize_for_json({
             "type": "result",
             "pdf_path": str(shared_state["latest_pdf"]) if shared_state["latest_pdf"] else None,
             "actions": enriched_actions,
             "action_scores": action_scores,
-            "lines_overloaded": sanitize_for_json(lines_overloaded),
+            "lines_overloaded": lines_overloaded,
             "message": analysis_message,
             "dc_fallback": dc_fallback_used
-        }
+        })
 
     def _run_ac_with_fallback(self, network, params):
         import pypowsybl.loadflow as lf
