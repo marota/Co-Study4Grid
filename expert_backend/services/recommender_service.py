@@ -1,10 +1,14 @@
 import expert_op4grid_recommender
 from expert_op4grid_recommender import config
-from expert_op4grid_recommender.main import Backend, run_analysis, run_analysis_step1, run_analysis_step2
+from expert_op4grid_recommender.main import (
+    Backend, run_analysis, run_analysis_step1, run_analysis_step2,
+    run_analysis_step2_graph, run_analysis_step2_discovery
+)
 from expert_op4grid_recommender.data_loader import load_actions, enrich_actions_lazy
 from expert_op4grid_recommender.utils.make_env_utils import create_olf_rte_parameter
 import os
 import glob
+import time
 from pathlib import Path
 import numpy as np
 
@@ -194,6 +198,7 @@ class RecommenderService:
             raise ValueError("Analysis context not found. Run step 1 first.")
         
         context = self._analysis_context
+        analysis_start_time = time.time()
         
         # Filter overloads in context based on user selection
         all_names = context["lines_overloaded_names"]
@@ -232,11 +237,15 @@ class RecommenderService:
         else:
             print(f"[Step2] monitor_deselected={monitor_deselected}, all_overloads={all_overloads} -> NOT filtering lines_we_care_about")
 
-        results = run_analysis_step2(context)
-        self._last_result = results # Store for diagram generation
+        # Part 1: Graph generation and PDF
+        context = run_analysis_step2_graph(context)
         
-        # Yield PDF event (graph is generated in Step 2)
-        yield {"type": "pdf", "pdf_path": self._get_latest_pdf_path()}
+        # Yield PDF event (graph is generated in Step 2 Part 1)
+        yield {"type": "pdf", "pdf_path": self._get_latest_pdf_path(analysis_start_time)}
+        
+        # Part 2: Action discovery
+        results = run_analysis_step2_discovery(context)
+        self._last_result = results # Store for diagram generation
 
         # Build enriched actions the same way as run_analysis - with monitoring_factor applied and topology
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
@@ -283,7 +292,6 @@ class RecommenderService:
 
     def run_analysis(self, disconnected_element: str):
         import io
-        import time
         import threading
         from contextlib import redirect_stdout
 
