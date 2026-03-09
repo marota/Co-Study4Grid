@@ -430,7 +430,7 @@ function App() {
     } finally {
       setAnalysisLoading(false);
     }
-  }, [selectedBranch, selectedOverloads, monitorDeselected, selectedActionIds]);
+  }, [selectedBranch, selectedOverloads, monitorDeselected]);
 
   const handleDisplayPrioritizedActions = useCallback(() => {
     if (!pendingAnalysisResult) return;

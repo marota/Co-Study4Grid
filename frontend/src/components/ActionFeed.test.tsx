@@ -20,7 +20,7 @@ vi.mock('../utils/svgUtils', () => ({
 }));
 
 import ActionFeed from './ActionFeed';
-import type { ActionDetail } from '../types';
+import type { ActionDetail, AnalysisResult } from '../types';
 
 describe('ActionFeed', () => {
     const emptyTopo = { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} };
@@ -50,7 +50,7 @@ describe('ActionFeed', () => {
         minLineDisconnections: 3,
         nPrioritizedActions: 10,
         ignoreReconnections: false,
-        pendingAnalysisResult: null as any,
+        pendingAnalysisResult: null as AnalysisResult | null,
     };
 
     it('renders "Scored Actions" heading when search is opened and actions are present', async () => {
@@ -125,7 +125,7 @@ describe('ActionFeed', () => {
             analysisLoading: false,
             pendingAnalysisResult: {
                 actions: { 'new_act': { description_unitaire: 'New', rho_before: [], rho_after: [], max_rho: 0.5, max_rho_line: '', is_rho_reduction: true } }
-            } as any,
+            } as unknown as AnalysisResult,
         };
         render(<ActionFeed {...props} />);
         
@@ -140,7 +140,7 @@ describe('ActionFeed', () => {
             onDisplayPrioritizedActions: onDisplay,
             pendingAnalysisResult: {
                 actions: { 'new_act': { description_unitaire: 'New', rho_before: [], rho_after: [], max_rho: 0.5, max_rho_line: '', is_rho_reduction: true } }
-            } as any,
+            } as unknown as AnalysisResult,
         };
         render(<ActionFeed {...props} />);
         
