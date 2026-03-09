@@ -93,6 +93,7 @@ export const api = {
         max_rho: number | null;
         max_rho_line: string;
         is_rho_reduction: boolean;
+        non_convergence: string | null;
         lines_overloaded: string[];
     }> => {
         const response = await axios.post(

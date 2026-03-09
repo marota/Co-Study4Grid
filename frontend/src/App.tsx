@@ -79,6 +79,7 @@ function App() {
     try {
       // Clear previous results to ensure consistency with new settings BEFORE fetching
       setResult(null);
+      setPendingAnalysisResult(null);
       setNDiagram(null);
       setN1Diagram(null);
       setActionDiagram(null);
@@ -152,6 +153,7 @@ function App() {
 
   // ===== Analysis State =====
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [pendingAnalysisResult, setPendingAnalysisResult] = useState<AnalysisResult | null>(null);
   const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
   const [manuallyAddedIds, setManuallyAddedIds] = useState<Set<string>>(new Set());
   const [rejectedActionIds, setRejectedActionIds] = useState<Set<string>>(new Set());
@@ -210,6 +212,7 @@ function App() {
     setNDiagram(null);
     setN1Diagram(null);
     setResult(null);
+    setPendingAnalysisResult(null);
     setSelectedActionId(null);
     setSelectedActionIds(new Set());
     setManuallyAddedIds(new Set());
@@ -321,14 +324,24 @@ function App() {
     }
   }, [n1Diagram]);
 
-  const handleRunAnalysis = async () => {
+  const handleRunAnalysis = useCallback(async () => {
     if (!selectedBranch) return;
     setAnalysisLoading(true);
     setError('');
     setInfoMessage('');
     setSelectedActionId(null);
     setActionDiagram(null);
-    setResult(null);
+    setPendingAnalysisResult(null);
+    setResult(prev => {
+      if (!prev) return null;
+      const manualActionsData: Record<string, ActionDetail> = {};
+      for (const [id, data] of Object.entries(prev.actions || {})) {
+        if (data.is_manual) {
+          manualActionsData[id] = data;
+        }
+      }
+      return { ...prev, actions: manualActionsData };
+    });
 
     try {
       // Step 1: Detection
@@ -393,25 +406,15 @@ function App() {
           try {
             const event = JSON.parse(line);
             if (event.type === 'pdf') {
-              setResult((p: AnalysisResult | null) => ({ ...p!, pdf_url: event.pdf_url } as AnalysisResult));
+              setResult((p: AnalysisResult | null) => ({ ...(p || {}), pdf_url: event.pdf_url } as AnalysisResult));
               setActiveTab('overflow');
             } else if (event.type === 'result') {
-              setResult((prev: AnalysisResult | null) => {
-                const manualActionsData: Record<string, ActionDetail> = {};
-                if (prev?.actions) {
-                  for (const [id, data] of Object.entries(prev.actions)) {
-                    if (manuallyAddedIds.has(id)) {
-                      manualActionsData[id] = data;
-                    }
-                  }
-                }
-                return {
-                  ...event,
-                  // Preserve pdf_url set by the earlier 'pdf' event
-                  pdf_url: prev?.pdf_url || event.pdf_url,
-                  actions: { ...event.actions, ...manualActionsData }
-                } as AnalysisResult;
-              });
+              // Mark all recommended actions as NOT manual
+              const actionsWithFlags = { ...event.actions };
+              for (const id in actionsWithFlags) {
+                actionsWithFlags[id].is_manual = false;
+              }
+              setPendingAnalysisResult({ ...event, actions: actionsWithFlags });
               if (event.message) setInfoMessage(event.message);
             } else if (event.type === 'error') {
               setError('Analysis failed: ' + event.message);
@@ -427,7 +430,27 @@ function App() {
     } finally {
       setAnalysisLoading(false);
     }
-  };
+  }, [selectedBranch, selectedOverloads, monitorDeselected]);
+
+  const handleDisplayPrioritizedActions = useCallback(() => {
+    if (!pendingAnalysisResult) return;
+    setResult(prev => {
+      // Preserve manually added / selected actions
+      const manualActionsData: Record<string, ActionDetail> = {};
+      if (prev?.actions) {
+        for (const [id, data] of Object.entries(prev.actions)) {
+          if (selectedActionIds.has(id)) {
+            manualActionsData[id] = data;
+          }
+        }
+      }
+      return {
+        ...pendingAnalysisResult,
+        actions: { ...pendingAnalysisResult.actions, ...manualActionsData },
+      };
+    });
+    setPendingAnalysisResult(null);
+  }, [pendingAnalysisResult, selectedActionIds]);
 
   const handleToggleOverload = useCallback((overload: string) => {
     setSelectedOverloads((prev: Set<string>) => {
@@ -477,6 +500,16 @@ function App() {
       next.add(actionId);
       return next;
     });
+    setResult(prev => {
+      if (!prev || !prev.actions[actionId]) return prev;
+      return {
+        ...prev,
+        actions: {
+          ...prev.actions,
+          [actionId]: { ...prev.actions[actionId], is_manual: true }
+        }
+      };
+    });
     setRejectedActionIds(prev => {
       const next = new Set(prev);
       next.delete(actionId);
@@ -518,7 +551,7 @@ function App() {
         lines_overloaded: base.lines_overloaded.length > 0 ? base.lines_overloaded : linesOverloaded,
         actions: {
           ...base.actions,
-          [actionId]: detail,
+          [actionId]: { ...detail, is_manual: true },
         },
       };
     });
@@ -1185,6 +1218,8 @@ function App() {
               selectedActionIds={selectedActionIds}
               rejectedActionIds={rejectedActionIds}
               manuallyAddedIds={manuallyAddedIds}
+              pendingAnalysisResult={pendingAnalysisResult}
+              onDisplayPrioritizedActions={handleDisplayPrioritizedActions}
               onActionSelect={handleActionSelect}
               onActionFavorite={handleActionFavorite}
               onActionReject={handleActionReject}

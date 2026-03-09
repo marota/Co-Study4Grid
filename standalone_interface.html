@@ -1378,7 +1378,14 @@
                 setInfoMessage('');
                 setAnalysisRan(false);
                 setPendingAnalysisResult(null);
-                setResult(null);
+                setResult(prev => {
+                    if (!prev) return null;
+                    const manuals = {};
+                    for (const [id, data] of Object.entries(prev.actions || {})) {
+                        if (data.is_manual) manuals[id] = data;
+                    }
+                    return { ...prev, actions: manuals };
+                });
 
                 try {
                     // Step 1: Detection
@@ -1447,26 +1454,16 @@
                             try {
                                 const event = JSON.parse(line);
                                 if (event.type === 'pdf') {
-                                    setResult(p => ({ ...p, pdf_url: event.pdf_url }));
+                                    setResult(p => ({ ...(p || {}), pdf_url: event.pdf_url }));
                                     setActiveTab('overflow');
                                 }
                                 else if (event.type === 'result') {
-                                    setResult(prev => {
-                                        const manualActionsData = {};
-                                        if (prev?.actions) {
-                                            for (const [id, data] of Object.entries(prev.actions)) {
-                                                if (manualActionIds.has(id)) {
-                                                    manualActionsData[id] = data;
-                                                }
-                                            }
-                                        }
-                                        return {
-                                            ...event,
-                                            // Preserve pdf_url set by the earlier 'pdf' event
-                                            pdf_url: prev?.pdf_url || event.pdf_url,
-                                            actions: { ...event.actions, ...manualActionsData }
-                                        };
-                                    });
+                                    // Mark all recommended actions as NOT manual
+                                    const actionsWithFlags = { ...event.actions };
+                                    for (const id in actionsWithFlags) {
+                                        actionsWithFlags[id].is_manual = false;
+                                    }
+                                    setPendingAnalysisResult({ ...event, actions: actionsWithFlags });
                                     if (event.message) setInfoMessage(event.message);
                                 }
                                 else if (event.type === 'error') setError('Analysis failed: ' + event.message);
@@ -1487,11 +1484,11 @@
             const handleDisplayPrioritizedActions = () => {
                 if (!pendingAnalysisResult) return;
                 setResult(prev => {
-                    // Preserve manually added actions
+                    // Preserve manually added actions via is_manual flag
                     const manualActionsData = {};
                     if (prev?.actions) {
                         for (const [id, data] of Object.entries(prev.actions)) {
-                            if (manualActionIds.has(id)) {
+                            if (data.is_manual) {
                                 manualActionsData[id] = data;
                             }
                         }
@@ -1544,6 +1541,16 @@
                     const next = new Set(prev);
                     next.add(actionId);
                     return next;
+                });
+                setResult(prev => {
+                    if (!prev || !prev.actions[actionId]) return prev;
+                    return {
+                        ...prev,
+                        actions: {
+                            ...prev.actions,
+                            [actionId]: { ...prev.actions[actionId], is_manual: true }
+                        }
+                    };
                 });
                 setRejectedActionIds(prev => {
                     const next = new Set(prev);
@@ -2042,6 +2049,7 @@
                                     max_rho: detail.max_rho,
                                     max_rho_line: detail.max_rho_line,
                                     is_rho_reduction: detail.is_rho_reduction,
+                                    is_manual: true,
                                 }
                             }
                         };
@@ -2811,8 +2819,9 @@
             }, [sortedActionEntries, manualActionIds]);
 
             const prioritizedEntries = React.useMemo(() => {
+                if (analysisLoading) return [];
                 return sortedActionEntries.filter(([id]) => !manualActionIds.has(id) && !rejectedActionIds.has(id));
-            }, [sortedActionEntries, manualActionIds, rejectedActionIds]);
+            }, [sortedActionEntries, manualActionIds, rejectedActionIds, analysisLoading]);
 
             const rejectedEntries = React.useMemo(() => {
                 return sortedActionEntries.filter(([id]) => rejectedActionIds.has(id));
@@ -3547,16 +3556,45 @@
                                     >Rejected Actions {rejectedEntries.length > 0 && <span style={{ background: suggestedTab === 'rejected' ? '#fdecea' : '#f8f9fa', color: suggestedTab === 'rejected' ? '#e74c3c' : '#6c757d', fontSize: '11px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>{rejectedEntries.length}</span>}</button>
                                 </div>
 
-                                {/* Suggestions area - results appear here naturally after analysis */}
+                                    {analysisLoading && (
+                                        <div style={{ padding: '20px', textAlign: 'center', background: '#e9ecef', borderRadius: '8px', marginBottom: '10px', color: '#495057', fontWeight: 600, border: '1px solid #dee2e6' }}>
+                                            ⚙️ Processing analysis...
+                                        </div>
+                                    )}
 
-                                {suggestedTab === 'prioritized' && (
+                                    {/* Display prioritized actions button inside Suggested Actions section */}
+                                    {pendingAnalysisResult && !analysisLoading && (
+                                        <button
+                                            onClick={handleDisplayPrioritizedActions}
+                                            style={{
+                                                width: '100%',
+                                                padding: '10px 16px',
+                                                margin: '0 0 10px 0',
+                                                background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: '8px',
+                                                cursor: 'pointer',
+                                                fontSize: '14px',
+                                                fontWeight: 700,
+                                                boxShadow: '0 2px 8px rgba(39,174,96,0.3)',
+                                                transition: 'transform 0.1s',
+                                            }}
+                                            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                                            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                                        >
+                                            📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
+                                        </button>
+                                    )}
+
+                                    {suggestedTab === 'prioritized' && (
                                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
                                         !analysisLoading ? (
                                             <div style={{ textAlign: 'center' }}>
                                                 <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0' }}>
-                                                    {analysisRan ? 'No suggested actions available.' : 'Run analysis to get action suggestions.'}
+                                                    {!pendingAnalysisResult ? 'Run analysis to get action suggestions.' : 'No suggested actions available.'}
                                                 </p>
-                                                {nDiagram && analysisRan === false && !dismissedRecommenderWarning && (
+                                                {!pendingAnalysisResult && (
                                                     <div style={{
                                                         marginTop: '10px',
                                                         padding: '10px',

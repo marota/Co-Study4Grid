@@ -31,6 +31,7 @@ export interface ActionDetail {
     max_rho: number | null;
     max_rho_line: string;
     is_rho_reduction: boolean;
+    is_manual?: boolean;
     non_convergence?: string | null;
     action_topology?: ActionTopology;
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction } from '../types';
+import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult } from '../types';
 import { api } from '../api';
 import { getActionTargetVoltageLevel, getActionTargetLines } from '../utils/svgUtils';
 
@@ -10,6 +10,8 @@ interface ActionFeedProps {
     selectedActionId: string | null;
     selectedActionIds: Set<string>;
     rejectedActionIds: Set<string>;
+    pendingAnalysisResult: AnalysisResult | null;
+    onDisplayPrioritizedActions: () => void;
     onActionSelect: (actionId: string | null) => void;
     onActionFavorite: (actionId: string) => void;
     onActionReject: (actionId: string) => void;
@@ -38,6 +40,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     selectedActionId,
     selectedActionIds,
     rejectedActionIds,
+    pendingAnalysisResult,
+    onDisplayPrioritizedActions,
     onActionSelect,
     onActionFavorite,
     onActionReject,
@@ -241,8 +245,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     }, [sortedActionEntries, selectedActionIds]);
 
     const prioritizedEntries = useMemo(() => {
+        if (analysisLoading) return [];
         return sortedActionEntries.filter(([id]) => !selectedActionIds.has(id) && !rejectedActionIds.has(id));
-    }, [sortedActionEntries, selectedActionIds, rejectedActionIds]);
+    }, [sortedActionEntries, selectedActionIds, rejectedActionIds, analysisLoading]);
 
     const rejectedEntries = useMemo(() => {
         return sortedActionEntries.filter(([id]) => rejectedActionIds.has(id));
@@ -666,15 +671,40 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         ⚙️ Processing analysis...
                     </div>
                 )}
-
+ 
+                {/* Display prioritized actions button inside Suggested Actions section */}
+                {pendingAnalysisResult && !analysisLoading && (
+                    <button
+                        onClick={onDisplayPrioritizedActions}
+                        style={{
+                            width: '100%',
+                            padding: '10px 16px',
+                            margin: '0 0 10px 0',
+                            background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: 700,
+                            boxShadow: '0 2px 8px rgba(39,174,96,0.3)',
+                            transition: 'transform 0.1s',
+                        }}
+                        onMouseEnter={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'}
+                        onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
+                    >
+                        📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
+                    </button>
+                )}
+ 
                 {suggestedTab === 'prioritized' && (
                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
                         !analysisLoading ? (
                             <div style={{ textAlign: 'center' }}>
                                 <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0' }}>
-                                    {Object.keys(actions).length > 0 ? 'No suggested actions available.' : 'Run analysis to get action suggestions.'}
+                                    {!pendingAnalysisResult ? 'Run analysis to get action suggestions.' : 'No suggested actions available.'}
                                 </p>
-                                {Object.keys(actions).length === 0 && (
+                                {!pendingAnalysisResult && (
                                     <div style={{
                                         marginTop: '10px',
                                         padding: '10px',

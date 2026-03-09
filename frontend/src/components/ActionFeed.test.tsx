@@ -20,7 +20,7 @@ vi.mock('../utils/svgUtils', () => ({
 }));
 
 import ActionFeed from './ActionFeed';
-import type { ActionDetail } from '../types';
+import type { ActionDetail, AnalysisResult } from '../types';
 
 describe('ActionFeed', () => {
     const emptyTopo = { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} };
@@ -36,6 +36,7 @@ describe('ActionFeed', () => {
         onActionFavorite: vi.fn(),
         onActionReject: vi.fn(),
         onAssetClick: vi.fn(),
+        onDisplayPrioritizedActions: vi.fn(),
         nodesByEquipmentId: new Map(),
         edgesByEquipmentId: new Map(),
         disconnectedElement: null,
@@ -49,6 +50,7 @@ describe('ActionFeed', () => {
         minLineDisconnections: 3,
         nPrioritizedActions: 10,
         ignoreReconnections: false,
+        pendingAnalysisResult: null as AnalysisResult | null,
     };
 
     it('renders "Scored Actions" heading when search is opened and actions are present', async () => {
@@ -66,6 +68,84 @@ describe('ActionFeed', () => {
         
         fireEvent.click(screen.getByText('+ Manual Selection'));
         expect(await screen.findByText('Scored Actions')).toBeInTheDocument();
+    });
+
+    it('hides prioritized suggestions while analysis is loading', () => {
+        const actionId = 'suggested_1';
+        const props = {
+            ...defaultProps,
+            actions: {
+                [actionId]: {
+                    description_unitaire: 'Suggested Action',
+                    rho_before: [1.0],
+                    rho_after: [0.8],
+                    max_rho: 0.8,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    is_manual: false,
+                    action_topology: emptyTopo
+                }
+            },
+            analysisLoading: true,
+        };
+        render(<ActionFeed {...props} />);
+        
+        expect(screen.queryByText('Suggested Action')).not.toBeInTheDocument();
+        expect(screen.getByText('⚙️ Processing analysis...')).toBeInTheDocument();
+    });
+
+    it('shows manual actions while analysis is loading', () => {
+        const actionId = 'manual_1';
+        const props = {
+            ...defaultProps,
+            actions: {
+                [actionId]: {
+                    description_unitaire: 'Manual Action',
+                    rho_before: [1.0],
+                    rho_after: [0.8],
+                    max_rho: 0.8,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    is_manual: true,
+                    action_topology: emptyTopo
+                }
+            },
+            selectedActionIds: new Set([actionId]),
+            analysisLoading: true,
+        };
+        render(<ActionFeed {...props} />);
+        
+        expect(screen.getByText('Manual Action')).toBeInTheDocument();
+        expect(screen.getByText('⚙️ Processing analysis...')).toBeInTheDocument();
+    });
+
+    it('shows display prioritized actions button when pending results exist and loading is false', () => {
+        const props = {
+            ...defaultProps,
+            analysisLoading: false,
+            pendingAnalysisResult: {
+                actions: { 'new_act': { description_unitaire: 'New', rho_before: [], rho_after: [], max_rho: 0.5, max_rho_line: '', is_rho_reduction: true } }
+            } as unknown as AnalysisResult,
+        };
+        render(<ActionFeed {...props} />);
+        
+        expect(screen.getByText(/Display 1 prioritized actions/)).toBeInTheDocument();
+    });
+
+    it('calls onDisplayPrioritizedActions when display button is clicked', () => {
+        const onDisplay = vi.fn();
+        const props = {
+            ...defaultProps,
+            analysisLoading: false,
+            onDisplayPrioritizedActions: onDisplay,
+            pendingAnalysisResult: {
+                actions: { 'new_act': { description_unitaire: 'New', rho_before: [], rho_after: [], max_rho: 0.5, max_rho_line: '', is_rho_reduction: true } }
+            } as unknown as AnalysisResult,
+        };
+        render(<ActionFeed {...props} />);
+        
+        fireEvent.click(screen.getByText(/Display 1 prioritized actions/));
+        expect(onDisplay).toHaveBeenCalled();
     });
 
     it('shows "computed" tag for actions without non_convergence in search table', async () => {
