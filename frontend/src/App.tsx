@@ -1060,6 +1060,10 @@ function App() {
                   <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>N Prioritized Actions</label>
                   <input type="number" step="1" value={nPrioritizedActions} onChange={e => setNPrioritizedActions(parseInt(e.target.value, 10))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
                 </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #eee' }}>
+                  <input type="checkbox" id="ignoreRec" checked={ignoreReconnections} onChange={e => setIgnoreReconnections(e.target.checked)} style={{ width: '16px', height: '16px' }} />
+                  <label htmlFor="ignoreRec" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Ignore Reconnections</label>
+                </div>
               </div>
             )}
 
@@ -1080,10 +1084,6 @@ function App() {
                   Pre-existing overloads excluded from N-1 & max loading unless worsened by this fraction (default 2%)
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #eee' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <input type="checkbox" id="ignoreRec" checked={ignoreReconnections} onChange={e => setIgnoreReconnections(e.target.checked)} style={{ width: '16px', height: '16px' }} />
-                    <label htmlFor="ignoreRec" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Ignore Reconnections</label>
-                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <input type="checkbox" id="fastMode" checked={pypowsyblFastMode} onChange={e => setPypowsyblFastMode(e.target.checked)} style={{ width: '16px', height: '16px' }} />
@@ -1196,6 +1196,12 @@ function App() {
               analysisLoading={analysisLoading}
               monitoringFactor={monitoringFactor}
               onVlDoubleClick={handleVlDoubleClick}
+              minLineReconnections={minLineReconnections}
+              minCloseCoupling={minCloseCoupling}
+              minOpenCoupling={minOpenCoupling}
+              minLineDisconnections={minLineDisconnections}
+              nPrioritizedActions={nPrioritizedActions}
+              ignoreReconnections={ignoreReconnections}
             />
           </div>
         </div>

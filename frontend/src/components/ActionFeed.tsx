@@ -22,6 +22,12 @@ interface ActionFeedProps {
     monitoringFactor: number;
     manuallyAddedIds: Set<string>;
     onVlDoubleClick?: (actionId: string, vlName: string) => void;
+    minLineReconnections: number;
+    minCloseCoupling: number;
+    minOpenCoupling: number;
+    minLineDisconnections: number;
+    nPrioritizedActions: number;
+    ignoreReconnections: boolean;
 }
 
 const ActionFeed: React.FC<ActionFeedProps> = ({
@@ -43,6 +49,12 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     monitoringFactor,
     manuallyAddedIds,
     onVlDoubleClick,
+    minLineReconnections,
+    minCloseCoupling,
+    minOpenCoupling,
+    minLineDisconnections,
+    nPrioritizedActions,
+    ignoreReconnections,
 }) => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -627,9 +639,28 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 {suggestedTab === 'prioritized' && (
                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
                         !analysisLoading ? (
-                            <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0', textAlign: 'center' }}>
-                                {Object.keys(actions).length > 0 ? 'No suggested actions available.' : 'Run analysis to get action suggestions.'}
-                            </p>
+                            <div style={{ textAlign: 'center' }}>
+                                <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0' }}>
+                                    {Object.keys(actions).length > 0 ? 'No suggested actions available.' : 'Run analysis to get action suggestions.'}
+                                </p>
+                                {Object.keys(actions).length === 0 && (
+                                    <div style={{
+                                        marginTop: '10px',
+                                        padding: '10px',
+                                        background: '#fff3cd',
+                                        border: '1px solid #ffeeba',
+                                        borderRadius: '6px',
+                                        fontSize: '12px',
+                                        color: '#856404',
+                                        textAlign: 'left'
+                                    }}>
+                                        <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Recommender Settings:</div>
+                                        <div>• Minimum actions: {minLineReconnections} reco, {minCloseCoupling} close, {minOpenCoupling} open, {minLineDisconnections} disco</div>
+                                        <div>• Maximum suggestions: {nPrioritizedActions}</div>
+                                        <div>• Ignore reconnections: {ignoreReconnections ? 'Yes' : 'No'}</div>
+                                    </div>
+                                )}
+                            </div>
                         ) : null
                     )
                 )}
