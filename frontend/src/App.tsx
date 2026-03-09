@@ -6,9 +6,11 @@ import OverloadPanel from './components/OverloadPanel';
 import { api } from './api';
 import { usePanZoom } from './hooks/usePanZoom';
 import {
-  processSvg, buildMetadataIndex, applyOverloadedHighlights,
-  applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight
+  buildMetadataIndex, applyOverloadedHighlights,
+  applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight,
+  getIdMap, invalidateIdMapCache,
 } from './utils/svgUtils';
+import { processSvgAsync } from './utils/svgWorkerClient';
 import type { ActionDetail, AnalysisResult, DiagramData, ViewBox, MetadataIndex, TabId, SettingsBackup, VlOverlay, SldTab, FlowDelta, AssetDelta } from './types';
 
 function App() {
@@ -279,7 +281,7 @@ function App() {
   const fetchBaseDiagram = async (vlCount: number) => {
     try {
       const res = await api.getNetworkDiagram();
-      const { svg, viewBox } = processSvg(res.svg, vlCount || 0);
+      const { svg, viewBox } = await processSvgAsync(res.svg, vlCount || 0);
       if (viewBox) setOriginalViewBox(viewBox);
       setNDiagram({ ...res, svg, originalViewBox: viewBox });
     } catch (err) {
@@ -302,7 +304,7 @@ function App() {
       setActiveTab('n-1');
       try {
         const res = await api.getN1Diagram(selectedBranch);
-        const { svg, viewBox } = processSvg(res.svg, voltageLevels.length);
+        const { svg, viewBox } = await processSvgAsync(res.svg, voltageLevels.length);
         setN1Diagram({ ...res, svg, originalViewBox: viewBox });
       } catch (err) {
         console.error('Failed to fetch N-1 diagram', err);
@@ -484,7 +486,7 @@ function App() {
     setActiveTab('action');
     try {
       const res = await api.getActionVariantDiagram(actionId);
-      const { svg, viewBox } = processSvg(res.svg, voltageLevels.length);
+      const { svg, viewBox } = await processSvgAsync(res.svg, voltageLevels.length);
       setActionDiagram({ ...res, svg, originalViewBox: viewBox });
     } catch (err) {
       console.error('Failed to fetch action variant diagram:', err);
@@ -735,17 +737,30 @@ function App() {
     }
   }, [actionDiagram, activeTab, actionPZ]);
 
+  // ===== Invalidate DOM id-map cache when SVG content changes =====
+  useEffect(() => {
+    if (nSvgContainerRef.current) invalidateIdMapCache(nSvgContainerRef.current);
+  }, [nDiagram]);
+  useEffect(() => {
+    if (n1SvgContainerRef.current) invalidateIdMapCache(n1SvgContainerRef.current);
+  }, [n1Diagram]);
+  useEffect(() => {
+    if (actionSvgContainerRef.current) invalidateIdMapCache(actionSvgContainerRef.current);
+  }, [actionDiagram]);
+
   // ===== Metadata Indices =====
   const nMetaIndex = useMemo(() => buildMetadataIndex(nDiagram?.metadata), [nDiagram?.metadata]);
   const n1MetaIndex = useMemo(() => buildMetadataIndex(n1Diagram?.metadata), [n1Diagram?.metadata]);
   const actionMetaIndex = useMemo(() => buildMetadataIndex(actionDiagram?.metadata), [actionDiagram?.metadata]);
 
   // ===== Highlights =====
-  useEffect(() => {
+  // Track which tabs need highlight re-application
+  const staleHighlights = useRef<Set<TabId>>(new Set());
+
+  const applyHighlightsForTab = useCallback((tab: TabId) => {
     const overloadedLines = result?.lines_overloaded || [];
 
-    // N-1 Tab Logic
-    if (activeTab === 'n-1') {
+    if (tab === 'n-1') {
       if (n1SvgContainerRef.current) {
         if (actionViewMode !== 'delta' && n1MetaIndex && overloadedLines.length > 0) {
           applyOverloadedHighlights(n1SvgContainerRef.current, n1MetaIndex, overloadedLines);
@@ -753,8 +768,8 @@ function App() {
         applyDeltaVisuals(n1SvgContainerRef.current, n1Diagram, n1MetaIndex, actionViewMode === 'delta');
         applyContingencyHighlight(n1SvgContainerRef.current, n1MetaIndex, selectedBranch);
       }
-    } // Action Tab Logic
-    if (activeTab === 'action') {
+    }
+    if (tab === 'action') {
       applyDeltaVisuals(actionSvgContainerRef.current, actionDiagram, actionMetaIndex, actionViewMode === 'delta');
 
       const actionDetail = result?.actions?.[selectedActionId || ''];
@@ -779,7 +794,6 @@ function App() {
           }
         }
 
-        // Always highlight action targets (Yellow halo)
         if (actionSvgContainerRef.current) {
           applyActionTargetHighlights(actionSvgContainerRef.current, actionMetaIndex, actionDetail, selectedActionId);
         }
@@ -789,10 +803,23 @@ function App() {
         }
       }
     }
-  }, [nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, result, selectedActionId, actionViewMode, activeTab, selectedBranch]);
+  }, [n1Diagram, actionDiagram, n1MetaIndex, actionMetaIndex, result, selectedActionId, actionViewMode, selectedBranch]);
+
+  // Apply highlights only for the active tab; mark others as stale
+  useEffect(() => {
+    applyHighlightsForTab(activeTab);
+    staleHighlights.current.delete(activeTab);
+    // Mark the other diagram tabs as stale
+    const otherTabs: TabId[] = ['n', 'n-1', 'action'].filter(t => t !== activeTab) as TabId[];
+    otherTabs.forEach(t => staleHighlights.current.add(t));
+  }, [nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, result, selectedActionId, actionViewMode, activeTab, selectedBranch, applyHighlightsForTab]);
 
   // ===== Voltage Range Filter =====
-  useEffect(() => {
+  // Track which tabs have stale voltage filters so we can apply on tab switch
+  const staleVoltageFilter = useRef<Set<TabId>>(new Set());
+
+  const applyVoltageFilter = useCallback((container: HTMLElement | null, metaIndex: MetadataIndex | null) => {
+    if (!container || !metaIndex) return;
     if (uniqueVoltages.length === 0 || Object.keys(nominalVoltageMap).length === 0) return;
 
     const [minKv, maxKv] = voltageRange;
@@ -801,53 +828,85 @@ function App() {
       return kv != null && kv >= minKv && kv <= maxKv;
     };
 
-    const applyFilter = (container: HTMLElement | null, metaIndex: MetadataIndex | null) => {
-      if (!container || !metaIndex) return;
-      const { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId } = metaIndex;
+    const { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId } = metaIndex;
+    const idMap = getIdMap(container);
 
-      const idMap = new Map<string, HTMLElement>();
-      container.querySelectorAll('[id]').forEach(el => idMap.set(el.id, el as HTMLElement));
-
-      for (const [vlId, node] of nodesByEquipmentId) {
-        const visible = isInRange(vlId);
-        const show = visible ? '' : 'none';
-        const el = idMap.get(node.svgId);
-        if (el) el.style.display = show;
-        if (node.legendSvgId) {
-          const leg = idMap.get(node.legendSvgId as string);
-          if (leg) leg.style.display = show;
-        }
-        if (node.legendEdgeSvgId) {
-          const legE = idMap.get(node.legendEdgeSvgId as string);
-          if (legE) legE.style.display = show;
-        }
+    for (const [vlId, node] of nodesByEquipmentId) {
+      const visible = isInRange(vlId);
+      const show = visible ? '' : 'none';
+      const el = idMap.get(node.svgId) as HTMLElement | undefined;
+      if (el) el.style.display = show;
+      if (node.legendSvgId) {
+        const leg = idMap.get(node.legendSvgId as string) as HTMLElement | undefined;
+        if (leg) leg.style.display = show;
       }
-
-      for (const [, edge] of edgesByEquipmentId) {
-        const node1 = nodesBySvgId.get(edge.node1);
-        const node2 = nodesBySvgId.get(edge.node2);
-        const vl1InRange = node1 ? isInRange(node1.equipmentId) : true;
-        const vl2InRange = node2 ? isInRange(node2.equipmentId) : true;
-        const edgeVisible = vl1InRange || vl2InRange;
-        const show = edgeVisible ? '' : 'none';
-
-        const el = idMap.get(edge.svgId);
-        if (el) el.style.display = show;
-        if (edge.edgeInfo1?.svgId) {
-          const ei = idMap.get(edge.edgeInfo1.svgId);
-          if (ei) ei.style.display = show;
-        }
-        if (edge.edgeInfo2?.svgId) {
-          const ei = idMap.get(edge.edgeInfo2.svgId);
-          if (ei) ei.style.display = show;
-        }
+      if (node.legendEdgeSvgId) {
+        const legE = idMap.get(node.legendEdgeSvgId as string) as HTMLElement | undefined;
+        if (legE) legE.style.display = show;
       }
-    };
+    }
 
-    applyFilter(nSvgContainerRef.current, nMetaIndex);
-    applyFilter(n1SvgContainerRef.current, n1MetaIndex);
-    applyFilter(actionSvgContainerRef.current, actionMetaIndex);
-  }, [voltageRange, nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, nominalVoltageMap, uniqueVoltages]);
+    for (const [, edge] of edgesByEquipmentId) {
+      const node1 = nodesBySvgId.get(edge.node1);
+      const node2 = nodesBySvgId.get(edge.node2);
+      const vl1InRange = node1 ? isInRange(node1.equipmentId) : true;
+      const vl2InRange = node2 ? isInRange(node2.equipmentId) : true;
+      const edgeVisible = vl1InRange || vl2InRange;
+      const show = edgeVisible ? '' : 'none';
+
+      const el = idMap.get(edge.svgId) as HTMLElement | undefined;
+      if (el) el.style.display = show;
+      if (edge.edgeInfo1?.svgId) {
+        const ei = idMap.get(edge.edgeInfo1.svgId) as HTMLElement | undefined;
+        if (ei) ei.style.display = show;
+      }
+      if (edge.edgeInfo2?.svgId) {
+        const ei = idMap.get(edge.edgeInfo2.svgId) as HTMLElement | undefined;
+        if (ei) ei.style.display = show;
+      }
+    }
+  }, [voltageRange, nominalVoltageMap, uniqueVoltages]);
+
+  // Apply voltage filter only to the active tab; mark others as stale
+  useEffect(() => {
+    if (uniqueVoltages.length === 0 || Object.keys(nominalVoltageMap).length === 0) return;
+
+    if (activeTab === 'n' || activeTab === 'overflow') {
+      applyVoltageFilter(nSvgContainerRef.current, nMetaIndex);
+      staleVoltageFilter.current.delete('n');
+      staleVoltageFilter.current.add('n-1');
+      staleVoltageFilter.current.add('action');
+    } else if (activeTab === 'n-1') {
+      applyVoltageFilter(n1SvgContainerRef.current, n1MetaIndex);
+      staleVoltageFilter.current.delete('n-1');
+      staleVoltageFilter.current.add('n');
+      staleVoltageFilter.current.add('action');
+    } else if (activeTab === 'action') {
+      applyVoltageFilter(actionSvgContainerRef.current, actionMetaIndex);
+      staleVoltageFilter.current.delete('action');
+      staleVoltageFilter.current.add('n');
+      staleVoltageFilter.current.add('n-1');
+    }
+  }, [voltageRange, nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, nominalVoltageMap, uniqueVoltages, activeTab, applyVoltageFilter]);
+
+  // Catch-up: when switching to a tab that has stale highlights or voltage filter, apply them
+  useEffect(() => {
+    if (activeTab === 'overflow') return;
+    if (staleHighlights.current.has(activeTab)) {
+      applyHighlightsForTab(activeTab);
+      staleHighlights.current.delete(activeTab);
+    }
+    if (staleVoltageFilter.current.has(activeTab)) {
+      const container = activeTab === 'n' ? nSvgContainerRef.current
+        : activeTab === 'n-1' ? n1SvgContainerRef.current
+          : actionSvgContainerRef.current;
+      const metaIndex = activeTab === 'n' ? nMetaIndex
+        : activeTab === 'n-1' ? n1MetaIndex
+          : actionMetaIndex;
+      applyVoltageFilter(container, metaIndex);
+      staleVoltageFilter.current.delete(activeTab);
+    }
+  }, [activeTab, applyHighlightsForTab, applyVoltageFilter, nMetaIndex, n1MetaIndex, actionMetaIndex]);
 
   // ===== Zoom to Element =====
   const zoomToElement = useCallback((targetId: string) => {

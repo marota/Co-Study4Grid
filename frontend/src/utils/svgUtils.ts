@@ -1,5 +1,24 @@
 import type { AssetDelta, ViewBox, MetadataIndex, NodeMeta, EdgeMeta, ActionDetail } from '../types';
 
+// ===== Cached DOM ID Map =====
+// Avoids repeated querySelectorAll('[id]') scans on large SVG containers.
+// The cache is keyed by container element and invalidated when the SVG content changes.
+const idMapCache = new WeakMap<HTMLElement, { svg: SVGSVGElement | null; map: Map<string, Element> }>();
+
+export const getIdMap = (container: HTMLElement): Map<string, Element> => {
+    const svg = container.querySelector('svg');
+    const cached = idMapCache.get(container);
+    if (cached && cached.svg === svg) return cached.map;
+    const map = new Map<string, Element>();
+    container.querySelectorAll('[id]').forEach(el => map.set(el.id, el));
+    idMapCache.set(container, { svg, map });
+    return map;
+};
+
+export const invalidateIdMapCache = (container: HTMLElement) => {
+    idMapCache.delete(container);
+};
+
 /**
  * Scale SVG elements for large grids so text, nodes, and flow values
  * are readable when zoomed in and naturally shrink at full view.
@@ -391,8 +410,7 @@ export const applyDeltaVisuals = (
     const { edgesByEquipmentId } = metaIndex;
     const flowDeltas = diagram.flow_deltas;
     const assetDeltas = diagram.asset_deltas || {};
-    const idMap = new Map<string, Element>();
-    container.querySelectorAll('[id]').forEach(el => idMap.set(el.id, el));
+    const idMap = getIdMap(container);
 
     const classMap: Record<string, string> = {
         positive: 'nad-delta-positive',
