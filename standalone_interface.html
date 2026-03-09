@@ -976,9 +976,10 @@
             const [suggestedTab, setSuggestedTab] = useState('prioritized');
             const [dismissedSelectedWarning, setDismissedSelectedWarning] = useState(false);
             const [dismissedRejectedWarning, setDismissedRejectedWarning] = useState(false);
+            const [dismissedRecommenderWarning, setDismissedRecommenderWarning] = useState(false);
             const [pendingAnalysisResult, setPendingAnalysisResult] = useState(null);
 
-            const handleOpenSettings = () => {
+            const handleOpenSettings = (tab = 'recommender') => {
                 setSettingsBackup({
                     minLineReconnections,
                     minCloseCoupling,
@@ -991,6 +992,7 @@
                     ignoreReconnections,
                     pypowsyblFastMode
                 });
+                setSettingsTab(tab);
                 setIsSettingsOpen(true);
             };
 
@@ -1035,6 +1037,7 @@
                 setInfoMessage('');
                 setDismissedSelectedWarning(false);
                 setDismissedRejectedWarning(false);
+                setDismissedRecommenderWarning(false);
                 setShowMonitoringWarning(false);
                 setInspectQuery('');
 
@@ -1192,6 +1195,7 @@
                 setRejectedActionIds(new Set());
                 setDismissedSelectedWarning(false);
                 setDismissedRejectedWarning(false);
+                setDismissedRecommenderWarning(false);
                 setInspectQuery('');
                 lastViewStateN.current = null; // Reset view state on new config
                 lastViewStateN1.current = null;
@@ -3033,6 +3037,10 @@
                                                 <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>N Prioritized Actions</label>
                                                 <input type="number" step="1" value={nPrioritizedActions} onChange={e => setNPrioritizedActions(parseInt(e.target.value, 10))} style={{ width: '80px', padding: '5px' }} />
                                             </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '5px', padding: '8px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #eee' }}>
+                                                <label htmlFor="ignoreRecStandalone" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Ignore Reconnections</label>
+                                                <input type="checkbox" id="ignoreRecStandalone" checked={ignoreReconnections} onChange={e => setIgnoreReconnections(e.target.checked)} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+                                            </div>
                                         </div>
                                     )}
 
@@ -3061,10 +3069,6 @@
                                             </div>
 
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #eee' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                    <input type="checkbox" id="ignoreRecStandalone" checked={ignoreReconnections} onChange={e => setIgnoreReconnections(e.target.checked)} style={{ width: '16px', height: '16px' }} />
-                                                    <label htmlFor="ignoreRecStandalone" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Ignore Reconnections</label>
-                                                </div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                                         <input type="checkbox" id="fastModeStandalone" checked={pypowsyblFastMode} onChange={e => setPypowsyblFastMode(e.target.checked)} style={{ width: '16px', height: '16px' }} />
@@ -3121,7 +3125,7 @@
                                             const unmonitoredStatic = totalLinesCount - monitoredLinesCount;
                                             return <React.Fragment>{effectiveMonitored} out of {totalLinesCount} lines monitored ({unmonitoredStatic} without permanent limits{deselCount > 0 && !monitorDeselected ? `, and ${deselCount} deselected` : ''}). Monitoring factor applied: {Math.round(monitoringFactor * 100)}%. {Math.round(preExistingOverloadThreshold * 100)}% loading increase threshold for considering worsened overload in N.</React.Fragment>;
                                         })()}
-                                        <button onClick={() => { handleOpenSettings(); setSettingsTab('configurations'); }} style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: '0 0 0 5px', fontSize: '0.8rem' }}>Change in settings</button>
+                                        <button onClick={() => handleOpenSettings('configurations')} style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: '0 0 0 5px', fontSize: '0.8rem' }}>Change in settings</button>
                                         <button onClick={() => setShowMonitoringWarning(false)} style={{ float: 'right', background: 'none', border: 'none', fontSize: '16px', lineHeight: 1, color: '#856404', cursor: 'pointer' }} title="Dismiss">&times;</button>
                                     </div>
                                 )}
@@ -3526,9 +3530,63 @@
                                 {suggestedTab === 'prioritized' && (
                                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
                                         !analysisLoading ? (
-                                            <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0', textAlign: 'center' }}>
-                                                {analysisRan ? 'No suggested actions available.' : 'Run analysis to get action suggestions.'}
-                                            </p>
+                                            <div style={{ textAlign: 'center' }}>
+                                                <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0' }}>
+                                                    {analysisRan ? 'No suggested actions available.' : 'Run analysis to get action suggestions.'}
+                                                </p>
+                                                {nDiagram && analysisRan === false && !dismissedRecommenderWarning && (
+                                                    <div style={{
+                                                        marginTop: '10px',
+                                                        padding: '10px',
+                                                        background: '#fff3cd',
+                                                        border: '1px solid #ffeeba',
+                                                        borderRadius: '6px',
+                                                        fontSize: '12px',
+                                                        color: '#856404',
+                                                        textAlign: 'left',
+                                                        position: 'relative'
+                                                    }}>
+                                                        <button 
+                                                            onClick={() => setDismissedRecommenderWarning(true)}
+                                                            style={{
+                                                                position: 'absolute',
+                                                                top: '5px',
+                                                                right: '5px',
+                                                                background: 'none',
+                                                                border: 'none',
+                                                                cursor: 'pointer',
+                                                                fontSize: '16px',
+                                                                color: '#856404',
+                                                                padding: '0',
+                                                                lineHeight: '1'
+                                                            }}
+                                                            title="Dismiss"
+                                                        >
+                                                            &times;
+                                                        </button>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginRight: '20px' }}>
+                                                            <div style={{ fontWeight: 'bold' }}>Recommender Settings:</div>
+                                                            <button
+                                                                onClick={() => handleOpenSettings('recommender')}
+                                                                style={{
+                                                                    background: 'none',
+                                                                    border: 'none',
+                                                                    color: '#0056b3',
+                                                                    textDecoration: 'underline',
+                                                                    cursor: 'pointer',
+                                                                    padding: '0',
+                                                                    fontSize: '11px'
+                                                                }}
+                                                            >
+                                                                Change in settings
+                                                            </button>
+                                                        </div>
+                                                        <div>• Minimum actions: {minLineReconnections} reco, {minCloseCoupling} close, {minOpenCoupling} open, {minLineDisconnections} disco</div>
+                                                        <div>• Maximum suggestions: {nPrioritizedActions}</div>
+                                                        <div>• Ignore reconnections: {ignoreReconnections ? 'Yes' : 'No'}</div>
+                                                    </div>
+                                                )}
+                                            </div>
                                         ) : null
                                     )
                                 )}
