@@ -681,6 +681,24 @@
             return new XMLSerializer().serializeToString(svgEl);
         };
 
+        // ===== Cached DOM ID Map =====
+        // Avoids repeated querySelectorAll('[id]') scans on large SVG containers.
+        const _idMapCache = new WeakMap();
+
+        const getIdMap = (container) => {
+            const svg = container.querySelector('svg');
+            const cached = _idMapCache.get(container);
+            if (cached && cached.svg === svg) return cached.map;
+            const map = new Map();
+            container.querySelectorAll('[id]').forEach(el => map.set(el.id, el));
+            _idMapCache.set(container, { svg, map });
+            return map;
+        };
+
+        const invalidateIdMapCache = (container) => {
+            _idMapCache.delete(container);
+        };
+
         // Build Map indices from metadata for O(1) lookups in zoomToElement
         const buildMetadataIndex = (metadata) => {
             try {
@@ -1730,8 +1748,7 @@
                     } catch { /* ignore parse errors */ }
                 }
 
-                const elMap = new Map();
-                container.querySelectorAll('[id]').forEach(el => elMap.set(el.id, el));
+                const elMap = getIdMap(container);
 
                 const lookupById = (svgId) =>
                     elMap.get(svgId)
@@ -2171,142 +2188,133 @@
             const n1MetaIndex = useMemo(() => buildMetadataIndex(n1Diagram?.metadata), [n1Diagram?.metadata]);
             const actionMetaIndex = useMemo(() => buildMetadataIndex(actionDiagram?.metadata), [actionDiagram?.metadata]);
 
-            // Highlight overloaded lines in orange on N-1 and Action diagrams,
-            // and highlight acted-upon lines in yellow fluo on Action diagram.
+            // ===== Invalidate DOM id-map cache when SVG content changes =====
             useEffect(() => {
+                if (nSvgContainerRef.current) invalidateIdMapCache(nSvgContainerRef.current);
+            }, [nDiagram]);
+            useEffect(() => {
+                if (n1SvgContainerRef.current) invalidateIdMapCache(n1SvgContainerRef.current);
+            }, [n1Diagram]);
+            useEffect(() => {
+                if (actionSvgContainerRef.current) invalidateIdMapCache(actionSvgContainerRef.current);
+            }, [actionDiagram]);
+
+            // ===== Highlights =====
+            // Track which tabs need highlight re-application
+            const staleHighlights = useRef(new Set());
+
+            // Helper to apply delta visuals
+            const applyDeltaVisuals = useCallback((container, diagram, metaIndex) => {
+                if (!container || !diagram || !metaIndex) return;
+
+                container.querySelectorAll('.nad-delta-positive').forEach(el => el.classList.remove('nad-delta-positive'));
+                container.querySelectorAll('.nad-delta-negative').forEach(el => el.classList.remove('nad-delta-negative'));
+                container.querySelectorAll('.nad-delta-grey').forEach(el => el.classList.remove('nad-delta-grey'));
+
+                container.querySelectorAll('[data-original-text]').forEach(el => {
+                    el.textContent = el.getAttribute('data-original-text');
+                    el.removeAttribute('data-original-text');
+                });
+
+                if (actionViewMode !== 'delta' || !diagram.flow_deltas) return;
+
+                const { edgesByEquipmentId } = metaIndex;
+                const flowDeltas = diagram.flow_deltas;
+                const assetDeltas = diagram.asset_deltas || {};
+                const idMap = getIdMap(container);
+
+                const classMap = {
+                    positive: 'nad-delta-positive',
+                    negative: 'nad-delta-negative',
+                    grey: 'nad-delta-grey',
+                };
+
+                for (const [lineId, deltaInfo] of Object.entries(flowDeltas)) {
+                    const edge = edgesByEquipmentId.get(lineId);
+                    if (!edge || !edge.svgId) continue;
+
+                    const el = idMap.get(edge.svgId);
+                    if (el) {
+                        const cls = classMap[deltaInfo.category];
+                        if (cls) el.classList.add(cls);
+                    }
+
+                    const pDeltaStr = deltaInfo.delta >= 0 ? `+${deltaInfo.delta.toFixed(1)}` : deltaInfo.delta.toFixed(1);
+
+                    if (edge.edgeInfo1?.svgId) {
+                        const infoEl = idMap.get(edge.edgeInfo1.svgId);
+                        if (infoEl) {
+                            infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                                if (!t.hasAttribute('data-original-text')) {
+                                    t.setAttribute('data-original-text', t.textContent);
+                                }
+                                t.textContent = `Δ ${pDeltaStr}`;
+                            });
+                        }
+                    }
+
+                    if (edge.edgeInfo2?.svgId) {
+                        const infoEl = idMap.get(edge.edgeInfo2.svgId);
+                        if (infoEl) {
+                            infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                                if (!t.hasAttribute('data-original-text')) {
+                                    t.setAttribute('data-original-text', t.textContent);
+                                }
+                                t.textContent = `Δ ${pDeltaStr}`;
+                            });
+                        }
+                    }
+                }
+
+                for (const [assetId, assetInfo] of Object.entries(assetDeltas)) {
+                    const edge = edgesByEquipmentId.get(assetId);
+                    if (edge && edge.svgId) {
+                        const el = idMap.get(edge.svgId);
+                        if (el) {
+                            const cls = classMap[assetInfo.category];
+                            if (cls) el.classList.add(cls);
+                        }
+
+                        const pStr = assetInfo.delta_p >= 0 ? `+${assetInfo.delta_p.toFixed(1)}` : assetInfo.delta_p.toFixed(1);
+                        if (edge.edgeInfo1?.svgId) {
+                            const infoEl = idMap.get(edge.edgeInfo1.svgId);
+                            if (infoEl) {
+                                infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                                    if (!t.hasAttribute('data-original-text')) {
+                                        t.setAttribute('data-original-text', t.textContent);
+                                    }
+                                    t.textContent = `Δ ${pStr}`;
+                                });
+                            }
+                        }
+
+                        const qStr = assetInfo.delta_q >= 0 ? `+${assetInfo.delta_q.toFixed(1)}` : assetInfo.delta_q.toFixed(1);
+                        if (edge.edgeInfo2?.svgId) {
+                            const infoEl = idMap.get(edge.edgeInfo2.svgId);
+                            if (infoEl) {
+                                infoEl.querySelectorAll('foreignObject, text').forEach(t => {
+                                    if (!t.hasAttribute('data-original-text')) {
+                                        t.setAttribute('data-original-text', t.textContent);
+                                    }
+                                    t.textContent = `Δ ${qStr}`;
+                                });
+                            }
+                        }
+                    }
+                }
+            }, [actionViewMode]);
+
+            const applyHighlightsForTab = useCallback((tab) => {
                 try {
                     const overloadedLines = result?.lines_overloaded || [];
 
-                    // Helper to apply delta visuals
-                    // Branch coloring is based on active power (P) delta only.
-                    // edgeInfo1 (active power / black arrow) shows P delta text.
-                    // edgeInfo2 (reactive power / blue arrow) shows Q delta text.
-                    // Load/generator assets are colored based on P delta.
-                    const applyDeltaVisuals = (container, diagram, metaIndex) => {
-                        if (!container || !diagram || !metaIndex) return;
-
-                        // Clear delta classes on edges and nodes
-                        container.querySelectorAll('.nad-delta-positive').forEach(el => el.classList.remove('nad-delta-positive'));
-                        container.querySelectorAll('.nad-delta-negative').forEach(el => el.classList.remove('nad-delta-negative'));
-                        container.querySelectorAll('.nad-delta-grey').forEach(el => el.classList.remove('nad-delta-grey'));
-
-                        // Restore original text labels
-                        container.querySelectorAll('[data-original-text]').forEach(el => {
-                            el.textContent = el.getAttribute('data-original-text');
-                            el.removeAttribute('data-original-text');
-                        });
-
-                        if (actionViewMode !== 'delta' || !diagram.flow_deltas) return;
-
-                        const { edgesByEquipmentId } = metaIndex;
-                        const flowDeltas = diagram.flow_deltas;
-                        const reactiveDeltas = diagram.reactive_flow_deltas || {};
-                        const assetDeltas = diagram.asset_deltas || {};
-                        const idMap = new Map();
-                        container.querySelectorAll('[id]').forEach(el => idMap.set(el.id, el));
-
-                        const classMap = {
-                            positive: 'nad-delta-positive',
-                            negative: 'nad-delta-negative',
-                            grey: 'nad-delta-grey',
-                        };
-
-                        // --- Branch (edge) deltas ---
-                        for (const [lineId, deltaInfo] of Object.entries(flowDeltas)) {
-                            const edge = edgesByEquipmentId.get(lineId);
-                            if (!edge || !edge.svgId) continue;
-
-                            // Color the edge based on active power delta
-                            const el = idMap.get(edge.svgId);
-                            if (el) {
-                                const cls = classMap[deltaInfo.category];
-                                if (cls) el.classList.add(cls);
-                            }
-
-                            // In NADs, both edgeInfo1 and edgeInfo2 represent Active Power (P) at the two terminals.
-                            // We do NOT use reactiveDeltas here. We apply the P delta to both terminals.
-                            const pDeltaStr = deltaInfo.delta >= 0 ? `+${deltaInfo.delta.toFixed(1)}` : deltaInfo.delta.toFixed(1);
-
-                            // Apply to Terminal 1 (edgeInfo1)
-                            if (edge.edgeInfo1?.svgId) {
-                                const infoEl = idMap.get(edge.edgeInfo1.svgId);
-                                if (infoEl) {
-                                    infoEl.querySelectorAll('foreignObject, text').forEach(t => {
-                                        if (!t.hasAttribute('data-original-text')) {
-                                            t.setAttribute('data-original-text', t.textContent);
-                                        }
-                                        t.textContent = `Δ ${pDeltaStr}`;
-                                    });
-                                }
-                            }
-
-                            // Apply to Terminal 2 (edgeInfo2)
-                            if (edge.edgeInfo2?.svgId) {
-                                const infoEl = idMap.get(edge.edgeInfo2.svgId);
-                                if (infoEl) {
-                                    infoEl.querySelectorAll('foreignObject, text').forEach(t => {
-                                        if (!t.hasAttribute('data-original-text')) {
-                                            t.setAttribute('data-original-text', t.textContent);
-                                        }
-                                        t.textContent = `Δ ${pDeltaStr}`;
-                                    });
-                                }
-                            }
-                        }
-
-                        // --- Asset (load/generator) deltas ---
-                        for (const [assetId, assetInfo] of Object.entries(assetDeltas)) {
-                            const edge = edgesByEquipmentId.get(assetId);
-                            if (edge && edge.svgId) {
-                                const el = idMap.get(edge.svgId);
-                                if (el) {
-                                    const cls = classMap[assetInfo.category];
-                                    if (cls) el.classList.add(cls);
-                                }
-
-                                // Update P arrow text on edgeInfo1
-                                const pStr = assetInfo.delta_p >= 0 ? `+${assetInfo.delta_p.toFixed(1)}` : assetInfo.delta_p.toFixed(1);
-                                if (edge.edgeInfo1?.svgId) {
-                                    const infoEl = idMap.get(edge.edgeInfo1.svgId);
-                                    if (infoEl) {
-                                        infoEl.querySelectorAll('foreignObject, text').forEach(t => {
-                                            if (!t.hasAttribute('data-original-text')) {
-                                                t.setAttribute('data-original-text', t.textContent);
-                                            }
-                                            t.textContent = `Δ ${pStr}`;
-                                        });
-                                    }
-                                }
-
-                                // Update Q arrow text on edgeInfo2
-                                const qStr = assetInfo.delta_q >= 0 ? `+${assetInfo.delta_q.toFixed(1)}` : assetInfo.delta_q.toFixed(1);
-                                if (edge.edgeInfo2?.svgId) {
-                                    const infoEl = idMap.get(edge.edgeInfo2.svgId);
-                                    if (infoEl) {
-                                        infoEl.querySelectorAll('foreignObject, text').forEach(t => {
-                                            if (!t.hasAttribute('data-original-text')) {
-                                                t.setAttribute('data-original-text', t.textContent);
-                                            }
-                                            t.textContent = `Δ ${qStr}`;
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    };
-
-
-                    // 2. Action Tab Logic
-                    if (activeTab === 'action') {
-                        // Apply delta visuals
+                    if (tab === 'action') {
                         applyDeltaVisuals(actionSvgContainerRef.current, actionDiagram, actionMetaIndex);
 
-                        // Standard action highlights (Action targets & Overloads)
                         const actionDetail = result?.actions?.[selectedActionId];
 
                         if (actionDetail) {
                             if (actionViewMode !== 'delta') {
-                                // Highlight overloads (post-action)
                                 const stillOverloaded = [];
                                 if (overloadedLines.length > 0 && actionDetail.rho_after) {
                                     overloadedLines.forEach((name, i) => {
@@ -2323,104 +2331,134 @@
                                 applyOverloadedHighlights(actionSvgContainerRef.current, actionMetaIndex, stillOverloaded);
                             }
 
-                            // Always highlight action targets (Yellow halo)
                             applyActionTargetHighlights(actionSvgContainerRef.current, actionMetaIndex, actionDetail, selectedActionId);
                         } else {
                             if (actionSvgContainerRef.current) applyActionTargetHighlights(actionSvgContainerRef.current, null, null, null);
                         }
                     }
 
-                    // Standard diagram highlights
-                    if (nDiagram && activeTab === 'n') {
+                    if (tab === 'n' && nDiagram) {
                         if (nSvgContainerRef.current) {
                             applyActionTargetHighlights(nSvgContainerRef.current, null, null, null);
-                            const overloadedLines = nDiagram.lines_overloaded || [];
-                            applyOverloadedHighlights(nSvgContainerRef.current, nMetaIndex, overloadedLines);
+                            const nOverloaded = nDiagram.lines_overloaded || [];
+                            applyOverloadedHighlights(nSvgContainerRef.current, nMetaIndex, nOverloaded);
                         }
-                    } else if (n1Diagram && activeTab === 'n-1' && n1SvgContainerRef.current && n1MetaIndex) {
-                        // Apply standard overloads ONLY if NOT in delta mode
+                    }
+
+                    if (tab === 'n-1' && n1Diagram && n1SvgContainerRef.current && n1MetaIndex) {
                         const n1Overloaded = n1Diagram.lines_overloaded || [];
                         if (actionViewMode !== 'delta' && n1Overloaded.length > 0) {
                             applyOverloadedHighlights(n1SvgContainerRef.current, n1MetaIndex, n1Overloaded);
                         }
-                        // Apply delta visuals (clears logic if mode != delta)
                         applyDeltaVisuals(n1SvgContainerRef.current, n1Diagram, n1MetaIndex);
-                        // Apply contingency highlight (yellow halo on disconnected element)
                         applyContingencyHighlight(n1SvgContainerRef.current, n1MetaIndex, selectedBranch);
                     }
-
                 } catch (err) {
                     console.error('[HighlightEffect] crash:', err);
                     setError('Decoration error: ' + err.message);
                 }
-            }, [n1Diagram, actionDiagram, n1MetaIndex, actionMetaIndex, result, selectedActionId, actionViewMode, activeTab]);
+            }, [nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, result, selectedActionId, actionViewMode, selectedBranch, applyDeltaVisuals]);
+
+            // Apply highlights only for the active tab; mark others as stale
+            useEffect(() => {
+                applyHighlightsForTab(activeTab);
+                staleHighlights.current.delete(activeTab);
+                ['n', 'n-1', 'action'].filter(t => t !== activeTab).forEach(t => staleHighlights.current.add(t));
+            }, [nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, result, selectedActionId, actionViewMode, activeTab, selectedBranch, applyHighlightsForTab]);
 
             // ===== VOLTAGE RANGE FILTER =====
-            // Hide/show SVG nodes and edges based on the nominal voltage range slider.
-            useEffect(() => {
+            // Track which tabs have stale voltage filters
+            const staleVoltageFilter = useRef(new Set());
+
+            const applyVoltageFilter = useCallback((container, metaIndex) => {
+                if (!container || !metaIndex) return;
                 if (uniqueVoltages.length === 0 || Object.keys(nominalVoltageMap).length === 0) return;
 
                 const [minKv, maxKv] = voltageRange;
-
-                // Helper: check if a voltage level ID falls within the range
                 const isInRange = (vlId) => {
                     const kv = nominalVoltageMap[vlId];
                     return kv != null && kv >= minKv && kv <= maxKv;
                 };
 
-                // Apply filter to a single SVG container + its metadata index
-                const applyFilter = (container, metaIndex) => {
-                    if (!container || !metaIndex) return;
-                    const { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId, edgesByNode } = metaIndex;
+                const { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId } = metaIndex;
+                const idMap = getIdMap(container);
 
-                    // Single DOM traversal for id→element map
-                    const idMap = new Map();
-                    container.querySelectorAll('[id]').forEach(el => idMap.set(el.id, el));
-
-                    // Filter nodes (VL substations)
-                    for (const [vlId, node] of nodesByEquipmentId) {
-                        const visible = isInRange(vlId);
-                        const show = visible ? '' : 'none';
-                        const el = idMap.get(node.svgId);
-                        if (el) el.style.display = show;
-                        // Also hide legend box and legend edge
-                        if (node.legendSvgId) {
-                            const leg = idMap.get(node.legendSvgId);
-                            if (leg) leg.style.display = show;
-                        }
-                        if (node.legendEdgeSvgId) {
-                            const legE = idMap.get(node.legendEdgeSvgId);
-                            if (legE) legE.style.display = show;
-                        }
+                for (const [vlId, node] of nodesByEquipmentId) {
+                    const visible = isInRange(vlId);
+                    const show = visible ? '' : 'none';
+                    const el = idMap.get(node.svgId);
+                    if (el) el.style.display = show;
+                    if (node.legendSvgId) {
+                        const leg = idMap.get(node.legendSvgId);
+                        if (leg) leg.style.display = show;
                     }
-
-                    // Filter edges: hide only if BOTH endpoint VLs are outside range
-                    for (const [eqId, edge] of edgesByEquipmentId) {
-                        const node1 = nodesBySvgId.get(edge.node1);
-                        const node2 = nodesBySvgId.get(edge.node2);
-                        const vl1InRange = node1 ? isInRange(node1.equipmentId) : true;
-                        const vl2InRange = node2 ? isInRange(node2.equipmentId) : true;
-                        const edgeVisible = vl1InRange || vl2InRange;
-                        const show = edgeVisible ? '' : 'none';
-
-                        const el = idMap.get(edge.svgId);
-                        if (el) el.style.display = show;
-                        // Edge info labels
-                        if (edge.edgeInfo1?.svgId) {
-                            const ei = idMap.get(edge.edgeInfo1.svgId);
-                            if (ei) ei.style.display = show;
-                        }
-                        if (edge.edgeInfo2?.svgId) {
-                            const ei = idMap.get(edge.edgeInfo2.svgId);
-                            if (ei) ei.style.display = show;
-                        }
+                    if (node.legendEdgeSvgId) {
+                        const legE = idMap.get(node.legendEdgeSvgId);
+                        if (legE) legE.style.display = show;
                     }
-                };
+                }
 
-                applyFilter(nSvgContainerRef.current, nMetaIndex);
-                applyFilter(n1SvgContainerRef.current, n1MetaIndex);
-                applyFilter(actionSvgContainerRef.current, actionMetaIndex);
-            }, [voltageRange, nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, nominalVoltageMap, uniqueVoltages]);
+                for (const [, edge] of edgesByEquipmentId) {
+                    const node1 = nodesBySvgId.get(edge.node1);
+                    const node2 = nodesBySvgId.get(edge.node2);
+                    const vl1InRange = node1 ? isInRange(node1.equipmentId) : true;
+                    const vl2InRange = node2 ? isInRange(node2.equipmentId) : true;
+                    const edgeVisible = vl1InRange || vl2InRange;
+                    const show = edgeVisible ? '' : 'none';
+
+                    const el = idMap.get(edge.svgId);
+                    if (el) el.style.display = show;
+                    if (edge.edgeInfo1?.svgId) {
+                        const ei = idMap.get(edge.edgeInfo1.svgId);
+                        if (ei) ei.style.display = show;
+                    }
+                    if (edge.edgeInfo2?.svgId) {
+                        const ei = idMap.get(edge.edgeInfo2.svgId);
+                        if (ei) ei.style.display = show;
+                    }
+                }
+            }, [voltageRange, nominalVoltageMap, uniqueVoltages]);
+
+            // Apply voltage filter only to the active tab; mark others as stale
+            useEffect(() => {
+                if (uniqueVoltages.length === 0 || Object.keys(nominalVoltageMap).length === 0) return;
+
+                if (activeTab === 'n' || activeTab === 'overflow') {
+                    applyVoltageFilter(nSvgContainerRef.current, nMetaIndex);
+                    staleVoltageFilter.current.delete('n');
+                    staleVoltageFilter.current.add('n-1');
+                    staleVoltageFilter.current.add('action');
+                } else if (activeTab === 'n-1') {
+                    applyVoltageFilter(n1SvgContainerRef.current, n1MetaIndex);
+                    staleVoltageFilter.current.delete('n-1');
+                    staleVoltageFilter.current.add('n');
+                    staleVoltageFilter.current.add('action');
+                } else if (activeTab === 'action') {
+                    applyVoltageFilter(actionSvgContainerRef.current, actionMetaIndex);
+                    staleVoltageFilter.current.delete('action');
+                    staleVoltageFilter.current.add('n');
+                    staleVoltageFilter.current.add('n-1');
+                }
+            }, [voltageRange, nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, nominalVoltageMap, uniqueVoltages, activeTab, applyVoltageFilter]);
+
+            // Catch-up: when switching to a tab that has stale highlights or voltage filter, apply them
+            useEffect(() => {
+                if (activeTab === 'overflow') return;
+                if (staleHighlights.current.has(activeTab)) {
+                    applyHighlightsForTab(activeTab);
+                    staleHighlights.current.delete(activeTab);
+                }
+                if (staleVoltageFilter.current.has(activeTab)) {
+                    const container = activeTab === 'n' ? nSvgContainerRef.current
+                        : activeTab === 'n-1' ? n1SvgContainerRef.current
+                            : actionSvgContainerRef.current;
+                    const metaIndex = activeTab === 'n' ? nMetaIndex
+                        : activeTab === 'n-1' ? n1MetaIndex
+                            : actionMetaIndex;
+                    applyVoltageFilter(container, metaIndex);
+                    staleVoltageFilter.current.delete(activeTab);
+                }
+            }, [activeTab, applyHighlightsForTab, applyVoltageFilter, nMetaIndex, n1MetaIndex, actionMetaIndex]);
 
             // Zoom to an element by computing its bounding box from metadata
             const zoomToElement = (targetId) => {

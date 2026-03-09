@@ -5,8 +5,12 @@ import {
     buildMetadataIndex,
     getActionTargetLines,
     getActionTargetVoltageLevel,
+    getIdMap,
+    invalidateIdMapCache,
+    applyOverloadedHighlights,
+    applyDeltaVisuals,
 } from './svgUtils';
-import type { ActionDetail, NodeMeta, EdgeMeta } from '../types';
+import type { ActionDetail, NodeMeta, EdgeMeta, MetadataIndex } from '../types';
 
 describe('processSvg', () => {
     it('extracts viewBox from SVG string', () => {
@@ -328,5 +332,173 @@ describe('getActionTargetVoltageLevel', () => {
         // because it's a line reconnection (lines with bus >= 0, no gen/load)
         const result = getActionTargetVoltageLevel(detail, 'reco_VL1', makeNodeMap('VL1'));
         expect(result).toBeNull();
+    });
+});
+
+describe('getIdMap', () => {
+    const makeContainer = (html: string) => {
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        return div;
+    };
+
+    it('builds a map of id → element from container children', () => {
+        const container = makeContainer('<svg><g id="node1"></g><g id="node2"></g></svg>');
+        const map = getIdMap(container);
+        expect(map.size).toBeGreaterThanOrEqual(2);
+        expect(map.get('node1')).toBeDefined();
+        expect(map.get('node2')).toBeDefined();
+    });
+
+    it('returns the same cached map on repeated calls', () => {
+        const container = makeContainer('<svg><g id="a"></g></svg>');
+        const map1 = getIdMap(container);
+        const map2 = getIdMap(container);
+        expect(map1).toBe(map2);
+    });
+
+    it('rebuilds the map when the SVG element changes', () => {
+        const container = makeContainer('<svg><g id="a"></g></svg>');
+        const map1 = getIdMap(container);
+        expect(map1.get('a')).toBeDefined();
+
+        // Replace the SVG entirely
+        container.innerHTML = '<svg><g id="b"></g></svg>';
+        const map2 = getIdMap(container);
+        expect(map2).not.toBe(map1);
+        expect(map2.get('b')).toBeDefined();
+        expect(map2.get('a')).toBeUndefined();
+    });
+
+    it('rebuilds after invalidateIdMapCache is called', () => {
+        const container = makeContainer('<svg><g id="x"></g></svg>');
+        const map1 = getIdMap(container);
+        invalidateIdMapCache(container);
+        const map2 = getIdMap(container);
+        // Different Map instance even though content is the same
+        expect(map2).not.toBe(map1);
+    });
+});
+
+describe('applyOverloadedHighlights', () => {
+    const makeMetaIndex = (): MetadataIndex => ({
+        nodesByEquipmentId: new Map(),
+        nodesBySvgId: new Map(),
+        edgesByEquipmentId: new Map([
+            ['LINE_A', { equipmentId: 'LINE_A', svgId: 'svg-line-a', node1: 'n1', node2: 'n2' }],
+            ['LINE_B', { equipmentId: 'LINE_B', svgId: 'svg-line-b', node1: 'n2', node2: 'n3' }],
+        ]),
+        edgesByNode: new Map(),
+    });
+
+    it('adds nad-overloaded class to matching edges', () => {
+        const container = document.createElement('div');
+        container.innerHTML = '<svg><g id="svg-line-a"><path/></g><g id="svg-line-b"><path/></g></svg>';
+        const metaIndex = makeMetaIndex();
+
+        applyOverloadedHighlights(container, metaIndex, ['LINE_A']);
+
+        const el = container.querySelector('#svg-line-a');
+        expect(el?.classList.contains('nad-overloaded')).toBe(true);
+
+        const elB = container.querySelector('#svg-line-b');
+        expect(elB?.classList.contains('nad-overloaded')).toBe(false);
+    });
+
+    it('clears previous overloaded highlights before applying new ones', () => {
+        const container = document.createElement('div');
+        container.innerHTML = '<svg><g id="svg-line-a" class="nad-overloaded"><path/></g><g id="svg-line-b"><path/></g></svg>';
+        const metaIndex = makeMetaIndex();
+
+        applyOverloadedHighlights(container, metaIndex, ['LINE_B']);
+
+        expect(container.querySelector('#svg-line-a')?.classList.contains('nad-overloaded')).toBe(false);
+        expect(container.querySelector('#svg-line-b')?.classList.contains('nad-overloaded')).toBe(true);
+    });
+
+    it('does nothing with empty overloaded lines array', () => {
+        const container = document.createElement('div');
+        container.innerHTML = '<svg><g id="svg-line-a"><path/></g></svg>';
+        const metaIndex = makeMetaIndex();
+
+        applyOverloadedHighlights(container, metaIndex, []);
+        // Should not throw and no classes added
+        expect(container.querySelector('#svg-line-a')?.classList.contains('nad-overloaded')).toBe(false);
+    });
+});
+
+describe('applyDeltaVisuals', () => {
+    const makeMetaIndex = (): MetadataIndex => ({
+        nodesByEquipmentId: new Map(),
+        nodesBySvgId: new Map(),
+        edgesByEquipmentId: new Map([
+            ['LINE_A', {
+                equipmentId: 'LINE_A', svgId: 'svg-line-a', node1: 'n1', node2: 'n2',
+                edgeInfo1: { svgId: 'info1-a' },
+                edgeInfo2: { svgId: 'info2-a' },
+            } as EdgeMeta],
+        ]),
+        edgesByNode: new Map(),
+    });
+
+    it('applies delta classes and text in delta mode', () => {
+        const container = document.createElement('div');
+        container.innerHTML = `<svg>
+            <g id="svg-line-a"><path/></g>
+            <g id="info1-a"><text>123.4</text></g>
+            <g id="info2-a"><text>56.7</text></g>
+        </svg>`;
+        const metaIndex = makeMetaIndex();
+        const diagram = {
+            flow_deltas: { LINE_A: { delta: 5.2, category: 'positive' } },
+        };
+
+        applyDeltaVisuals(container, diagram, metaIndex, true);
+
+        expect(container.querySelector('#svg-line-a')?.classList.contains('nad-delta-positive')).toBe(true);
+        expect(container.querySelector('#info1-a text')?.textContent).toBe('\u0394 +5.2');
+        expect(container.querySelector('#info1-a text')?.getAttribute('data-original-text')).toBe('123.4');
+    });
+
+    it('restores original text when switching out of delta mode', () => {
+        const container = document.createElement('div');
+        container.innerHTML = `<svg>
+            <g id="svg-line-a"><path/></g>
+            <g id="info1-a"><text data-original-text="123.4">Δ +5.2</text></g>
+            <g id="info2-a"><text data-original-text="56.7">Δ +5.2</text></g>
+        </svg>`;
+        const metaIndex = makeMetaIndex();
+
+        applyDeltaVisuals(container, { flow_deltas: {} }, metaIndex, false);
+
+        expect(container.querySelector('#info1-a text')?.textContent).toBe('123.4');
+        expect(container.querySelector('#info1-a text')?.hasAttribute('data-original-text')).toBe(false);
+    });
+
+    it('does nothing when diagram is null', () => {
+        const container = document.createElement('div');
+        container.innerHTML = '<svg><g id="svg-line-a"><path/></g></svg>';
+        const metaIndex = makeMetaIndex();
+
+        // Should not throw
+        applyDeltaVisuals(container, null, metaIndex, true);
+    });
+
+    it('applies negative delta class correctly', () => {
+        const container = document.createElement('div');
+        container.innerHTML = `<svg>
+            <g id="svg-line-a"><path/></g>
+            <g id="info1-a"><text>10</text></g>
+            <g id="info2-a"><text>20</text></g>
+        </svg>`;
+        const metaIndex = makeMetaIndex();
+        const diagram = {
+            flow_deltas: { LINE_A: { delta: -3.7, category: 'negative' } },
+        };
+
+        applyDeltaVisuals(container, diagram, metaIndex, true);
+
+        expect(container.querySelector('#svg-line-a')?.classList.contains('nad-delta-negative')).toBe(true);
+        expect(container.querySelector('#info1-a text')?.textContent).toBe('\u0394 -3.7');
     });
 });
