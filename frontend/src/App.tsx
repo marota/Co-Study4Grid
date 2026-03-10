@@ -45,6 +45,9 @@ function App() {
   const [settingsTab, setSettingsTab] = useState<'recommender' | 'configurations'>('recommender');
   const [settingsBackup, setSettingsBackup] = useState<SettingsBackup | null>(null);
 
+  // Confirmation dialog state for contingency change / load study
+  const [confirmDialog, setConfirmDialog] = useState<{ type: 'contingency' | 'loadStudy'; pendingBranch?: string } | null>(null);
+
   const handleOpenSettings = useCallback(() => {
     setSettingsBackup({
       minLineReconnections,
@@ -205,6 +208,69 @@ function App() {
   // Persist paths to localStorage
   useEffect(() => { localStorage.setItem('networkPath', networkPath); }, [networkPath]);
   useEffect(() => { localStorage.setItem('actionPath', actionPath); }, [actionPath]);
+
+  // ===== Contingency Change Confirmation Helpers =====
+  // Check if there is any analysis state that would be lost on contingency change
+  const hasAnalysisState = useCallback(() => {
+    return !!(result || pendingAnalysisResult || selectedActionId || actionDiagram || manuallyAddedIds.size > 0 || selectedActionIds.size > 0 || rejectedActionIds.size > 0);
+  }, [result, pendingAnalysisResult, selectedActionId, actionDiagram, manuallyAddedIds, selectedActionIds, rejectedActionIds]);
+
+  // Clear all contingency-related analysis state (preserves network/config)
+  const clearContingencyState = useCallback(() => {
+    setResult(null);
+    setPendingAnalysisResult(null);
+    setSelectedActionId(null);
+    setSelectedActionIds(new Set());
+    setManuallyAddedIds(new Set());
+    setRejectedActionIds(new Set());
+    setActionDiagram(null);
+    setN1Diagram(null);
+    setActiveTab('n');
+    setVlOverlay(null);
+    setError('');
+    setInfoMessage('');
+    setInspectQuery('');
+    lastZoomState.current = { query: '', branch: '' };
+  }, []);
+
+  // Handle branch selection with confirmation when analysis state exists
+  // Only prompt for confirmation when the user picks a valid branch from the list
+  const handleBranchChange = useCallback((newBranch: string) => {
+    if (newBranch === selectedBranch) return;
+    // Allow clearing the input freely
+    if (!newBranch) {
+      setSelectedBranch('');
+      return;
+    }
+    // Only intercept when a valid branch is selected (not while typing partial text)
+    const isValidBranch = branches.includes(newBranch);
+    if (isValidBranch && hasAnalysisState()) {
+      setConfirmDialog({ type: 'contingency', pendingBranch: newBranch });
+    } else {
+      setSelectedBranch(newBranch);
+    }
+  }, [selectedBranch, branches, hasAnalysisState]);
+
+  // Handle Load Study with confirmation when analysis state exists
+  const handleLoadStudyClick = useCallback(() => {
+    if (hasAnalysisState()) {
+      setConfirmDialog({ type: 'loadStudy' });
+    } else {
+      handleLoadConfig();
+    }
+  }, [hasAnalysisState, handleLoadConfig]);
+
+  // Confirm the pending action from the dialog
+  const handleConfirmDialog = useCallback(() => {
+    if (!confirmDialog) return;
+    if (confirmDialog.type === 'contingency') {
+      clearContingencyState();
+      setSelectedBranch(confirmDialog.pendingBranch || '');
+    } else {
+      handleLoadConfig();
+    }
+    setConfirmDialog(null);
+  }, [confirmDialog, clearContingencyState, handleLoadConfig]);
 
   // ===== Config Loading =====
   const handleLoadConfig = useCallback(async () => {
@@ -1093,7 +1159,7 @@ function App() {
         </div>
 
         <button
-          onClick={handleLoadConfig} disabled={configLoading}
+          onClick={handleLoadStudyClick} disabled={configLoading}
           style={{ padding: '6px 14px', background: configLoading ? '#95a5a6' : '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: configLoading ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
         >
           {configLoading ? '⏳ Loading...' : '🔄 Load Study'}
@@ -1237,7 +1303,7 @@ function App() {
               <input
                 list="contingencies"
                 value={selectedBranch}
-                onChange={e => setSelectedBranch(e.target.value)}
+                onChange={e => handleBranchChange(e.target.value)}
                 placeholder="Search line/bus..."
                 style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }}
               />
@@ -1351,6 +1417,53 @@ function App() {
           />
         </div>
       </div>
+      {/* Confirmation Dialog for contingency change / load study */}
+      {confirmDialog && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 4000,
+          display: 'flex', justifyContent: 'center', alignItems: 'center'
+        }}>
+          <div style={{
+            background: 'white', padding: '25px', borderRadius: '10px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+            maxWidth: '450px', width: '90%', textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '2rem', marginBottom: '12px' }}>&#9888;</div>
+            <h3 style={{ margin: '0 0 12px', color: '#2c3e50', fontSize: '1.1rem' }}>
+              {confirmDialog.type === 'contingency' ? 'Change Contingency?' : 'Reload Study?'}
+            </h3>
+            <p style={{ margin: '0 0 20px', color: '#555', fontSize: '0.9rem', lineHeight: '1.5' }}>
+              All previous analysis results, manual simulations, action selections, and diagrams will be cleared.
+              {confirmDialog.type === 'contingency'
+                ? ' The network state will be preserved.'
+                : ' The network will be reloaded from scratch.'}
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button
+                onClick={() => setConfirmDialog(null)}
+                style={{
+                  padding: '8px 20px', background: '#95a5a6', color: 'white',
+                  border: 'none', borderRadius: '5px', cursor: 'pointer',
+                  fontWeight: 'bold', fontSize: '0.85rem'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDialog}
+                style={{
+                  padding: '8px 20px', background: '#e67e22', color: 'white',
+                  border: 'none', borderRadius: '5px', cursor: 'pointer',
+                  fontWeight: 'bold', fontSize: '0.85rem'
+                }}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {error && (
         <div style={{
           position: 'fixed', bottom: 20, right: 20,
