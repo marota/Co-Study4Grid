@@ -1,148 +1,202 @@
-# Plan: Fix Tab-Switch Rendering Latency in Standalone Interface
+# Rendering Optimizations for Large Grid NAD Visualization
 
-## Context
+## Overview
 
-Sur un réseau France (11 225 lignes, ~500+ niveaux de tension), le changement d'onglet Action ↔ N-1 prend 1-3s. L'onglet ne s'affiche que quand tout le rendu est terminé — on ne voit pas le SVG apparaître puis se décorer, on voit un freeze.
+ExpertAssist renders pypowsybl Network Area Diagrams (NAD) for power grids with 11,000+ lines and 500+ voltage levels. At this scale, naive rendering causes multi-second tab switches, invisible line colors at zoom-out, and zoom lag/crashes. This document traces the critical rendering features, their rationale, and regression risks.
 
-### Causes identifiées (par ordre d'impact)
+## Critical CSS Properties
 
-| # | Cause | Impact | Localisation |
-|---|-------|--------|-------------|
-| **1** | `useLayoutEffect` sans dépendances dans `usePanZoom` **bloque le paint** | **CRITIQUE** — empêche le navigateur de montrer l'onglet | `standalone_interface.html:448-461` |
-| **2** | Filtre voltage : 33 675 écritures `style.display` même quand le range couvre tout | **~1-3s** — inutile dans le cas par défaut | `standalone_interface.html:2430-2477` |
-| **3** | `applyDeltaVisuals` : en mode Impacts/delta, ajoute une classe CSS à **chaque** ligne du réseau (positive/negative/grey) + modifie le texte de chaque terminal | **~50-200ms** | `standalone_interface.html:2247-2345` |
-| **4** | `getScreenCTM()` dans les highlights force un recalcul de layout | **~5-15ms** | `standalone_interface.html:884-885, 959-960` |
-| **5** | 4× `querySelectorAll` de nettoyage dans `applyDeltaVisuals` scannent tout le SVG même quand aucun delta n'a été appliqué | **~3-7ms** | `standalone_interface.html:2250-2257` |
+### 1. `vector-effect: non-scaling-stroke` — Line Visibility & Zoom Performance
 
-### Cause #1 en détail : le `useLayoutEffect` bloquant
+**Files:** `frontend/src/App.css`, `standalone_interface.html` (CSS section)
 
-```javascript
-// Line 448 — PAS de tableau de dépendances → tourne à CHAQUE render
-useLayoutEffect(() => {
-    svgElRef.current = svgRef.current.querySelector('svg');
-    if (svgElRef.current?.hasAttribute('data-large-grid')) {
-        svgRef.current.classList.add('text-hidden');
-    }
-});
+```css
+.svg-container svg path,
+.svg-container svg line,
+.svg-container svg polyline,
+.svg-container svg rect {
+    vector-effect: non-scaling-stroke;
+}
 ```
 
-`useLayoutEffect` s'exécute **avant** le paint du navigateur. Sans dependency array, il tourne 3 fois par render (un par instance de `usePanZoom` : N, N-1, Action). La séquence est :
+**What it does:** Keeps stroke widths at a constant screen-pixel size regardless of SVG viewBox zoom level.
 
-1. `setActiveTab('n-1')` → React re-render
-2. React calcule le nouveau DOM (visibility CSS passe à 'visible')
-3. **AVANT paint** : 3× `useLayoutEffect` font des `querySelector('svg')` sur des SVG massifs
-4. **AVANT paint** : `useLayoutEffect` de `activeTabRef` (léger)
-5. Navigateur paint → mais seulement maintenant
-6. `useEffect`s se déclenchent (highlights + voltage filter via rAF)
+**Why it's critical:**
+- **Without it at full zoom-out:** Lines become sub-pixel width on large grids — native pypowsybl colors are invisible (the diagram appears as scattered dots)
+- **Without it when zoomed in:** Strokes scale to hundreds of screen pixels, causing extremely expensive anti-aliased rendering → zoom lag and browser crashes
+- **With it:** Strokes stay at ~1-2px screen width at any zoom level. Native pypowsybl line colors are always visible. Rendering cost is constant regardless of zoom.
 
-→ L'utilisateur ne voit le changement qu'après l'étape 5.
+**Regression history:** Removed in commit `6d03b24` ("Fix thick lines"), causing lines to lose visible colors and zoom to lag/crash. Restored in `df20d54`.
 
-## Plan d'implémentation
+> **DO NOT REMOVE this CSS rule.** It is the single most impactful rendering property for large grids. pypowsybl SVGs include native colors on paths — this rule ensures they remain visible. If lines appear "too thick" at some zoom level, address it by adjusting individual stroke-width values, not by removing non-scaling-stroke.
 
-### Fix 1 : Ajouter un dependency array au `useLayoutEffect` de `usePanZoom` (critique)
+### 2. `contain: layout style paint` — CSS Containment
 
-**Fichier :** `standalone_interface.html:448-461`
+**Files:** `frontend/src/App.css`, `standalone_interface.html`
 
-Ajouter `[initialViewBox]` comme dépendance — ce hook n'a besoin de tourner que quand le SVG change (nouveau diagramme chargé), pas à chaque render.
-
-```javascript
-useLayoutEffect(() => {
-    if (svgRef.current) {
-        svgElRef.current = svgRef.current.querySelector('svg');
-        if (svgElRef.current?.hasAttribute('data-large-grid')) {
-            const vb = viewBoxRef.current;
-            const origMax = initialMaxDimRef.current;
-            if (!vb || !origMax || Math.max(vb.w, vb.h) / origMax >= 0.5) {
-                svgRef.current.classList.add('text-hidden');
-            }
-        }
-    } else {
-        svgElRef.current = null;
-    }
-}, [initialViewBox]); // ← ne tourne que quand un nouveau diagramme arrive
+```css
+.svg-container {
+    contain: layout style paint;
+}
 ```
 
-### Fix 2 : Short-circuit du filtre voltage quand le range couvre tout
+**What it does:** Tells the browser that layout/paint within `.svg-container` is independent of the rest of the page.
 
-**Fichier :** `standalone_interface.html:2430` (dans `applyVoltageFilter`)
+**Why it's critical:** During viewBox changes (zoom/pan) and tab switches, the browser would otherwise propagate style/layout recalculations to ancestor elements. Containment limits the scope of recalculation to the SVG subtree.
 
-```javascript
-const applyVoltageFilter = useCallback((container, metaIndex) => {
-    if (!container || !metaIndex) return;
-    if (uniqueVoltages.length === 0 || Object.keys(nominalVoltageMap).length === 0) return;
+### 3. `text-hidden` Class — Text Culling on Large Grids
 
-    const [minKv, maxKv] = voltageRange;
-    // Skip if range covers everything — all elements already visible
-    if (minKv <= uniqueVoltages[0] && maxKv >= uniqueVoltages[uniqueVoltages.length - 1]) return;
+**Files:** `frontend/src/App.css`, `standalone_interface.html`
 
-    // ... rest of filter
+```css
+.svg-container.text-hidden foreignObject,
+.svg-container.text-hidden .nad-edge-infos,
+.svg-container.text-hidden .nad-text-edges {
+    display: none !important;
+}
 ```
 
-### Fix 3 : Guard `applyDeltaVisuals` nettoyage avec un flag
+**What it does:** Hides thousands of text labels (foreignObject, edge info) when zoomed out on large grids. Text is too small to read at full zoom-out, and rendering it is expensive.
 
-**Fichier :** `standalone_interface.html:2247-2257`
+**When it activates:** Controlled by `usePanZoom` hook — text is hidden when the viewBox covers ≥55% of the original diagram size, shown when zoomed in to ≤45% (hysteresis prevents flicker near the boundary).
 
-Tracker si des deltas ont été appliqués avec un `data-` attribute pour éviter 4 scans inutiles :
+## Pan/Zoom Architecture (`usePanZoom`)
 
-```javascript
-const applyDeltaVisuals = useCallback((container, diagram, metaIndex) => {
-    if (!container || !diagram || !metaIndex) return;
+**Files:** `frontend/src/hooks/usePanZoom.ts`, `standalone_interface.html` (usePanZoom function)
 
-    // Skip cleanup if no deltas were ever applied to this container
-    if (container.hasAttribute('data-deltas-applied')) {
-        container.querySelectorAll('.nad-delta-positive').forEach(el => el.classList.remove('nad-delta-positive'));
-        container.querySelectorAll('.nad-delta-negative').forEach(el => el.classList.remove('nad-delta-negative'));
-        container.querySelectorAll('.nad-delta-grey').forEach(el => el.classList.remove('nad-delta-grey'));
-        container.querySelectorAll('[data-original-text]').forEach(el => {
-            el.textContent = el.getAttribute('data-original-text');
-            el.removeAttribute('data-original-text');
-        });
-        container.removeAttribute('data-deltas-applied');
-    }
+### Design Principles
 
-    if (actionViewMode !== 'delta' || !diagram.flow_deltas) return;
+1. **Direct DOM manipulation during interaction** — viewBox changes go directly to the SVG element via `setAttribute`, bypassing React's render cycle entirely. React state is only updated when interaction ends (debounced).
 
-    // ... apply deltas, then at end:
-    container.setAttribute('data-deltas-applied', '1');
+2. **Cached SVG element reference** — `svgElRef.current` is set once when the diagram loads (`useLayoutEffect([initialViewBox])`), avoiding repeated `querySelector('svg')` calls during the hot path (wheel/drag events).
+
+3. **Debounced React state sync** — `commitViewBox()` fires 150ms after the last wheel event, preventing React re-renders during rapid zoom.
+
+4. **rAF-throttled drag** — Mouse move events are batched to at most one DOM update per display frame via `requestAnimationFrame`.
+
+### Critical `useLayoutEffect` Hooks
+
+```
+┌─ useLayoutEffect([initialViewBox])
+│  Cache svgElRef, apply text-hidden on large grids.
+│  MUST have [initialViewBox] deps — without deps it runs every render,
+│  blocking paint on every tab switch.
+│
+├─ useLayoutEffect([active])
+│  When tab becomes active, apply current viewBox to SVG DOM BEFORE paint.
+│  Prevents one frame of stale/default viewBox on tab switch.
+│
+└─ useLayoutEffect([activeTab]) — in App.tsx / standalone
+   Tab synchronization: copies viewBox from previous tab to new tab
+   before the browser paints, so the new tab shows the same zoom region.
 ```
 
-### Fix 4 : Cacher `bgCTM` dans les fonctions de highlight
+> **Regression risk:** Changing any of these to `useEffect` will cause visible flicker on tab switch (one frame of wrong zoom state). Removing the `[initialViewBox]` dependency will cause all three `usePanZoom` instances to run `querySelector` on every React render, blocking paint for ~100-300ms on large grids.
 
-**Fichier :** `standalone_interface.html:884-885, 959-960`
+## Tab-Switch Optimization
 
-`getScreenCTM()` du background layer est constant pour un SVG donné. Le cacher :
+### Problem
+On a France-scale grid (11,225 lines, ~500+ voltage levels), switching between N / N-1 / Action tabs was taking 1-3 seconds. The tab wouldn't appear until all decorations (highlights, voltage filter, delta visuals) finished running.
 
-```javascript
-// In applyHighlight():
-const bgCTM = backgroundLayer._cachedScreenCTM || (backgroundLayer._cachedScreenCTM = backgroundLayer.getScreenCTM());
+### Solution: Deferred Decorations
+
+Highlights and voltage filters are deferred to the next animation frame on tab switch:
+
+```
+User clicks tab → React render → useLayoutEffect (viewBox sync)
+→ Browser paints tab (SVG visible immediately)
+→ requestAnimationFrame → apply highlights + voltage filter
 ```
 
-Invalider quand le SVG change (dans l'effet d'invalidation du cache id-map).
+**Implementation:**
+- The highlight effect detects tab switches via `prevActiveTabRef`
+- On tab switch: decorations are deferred via `requestAnimationFrame`
+- On data change (same tab): decorations apply synchronously
 
-### Fix 5 : Utiliser `getIdMap()` dans `applyOverloadedHighlights` au lieu de `querySelector`
+**Stale tracking:** Inactive tabs are marked as "stale" in a `Set`. When switching to a stale tab, decorations re-apply in the deferred rAF callback.
 
-**Fichier :** `standalone_interface.html:762`
+### SVG Container Strategy
 
-Remplacer `container.querySelector([id="${edge.svgId}"])` par `getIdMap(container).get(edge.svgId)` — O(1) au lieu de O(n).
+All three diagram containers (N, N-1, Action) stay mounted in the DOM with `visibility: hidden` / `z-index: -1` when inactive. This avoids destroying and recreating the SVG on every tab switch, preserving zoom state and avoiding expensive initial parse/render.
 
-### Fix 6 : Appliquer les mêmes optimisations au frontend React
+```jsx
+<div style={{
+    zIndex: activeTab === 'n' ? 10 : -1,
+    visibility: activeTab === 'n' ? 'visible' : 'hidden',
+}}>
+```
 
-**Fichiers :**
-- `frontend/src/components/VisualizationPanel.tsx` — voltage filter early-return, useLayoutEffect deps
-- `frontend/src/utils/svgUtils.ts` — getIdMap dans highlights, CTM cache, delta guard
+## Highlight & Decoration Optimizations
 
-## Fichiers à modifier
+### ID Map Cache (`getIdMap`)
 
-1. `standalone_interface.html` — Fixes 1-5
-2. `frontend/src/components/VisualizationPanel.tsx` — Fix 6 (voltage filter early-return, useLayoutEffect)
-3. `frontend/src/utils/svgUtils.ts` — Fix 6 (getIdMap in highlights, CTM cache)
-4. `frontend/src/utils/svgUtils.test.ts` — Tests pour early-return et skip behaviors
+**Files:** `frontend/src/utils/svgUtils.ts`, `standalone_interface.html`
 
-## Vérification
+Instead of `container.querySelector(`[id="${svgId}"]`)` (O(n) per call), a `Map<string, Element>` is built once per SVG and cached. Subsequent lookups are O(1). The cache is invalidated when the diagram changes.
 
-1. Ouvrir `standalone_interface.html` avec le réseau France
-2. Changer d'onglet Action ↔ N-1 → doit être quasi-instantané (tab visible immédiatement, décorations ~1 frame après)
-3. Bouger le slider kV → le filtre voltage doit toujours fonctionner
-4. Activer le mode Impacts → les couleurs delta doivent apparaître correctement
-5. `cd frontend && npx vitest run` → tous les tests passent
-6. `cd frontend && npm run build && npm run lint` → clean
+### CTM Cache for Highlight Positioning
+
+`getScreenCTM()` is cached per highlight pass instead of computed inside loops. The background layer's CTM is constant for all highlights in a single call, so caching it avoids redundant layout-forcing calls.
+
+### Delta Visuals Guard
+
+The `data-deltas-applied` attribute on the container tracks whether delta CSS classes have been applied. On cleanup, the expensive `querySelectorAll` scans only run when deltas were previously applied, skipping 4 full-tree scans when switching between Flows/Impacts mode and no deltas exist.
+
+### Voltage Filter Early-Return
+
+```javascript
+if (minKv <= uniqueVoltages[0] && maxKv >= uniqueVoltages[uniqueVoltages.length - 1]) return;
+```
+
+When the voltage range slider covers all voltages (the default state), the filter skips iterating all nodes/edges — avoiding ~33,000 `style.display` writes on large grids.
+
+## SVG Boost for Large Grids (`boostSvgForLargeGrid`)
+
+**Files:** `frontend/src/utils/svgUtils.ts`, `standalone_interface.html`
+
+For grids with ≥500 voltage levels and viewBox ratio > 3× the reference size (1250), text sizes, bus node radii, and edge info elements are scaled up proportionally so they're readable when zoomed in. The function:
+
+1. Parses the SVG string with DOMParser
+2. Scales font sizes, circle radii, and transform groups
+3. Adds `data-large-grid` attribute (used by text-hidden CSS)
+4. Serializes back to string
+
+**Boost cache:** Results are cached in an LRU map (max 6 entries: N + N-1 + Action × 2 view modes) keyed by `length:vlCount:first200chars` to avoid redundant DOM parse/serialize on the same SVG.
+
+## Regression Test Coverage
+
+**File:** `frontend/src/utils/cssRegression.test.ts`
+
+Automated tests verify that critical CSS rules are present in both `App.css` and `standalone_interface.html`:
+
+| Test Category | What It Verifies |
+|---|---|
+| `non-scaling-stroke` | CSS rule present for path/line/polyline/rect |
+| CSS containment | `contain: layout style paint` on `.svg-container` |
+| `text-hidden` | `display: none` for foreignObject when class active |
+| Highlight styles | `.nad-overloaded` (orange), `.nad-action-target` (yellow) |
+| Delta visualization | Positive (orange) and negative (blue) delta styles |
+| `usePanZoom` guards | `useLayoutEffect` deps correct, tab sync uses `useLayoutEffect` |
+| Voltage filter | Early-return when range covers all voltages |
+| Deferred highlights | `requestAnimationFrame` used on tab switch |
+| Boost cache | `_boostCache` and `BOOST_CACHE_MAX` present |
+
+**File:** `frontend/src/hooks/usePanZoom.test.tsx`
+
+Tests verify:
+- ViewBox sync on mount, activation, and diagram changes
+- ViewBox preservation across active/inactive transitions
+- Text visibility toggle on large grids (hidden at zoom-out, visible at zoom-in)
+- No corruption after rapid tab switching
+
+## Summary: Do's and Don'ts
+
+| Do | Don't |
+|---|---|
+| Use `vector-effect: non-scaling-stroke` on SVG elements | Remove it to fix "thick lines" — adjust stroke-width instead |
+| Use `useLayoutEffect` for viewBox sync | Change to `useEffect` — causes visible flicker |
+| Defer decorations via `requestAnimationFrame` on tab switch | Apply highlights synchronously on tab switch |
+| Cache `getScreenCTM()` and ID maps | Call `querySelector` or `getScreenCTM()` in loops |
+| Keep all SVG containers mounted (visibility toggle) | Conditionally render/destroy SVG containers on tab switch |
+| Short-circuit voltage filter when range covers all | Iterate all elements even when no filtering needed |
+| Run `cssRegression.test.ts` after CSS changes | Skip tests after modifying App.css or standalone CSS |
