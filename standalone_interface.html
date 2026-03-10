@@ -445,6 +445,8 @@
             // Cache SVG element when container content changes.
             // Also hide text immediately on large grids to prevent a flash
             // of unreadable text before the first applyViewBox call.
+            // Runs only when a new diagram loads (initialViewBox changes),
+            // NOT on every render — otherwise it blocks paint on tab switch.
             useLayoutEffect(() => {
                 if (svgRef.current) {
                     svgElRef.current = svgRef.current.querySelector('svg');
@@ -458,7 +460,7 @@
                 } else {
                     svgElRef.current = null;
                 }
-            });
+            }, [initialViewBox]);
 
             // Sync from initialViewBox (diagram load or programmatic reset)
             useEffect(() => {
@@ -756,10 +758,11 @@
             container.querySelectorAll('.nad-overloaded').forEach(el => el.classList.remove('nad-overloaded'));
 
             const { edgesByEquipmentId } = metaIndex;
+            const idMap = getIdMap(container);
             overloadedLines.forEach(lineName => {
                 const edge = edgesByEquipmentId.get(lineName);
                 if (edge && edge.svgId) {
-                    const el = container.querySelector(`[id="${edge.svgId}"]`);
+                    const el = idMap.get(edge.svgId);
                     if (el) el.classList.add('nad-overloaded');
                 }
             });
@@ -869,6 +872,9 @@
                 }
             }
 
+            // Cache bgCTM per call — constant for all highlights in a single pass
+            let cachedBgCTM = null;
+
             // Helper to apply highlight
             const applyHighlight = (el) => {
                 if (!el) return;
@@ -882,9 +888,9 @@
 
                     try {
                         const elCTM = el.getScreenCTM();
-                        const bgCTM = backgroundLayer.getScreenCTM();
-                        if (elCTM && bgCTM) {
-                            const relativeCTM = bgCTM.inverse().multiply(elCTM);
+                        if (!cachedBgCTM) cachedBgCTM = backgroundLayer.getScreenCTM();
+                        if (elCTM && cachedBgCTM) {
+                            const relativeCTM = cachedBgCTM.inverse().multiply(elCTM);
                             const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
                             clone.setAttribute('transform', matrixStr);
                         }
@@ -898,6 +904,8 @@
                 }
             };
 
+            const idMap = getIdMap(container);
+
             // 1. Try VL detection first (handles nodal AND coupler actions)
             const vlName = getActionTargetVoltageLevel(actionDetail, actionId, nodesByEquipmentId);
             console.log('[action-target] VL result:', vlName);
@@ -905,7 +913,7 @@
                 const node = nodesByEquipmentId.get(vlName);
                 console.log('[action-target] node svgId:', node?.svgId);
                 if (node && node.svgId) {
-                    const el = container.querySelector(`[id="${node.svgId}"]`);
+                    const el = idMap.get(node.svgId);
                     console.log('[action-target] SVG element found:', !!el);
                     if (el) {
                         applyHighlight(el);
@@ -919,7 +927,7 @@
             targetLines.forEach(lineName => {
                 const edge = edgesByEquipmentId.get(lineName);
                 if (edge && edge.svgId) {
-                    const el = container.querySelector(`[id="${edge.svgId}"]`);
+                    const el = idMap.get(edge.svgId);
                     applyHighlight(el);
                 }
             });
@@ -947,7 +955,7 @@
                 }
             }
 
-            const el = container.querySelector(`[id="${edge.svgId}"]`);
+            const el = getIdMap(container).get(edge.svgId);
             if (!el || !backgroundLayer) return;
 
             const clone = el.cloneNode(true);
@@ -957,7 +965,8 @@
 
             try {
                 const elCTM = el.getScreenCTM();
-                const bgCTM = backgroundLayer.getScreenCTM();
+                // Cache bgCTM — only one contingency highlight per call
+                const bgCTM = backgroundLayer._cachedScreenCTM || (backgroundLayer._cachedScreenCTM = backgroundLayer.getScreenCTM());
                 if (elCTM && bgCTM) {
                     const relativeCTM = bgCTM.inverse().multiply(elCTM);
                     const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
@@ -2226,15 +2235,21 @@
             const n1MetaIndex = useMemo(() => buildMetadataIndex(n1Diagram?.metadata), [n1Diagram?.metadata]);
             const actionMetaIndex = useMemo(() => buildMetadataIndex(actionDiagram?.metadata), [actionDiagram?.metadata]);
 
-            // ===== Invalidate DOM id-map cache when SVG content changes =====
+            // ===== Invalidate DOM caches when SVG content changes =====
+            const invalidateSvgCaches = (container) => {
+                invalidateIdMapCache(container);
+                // Also invalidate cached CTM on background layer
+                const bgLayer = container.querySelector('#nad-background-layer');
+                if (bgLayer) delete bgLayer._cachedScreenCTM;
+            };
             useEffect(() => {
-                if (nSvgContainerRef.current) invalidateIdMapCache(nSvgContainerRef.current);
+                if (nSvgContainerRef.current) invalidateSvgCaches(nSvgContainerRef.current);
             }, [nDiagram]);
             useEffect(() => {
-                if (n1SvgContainerRef.current) invalidateIdMapCache(n1SvgContainerRef.current);
+                if (n1SvgContainerRef.current) invalidateSvgCaches(n1SvgContainerRef.current);
             }, [n1Diagram]);
             useEffect(() => {
-                if (actionSvgContainerRef.current) invalidateIdMapCache(actionSvgContainerRef.current);
+                if (actionSvgContainerRef.current) invalidateSvgCaches(actionSvgContainerRef.current);
             }, [actionDiagram]);
 
             // ===== Highlights =====
@@ -2247,14 +2262,18 @@
             const applyDeltaVisuals = useCallback((container, diagram, metaIndex) => {
                 if (!container || !diagram || !metaIndex) return;
 
-                container.querySelectorAll('.nad-delta-positive').forEach(el => el.classList.remove('nad-delta-positive'));
-                container.querySelectorAll('.nad-delta-negative').forEach(el => el.classList.remove('nad-delta-negative'));
-                container.querySelectorAll('.nad-delta-grey').forEach(el => el.classList.remove('nad-delta-grey'));
+                // Only run cleanup queries if deltas were previously applied
+                if (container.hasAttribute('data-deltas-applied')) {
+                    container.querySelectorAll('.nad-delta-positive').forEach(el => el.classList.remove('nad-delta-positive'));
+                    container.querySelectorAll('.nad-delta-negative').forEach(el => el.classList.remove('nad-delta-negative'));
+                    container.querySelectorAll('.nad-delta-grey').forEach(el => el.classList.remove('nad-delta-grey'));
 
-                container.querySelectorAll('[data-original-text]').forEach(el => {
-                    el.textContent = el.getAttribute('data-original-text');
-                    el.removeAttribute('data-original-text');
-                });
+                    container.querySelectorAll('[data-original-text]').forEach(el => {
+                        el.textContent = el.getAttribute('data-original-text');
+                        el.removeAttribute('data-original-text');
+                    });
+                    container.removeAttribute('data-deltas-applied');
+                }
 
                 if (actionViewMode !== 'delta' || !diagram.flow_deltas) return;
 
@@ -2342,6 +2361,7 @@
                         }
                     }
                 }
+                container.setAttribute('data-deltas-applied', '1');
             }, [actionViewMode]);
 
             const applyHighlightsForTab = useCallback((tab) => {
@@ -2432,6 +2452,9 @@
                 if (uniqueVoltages.length === 0 || Object.keys(nominalVoltageMap).length === 0) return;
 
                 const [minKv, maxKv] = voltageRange;
+                // Skip if range covers all voltages — all elements already visible
+                if (minKv <= uniqueVoltages[0] && maxKv >= uniqueVoltages[uniqueVoltages.length - 1]) return;
+
                 const isInRange = (vlId) => {
                     const kv = nominalVoltageMap[vlId];
                     return kv != null && kv >= minKv && kv <= maxKv;

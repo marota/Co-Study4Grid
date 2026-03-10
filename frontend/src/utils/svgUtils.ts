@@ -148,10 +148,11 @@ export const applyOverloadedHighlights = (
     container.querySelectorAll('.nad-overloaded').forEach(el => el.classList.remove('nad-overloaded'));
 
     const { edgesByEquipmentId } = metaIndex;
+    const idMap = getIdMap(container);
     overloadedLines.forEach(lineName => {
         const edge = edgesByEquipmentId.get(lineName);
         if (edge && edge.svgId) {
-            const el = container.querySelector(`[id="${edge.svgId}"]`);
+            const el = idMap.get(edge.svgId);
             if (el) el.classList.add('nad-overloaded');
         }
     });
@@ -273,6 +274,9 @@ export const applyActionTargetHighlights = (
         }
     }
 
+    // Cache bgCTM per call — constant for all highlights in a single pass
+    let cachedBgCTM: DOMMatrix | null = null;
+
     const applyHighlight = (el: Element) => {
         if (!el) return;
 
@@ -284,9 +288,9 @@ export const applyActionTargetHighlights = (
 
             try {
                 const elCTM = (el as SVGGraphicsElement).getScreenCTM();
-                const bgCTM = (backgroundLayer as unknown as SVGGraphicsElement).getScreenCTM();
-                if (elCTM && bgCTM) {
-                    const relativeCTM = bgCTM.inverse().multiply(elCTM);
+                if (!cachedBgCTM) cachedBgCTM = (backgroundLayer as unknown as SVGGraphicsElement).getScreenCTM();
+                if (elCTM && cachedBgCTM) {
+                    const relativeCTM = cachedBgCTM.inverse().multiply(elCTM);
                     const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
                     clone.setAttribute('transform', matrixStr);
                 }
@@ -299,12 +303,14 @@ export const applyActionTargetHighlights = (
         }
     };
 
+    const idMap = getIdMap(container);
+
     // 1. Try VL detection first (handles nodal AND coupler actions)
     const vlName = getActionTargetVoltageLevel(actionDetail, actionId, nodesByEquipmentId);
     if (vlName) {
         const node = nodesByEquipmentId.get(vlName);
         if (node && node.svgId) {
-            const el = container.querySelector(`[id="${node.svgId}"]`);
+            const el = idMap.get(node.svgId);
             if (el) {
                 applyHighlight(el);
                 return;
@@ -317,7 +323,7 @@ export const applyActionTargetHighlights = (
     targetLines.forEach(lineName => {
         const edge = edgesByEquipmentId.get(lineName);
         if (edge && edge.svgId) {
-            const el = container.querySelector(`[id="${edge.svgId}"]`);
+            const el = idMap.get(edge.svgId);
             if (el) applyHighlight(el);
         }
     });
@@ -351,7 +357,7 @@ export const applyContingencyHighlight = (
         }
     }
 
-    const el = container.querySelector(`[id="${edge.svgId}"]`);
+    const el = getIdMap(container).get(edge.svgId);
     if (!el || !backgroundLayer) return;
 
     const clone = el.cloneNode(true) as SVGGraphicsElement;
@@ -361,7 +367,9 @@ export const applyContingencyHighlight = (
 
     try {
         const elCTM = (el as SVGGraphicsElement).getScreenCTM();
-        const bgCTM = (backgroundLayer as unknown as SVGGraphicsElement).getScreenCTM();
+        // Cache bgCTM on the DOM element — constant for a given SVG
+        const bgSvgEl = backgroundLayer as unknown as SVGGraphicsElement & { _cachedScreenCTM?: DOMMatrix | null };
+        const bgCTM = bgSvgEl._cachedScreenCTM || (bgSvgEl._cachedScreenCTM = bgSvgEl.getScreenCTM());
         if (elCTM && bgCTM) {
             const relativeCTM = bgCTM.inverse().multiply(elCTM);
             const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;

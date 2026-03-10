@@ -100,6 +100,8 @@ export const usePanZoom = (
     // Cache SVG element when container content changes.
     // Also hide text immediately on large grids to prevent a flash
     // of unreadable text before the first applyViewBox call.
+    // Runs only when a new diagram loads (initialViewBox changes),
+    // NOT on every render — otherwise it blocks paint on tab switch.
     useLayoutEffect(() => {
         if (svgRef.current) {
             svgElRef.current = svgRef.current.querySelector('svg');
@@ -114,7 +116,8 @@ export const usePanZoom = (
         } else {
             svgElRef.current = null;
         }
-    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialViewBox]);
 
     // Sync from initialViewBox (diagram load or programmatic reset)
     useEffect(() => {
