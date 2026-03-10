@@ -350,7 +350,10 @@ function App() {
   useEffect(() => {
     if (!selectedBranch) {
       setN1Diagram(null);
-      committedBranchRef.current = '';
+      // Only clear the committed branch when there's no analysis state to protect
+      if (!hasAnalysisState()) {
+        committedBranchRef.current = '';
+      }
       return;
     }
     if (branches.length > 0 && !branches.includes(selectedBranch)) {
