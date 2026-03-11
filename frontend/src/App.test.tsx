@@ -577,3 +577,122 @@ describe('Full State Reset on Apply Settings', () => {
     expect(mockApi.getBranches).not.toHaveBeenCalled();
   });
 });
+
+describe('Save Results button', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();  // restores spied-on originals before each test
+    vi.clearAllMocks();
+    localStorage.clear();
+    vi.unstubAllGlobals();
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  });
+
+  it('is present in the header after study load', async () => {
+    await renderAndLoadStudy();
+    expect(screen.getByTitle('Save session results to JSON')).toBeInTheDocument();
+  });
+
+  it('is disabled when no branch has been selected', async () => {
+    await renderAndLoadStudy();
+    const saveBtn = screen.getByTitle('Save session results to JSON');
+    expect(saveBtn).toBeDisabled();
+  });
+
+  it('is enabled after selecting a valid branch', async () => {
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+    const saveBtn = screen.getByTitle('Save session results to JSON');
+    expect(saveBtn).not.toBeDisabled();
+  });
+
+  it('triggers a JSON download when clicked after branch selection', async () => {
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL');
+    // Spy on anchor click to capture download without browser navigation
+    const originalCreateElement = document.createElement.bind(document);
+    const anchorClicks: HTMLAnchorElement[] = [];
+    vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+      const el = originalCreateElement(tag as keyof HTMLElementTagNameMap);
+      if (tag === 'a') {
+        vi.spyOn(el as HTMLAnchorElement, 'click').mockImplementation(() => {
+          anchorClicks.push(el as HTMLAnchorElement);
+        });
+      }
+      return el;
+    });
+
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+
+    const saveBtn = screen.getByTitle('Save session results to JSON');
+    await act(async () => {
+      await userEvent.click(saveBtn);
+    });
+
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(anchorClicks).toHaveLength(1);
+    const anchor = anchorClicks[0];
+    expect(anchor.download).toMatch(/^expertassist_session_BRANCH_A_/);
+    expect(anchor.download).toMatch(/\.json$/);
+  });
+
+  it('JSON download contains configuration, contingency, and overloads sections', async () => {
+    let capturedBlob: Blob | undefined;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      capturedBlob = blob as Blob;
+      return 'blob:mock-url';
+    });
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+      const el = origCreate(tag as keyof HTMLElementTagNameMap);
+      if (tag === 'a') vi.spyOn(el as HTMLAnchorElement, 'click').mockImplementation(() => {});
+      return el;
+    });
+
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+
+    const saveBtn = screen.getByTitle('Save session results to JSON');
+    await act(async () => {
+      await userEvent.click(saveBtn);
+    });
+
+    expect(capturedBlob).toBeDefined();
+    const text = await capturedBlob!.text();
+    const session = JSON.parse(text);
+
+    expect(session).toHaveProperty('saved_at');
+    expect(session).toHaveProperty('configuration');
+    expect(session.configuration).toHaveProperty('network_path');
+    expect(session.configuration).toHaveProperty('monitoring_factor');
+    expect(session).toHaveProperty('contingency');
+    expect(session.contingency.disconnected_element).toBe('BRANCH_A');
+    expect(session).toHaveProperty('overloads');
+    expect(session).toHaveProperty('analysis');
+  });
+
+  it('JSON analysis is null when no analysis has been run', async () => {
+    let capturedBlob: Blob | undefined;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      capturedBlob = blob as Blob;
+      return 'blob:mock-url';
+    });
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+      const el = origCreate(tag as keyof HTMLElementTagNameMap);
+      if (tag === 'a') vi.spyOn(el as HTMLAnchorElement, 'click').mockImplementation(() => {});
+      return el;
+    });
+
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+
+    const saveBtn = screen.getByTitle('Save session results to JSON');
+    await act(async () => {
+      await userEvent.click(saveBtn);
+    });
+
+    const session = JSON.parse(await capturedBlob!.text());
+    expect(session.analysis).toBeNull();
+  });
+});

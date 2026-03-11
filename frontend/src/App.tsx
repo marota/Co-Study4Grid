@@ -11,7 +11,8 @@ import {
   getIdMap, invalidateIdMapCache,
 } from './utils/svgUtils';
 import { processSvgAsync } from './utils/svgWorkerClient';
-import type { ActionDetail, AnalysisResult, DiagramData, ViewBox, MetadataIndex, TabId, SettingsBackup, VlOverlay, SldTab, FlowDelta, AssetDelta, SessionResult } from './types';
+import type { ActionDetail, AnalysisResult, DiagramData, ViewBox, MetadataIndex, TabId, SettingsBackup, VlOverlay, SldTab, FlowDelta, AssetDelta } from './types';
+import { buildSessionResult } from './utils/sessionUtils';
 
 function App() {
   // ===== Configuration State =====
@@ -95,6 +96,7 @@ function App() {
       setSelectedActionIds(new Set());
       setManuallyAddedIds(new Set());
       setRejectedActionIds(new Set());
+      setSuggestedByRecommenderIds(new Set());
       setAnalysisLoading(false);
       setSelectedOverloads(new Set());
       setMonitorDeselected(false);
@@ -172,6 +174,10 @@ function App() {
   const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
   const [manuallyAddedIds, setManuallyAddedIds] = useState<Set<string>>(new Set());
   const [rejectedActionIds, setRejectedActionIds] = useState<Set<string>>(new Set());
+  // Tracks every action ID ever returned by the recommender for the current contingency.
+  // Kept separate from manuallyAddedIds so an action can be both is_suggested AND
+  // is_manually_simulated when the user simulated it before the recommender returned it.
+  const [suggestedByRecommenderIds, setSuggestedByRecommenderIds] = useState<Set<string>>(new Set());
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [infoMessage, setInfoMessage] = useState('');
   
@@ -233,6 +239,7 @@ function App() {
     setSelectedActionIds(new Set());
     setManuallyAddedIds(new Set());
     setRejectedActionIds(new Set());
+    setSuggestedByRecommenderIds(new Set());
     setActionDiagram(null);
     setN1Diagram(null);
     setActiveTab('n');
@@ -265,6 +272,7 @@ function App() {
     setSelectedActionIds(new Set());
     setManuallyAddedIds(new Set());
     setRejectedActionIds(new Set());
+    setSuggestedByRecommenderIds(new Set());
     setAnalysisLoading(false);
     // Analysis flow
     setSelectedOverloads(new Set());
@@ -515,6 +523,9 @@ function App() {
               for (const id in actionsWithFlags) {
                 actionsWithFlags[id].is_manual = false;
               }
+              // Record all IDs returned by the recommender — accumulate across re-runs
+              // so that re-analysis for the same contingency still marks prior suggestions.
+              setSuggestedByRecommenderIds(prev => new Set([...prev, ...Object.keys(actionsWithFlags)]));
               setPendingAnalysisResult({ ...event, actions: actionsWithFlags });
               if (event.message) setInfoMessage(event.message);
             } else if (event.type === 'error') {
@@ -670,66 +681,17 @@ function App() {
 
   // ===== Save Results =====
   const handleSaveResults = useCallback(() => {
-    const savedActions: SessionResult['analysis'] = result
-      ? {
-          message: result.message,
-          dc_fallback: result.dc_fallback,
-          action_scores: result.action_scores,
-          actions: Object.fromEntries(
-            Object.entries(result.actions).map(([id, detail]) => [
-              id,
-              {
-                description_unitaire: detail.description_unitaire,
-                rho_before: detail.rho_before,
-                rho_after: detail.rho_after,
-                max_rho: detail.max_rho,
-                max_rho_line: detail.max_rho_line,
-                is_rho_reduction: detail.is_rho_reduction,
-                non_convergence: detail.non_convergence,
-                action_topology: detail.action_topology,
-                status: {
-                  is_selected: selectedActionIds.has(id),
-                  is_suggested: !manuallyAddedIds.has(id),
-                  is_rejected: rejectedActionIds.has(id),
-                  is_manually_simulated: manuallyAddedIds.has(id),
-                },
-              },
-            ])
-          ),
-        }
-      : null;
-
-    const session: SessionResult = {
-      saved_at: new Date().toISOString(),
-      configuration: {
-        network_path: networkPath,
-        action_file_path: actionPath,
-        min_line_reconnections: minLineReconnections,
-        min_close_coupling: minCloseCoupling,
-        min_open_coupling: minOpenCoupling,
-        min_line_disconnections: minLineDisconnections,
-        n_prioritized_actions: nPrioritizedActions,
-        lines_monitoring_path: linesMonitoringPath,
-        monitoring_factor: monitoringFactor,
-        pre_existing_overload_threshold: preExistingOverloadThreshold,
-        ignore_reconnections: ignoreReconnections,
-        pypowsybl_fast_mode: pypowsyblFastMode,
-      },
-      contingency: {
-        disconnected_element: selectedBranch,
-        selected_overloads: Array.from(selectedOverloads),
-        monitor_deselected: monitorDeselected,
-      },
-      overloads: {
-        n_overloads: nDiagram?.lines_overloaded || [],
-        n1_overloads: n1Diagram?.lines_overloaded || [],
-        resolved_overloads: result?.lines_overloaded || [],
-      },
-      overflow_graph: result?.pdf_url
-        ? { pdf_url: result.pdf_url, pdf_path: result.pdf_path ?? null }
-        : null,
-      analysis: savedActions,
-    };
+    const session = buildSessionResult({
+      networkPath, actionPath,
+      minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
+      nPrioritizedActions, linesMonitoringPath, monitoringFactor,
+      preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
+      selectedBranch, selectedOverloads, monitorDeselected,
+      nOverloads: nDiagram?.lines_overloaded ?? [],
+      n1Overloads: n1Diagram?.lines_overloaded ?? [],
+      result,
+      selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds,
+    });
 
     const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -741,7 +703,7 @@ function App() {
     a.click();
     URL.revokeObjectURL(url);
   }, [
-    result, selectedActionIds, manuallyAddedIds, rejectedActionIds,
+    result, selectedActionIds, manuallyAddedIds, rejectedActionIds, suggestedByRecommenderIds,
     networkPath, actionPath, minLineReconnections, minCloseCoupling, minOpenCoupling,
     minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor,
     preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
