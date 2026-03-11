@@ -1178,7 +1178,7 @@
             const [loadingAvailableActions, setLoadingAvailableActions] = useState(false);
             const [simulatingActionId, setSimulatingActionId] = useState(null);
             const [searchError, setSearchError] = useState('');
-            const [typeFilters, setTypeFilters] = useState({ disco: true, reco: true, open: true, close: true });
+            const [typeFilters, setTypeFilters] = useState({ disco: true, reco: true, open: true, close: true, pst: true });
             const searchDropdownRef = useRef(null);
             const searchInputRef = useRef(null);
             const [scoreTooltip, setScoreTooltip] = useState(null);
@@ -2308,13 +2308,23 @@
                 return availableActions
                     .filter(a => !existingIds.has(a.id))
                     .filter(a => {
-                        const t = a.type || 'unknown';
-                        if ((t.includes('disco') || t.includes('open_line') || t.includes('open_load')) && !typeFilters.disco) return false;
-                        if ((t.includes('reco') || t.includes('close_line') || t.includes('close_load')) && !typeFilters.reco) return false;
-                        if (t.includes('open_coupling') && !typeFilters.open) return false;
-                        if (t.includes('close_coupling') && !typeFilters.close) return false;
-                        if (!typeFilters.disco && !typeFilters.reco && !typeFilters.open && !typeFilters.close) return false;
-                        return true;
+                        const t = (a.type || 'unknown').toLowerCase();
+                        const actionId = a.id.toLowerCase();
+                        const actionDesc = (a.description || '').toLowerCase();
+
+                        const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
+                        const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
+                        const isOpenCoupling = t.includes('open_coupling');
+                        const isCloseCoupling = t.includes('close_coupling');
+                        const isPstAction = (actionId.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
+
+                        if (isDisco) return typeFilters.disco;
+                        if (isReco) return typeFilters.reco;
+                        if (isOpenCoupling) return typeFilters.open;
+                        if (isCloseCoupling) return typeFilters.close;
+                        if (isPstAction) return typeFilters.pst;
+
+                        return typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
                     })
                     .filter(a => a.id.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q))
                     .slice(0, 20);
@@ -2325,14 +2335,29 @@
                 if (!result?.action_scores) return [];
                 const list = [];
                 for (const [type, data] of Object.entries(result.action_scores)) {
-                    // Apply filtering
-                    if (type === 'line_disconnection' && !typeFilters.disco) continue;
-                    if (type === 'line_reconnection' && !typeFilters.reco) continue;
-                    if (type === 'open_coupling' && !typeFilters.open) continue;
-                    if (type === 'close_coupling' && !typeFilters.close) continue;
-
                     const scores = data?.scores || {};
                     for (const [actionId, score] of Object.entries(scores)) {
+                        const actionDetail = result?.actions?.[actionId];
+                        const actionDesc = (actionDetail?.description_unitaire || '').toLowerCase();
+                        const aid = actionId.toLowerCase();
+                        const t = type.toLowerCase();
+                        
+                        const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
+                        const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
+                        const isOpenCoupling = t.includes('open_coupling');
+                        const isCloseCoupling = t.includes('close_coupling');
+                        const isPstAction = (aid.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
+
+                        let shouldShow = false;
+                        if (isDisco) shouldShow = typeFilters.disco;
+                        else if (isReco) shouldShow = typeFilters.reco;
+                        else if (isOpenCoupling) shouldShow = typeFilters.open;
+                        else if (isCloseCoupling) shouldShow = typeFilters.close;
+                        else if (isPstAction) shouldShow = typeFilters.pst;
+                        else shouldShow = typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
+
+                        if (!shouldShow) continue;
+                        
                         list.push({ type, actionId, score: Number(score) });
                     }
                 }
@@ -2344,7 +2369,7 @@
                     }
                     return b.score - a.score;
                 });
-            }, [result?.action_scores, typeFilters]);
+            }, [result?.action_scores, result?.actions, typeFilters]);
 
 
 
@@ -3644,7 +3669,7 @@
                                             />
                                         </div>
                                         <div style={{ padding: '4px 8px', display: 'flex', flexWrap: 'wrap', gap: '6px', borderTop: '1px solid #eee', fontSize: '11px' }}>
-                                            {[['disco', 'Disconnections'], ['reco', 'Reconnections'], ['open', 'Open coupling'], ['close', 'Close coupling']].map(([key, label]) => (
+                                            {[['disco', 'Disconnections'], ['reco', 'Reconnections'], ['pst', 'PST'], ['open', 'Open coupling'], ['close', 'Close coupling']].map(([key, label]) => (
                                                 <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', color: '#555' }}>
                                                     <input
                                                         type="checkbox"
