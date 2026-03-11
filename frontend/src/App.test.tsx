@@ -557,7 +557,7 @@ describe('Full State Reset on Apply Settings', () => {
     expect(callArgs).toHaveProperty('n_prioritized_actions');
   });
 
-  it('does not re-fetch branches after Apply Settings', async () => {
+  it('re-fetches branches after Apply Settings', async () => {
     await renderAndLoadStudy();
 
     mockApi.getBranches.mockClear();
@@ -573,8 +573,8 @@ describe('Full State Reset on Apply Settings', () => {
       expect(mockApi.updateConfig).toHaveBeenCalled();
     });
 
-    // Apply Settings does NOT re-fetch branches (unlike Load Study)
-    expect(mockApi.getBranches).not.toHaveBeenCalled();
+    // Apply Settings DOES now re-fetch branches (matching Load Study behavior)
+    expect(mockApi.getBranches).toHaveBeenCalled();
   });
 });
 
@@ -694,5 +694,60 @@ describe('Save Results button', () => {
 
     const session = JSON.parse(await capturedBlob!.text());
     expect(session.analysis).toBeNull();
+  });
+});
+
+describe('Settings Modal Enhancements', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  async function openSettings() {
+    render(<App />);
+    const settingsBtn = screen.getByTitle('Settings');
+    await act(async () => {
+      await userEvent.click(settingsBtn);
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Apply')).toBeInTheDocument();
+    });
+  }
+
+  it('defaults to the Paths tab when opened', async () => {
+    await openSettings();
+    // The Paths tab should be active. We can check for a path-specific input.
+    expect(screen.getByLabelText(/Network Path/i)).toBeInTheDocument();
+  });
+
+  it('auto-closes and fetches study data on Apply', async () => {
+    await openSettings();
+
+    mockApi.updateConfig.mockClear();
+    mockApi.getBranches.mockClear();
+    mockApi.getVoltageLevels.mockClear();
+
+    const applyBtn = screen.getByText('Apply');
+    await act(async () => {
+      await userEvent.click(applyBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockApi.updateConfig).toHaveBeenCalled();
+    });
+
+    // Verification of auto-close
+    await waitFor(() => {
+      expect(screen.queryByText('Apply')).not.toBeInTheDocument();
+    });
+
+    // Verification of study data fetching
+    await waitFor(() => {
+      expect(mockApi.getBranches).toHaveBeenCalled();
+      expect(mockApi.getVoltageLevels).toHaveBeenCalled();
+      expect(mockApi.getNominalVoltages).toHaveBeenCalled();
+      expect(mockApi.getNetworkDiagram).toHaveBeenCalled();
+    });
   });
 });

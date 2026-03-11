@@ -1050,7 +1050,7 @@
                     ignoreReconnections,
                     pypowsyblFastMode
                 });
-                setSettingsTab(tab);
+                setSettingsTab('paths');
                 setIsSettingsOpen(true);
             };
 
@@ -1121,6 +1121,28 @@
                             setShowMonitoringWarning(true);
                         }
                     }
+
+                    // Fetch study-related data (branches, nominal voltages etc.)
+                    const [branchesRes, vlRes, nomVRes] = await Promise.all([
+                        axios.get(API_BASE + '/api/branches'),
+                        axios.get(API_BASE + '/api/voltage-levels'),
+                        axios.get(API_BASE + '/api/nominal-voltages')
+                    ]);
+
+                    setBranches(branchesRes.data.branches);
+                    setVoltageLevels(vlRes.data.voltage_levels);
+                    setSelectedBranch('');
+
+                    // Set up nominal voltage filter
+                    const nvMap = nomVRes.data.mapping;
+                    const uniqueKv = nomVRes.data.unique_kv;
+                    setNominalVoltageMap(nvMap);
+                    setUniqueVoltages(uniqueKv);
+                    if (uniqueKv.length > 0) {
+                        setVoltageRange([uniqueKv[0], uniqueKv[uniqueKv.length - 1]]);
+                    }
+
+                    fetchBaseDiagram(vlRes.data.voltage_levels.length);
 
                     setSettingsBackup({
                         networkPath,

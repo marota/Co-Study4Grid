@@ -52,6 +52,85 @@ function App() {
   // Confirmation dialog state for contingency change / load study
   const [confirmDialog, setConfirmDialog] = useState<{ type: 'contingency' | 'loadStudy'; pendingBranch?: string } | null>(null);
 
+
+  const pickSettingsPath = async (type: 'file' | 'dir', setter: (path: string) => void) => {
+    try {
+      const path = await api.pickPath(type);
+      if (path) setter(path);
+    } catch {
+      console.error('Failed to open file picker');
+    }
+  };
+
+  // Nominal voltage filter state
+  const [nominalVoltageMap, setNominalVoltageMap] = useState<Record<string, number>>({});
+  const [uniqueVoltages, setUniqueVoltages] = useState<number[]>([]);
+  const [voltageRange, setVoltageRange] = useState<[number, number]>([0, 400]);
+
+  // ===== Analysis State =====
+  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [pendingAnalysisResult, setPendingAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
+  const [manuallyAddedIds, setManuallyAddedIds] = useState<Set<string>>(new Set());
+  const [rejectedActionIds, setRejectedActionIds] = useState<Set<string>>(new Set());
+  // Tracks every action ID ever returned by the recommender for the current contingency.
+  // Kept separate from manuallyAddedIds so an action can be both is_suggested AND
+  // is_manually_simulated when the user simulated it before the recommender returned it.
+  const [suggestedByRecommenderIds, setSuggestedByRecommenderIds] = useState<Set<string>>(new Set());
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [infoMessage, setInfoMessage] = useState('');
+  
+  // ===== Analysis Flow State =====
+  const [selectedOverloads, setSelectedOverloads] = useState<Set<string>>(new Set());
+  const [monitorDeselected, setMonitorDeselected] = useState(false);
+
+  // ===== Visualization State =====
+  const [activeTab, setActiveTab] = useState<TabId>('n');
+  const activeTabRef = useRef<TabId>(activeTab);
+  useLayoutEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+  const prevTabRef = useRef<TabId>(activeTab);
+
+  const [nDiagram, setNDiagram] = useState<DiagramData | null>(null);
+  const [n1Diagram, setN1Diagram] = useState<DiagramData | null>(null);
+  const [n1Loading, setN1Loading] = useState(false);
+
+  // Action variant diagram state
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
+  const [actionDiagram, setActionDiagram] = useState<DiagramData | null>(null);
+  const [actionDiagramLoading, setActionDiagramLoading] = useState(false);
+
+  // Delta visualization mode
+  const [actionViewMode, setActionViewMode] = useState<'network' | 'delta'>('network');
+
+  const [originalViewBox, setOriginalViewBox] = useState<ViewBox | null>(null);
+  const [inspectQuery, setInspectQuery] = useState('');
+
+  // Independent Refs for N, N-1, and Action Variant
+  const nSvgContainerRef = useRef<HTMLDivElement>(null);
+  const n1SvgContainerRef = useRef<HTMLDivElement>(null);
+  const actionSvgContainerRef = useRef<HTMLDivElement>(null);
+
+  // Native Pan/Zoom Instances
+  const nPZ = usePanZoom(nSvgContainerRef, nDiagram?.originalViewBox, activeTab === 'n');
+  const n1PZ = usePanZoom(n1SvgContainerRef, n1Diagram?.originalViewBox, activeTab === 'n-1');
+  const actionPZ = usePanZoom(actionSvgContainerRef, actionDiagram?.originalViewBox, activeTab === 'action');
+
+  // Zoom state tracking
+  const lastZoomState = useRef({ query: '', branch: '' });
+  // Captured viewBox to re-apply after the action diagram loads
+  const actionSyncSourceRef = useRef<ViewBox | null>(null);
+
+  const fetchBaseDiagram = useCallback(async (vlCount: number) => {
+    try {
+      const res = await api.getNetworkDiagram();
+      const { svg, viewBox } = await processSvgAsync(res.svg, vlCount || 0);
+      if (viewBox) setOriginalViewBox(viewBox);
+      setNDiagram({ ...res, svg, originalViewBox: viewBox });
+    } catch (err) {
+      console.error('Failed to fetch diagram:', err);
+    }
+  }, []);
+
   const handleOpenSettings = useCallback(() => {
     setSettingsBackup({
       networkPath,
@@ -68,6 +147,7 @@ function App() {
       ignoreReconnections,
       pypowsyblFastMode
     });
+    setSettingsTab('paths');
     setIsSettingsOpen(true);
   }, [networkPath, actionPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
 
@@ -144,6 +224,25 @@ function App() {
         }
       }
 
+      // Fetch study-related data (branches, nominal voltages etc.)
+      const [branchesList, vlRes, nomVRes] = await Promise.all([
+        api.getBranches(),
+        api.getVoltageLevels(),
+        api.getNominalVoltages(),
+      ]);
+
+      setBranches(branchesList);
+      setVoltageLevels(vlRes);
+      setSelectedBranch('');
+
+      setNominalVoltageMap(nomVRes.mapping);
+      setUniqueVoltages(nomVRes.unique_kv);
+      if (nomVRes.unique_kv.length > 0) {
+        setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
+      }
+
+      fetchBaseDiagram(vlRes.length);
+
       setSettingsBackup({
         networkPath,
         actionPath,
@@ -164,74 +263,7 @@ function App() {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
       setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
     }
-  }, [networkPath, actionPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
-
-  const pickSettingsPath = async (type: 'file' | 'dir', setter: (path: string) => void) => {
-    try {
-      const path = await api.pickPath(type);
-      if (path) setter(path);
-    } catch {
-      console.error('Failed to open file picker');
-    }
-  };
-
-  // Nominal voltage filter state
-  const [nominalVoltageMap, setNominalVoltageMap] = useState<Record<string, number>>({});
-  const [uniqueVoltages, setUniqueVoltages] = useState<number[]>([]);
-  const [voltageRange, setVoltageRange] = useState<[number, number]>([0, 400]);
-
-  // ===== Analysis State =====
-  const [result, setResult] = useState<AnalysisResult | null>(null);
-  const [pendingAnalysisResult, setPendingAnalysisResult] = useState<AnalysisResult | null>(null);
-  const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
-  const [manuallyAddedIds, setManuallyAddedIds] = useState<Set<string>>(new Set());
-  const [rejectedActionIds, setRejectedActionIds] = useState<Set<string>>(new Set());
-  // Tracks every action ID ever returned by the recommender for the current contingency.
-  // Kept separate from manuallyAddedIds so an action can be both is_suggested AND
-  // is_manually_simulated when the user simulated it before the recommender returned it.
-  const [suggestedByRecommenderIds, setSuggestedByRecommenderIds] = useState<Set<string>>(new Set());
-  const [analysisLoading, setAnalysisLoading] = useState(false);
-  const [infoMessage, setInfoMessage] = useState('');
-  
-  // ===== Analysis Flow State =====
-  const [selectedOverloads, setSelectedOverloads] = useState<Set<string>>(new Set());
-  const [monitorDeselected, setMonitorDeselected] = useState(false);
-
-  // ===== Visualization State =====
-  const [activeTab, setActiveTab] = useState<TabId>('n');
-  const activeTabRef = useRef<TabId>(activeTab);
-  useLayoutEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
-  const prevTabRef = useRef<TabId>(activeTab);
-
-  const [nDiagram, setNDiagram] = useState<DiagramData | null>(null);
-  const [n1Diagram, setN1Diagram] = useState<DiagramData | null>(null);
-  const [n1Loading, setN1Loading] = useState(false);
-
-  // Action variant diagram state
-  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
-  const [actionDiagram, setActionDiagram] = useState<DiagramData | null>(null);
-  const [actionDiagramLoading, setActionDiagramLoading] = useState(false);
-
-  // Delta visualization mode
-  const [actionViewMode, setActionViewMode] = useState<'network' | 'delta'>('network');
-
-  const [originalViewBox, setOriginalViewBox] = useState<ViewBox | null>(null);
-  const [inspectQuery, setInspectQuery] = useState('');
-
-  // Independent Refs for N, N-1, and Action Variant
-  const nSvgContainerRef = useRef<HTMLDivElement>(null);
-  const n1SvgContainerRef = useRef<HTMLDivElement>(null);
-  const actionSvgContainerRef = useRef<HTMLDivElement>(null);
-
-  // Native Pan/Zoom Instances
-  const nPZ = usePanZoom(nSvgContainerRef, nDiagram?.originalViewBox, activeTab === 'n');
-  const n1PZ = usePanZoom(n1SvgContainerRef, n1Diagram?.originalViewBox, activeTab === 'n-1');
-  const actionPZ = usePanZoom(actionSvgContainerRef, actionDiagram?.originalViewBox, activeTab === 'action');
-
-  // Zoom state tracking
-  const lastZoomState = useRef({ query: '', branch: '' });
-  // Captured viewBox to re-apply after the action diagram loads
-  const actionSyncSourceRef = useRef<ViewBox | null>(null);
+  }, [networkPath, actionPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode, fetchBaseDiagram]);
 
   // Persist paths to localStorage
   useEffect(() => { localStorage.setItem('networkPath', networkPath); }, [networkPath]);
@@ -355,7 +387,7 @@ function App() {
     } finally {
       setConfigLoading(false);
     }
-  }, [networkPath, actionPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, monitoringFactor, linesMonitoringPath, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
+  }, [networkPath, actionPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, monitoringFactor, linesMonitoringPath, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode, fetchBaseDiagram]);
 
   // Handle Load Study with confirmation when analysis state exists
   const handleLoadStudyClick = useCallback(() => {
@@ -379,16 +411,6 @@ function App() {
     setConfirmDialog(null);
   }, [confirmDialog, clearContingencyState, handleLoadConfig]);
 
-  const fetchBaseDiagram = async (vlCount: number) => {
-    try {
-      const res = await api.getNetworkDiagram();
-      const { svg, viewBox } = await processSvgAsync(res.svg, vlCount || 0);
-      if (viewBox) setOriginalViewBox(viewBox);
-      setNDiagram({ ...res, svg, originalViewBox: viewBox });
-    } catch (err) {
-      console.error('Failed to fetch diagram:', err);
-    }
-  };
 
   // ===== N-1 Diagram Fetching =====
   // Uses committedBranchRef to detect actual branch changes vs. re-selections.
@@ -1332,17 +1354,17 @@ function App() {
             {settingsTab === 'paths' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network File Path</label>
+                  <label htmlFor="networkPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network Path (Grid Folder)</label>
                   <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Synchronized with the banner field</div>
                   <div style={{ display: 'flex', gap: '5px' }}>
-                    <input type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                    <input id="networkPathInput" type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
                     <button onClick={() => pickSettingsPath('dir', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📂</button>
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Action Dictionary File Path</label>
+                  <label htmlFor="actionPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Action Dictionary File Path</label>
                   <div style={{ display: 'flex', gap: '5px' }}>
-                    <input type="text" value={actionPath} onChange={e => setActionPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                    <input id="actionPathInput" type="text" value={actionPath} onChange={e => setActionPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
                     <button onClick={() => pickSettingsPath('file', setActionPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📄</button>
                   </div>
                 </div>
