@@ -90,15 +90,32 @@ def update_config(config: ConfigRequest):
         else:
             monitored_lines = getattr(recommender_config, 'MONITORED_LINES_COUNT', total_lines)
 
-        # Compute action dictionary statistics
+        # Compute action dictionary statistics using same logic as frontend
         import os as _os
+        from expert_op4grid_recommender.action_evaluation.classifier import ActionClassifier
+        
         action_dict = recommender_service._dict_action or {}
         action_file_name = _os.path.basename(config.action_file_path)
-        n_reco = sum(1 for k in action_dict if k.lower().startswith('reco_'))
-        n_disco = sum(1 for k in action_dict if k.lower().startswith('disco_'))
-        n_pst = sum(1 for k in action_dict if 'pst' in k.lower() and not k.lower().startswith('reco_') and not k.lower().startswith('disco_'))
-        n_open_coupling = sum(1 for k in action_dict if 'open_coupling' in k.lower())
-        n_close_coupling = sum(1 for k in action_dict if 'close_coupling' in k.lower())
+        
+        n_reco = n_disco = n_pst = n_open_coupling = n_close_coupling = 0
+        classifier = ActionClassifier()
+        
+        for k, v in action_dict.items():
+            action_id = str(k).lower()
+            action_desc = str(v.get("description_unitaire", v.get("description", ""))).lower()
+            t = str(classifier.identify_action_type(v) or "unknown").lower()
+            
+            is_disco = 'disco' in t or 'open_line' in t or 'open_load' in t or 'ouverture' in action_desc
+            is_reco = 'reco' in t or 'close_line' in t or 'close_load' in t or 'fermeture' in action_desc
+            is_open_coupling = 'open_coupling' in t
+            is_close_coupling = 'close_coupling' in t
+            is_pst_action = ('pst' in action_id or 'pst' in action_desc or 'pst' in t) and not is_disco and not is_reco and not is_open_coupling and not is_close_coupling
+            
+            if is_disco: n_disco += 1
+            if is_reco: n_reco += 1
+            if is_open_coupling: n_open_coupling += 1
+            if is_close_coupling: n_close_coupling += 1
+            if is_pst_action: n_pst += 1
 
         return {
             "status": "success", 
