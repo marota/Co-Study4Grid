@@ -193,7 +193,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             }
             return b.score - a.score;
         });
-    }, [actionScores, typeFilters]);
+    }, [actionScores, typeFilters, actions]);
 
     // Close dropdown on outside click
     useEffect(() => {

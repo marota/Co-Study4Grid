@@ -270,7 +270,7 @@ describe('ActionFeed', () => {
         const regularAction = { id: 'line_reco_1', description: 'Regular action', type: 'line_reconnection' };
         
         // Mock API to return both actions
-        (api.getAvailableActions as any).mockResolvedValueOnce([pstAction, regularAction]);
+        vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstAction, regularAction]);
 
         render(<ActionFeed {...defaultProps} />);
         
@@ -297,7 +297,7 @@ describe('ActionFeed', () => {
     it('hides PST actions matching search query when PST filter is unchecked', async () => {
         const pstAction = { id: 'pst_tap_up', description: 'PST action' };
         
-        (api.getAvailableActions as any).mockResolvedValueOnce([pstAction]);
+        vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstAction]);
 
         render(<ActionFeed {...defaultProps} />);
         
@@ -327,7 +327,7 @@ describe('ActionFeed', () => {
         const discoAction = { id: 'abc', description: 'Ouverture de ligne' }; // Should be recognized as disco
         const unknownAction = { id: 'xyz', description: 'Some unknown action' };
         
-        (api.getAvailableActions as any).mockResolvedValueOnce([pstAction, discoAction, unknownAction]);
+        vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstAction, discoAction, unknownAction]);
 
         render(<ActionFeed {...defaultProps} />);
         
@@ -355,7 +355,7 @@ describe('ActionFeed', () => {
             type: 'pst_tap_change' // Simulating backend tagging it as PST
         };
         
-        (api.getAvailableActions as any).mockResolvedValueOnce([pstDiscoAction]);
+        vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstDiscoAction]);
 
         render(<ActionFeed {...defaultProps} />);
         

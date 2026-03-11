@@ -2229,24 +2229,6 @@
                 if (!result?.action_scores) return [];
                 const list = [];
                 for (const [type, data] of Object.entries(result.action_scores)) {
-                    // Apply filtering logic consistent with the search dropdown
-                    const isDiscoType = type === 'line_disconnection';
-                    const isRecoType = type === 'line_reconnection';
-                    const isOpenType = type === 'open_coupling';
-                    const isCloseType = type === 'close_coupling';
-                    const isPstType = type === 'pst_tap_change' || type.includes('pst');
-                    
-                    if (isDiscoType && !typeFilters.disco) continue;
-                    if (isRecoType && !typeFilters.reco) continue;
-                    if (isOpenType && !typeFilters.open) continue;
-                    if (isCloseType && !typeFilters.close) continue;
-                    if (isPstType && !typeFilters.pst) continue;
-                    
-                    const isKnownType = isDiscoType || isRecoType || isOpenType || isCloseType || isPstType;
-                    if (!isKnownType && !(typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst)) {
-                        continue;
-                    }
-
                     const scores = data?.scores || {};
                     for (const [actionId, score] of Object.entries(scores)) {
                         const actionDetail = result?.actions?.[actionId];
@@ -2281,7 +2263,7 @@
                     }
                     return b.score - a.score;
                 });
-            }, [result?.action_scores, typeFilters]);
+            }, [result?.action_scores, result?.actions, typeFilters]);
 
 
 
