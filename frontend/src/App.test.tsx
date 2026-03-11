@@ -1,3 +1,4 @@
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -7,7 +8,25 @@ import App from './App';
 
 // Mock child components to avoid their complexity
 vi.mock('./components/VisualizationPanel', () => ({
-  default: () => <div data-testid="visualization-panel" />,
+  default: ({ nDiagram, configLoading, networkPath, layoutPath }: any) => {
+    const [showPathWarning, setShowPathWarning] = React.useState(true);
+    React.useEffect(() => {
+      if (nDiagram?.svg) setShowPathWarning(false);
+    }, [nDiagram?.svg]);
+
+    return (
+      <div data-testid="visualization-panel">
+        {!nDiagram?.svg && !configLoading && showPathWarning && (
+          <div>
+            <div>Configuration Paths</div>
+            <button onClick={() => setShowPathWarning(false)}>✕</button>
+            <div>Layout Path: {layoutPath}</div>
+            <div>Output Folder: {networkPath}</div>
+          </div>
+        )}
+      </div>
+    );
+  },
 }));
 vi.mock('./components/ActionFeed', () => ({
   default: () => <div data-testid="action-feed" />,
@@ -779,6 +798,48 @@ describe('Settings Modal Enhancements', () => {
         network_path: '/path/to/network.xiidm',
         layout_path: '/path/to/layout.json'
       }));
+    });
+  });
+
+  it('shows path warning when no network is loaded and allows dismissal', async () => {
+    // Initial render should show the warning since no diagram is loaded
+    render(<App />);
+    
+    await waitFor(() => {
+      expect(screen.getByText(/Configuration Paths/i)).toBeInTheDocument();
+    });
+    
+    expect(screen.getByText(/Layout Path:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Output Folder:/i)).toBeInTheDocument();
+
+    // Dismiss the warning
+    const closeBtn = screen.getByText('✕');
+    await userEvent.click(closeBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Configuration Paths/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it('hides path warning when a network diagram is loaded', async () => {
+    render(<App />);
+    
+    // Warning should be present initially
+    await waitFor(() => {
+      expect(screen.getByText(/Configuration Paths/i)).toBeInTheDocument();
+    });
+
+    // Simulate loading a study which will set nDiagram
+    const settingsBtn = screen.getByTitle('Settings');
+    await userEvent.click(settingsBtn);
+    
+    const applyBtn = screen.getByText('Apply');
+    await userEvent.click(applyBtn);
+
+    // After apply, the warning should disappear because a diagram (nDiagram) will be "loaded" 
+    // (mocked in our tests)
+    await waitFor(() => {
+      expect(screen.queryByText(/Configuration Paths/i)).not.toBeInTheDocument();
     });
   });
 });

@@ -1208,6 +1208,14 @@
             const searchDropdownRef = useRef(null);
             const searchInputRef = useRef(null);
             const [scoreTooltip, setScoreTooltip] = useState(null);
+            const [showPathWarning, setShowPathWarning] = useState(true);
+
+            // Hide warning as soon as a diagram is rendered
+            useEffect(() => {
+                if (nDiagram?.svg || n1Diagram?.svg || actionDiagram?.svg) {
+                    setShowPathWarning(false);
+                }
+            }, [nDiagram?.svg, n1Diagram?.svg, actionDiagram?.svg]);
 
             const showScoreTooltip = (e, content) => {
                 const rect = e.currentTarget.getBoundingClientRect();
@@ -4105,6 +4113,53 @@
 
                             </div>
                             <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                                {/* Path Warning Banner */}
+                                {!nDiagram?.svg && !configLoading && showPathWarning && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '10px',
+                                        left: '50%',
+                                        transform: 'translateX(-50%)',
+                                        zIndex: 150,
+                                        backgroundColor: '#fff3cd',
+                                        color: '#856404',
+                                        padding: '12px 20px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #ffeeba',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '8px',
+                                        maxWidth: '80%',
+                                        fontSize: '13px'
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <span>⚠️</span> Configuration Paths
+                                            </div>
+                                            <button 
+                                                onClick={() => setShowPathWarning(false)}
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', color: '#856404' }}
+                                            >✕</button>
+                                        </div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            <strong>Layout Path:</strong> {layoutPath || 'Not set'}
+                                        </div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            <strong>Output Folder:</strong> {networkPath ? networkPath.substring(0, networkPath.lastIndexOf('/')) : 'Not set'}
+                                        </div>
+                                        <div style={{ marginTop: '4px' }}>
+                                            <a 
+                                                href="#" 
+                                                onClick={(e) => { e.preventDefault(); setSettingsOpen(true); }}
+                                                style={{ color: '#0056b3', textDecoration: 'underline', fontWeight: 500 }}
+                                            >
+                                                Change in settings
+                                            </a>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* View Mode Overlay */}
                                 {(activeTab !== 'overflow' && activeTab !== 'n' && (
                                     (activeTab === 'n-1' && !!n1Diagram?.svg) ||

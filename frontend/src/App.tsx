@@ -1607,6 +1607,9 @@ function App() {
             onOverlaySldTabChange={handleOverlaySldTabChange}
             voltageLevels={voltageLevels}
             onVlOpen={(vlName) => handleVlDoubleClick(activeTab === 'action' ? selectedActionId || '' : '', vlName)}
+            networkPath={networkPath}
+            layoutPath={layoutPath}
+            onOpenSettings={handleOpenSettings}
           />
         </div>
       </div>
