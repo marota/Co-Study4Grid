@@ -91,7 +91,7 @@ class RecommenderService:
             if action_obj is not None:
                 topo = {}
                 # pypowsybl Actions use these fields
-                for field in ("lines_ex_bus", "lines_or_bus", "gens_bus", "loads_bus", "substations", "switches"):
+                for field in ("lines_ex_bus", "lines_or_bus", "gens_bus", "loads_bus", "pst_tap", "substations", "switches"):
                     val = getattr(action_obj, field, None)
                     if val is None and isinstance(action_obj, dict):
                         val = action_obj.get(field)
