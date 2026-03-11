@@ -163,3 +163,62 @@ export interface VlOverlay {
     reactive_flow_deltas?: Record<string, FlowDelta>;
     asset_deltas?: Record<string, AssetDelta>;
 }
+
+// ===== Session Save =====
+
+export interface SavedActionStatus {
+    is_selected: boolean;       // user starred/favorited
+    is_suggested: boolean;      // recommended by expert_op4grid (not manually added)
+    is_rejected: boolean;       // user explicitly rejected
+    is_manually_simulated: boolean; // user manually triggered simulation
+}
+
+export interface SavedActionEntry {
+    description_unitaire: string;
+    rho_before: number[] | null;
+    rho_after: number[] | null;
+    max_rho: number | null;
+    max_rho_line: string;
+    is_rho_reduction: boolean;
+    non_convergence?: string | null;
+    action_topology?: ActionTopology;
+    status: SavedActionStatus;
+}
+
+export interface SessionResult {
+    saved_at: string;           // ISO 8601 timestamp
+    configuration: {
+        network_path: string;
+        action_file_path: string;
+        min_line_reconnections: number;
+        min_close_coupling: number;
+        min_open_coupling: number;
+        min_line_disconnections: number;
+        n_prioritized_actions: number;
+        lines_monitoring_path: string;
+        monitoring_factor: number;
+        pre_existing_overload_threshold: number;
+        ignore_reconnections: boolean;
+        pypowsybl_fast_mode: boolean;
+    };
+    contingency: {
+        disconnected_element: string;
+        selected_overloads: string[];
+        monitor_deselected: boolean;
+    };
+    overloads: {
+        n_overloads: string[];
+        n1_overloads: string[];
+        resolved_overloads: string[];   // overloads that were resolved (selected for step2)
+    };
+    overflow_graph: {
+        pdf_url: string | null;
+        pdf_path: string | null;
+    } | null;
+    analysis: {
+        message: string;
+        dc_fallback: boolean;
+        action_scores: Record<string, Record<string, unknown>> | undefined;
+        actions: Record<string, SavedActionEntry>;
+    } | null;
+}

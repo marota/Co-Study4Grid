@@ -11,7 +11,7 @@ import {
   getIdMap, invalidateIdMapCache,
 } from './utils/svgUtils';
 import { processSvgAsync } from './utils/svgWorkerClient';
-import type { ActionDetail, AnalysisResult, DiagramData, ViewBox, MetadataIndex, TabId, SettingsBackup, VlOverlay, SldTab, FlowDelta, AssetDelta } from './types';
+import type { ActionDetail, AnalysisResult, DiagramData, ViewBox, MetadataIndex, TabId, SettingsBackup, VlOverlay, SldTab, FlowDelta, AssetDelta, SessionResult } from './types';
 
 function App() {
   // ===== Configuration State =====
@@ -668,6 +668,87 @@ function App() {
     setActionViewMode(mode);
   }, []);
 
+  // ===== Save Results =====
+  const handleSaveResults = useCallback(() => {
+    const savedActions: SessionResult['analysis'] = result
+      ? {
+          message: result.message,
+          dc_fallback: result.dc_fallback,
+          action_scores: result.action_scores,
+          actions: Object.fromEntries(
+            Object.entries(result.actions).map(([id, detail]) => [
+              id,
+              {
+                description_unitaire: detail.description_unitaire,
+                rho_before: detail.rho_before,
+                rho_after: detail.rho_after,
+                max_rho: detail.max_rho,
+                max_rho_line: detail.max_rho_line,
+                is_rho_reduction: detail.is_rho_reduction,
+                non_convergence: detail.non_convergence,
+                action_topology: detail.action_topology,
+                status: {
+                  is_selected: selectedActionIds.has(id),
+                  is_suggested: !manuallyAddedIds.has(id),
+                  is_rejected: rejectedActionIds.has(id),
+                  is_manually_simulated: manuallyAddedIds.has(id),
+                },
+              },
+            ])
+          ),
+        }
+      : null;
+
+    const session: SessionResult = {
+      saved_at: new Date().toISOString(),
+      configuration: {
+        network_path: networkPath,
+        action_file_path: actionPath,
+        min_line_reconnections: minLineReconnections,
+        min_close_coupling: minCloseCoupling,
+        min_open_coupling: minOpenCoupling,
+        min_line_disconnections: minLineDisconnections,
+        n_prioritized_actions: nPrioritizedActions,
+        lines_monitoring_path: linesMonitoringPath,
+        monitoring_factor: monitoringFactor,
+        pre_existing_overload_threshold: preExistingOverloadThreshold,
+        ignore_reconnections: ignoreReconnections,
+        pypowsybl_fast_mode: pypowsyblFastMode,
+      },
+      contingency: {
+        disconnected_element: selectedBranch,
+        selected_overloads: Array.from(selectedOverloads),
+        monitor_deselected: monitorDeselected,
+      },
+      overloads: {
+        n_overloads: nDiagram?.lines_overloaded || [],
+        n1_overloads: n1Diagram?.lines_overloaded || [],
+        resolved_overloads: result?.lines_overloaded || [],
+      },
+      overflow_graph: result?.pdf_url
+        ? { pdf_url: result.pdf_url, pdf_path: result.pdf_path ?? null }
+        : null,
+      analysis: savedActions,
+    };
+
+    const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const contingencyLabel = selectedBranch ? `_${selectedBranch.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
+    a.download = `expertassist_session${contingencyLabel}_${ts}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [
+    result, selectedActionIds, manuallyAddedIds, rejectedActionIds,
+    networkPath, actionPath, minLineReconnections, minCloseCoupling, minOpenCoupling,
+    minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor,
+    preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
+    selectedBranch, selectedOverloads, monitorDeselected,
+    nDiagram, n1Diagram,
+  ]);
+
   // ===== SLD Overlay =====
   const [vlOverlay, setVlOverlay] = useState<VlOverlay | null>(null);
 
@@ -1196,6 +1277,21 @@ function App() {
           style={{ padding: '6px 14px', background: configLoading ? '#95a5a6' : '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: configLoading ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
         >
           {configLoading ? '⏳ Loading...' : '🔄 Load Study'}
+        </button>
+
+        <button
+          onClick={handleSaveResults}
+          disabled={!result && !selectedBranch}
+          style={{
+            padding: '6px 14px',
+            background: (!result && !selectedBranch) ? '#95a5a6' : '#8e44ad',
+            color: 'white', border: 'none', borderRadius: '4px',
+            cursor: (!result && !selectedBranch) ? 'not-allowed' : 'pointer',
+            fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap'
+          }}
+          title="Save session results to JSON"
+        >
+          💾 Save Results
         </button>
 
         <button
