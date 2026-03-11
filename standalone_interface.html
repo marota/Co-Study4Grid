@@ -3321,8 +3321,8 @@
                         <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                             <label>Network Path</label>
                             <div style={{ display: 'flex', gap: '4px' }}>
-                                <input type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
-                                <button onClick={() => pickPath('dir', setNetworkPath)} style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '0.8rem' }}>📂</button>
+                                <input type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} placeholder="load your grid xiidm file path" style={{ flex: 1, minWidth: 0 }} />
+                                <button onClick={() => pickPath('file', setNetworkPath)} style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '0.8rem' }}>📄</button>
                             </div>
                         </div>
                         <button onClick={handleLoadConfig} disabled={configLoading} style={{ padding: '6px 14px', background: configLoading ? '#95a5a6' : '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: configLoading ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
@@ -3395,8 +3395,8 @@
                                                 <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network File Path (.xiidm)</label>
                                                 <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Synchronized with the banner field</div>
                                                 <div style={{ display: 'flex', gap: '5px' }}>
-                                                    <input type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                                                    <button onClick={() => pickPath('file', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📁</button>
+                                                    <input type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} placeholder="load your grid xiidm file path" style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                                                    <button onClick={() => pickPath('file', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📄</button>
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -3410,7 +3410,7 @@
                                                 <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Layout File Path (.json)</label>
                                                 <div style={{ display: 'flex', gap: '5px' }}>
                                                     <input type="text" value={layoutPath} onChange={e => setLayoutPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                                                    <button onClick={() => pickPath('file', setLayoutPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📁</button>
+                                                    <button onClick={() => pickPath('file', setLayoutPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📄</button>
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -4151,7 +4151,7 @@
                                         <div style={{ marginTop: '4px' }}>
                                             <a 
                                                 href="#" 
-                                                onClick={(e) => { e.preventDefault(); setSettingsOpen(true); }}
+                                                onClick={(e) => { e.preventDefault(); setSettingsTab('paths'); setIsSettingsOpen(true); }}
                                                 style={{ color: '#0056b3', textDecoration: 'underline', fontWeight: 500 }}
                                             >
                                                 Change in settings

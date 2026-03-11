@@ -42,7 +42,7 @@ function App() {
   const [ignoreReconnections, setIgnoreReconnections] = useState<boolean>(false);
   const [pypowsyblFastMode, setPypowsyblFastMode] = useState<boolean>(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'recommender' | 'configurations' | 'paths'>('recommender');
+  const [settingsTab, setSettingsTab] = useState<'recommender' | 'configurations' | 'paths'>('paths');
   const [settingsBackup, setSettingsBackup] = useState<SettingsBackup | null>(null);
 
   // Confirmation dialog state for contingency change / load study
@@ -127,7 +127,7 @@ function App() {
     }
   }, []);
 
-  const handleOpenSettings = useCallback(() => {
+  const handleOpenSettings = useCallback((tab: 'recommender' | 'configurations' | 'paths' = 'paths') => {
     setSettingsBackup({
       networkPath,
       actionPath,
@@ -144,7 +144,7 @@ function App() {
       ignoreReconnections,
       pypowsyblFastMode
     });
-    setSettingsTab('paths');
+    setSettingsTab(tab);
     setIsSettingsOpen(true);
   }, [networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
 
@@ -1279,13 +1279,14 @@ function App() {
           <div style={{ display: 'flex', gap: '4px' }}>
             <input
               type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)}
+              placeholder="load your grid xiidm file path"
               style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '0.8rem' }}
             />
             <button
-              onClick={() => pickSettingsPath('dir', setNetworkPath)}
+              onClick={() => pickSettingsPath('file', setNetworkPath)}
               style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '0.8rem' }}
             >
-              📂
+              📄
             </button>
           </div>
         </div>
@@ -1313,7 +1314,7 @@ function App() {
         </button>
 
         <button
-          onClick={handleOpenSettings}
+          onClick={() => handleOpenSettings('paths')}
           style={{ background: '#7f8c8d', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 8px', fontSize: '1rem', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
           title="Settings"
         >
@@ -1328,11 +1329,14 @@ function App() {
           backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000,
           display: 'flex', justifyContent: 'center', alignItems: 'center'
         }}>
-          <div style={{
-            background: 'white', padding: '25px', borderRadius: '8px',
-            width: '450px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
-            display: 'flex', flexDirection: 'column', gap: '15px', color: 'black'
-          }}>
+          <div 
+            role="dialog"
+            style={{
+              background: 'white', padding: '25px', borderRadius: '8px',
+              width: '450px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+              display: 'flex', flexDirection: 'column', gap: '15px', color: 'black'
+            }}
+          >
             <div style={{ display: 'flex', borderBottom: '1px solid #eee', marginBottom: '15px' }}>
               <button
                 onClick={() => setSettingsTab('paths')}
@@ -1375,8 +1379,8 @@ function App() {
                   <label htmlFor="networkPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network File Path (.xiidm)</label>
                   <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Synchronized with the banner field</div>
                   <div style={{ display: 'flex', gap: '5px' }}>
-                    <input id="networkPathInput" type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                    <button onClick={() => pickSettingsPath('file', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📁</button>
+                    <input id="networkPathInput" type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} placeholder="load your grid xiidm file path" style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                    <button onClick={() => pickSettingsPath('file', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📄</button>
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -1390,7 +1394,7 @@ function App() {
                   <label htmlFor="layoutPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Layout File Path (.json)</label>
                   <div style={{ display: 'flex', gap: '5px' }}>
                     <input id="layoutPathInput" type="text" value={layoutPath} onChange={e => setLayoutPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                    <button onClick={() => pickSettingsPath('file', setLayoutPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📁</button>
+                    <button onClick={() => pickSettingsPath('file', setLayoutPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📄</button>
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>

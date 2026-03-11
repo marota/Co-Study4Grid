@@ -8,7 +8,7 @@ import App from './App';
 
 // Mock child components to avoid their complexity
 vi.mock('./components/VisualizationPanel', () => ({
-  default: ({ nDiagram, configLoading, networkPath, layoutPath }: any) => {
+  default: ({ nDiagram, configLoading, networkPath, layoutPath, onOpenSettings }: any) => {
     const [showPathWarning, setShowPathWarning] = React.useState(true);
     React.useEffect(() => {
       if (nDiagram?.svg) setShowPathWarning(false);
@@ -21,7 +21,8 @@ vi.mock('./components/VisualizationPanel', () => ({
             <div>Configuration Paths</div>
             <button onClick={() => setShowPathWarning(false)}>✕</button>
             <div>Layout Path: {layoutPath}</div>
-            <div>Output Folder: {networkPath}</div>
+            <div>Output Folder: {networkPath ? (networkPath.includes('/') ? networkPath.substring(0, networkPath.lastIndexOf('/')) : networkPath) : 'Not set'}</div>
+            <button onClick={() => onOpenSettings('paths')}>Change in settings</button>
           </div>
         )}
       </div>
@@ -841,5 +842,83 @@ describe('Settings Modal Enhancements', () => {
     await waitFor(() => {
       expect(screen.queryByText(/Configuration Paths/i)).not.toBeInTheDocument();
     });
+  });
+
+  it('opens settings on Paths tab when "Change in settings" is clicked in warning banner', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Configuration Paths/i)).toBeInTheDocument();
+    });
+
+    const changeLink = screen.getByText(/Change in settings/i);
+    await userEvent.click(changeLink);
+
+    // Should open settings modal
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    
+    // Should be on Paths tab (default for settings modal anyway, but let's be sure)
+    expect(screen.getByLabelText(/Network File Path/i)).toBeInTheDocument();
+  });
+
+  it('correctly derives and displays output folder from network path in warning banner', async () => {
+    // We need to render App with a specific network path
+    // But networkPath is state initialized from localStorage or empty
+    // Let's just check the existing banner in the initial render if we can mock the initial state
+    // Or just check if the warning banner (which we already test) shows the derived path
+    
+    // In our tests, we can clear localStorage and then render
+    localStorage.setItem('networkPath', '/home/user/data/grid.xiidm');
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Configuration Paths/i)).toBeInTheDocument();
+    });
+
+    // The output folder should be /home/user/data
+    expect(screen.getByText(/Output Folder:/i)).toHaveTextContent('/home/user/data');
+  });
+
+  it('displays correct icons and placeholders in settings modal', async () => {
+    await openSettings();
+
+    const networkInput = screen.getByLabelText(/Network File Path/i);
+    expect(networkInput).toHaveAttribute('placeholder', 'load your grid xiidm file path');
+
+    // Check icons (they are emojis in buttons)
+    // Network button icon
+    const networkBtn = networkInput.parentElement?.querySelector('button');
+    expect(networkBtn?.textContent).toBe('📄');
+
+    // Layout button icon
+    const layoutInput = screen.getByLabelText(/Layout File Path/i);
+    const layoutBtn = layoutInput.parentElement?.querySelector('button');
+    expect(layoutBtn?.textContent).toBe('📄');
+
+    // Action button icon (was already 📄 but good to check)
+    const actionInput = screen.getByLabelText(/Action Dictionary File Path/i);
+    const actionBtn = actionInput.parentElement?.querySelector('button');
+    expect(actionBtn?.textContent).toBe('📄');
+
+    // Output folder icon (should be 📂)
+    const outputInput = screen.getByPlaceholderText('e.g. /home/user/sessions');
+    const outputBtn = outputInput.parentElement?.querySelector('button');
+    expect(outputBtn?.textContent).toBe('📂');
+  });
+
+  it('displays file icon for network path in main banner', async () => {
+    render(<App />);
+    // In main banner (header)
+    const labels = screen.getAllByText(/Network Path/i);
+    // Find the one in the header
+    const headerBannerLabel = labels.find(l => {
+      const parent = l.parentElement;
+      return parent && parent.style.flex.startsWith('1 1 200px');
+    });
+    const bannerBtn = headerBannerLabel?.parentElement?.querySelector('button');
+    expect(bannerBtn?.textContent).toBe('📄');
+
+    const bannerInput = headerBannerLabel?.parentElement?.querySelector('input');
+    expect(bannerInput).toHaveAttribute('placeholder', 'load your grid xiidm file path');
   });
 });

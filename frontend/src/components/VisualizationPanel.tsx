@@ -36,7 +36,7 @@ interface VisualizationPanelProps {
     onVlOpen: (vlName: string) => void;
     networkPath: string;
     layoutPath: string;
-    onOpenSettings: (tab?: string) => void;
+    onOpenSettings: (tab?: 'recommender' | 'configurations' | 'paths') => void;
 }
 
 // ===== SLD Overlay sub-component =====
