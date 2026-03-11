@@ -3892,7 +3892,7 @@
 
 
                             {/* Action Dict Info Warning */}
-                            {showActionDictWarning && !simulating && !analysisLoading && actionDictFileName && actionDictStats && (
+                            {showActionDictWarning && !simulatingActionId && !analysisLoading && actionDictFileName && actionDictStats && (
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', padding: '8px 10px', background: '#e8f4fd', border: '1px solid #b8d9f5', borderRadius: '6px', marginBottom: '10px', fontSize: '12px', color: '#1a5276' }}>
                                     <div style={{ flex: 1 }}>
                                         <div style={{ fontWeight: 600, marginBottom: '4px' }}>ℹ️ Action dictionary: <code style={{ fontFamily: 'monospace', background: '#d6eaf8', padding: '1px 4px', borderRadius: '3px' }}>{actionDictFileName}</code></div>
