@@ -664,6 +664,7 @@ describe('Save Results button', () => {
     expect(session).toHaveProperty('saved_at');
     expect(session).toHaveProperty('configuration');
     expect(session.configuration).toHaveProperty('network_path');
+    expect(session.configuration).toHaveProperty('layout_path');
     expect(session.configuration).toHaveProperty('monitoring_factor');
     expect(session).toHaveProperty('contingency');
     expect(session.contingency.disconnected_element).toBe('BRANCH_A');
@@ -718,7 +719,8 @@ describe('Settings Modal Enhancements', () => {
   it('defaults to the Paths tab when opened', async () => {
     await openSettings();
     // The Paths tab should be active. We can check for a path-specific input.
-    expect(screen.getByLabelText(/Network Path/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Network File Path/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Layout File Path/i)).toBeInTheDocument();
   });
 
   it('auto-closes and fetches study data on Apply', async () => {
@@ -748,6 +750,35 @@ describe('Settings Modal Enhancements', () => {
       expect(mockApi.getVoltageLevels).toHaveBeenCalled();
       expect(mockApi.getNominalVoltages).toHaveBeenCalled();
       expect(mockApi.getNetworkDiagram).toHaveBeenCalled();
+    });
+  });
+
+  it('updates configuration with new network and layout paths', async () => {
+    await openSettings();
+
+    const networkInput = screen.getByLabelText(/Network File Path/i);
+    const layoutInput = screen.getByLabelText(/Layout File Path/i);
+
+    await userEvent.clear(networkInput);
+    await userEvent.type(networkInput, '/path/to/network.xiidm');
+    await userEvent.clear(layoutInput);
+    await userEvent.type(layoutInput, '/path/to/layout.json');
+
+    mockApi.updateConfig.mockResolvedValue({
+      monitored_lines_count: 5,
+      total_lines_count: 5
+    });
+
+    const applyBtn = screen.getByText('Apply');
+    await act(async () => {
+      await userEvent.click(applyBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockApi.updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+        network_path: '/path/to/network.xiidm',
+        layout_path: '/path/to/layout.json'
+      }));
     });
   });
 });

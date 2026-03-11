@@ -16,15 +16,11 @@ import { buildSessionResult } from './utils/sessionUtils';
 
 function App() {
   // ===== Configuration State =====
-  const [networkPath, setNetworkPath] = useState(
-    localStorage.getItem('networkPath') || '/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z_dijon_only'
-  );
-  const [actionPath, setActionPath] = useState(
-    localStorage.getItem('actionPath') || '/home/marotant/dev/Expert_op4grid_recommender/data/action_space/reduced_model_actions_20240828T0100Z_new_dijon.json'
-  );
-  const [outputFolderPath, setOutputFolderPath] = useState(
-    localStorage.getItem('outputFolderPath') || ''
-  );
+  const [networkPath, setNetworkPath] = useState('');
+  const [actionPath, setActionPath] = useState('');
+  const [layoutPath, setLayoutPath] = useState('');
+  const [outputFolderPath, setOutputFolderPath] = useState('');
+
   const [branches, setBranches] = useState<string[]>([]);
   const [voltageLevels, setVoltageLevels] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState('');
@@ -135,6 +131,7 @@ function App() {
     setSettingsBackup({
       networkPath,
       actionPath,
+      layoutPath,
       outputFolderPath,
       minLineReconnections,
       minCloseCoupling,
@@ -149,12 +146,13 @@ function App() {
     });
     setSettingsTab('paths');
     setIsSettingsOpen(true);
-  }, [networkPath, actionPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
+  }, [networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
 
   const handleCloseSettings = useCallback(() => {
     if (settingsBackup) {
       if (settingsBackup.networkPath !== undefined) setNetworkPath(settingsBackup.networkPath);
       if (settingsBackup.actionPath !== undefined) setActionPath(settingsBackup.actionPath);
+      if (settingsBackup.layoutPath !== undefined) setLayoutPath(settingsBackup.layoutPath);
       if (settingsBackup.outputFolderPath !== undefined) setOutputFolderPath(settingsBackup.outputFolderPath);
       setMinLineReconnections(settingsBackup.minLineReconnections);
       setMinCloseCoupling(settingsBackup.minCloseCoupling);
@@ -204,6 +202,7 @@ function App() {
       const configRes = await api.updateConfig({
         network_path: networkPath,
         action_file_path: actionPath,
+        layout_path: layoutPath,
         min_line_reconnections: minLineReconnections,
         min_close_coupling: minCloseCoupling,
         min_open_coupling: minOpenCoupling,
@@ -246,6 +245,7 @@ function App() {
       setSettingsBackup({
         networkPath,
         actionPath,
+        layoutPath,
         outputFolderPath,
         minLineReconnections,
         minCloseCoupling,
@@ -263,12 +263,28 @@ function App() {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
       setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
     }
-  }, [networkPath, actionPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode, fetchBaseDiagram]);
+  }, [networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode, fetchBaseDiagram]);
+
+  // Load paths from localStorage on initial mount
+  useEffect(() => {
+    const savedNetwork = localStorage.getItem('networkPath');
+    const savedAction = localStorage.getItem('actionPath');
+    const savedLayout = localStorage.getItem('layoutPath');
+    const savedOutput = localStorage.getItem('outputFolderPath');
+
+    setNetworkPath(savedNetwork || '/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z_dijon_only');
+    setActionPath(savedAction || '/home/marotant/dev/Expert_op4grid_recommender/data/action_space/reduced_model_actions_20240828T0100Z_new_dijon.json');
+    setLayoutPath(savedLayout || '');
+    setOutputFolderPath(savedOutput || '');
+  }, []);
 
   // Persist paths to localStorage
-  useEffect(() => { localStorage.setItem('networkPath', networkPath); }, [networkPath]);
-  useEffect(() => { localStorage.setItem('actionPath', actionPath); }, [actionPath]);
-  useEffect(() => { localStorage.setItem('outputFolderPath', outputFolderPath); }, [outputFolderPath]);
+  useEffect(() => {
+    localStorage.setItem('networkPath', networkPath);
+    localStorage.setItem('actionPath', actionPath);
+    localStorage.setItem('layoutPath', layoutPath);
+    localStorage.setItem('outputFolderPath', outputFolderPath);
+  }, [networkPath, actionPath, layoutPath, outputFolderPath]);
 
   // ===== Contingency Change Confirmation Helpers =====
   // Check if there is any analysis state that would be lost on contingency change
@@ -717,7 +733,9 @@ function App() {
   // ===== Save Results =====
   const handleSaveResults = useCallback(async () => {
     const session = buildSessionResult({
-      networkPath, actionPath,
+      networkPath,
+      actionPath,
+      layoutPath,
       minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
       nPrioritizedActions, linesMonitoringPath, monitoringFactor,
       preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
@@ -1354,11 +1372,11 @@ function App() {
             {settingsTab === 'paths' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label htmlFor="networkPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network Path (Grid Folder)</label>
+                  <label htmlFor="networkPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network File Path (.xiidm)</label>
                   <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Synchronized with the banner field</div>
                   <div style={{ display: 'flex', gap: '5px' }}>
                     <input id="networkPathInput" type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                    <button onClick={() => pickSettingsPath('dir', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📂</button>
+                    <button onClick={() => pickSettingsPath('file', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📁</button>
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -1366,6 +1384,13 @@ function App() {
                   <div style={{ display: 'flex', gap: '5px' }}>
                     <input id="actionPathInput" type="text" value={actionPath} onChange={e => setActionPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
                     <button onClick={() => pickSettingsPath('file', setActionPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📄</button>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label htmlFor="layoutPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Layout File Path (.json)</label>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    <input id="layoutPathInput" type="text" value={layoutPath} onChange={e => setLayoutPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                    <button onClick={() => pickSettingsPath('file', setLayoutPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📁</button>
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>

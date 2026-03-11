@@ -20,13 +20,15 @@ class TestRecommenderService:
         service = RecommenderService()
         
         # Test paths
-        network_path = "/tmp/test_network"
+        network_path = "/tmp/test_network.xiidm"
         action_path = "/tmp/test_actions.json"
+        layout_path = "/tmp/test_layout.json"
 
         # Create a sample config request with test data paths and custom values
         settings = ConfigRequest(
             network_path=network_path,
             action_file_path=action_path,
+            layout_path=layout_path,
             min_line_reconnections=5.0,
             min_close_coupling=4.0,
             min_open_coupling=3.0,
@@ -41,9 +43,11 @@ class TestRecommenderService:
         service.update_config(settings)
 
         # Verify that config module was updated correctly
+        assert config.ENV_PATH == Path(network_path)
         assert config.ENV_NAME == "test_network"
         assert config.ENV_FOLDER == Path("/tmp")
         assert config.ACTION_FILE_PATH == Path(action_path)
+        assert config.LAYOUT_FILE_PATH == Path(layout_path)
         
         assert config.MIN_LINE_RECONNECTIONS == 5.0
         assert config.MIN_CLOSE_COUPLING == 4.0

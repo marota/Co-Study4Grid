@@ -37,6 +37,7 @@ class ConfigRequest(BaseModel):
     pre_existing_overload_threshold: float = 0.02
     ignore_reconnections: bool = False
     pypowsybl_fast_mode: bool = True
+    layout_path: str | None = None
 
 class AnalysisRequest(BaseModel):
     disconnected_element: str

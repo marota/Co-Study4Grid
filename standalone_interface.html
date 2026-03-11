@@ -987,16 +987,16 @@
         };
 
         function App() {
-            const [networkPath, setNetworkPath] = useState(localStorage.getItem('networkPath') || '/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z_dijon_only');
-            const [actionPath, setActionPath] = useState(localStorage.getItem('actionPath') || '/home/marotant/dev/Expert_op4grid_recommender/data/action_space/reduced_model_actions_20240828T0100Z_new_dijon.json');
-            const [outputFolderPath, setOutputFolderPath] = useState(localStorage.getItem('outputFolderPath') || '');
-            const [linesMonitoringPath, setLinesMonitoringPath] = useState(localStorage.getItem('linesMonitoringPath') || '');
-            const initialMountRef = useRef(true);
-
             const [branches, setBranches] = useState([]);
             const [voltageLevels, setVoltageLevels] = useState([]);
+            const initialMountRef = useRef(true);
 
             // Nominal voltage filter state
+            const [networkPath, setNetworkPath] = useState(localStorage.getItem('networkPath') || '');
+            const [actionPath, setActionPath] = useState(localStorage.getItem('actionPath') || '');
+            const [layoutPath, setLayoutPath] = useState(localStorage.getItem('layoutPath') || '');
+            const [outputFolderPath, setOutputFolderPath] = useState(localStorage.getItem('outputFolderPath') || '');
+            const [linesMonitoringPath, setLinesMonitoringPath] = useState(localStorage.getItem('linesMonitoringPath') || '');
             const [nominalVoltageMap, setNominalVoltageMap] = useState({});  // {vl_id: kv}
             const [uniqueVoltages, setUniqueVoltages] = useState([]);       // sorted [kv1, kv2, ...]
             const [voltageRange, setVoltageRange] = useState([0, 400]);     // [minKv, maxKv] cursor positions
@@ -1038,6 +1038,7 @@
                 setSettingsBackup({
                     networkPath,
                     actionPath,
+                    layoutPath,
                     outputFolderPath,
                     minLineReconnections,
                     minCloseCoupling,
@@ -1058,6 +1059,7 @@
                 if (settingsBackup) {
                     if (settingsBackup.networkPath !== undefined) setNetworkPath(settingsBackup.networkPath);
                     if (settingsBackup.actionPath !== undefined) setActionPath(settingsBackup.actionPath);
+                    if (settingsBackup.layoutPath !== undefined) setLayoutPath(settingsBackup.layoutPath);
                     if (settingsBackup.outputFolderPath !== undefined) setOutputFolderPath(settingsBackup.outputFolderPath);
                     setMinLineReconnections(settingsBackup.minLineReconnections);
                     setMinCloseCoupling(settingsBackup.minCloseCoupling);
@@ -1102,6 +1104,7 @@
                     const configRes = await axios.post(API_BASE + '/api/config', {
                         network_path: networkPath,
                         action_file_path: actionPath,
+                        layout_path: layoutPath,
                         min_line_reconnections: minLineReconnections,
                         min_close_coupling: minCloseCoupling,
                         min_open_coupling: minOpenCoupling,
@@ -1147,6 +1150,7 @@
                     setSettingsBackup({
                         networkPath,
                         actionPath,
+                        layoutPath,
                         outputFolderPath,
                         minLineReconnections,
                         minCloseCoupling,
@@ -1248,6 +1252,7 @@
 
             useEffect(() => { localStorage.setItem('networkPath', networkPath); }, [networkPath]);
             useEffect(() => { localStorage.setItem('actionPath', actionPath); }, [actionPath]);
+            useEffect(() => { localStorage.setItem('layoutPath', layoutPath); }, [layoutPath]);
             useEffect(() => { localStorage.setItem('outputFolderPath', outputFolderPath); }, [outputFolderPath]);
             useEffect(() => { localStorage.setItem('linesMonitoringPath', linesMonitoringPath); }, [linesMonitoringPath]);
             useEffect(() => { localStorage.setItem('ignoreReconnections', ignoreReconnections); }, [ignoreReconnections]);
@@ -1296,6 +1301,7 @@
                     const configRes = await axios.post(API_BASE + '/api/config', {
                         network_path: networkPath,
                         action_file_path: actionPath,
+                        layout_path: layoutPath,
                         min_line_reconnections: minLineReconnections,
                         min_close_coupling: minCloseCoupling,
                         min_open_coupling: minOpenCoupling,
@@ -3378,11 +3384,11 @@
                                     {settingsTab === 'paths' && (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network File Path</label>
+                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network File Path (.xiidm)</label>
                                                 <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Synchronized with the banner field</div>
                                                 <div style={{ display: 'flex', gap: '5px' }}>
                                                     <input type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                                                    <button onClick={() => pickPath('dir', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📂</button>
+                                                    <button onClick={() => pickPath('file', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📁</button>
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -3390,6 +3396,13 @@
                                                 <div style={{ display: 'flex', gap: '5px' }}>
                                                     <input type="text" value={actionPath} onChange={e => setActionPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
                                                     <button onClick={() => pickPath('file', setActionPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📄</button>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Layout File Path (.json)</label>
+                                                <div style={{ display: 'flex', gap: '5px' }}>
+                                                    <input type="text" value={layoutPath} onChange={e => setLayoutPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                                                    <button onClick={() => pickPath('file', setLayoutPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📁</button>
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>

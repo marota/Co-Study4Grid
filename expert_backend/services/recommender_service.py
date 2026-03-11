@@ -114,7 +114,7 @@ class RecommenderService:
     def update_config(self, settings):
         # Update the global config of the package
         path_obj = Path(settings.network_path)
-        config.ENV_NAME = path_obj.name
+        config.ENV_NAME = path_obj.stem
         config.ENV_FOLDER = path_obj.parent
         config.ENV_PATH = path_obj
         
@@ -134,6 +134,12 @@ class RecommenderService:
             config.IGNORE_RECONNECTIONS = settings.ignore_reconnections
         if hasattr(settings, 'pypowsybl_fast_mode') and settings.pypowsybl_fast_mode is not None:
             config.PYPOWSYBL_FAST_MODE = settings.pypowsybl_fast_mode
+        
+        # New layout file path
+        if hasattr(settings, 'layout_path') and settings.layout_path:
+            config.LAYOUT_FILE_PATH = Path(settings.layout_path)
+        else:
+            config.LAYOUT_FILE_PATH = None
 
         # Force the requested global flags
         config.MAX_RHO_BOTH_EXTREMITIES = True
@@ -495,13 +501,9 @@ class RecommenderService:
 
         import pypowsybl as pp
 
-        network_file = config.ENV_PATH / "grid.xiidm"
+        network_file = config.ENV_PATH
         if not network_file.exists():
-            xiidm_files = list(config.ENV_PATH.glob("*.xiidm"))
-            if xiidm_files:
-                network_file = xiidm_files[0]
-            else:
-                raise FileNotFoundError(f"No .xiidm file found in {config.ENV_PATH}")
+            raise FileNotFoundError(f"Network file not found: {config.ENV_PATH}")
         
         n = pp.network.load(str(network_file))
         # Convenience method not in pypowsybl API: return line IDs as a list
@@ -592,8 +594,8 @@ class RecommenderService:
         import pandas as pd
         import json
 
-        layout_file = config.ENV_PATH / "grid_layout.json"
-        if layout_file.exists():
+        layout_file = getattr(config, 'LAYOUT_FILE_PATH', None)
+        if layout_file and layout_file.exists():
             try:
                 with open(layout_file, 'r') as f:
                     layout_data = json.load(f)

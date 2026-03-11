@@ -11,6 +11,7 @@ export interface ConfigRequest {
     pre_existing_overload_threshold?: number;
     ignore_reconnections?: boolean;
     pypowsybl_fast_mode?: boolean;
+    layout_path?: string;
 }
 
 export interface AnalysisRequest {
@@ -138,6 +139,7 @@ export interface SettingsBackup {
     preExistingOverloadThreshold: number;
     ignoreReconnections?: boolean;
     pypowsyblFastMode?: boolean;
+    layoutPath?: string;
 }
 
 export interface AvailableAction {
@@ -206,6 +208,7 @@ export interface SessionResult {
         pre_existing_overload_threshold: number;
         ignore_reconnections: boolean;
         pypowsybl_fast_mode: boolean;
+        layout_path: string;
     };
     contingency: {
         disconnected_element: string;

@@ -9,6 +9,7 @@ export interface SessionInput {
     // Configuration / paths
     networkPath: string;
     actionPath: string;
+    layoutPath: string;
     minLineReconnections: number;
     minCloseCoupling: number;
     minOpenCoupling: number;
@@ -51,7 +52,7 @@ export interface SessionInput {
  */
 export function buildSessionResult(input: SessionInput): SessionResult {
     const {
-        networkPath, actionPath,
+        networkPath, actionPath, layoutPath,
         minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
         nPrioritizedActions, linesMonitoringPath, monitoringFactor,
         preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
@@ -97,6 +98,7 @@ export function buildSessionResult(input: SessionInput): SessionResult {
         configuration: {
             network_path: networkPath,
             action_file_path: actionPath,
+            layout_path: layoutPath,
             min_line_reconnections: minLineReconnections,
             min_close_coupling: minCloseCoupling,
             min_open_coupling: minOpenCoupling,
