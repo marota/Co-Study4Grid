@@ -68,7 +68,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     const [loadingActions, setLoadingActions] = useState(false);
     const [simulating, setSimulating] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [typeFilters, setTypeFilters] = useState({ disco: true, reco: true, open: true, close: true });
+    const [typeFilters, setTypeFilters] = useState({ disco: true, reco: true, open: true, close: true, pst: true });
     const searchInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [tooltip, setTooltip] = useState<{ content: React.ReactNode; x: number; y: number } | null>(null);
@@ -110,15 +110,24 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         return availableActions
             .filter(a => !alreadyShown.has(a.id))
             .filter(a => {
-                const t = a.type || 'unknown';
-                if ((t.includes('disco') || t.includes('open_line') || t.includes('open_load')) && !typeFilters.disco) return false;
-                if ((t.includes('reco') || t.includes('close_line') || t.includes('close_load')) && !typeFilters.reco) return false;
-                if (t === 'open_coupling' && !typeFilters.open) return false;
-                if (t === 'close_coupling' && !typeFilters.close) return false;
-                // If it's truly 'unknown' or something else, only show if all are checked or perhaps none?
-                // For now, if all filters are unchecked, return false.
-                if (!typeFilters.disco && !typeFilters.reco && !typeFilters.open && !typeFilters.close) return false;
-                return true;
+                const t = (a.type || 'unknown').toLowerCase();
+                const actionId = a.id.toLowerCase();
+                const actionDesc = (a.description || '').toLowerCase();
+                
+                const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
+                const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
+                const isOpenCoupling = t.includes('open_coupling');
+                const isCloseCoupling = t.includes('close_coupling');
+                const isPstAction = (actionId.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
+
+                if (isDisco) return typeFilters.disco;
+                if (isReco) return typeFilters.reco;
+                if (isOpenCoupling) return typeFilters.open;
+                if (isCloseCoupling) return typeFilters.close;
+                if (isPstAction) return typeFilters.pst;
+
+                // Handle unknown or categories not explicitly listed above
+                return typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
             })
             .filter(a => a.id.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q))
             .slice(0, 20);
@@ -129,14 +138,50 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         if (!actionScores) return [];
         const list: { type: string; actionId: string; score: number }[] = [];
         for (const [type, data] of Object.entries(actionScores)) {
-            // Apply filtering
-            if (type === 'line_disconnection' && !typeFilters.disco) continue;
-            if (type === 'line_reconnection' && !typeFilters.reco) continue;
-            if (type === 'open_coupling' && !typeFilters.open) continue;
-            if (type === 'close_coupling' && !typeFilters.close) continue;
+            // Apply filtering logic consistent with the search dropdown
+            const isDiscoType = type === 'line_disconnection';
+            const isRecoType = type === 'line_reconnection';
+            const isOpenType = type === 'open_coupling';
+            const isCloseType = type === 'close_coupling';
+            const isPstType = type === 'pst_tap_change' || type.includes('pst');
+            
+            if (isDiscoType && !typeFilters.disco) continue;
+            if (isRecoType && !typeFilters.reco) continue;
+            if (isOpenType && !typeFilters.open) continue;
+            if (isCloseType && !typeFilters.close) continue;
+            if (isPstType && !typeFilters.pst) continue;
+            
+            // If it's a known type but its filter is off, it's already skipped.
+            // If it's an unknown type, we show it only if ALL filters are active.
+            const isKnownType = isDiscoType || isRecoType || isOpenType || isCloseType || isPstType;
+            if (!isKnownType && !(typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst)) {
+                continue;
+            }
 
             const scores = data?.scores || {};
             for (const [actionId, score] of Object.entries(scores)) {
+                // Determine if this specific action should be filtered out
+                const actionDetail = actions[actionId];
+                const actionDesc = (actionDetail?.description_unitaire || '').toLowerCase();
+                const aid = actionId.toLowerCase();
+                const t = type.toLowerCase();
+                
+                const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
+                const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
+                const isOpenCoupling = t.includes('open_coupling');
+                const isCloseCoupling = t.includes('close_coupling');
+                const isPstAction = (aid.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
+
+                let shouldShow = false;
+                if (isDisco) shouldShow = typeFilters.disco;
+                else if (isReco) shouldShow = typeFilters.reco;
+                else if (isOpenCoupling) shouldShow = typeFilters.open;
+                else if (isCloseCoupling) shouldShow = typeFilters.close;
+                else if (isPstAction) shouldShow = typeFilters.pst;
+                else shouldShow = typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
+
+                if (!shouldShow) continue;
+                
                 list.push({ type, actionId, score: Number(score) });
             }
         }
@@ -450,12 +495,12 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         </div>
                         {/* Action type filter checkboxes */}
                         <div style={{ padding: '4px 8px', display: 'flex', flexWrap: 'wrap', gap: '6px', borderTop: '1px solid #eee', fontSize: '11px' }}>
-                            {([['disco', 'Disconnections'], ['reco', 'Reconnections'], ['open', 'Open coupling'], ['close', 'Close coupling']] as const).map(([key, label]) => (
+                            {([['disco', 'Disconnections'], ['reco', 'Reconnections'], ['pst', 'PST'], ['open', 'Open coupling'], ['close', 'Close coupling']] as const).map(([key, label]) => (
                                 <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', color: '#555' }}>
                                     <input
                                         type="checkbox"
-                                        checked={typeFilters[key]}
-                                        onChange={() => setTypeFilters(prev => ({ ...prev, [key]: !prev[key] }))}
+                                        checked={typeFilters[key as keyof typeof typeFilters]}
+                                        onChange={() => setTypeFilters(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))}
                                         style={{ margin: 0, cursor: 'pointer' }}
                                     />
                                     {label}
