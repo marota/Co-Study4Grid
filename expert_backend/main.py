@@ -217,11 +217,22 @@ def save_session(request: SaveSessionRequest):
         f.write(request.json_content)
 
     # Copy overflow PDF if available
-    if request.pdf_path and os.path.isfile(request.pdf_path):
-        pdf_dest = os.path.join(session_dir, os.path.basename(request.pdf_path))
-        shutil.copy2(request.pdf_path, pdf_dest)
+    pdf_copied = False
+    if request.pdf_path:
+        if os.path.isfile(request.pdf_path):
+            pdf_dest = os.path.join(session_dir, os.path.basename(request.pdf_path))
+            try:
+                shutil.copy2(request.pdf_path, pdf_dest)
+                pdf_copied = True
+            except Exception as e:
+                print(f"Warning: Failed to copy PDF from {request.pdf_path} to {pdf_dest}: {e}")
+        else:
+            print(f"Warning: PDF path provided but file not found: {request.pdf_path}")
 
-    return {"session_folder": session_dir}
+    return {
+        "session_folder": session_dir,
+        "pdf_copied": pdf_copied
+    }
 
 from fastapi.responses import StreamingResponse
 import json

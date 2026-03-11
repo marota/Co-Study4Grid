@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
 
 // Mocking dependencies
 vi.mock('../api', () => ({
@@ -97,8 +98,8 @@ describe('ActionFeed', () => {
         render(<ActionFeed {...props} />);
         
         expect(screen.queryByText('Suggested Action')).not.toBeInTheDocument();
-        // Processing indicator is now only under Suggested Actions tab, not top-level
-        expect(screen.queryByText('⚙️ Processing analysis...')).not.toBeInTheDocument();
+        // Processing indicator is now visible during analysis
+        expect(screen.getByText('⚙️ Processing analysis...')).toBeInTheDocument();
     });
 
     it('shows manual actions while analysis is loading', () => {
@@ -123,8 +124,8 @@ describe('ActionFeed', () => {
         render(<ActionFeed {...props} />);
         
         expect(screen.getByText('Manual Action')).toBeInTheDocument();
-        // Processing indicator moved to Suggested Actions only; not duplicated at top
-        expect(screen.queryByText('⚙️ Processing analysis...')).not.toBeInTheDocument();
+        // Processing indicator is visible even when viewing selected actions
+        expect(screen.getByText('⚙️ Processing analysis...')).toBeInTheDocument();
     });
 
     it('shows display prioritized actions button when pending results exist and loading is false', () => {
@@ -415,7 +416,7 @@ describe('ActionFeed', () => {
         expect(screen.queryByText(/Action dictionary/)).not.toBeInTheDocument();
     });
 
-    it('hides action dict warning while analysis is loading', () => {
+    it('shows action dict warning while analysis is loading with yellow theme', () => {
         const props = {
             ...defaultProps,
             actionDictFileName: 'actions.json',
@@ -423,7 +424,30 @@ describe('ActionFeed', () => {
             analysisLoading: true,
         };
         render(<ActionFeed {...props} />);
-        expect(screen.queryByText(/Action dictionary/)).not.toBeInTheDocument();
+        // Timing fix: it should appear at the same time as other user warnings (even during analysis)
+        const warning = screen.getByText(/Action dictionary/);
+        expect(warning).toBeInTheDocument();
+        // Check yellow theme
+        const parent = warning.closest('div[style*="background"]') as HTMLDivElement;
+        if (parent) {
+            expect(parent.style.background).toContain('rgb(255, 243, 205)'); // #fff3cd
+            expect(parent.style.border).toContain('rgb(255, 238, 186)'); // #ffeeba
+            expect(parent.style.color).toContain('rgb(133, 100, 4)'); // #856404
+        }
+    });
+
+    it('shows yellow pulsing processing banner during analysisLoading', () => {
+        const props = {
+            ...defaultProps,
+            analysisLoading: true,
+        };
+        render(<ActionFeed {...props} />);
+        
+        const banner = screen.getByText('⚙️ Processing analysis...');
+        expect(banner).toBeInTheDocument();
+        expect(banner.style.background).toContain('rgb(255, 243, 205)'); // #fff3cd
+        expect(banner.style.color).toContain('rgb(133, 100, 4)'); // #856404
+        expect(banner.style.animation).toContain('pulse');
     });
 
     it('includes minPst in the recommender settings warning', () => {

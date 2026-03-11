@@ -44,7 +44,7 @@ class TestRecommenderService:
 
         # Verify that config module was updated correctly
         assert config.ENV_PATH == Path(network_path)
-        assert config.ENV_NAME == "test_network"
+        assert config.ENV_NAME == "test_network.xiidm"
         assert config.ENV_FOLDER == Path("/tmp")
         assert config.ACTION_FILE_PATH == Path(action_path)
         assert config.LAYOUT_FILE_PATH == Path(layout_path)

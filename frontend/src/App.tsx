@@ -78,6 +78,15 @@ function App() {
   const [suggestedByRecommenderIds, setSuggestedByRecommenderIds] = useState<Set<string>>(new Set());
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [infoMessage, setInfoMessage] = useState('');
+
+  useEffect(() => {
+    if (infoMessage) {
+      const timer = setTimeout(() => {
+        setInfoMessage('');
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [infoMessage]);
   
   // ===== Analysis Flow State =====
   const [selectedOverloads, setSelectedOverloads] = useState<Set<string>>(new Set());
@@ -598,7 +607,11 @@ function App() {
           try {
             const event = JSON.parse(line);
             if (event.type === 'pdf') {
-              setResult((p: AnalysisResult | null) => ({ ...(p || {}), pdf_url: event.pdf_url } as AnalysisResult));
+              setResult((p: AnalysisResult | null) => ({ 
+                ...(p || {}), 
+                pdf_url: event.pdf_url,
+                pdf_path: event.pdf_path 
+              } as AnalysisResult));
               setActiveTab('overflow');
             } else if (event.type === 'result') {
               // Mark all recommended actions as NOT manual
@@ -791,7 +804,8 @@ function App() {
           pdf_path: result?.pdf_path ?? null,
           output_folder_path: outputFolderPath,
         });
-        setInfoMessage(`Session saved to: ${res.session_folder}`);
+        const pdfMsg = res.pdf_copied ? " (including PDF)" : " (PDF not found)";
+        setInfoMessage(`SUCCESS: Session saved to: ${res.session_folder}${pdfMsg}`);
       } catch (err: unknown) {
         const e = err as { response?: { data?: { detail?: string } }; message?: string };
         setError('Failed to save session: ' + (e.response?.data?.detail || e.message));
@@ -1550,8 +1564,8 @@ function App() {
                     marginTop: '8px',
                     width: '100%',
                     padding: '8px',
-                    background: (!selectedBranch || analysisLoading) ? '#95a5a6' : '#27ae60',
-                    color: 'white',
+                    background: analysisLoading ? '#f1c40f' : (!selectedBranch ? '#95a5a6' : '#27ae60'),
+                    color: analysisLoading ? '#856404' : 'white',
                     border: 'none',
                     borderRadius: '4px',
                     cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer',
@@ -1717,9 +1731,12 @@ function App() {
       {infoMessage && (
         <div style={{
           position: 'fixed', bottom: 20, left: 20,
-          background: '#3498db', color: 'white',
-          padding: '10px 20px', borderRadius: '4px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.2)', zIndex: 1000,
+          background: infoMessage.startsWith('SUCCESS') ? '#27ae60' : '#3498db', 
+          color: 'white',
+          padding: '12px 24px', borderRadius: '4px',
+          boxShadow: '0 4px 15px rgba(0,0,0,0.3)', zIndex: 1000,
+          fontWeight: 'bold',
+          border: '1px solid rgba(255,255,255,0.2)'
         }}>
           {infoMessage}
         </div>

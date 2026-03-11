@@ -725,8 +725,19 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                 title="Overflow Graph"
                             />
                         ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
-                                {analysisLoading ? 'Processing Analysis...' : 'Run analysis to see overflow graph'}
+                            <div style={{ 
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', 
+                                color: analysisLoading ? '#856404' : '#999',
+                                background: analysisLoading ? '#fff3cd' : 'white',
+                                fontWeight: analysisLoading ? 600 : 'normal',
+                                gap: '10px'
+                            }}>
+                                {analysisLoading ? (
+                                    <>
+                                        <span style={{ fontSize: '24px' }}>⚙️</span>
+                                        <span>Processing Analysis...</span>
+                                    </>
+                                ) : 'Run analysis to see overflow graph'}
                             </div>
                         )}
                     </div>

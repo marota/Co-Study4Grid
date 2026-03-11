@@ -678,15 +678,15 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 )}
             </div>
             {/* Action Dict Info Warning */}
-            {showActionDictWarning && !simulating && !analysisLoading && actionDictFileName && actionDictStats && (
+            {showActionDictWarning && !simulating && !pendingAnalysisResult && Object.keys(actions).length === 0 && actionDictFileName && actionDictStats && (
                 <div style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
                     gap: '8px', padding: '8px 10px',
-                    background: '#e8f4fd', border: '1px solid #b8d9f5',
-                    borderRadius: '6px', marginBottom: '10px', fontSize: '12px', color: '#1a5276'
+                    background: '#fff3cd', border: '1px solid #ffeeba',
+                    borderRadius: '6px', marginBottom: '10px', fontSize: '12px', color: '#856404'
                 }}>
                     <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>ℹ️ Action dictionary: <code style={{ fontFamily: 'monospace', background: '#d6eaf8', padding: '1px 4px', borderRadius: '3px' }}>{actionDictFileName}</code></div>
+                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>ℹ️ Action dictionary: <code style={{ fontFamily: 'monospace', background: '#fcf3cf', padding: '1px 4px', borderRadius: '3px', border: '1px solid #f9e79f' }}>{actionDictFileName}</code></div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '4px' }}>
                             <span>🔄 Reco: <strong>{actionDictStats.reco}</strong></span>
                             <span>⛔ Disco: <strong>{actionDictStats.disco}</strong></span>
@@ -698,7 +698,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                             <button onClick={() => onOpenSettings('paths')} style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '12px' }}>Change in settings</button>
                         )}
                     </div>
-                    <button onClick={() => setShowActionDictWarning(false)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: '#1a5276' }} title="Dismiss">✕</button>
+                    <button onClick={() => setShowActionDictWarning(false)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: '#856404' }} title="Dismiss">✕</button>
                 </div>
             )}
             <div style={{ marginBottom: '15px' }}>
@@ -737,9 +737,24 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 </div>
 
 
-                {/* Processing indicator during analysis - removed duplicate, keeping one under Suggested Actions */}
-
- 
+                {/* Processing indicator during analysis */}
+                {analysisLoading && (
+                    <div style={{
+                        padding: '12px',
+                        background: '#fff3cd',
+                        border: '1px solid #ffeeba',
+                        borderRadius: '8px',
+                        marginBottom: '15px',
+                        textAlign: 'center',
+                        color: '#856404',
+                        fontWeight: 600,
+                        fontSize: '14px',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                        animation: 'pulse 2s infinite ease-in-out'
+                    }}>
+                        ⚙️ Processing analysis...
+                    </div>
+                )}
                 {/* Display prioritized actions button inside Suggested Actions section */}
                 {pendingAnalysisResult && !analysisLoading && (
                     <button

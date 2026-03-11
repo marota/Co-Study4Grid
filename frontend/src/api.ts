@@ -113,8 +113,8 @@ export const api = {
         json_content: string;
         pdf_path: string | null;
         output_folder_path: string;
-    }): Promise<{ session_folder: string }> => {
-        const response = await axios.post<{ session_folder: string }>(
+    }): Promise<{ session_folder: string; pdf_copied: boolean }> => {
+        const response = await axios.post<{ session_folder: string; pdf_copied: boolean }>(
             `${API_BASE_URL}/api/save-session`,
             params
         );

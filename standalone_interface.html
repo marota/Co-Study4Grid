@@ -1199,6 +1199,15 @@
             const [error, setError] = useState('');
             const [result, setResult] = useState(null);
             const [infoMessage, setInfoMessage] = useState('');
+
+            useEffect(() => {
+                if (infoMessage) {
+                    const timer = setTimeout(() => {
+                        setInfoMessage('');
+                    }, 3000);
+                    return () => clearTimeout(timer);
+                }
+            }, [infoMessage]);
             const [inspectQuery, setInspectQuery] = useState('');
 
             // Analysis Flow State
@@ -1623,7 +1632,8 @@
                             pdf_path: result?.pdf_path ?? null,
                             output_folder_path: outputFolderPath,
                         });
-                        setInfoMessage(`Session saved to: ${res.data.session_folder}`);
+                        const pdfMsg = res.data.pdf_copied ? " (including PDF)" : " (PDF not found)";
+                        setInfoMessage(`SUCCESS: Session saved to: ${res.data.session_folder}${pdfMsg}`);
                     } catch (err) {
                         setError('Failed to save session: ' + (err.response?.data?.detail || err.message));
                     }
@@ -1722,7 +1732,11 @@
                             try {
                                 const event = JSON.parse(line);
                                 if (event.type === 'pdf') {
-                                    setResult(p => ({ ...(p || {}), pdf_url: event.pdf_url }));
+                                    setResult(p => ({ 
+                                        ...(p || {}), 
+                                        pdf_url: event.pdf_url,
+                                        pdf_path: event.pdf_path 
+                                    }));
                                     setActiveTab('overflow');
                                 }
                                 else if (event.type === 'result') {
@@ -2931,8 +2945,19 @@
                                         <iframe src={API_BASE + result.pdf_url} key={result.pdf_url} style={{ width: '100%', height: '100%', border: 'none' }} />
                                         : <iframe srcDoc={result.plot_html} style={{ width: '100%', height: '100%', border: 'none' }} />
                                 ) : (
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
-                                        {analysisLoading ? 'Processing Analysis...' : 'Run analysis to see overflow graph'}
+                                    <div style={{ 
+                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', 
+                                        color: analysisLoading ? '#856404' : '#999',
+                                        background: analysisLoading ? '#fff3cd' : 'white',
+                                        fontWeight: analysisLoading ? 600 : 'normal',
+                                        gap: '10px'
+                                    }}>
+                                        {analysisLoading ? (
+                                            <>
+                                                <span style={{ fontSize: '24px' }}>⚙️</span>
+                                                <span>Processing Analysis...</span>
+                                            </>
+                                        ) : 'Run analysis to see overflow graph'}
                                     </div>
                                 )}
                             </div>
@@ -3546,7 +3571,14 @@
                                     <button
                                         onClick={handleRunAnalysis}
                                         disabled={!selectedBranch || analysisLoading}
-                                        style={{ marginTop: '8px', width: '100%', padding: '8px', background: (!selectedBranch || analysisLoading) ? '#95a5a6' : '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                                        style={{ 
+                                            marginTop: '8px', width: '100%', padding: '8px', 
+                                            background: analysisLoading ? '#f1c40f' : (!selectedBranch ? '#95a5a6' : '#27ae60'), 
+                                            color: analysisLoading ? '#856404' : 'white', 
+                                            border: 'none', borderRadius: '4px', 
+                                            cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer', 
+                                            fontWeight: 'bold', fontSize: '0.85rem' 
+                                        }}
                                     >
                                         {analysisLoading ? '⚙️ Running...' : '🚀 Run Analysis'}
                                     </button>
@@ -3913,10 +3945,15 @@
 
 
                             {/* Action Dict Info Warning */}
-                            {showActionDictWarning && !simulatingActionId && !analysisLoading && actionDictFileName && actionDictStats && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', padding: '8px 10px', background: '#e8f4fd', border: '1px solid #b8d9f5', borderRadius: '6px', marginBottom: '10px', fontSize: '12px', color: '#1a5276' }}>
+                            {showActionDictWarning && !simulatingActionId && !pendingAnalysisResult && Object.keys(result?.actions || {}).length === 0 && actionDictFileName && actionDictStats && (
+                                <div style={{ 
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', 
+                                    gap: '8px', padding: '8px 10px', 
+                                    background: '#fff3cd', border: '1px solid #ffeeba', 
+                                    borderRadius: '6px', marginBottom: '10px', fontSize: '12px', color: '#856404' 
+                                }}>
                                     <div style={{ flex: 1 }}>
-                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>ℹ️ Action dictionary: <code style={{ fontFamily: 'monospace', background: '#d6eaf8', padding: '1px 4px', borderRadius: '3px' }}>{actionDictFileName}</code></div>
+                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>ℹ️ Action dictionary: <code style={{ fontFamily: 'monospace', background: '#fcf3cf', padding: '1px 4px', borderRadius: '3px', border: '1px solid #f9e79f' }}>{actionDictFileName}</code></div>
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '4px' }}>
                                             <span>🔄 Reco: <strong>{actionDictStats.reco}</strong></span>
                                             <span>⛔ Disco: <strong>{actionDictStats.disco}</strong></span>
@@ -3926,7 +3963,7 @@
                                         </div>
                                         <button onClick={() => { setIsSettingsOpen(true); setSettingsTab('paths'); }} style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '12px' }}>Change in settings</button>
                                     </div>
-                                    <button onClick={() => setShowActionDictWarning(false)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: '#1a5276' }} title="Dismiss">✕</button>
+                                    <button onClick={() => setShowActionDictWarning(false)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: '#856404' }} title="Dismiss">✕</button>
                                 </div>
                             )}
                             <div style={{ marginBottom: '15px' }}>
@@ -3989,7 +4026,19 @@
                                 </div>
 
                                     {analysisLoading && (
-                                        <div style={{ padding: '20px', textAlign: 'center', background: '#e9ecef', borderRadius: '8px', marginBottom: '10px', color: '#495057', fontWeight: 600, border: '1px solid #dee2e6' }}>
+                                        <div style={{ 
+                                            padding: '12px', 
+                                            background: '#fff3cd', 
+                                            border: '1px solid #ffeeba', 
+                                            borderRadius: '8px', 
+                                            marginBottom: '15px', 
+                                            textAlign: 'center', 
+                                            color: '#856404', 
+                                            fontWeight: 600, 
+                                            fontSize: '14px',
+                                            boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                                            animation: 'pulse 2s infinite ease-in-out'
+                                        }}>
                                             ⚙️ Processing analysis...
                                         </div>
                                     )}
@@ -4327,6 +4376,19 @@
                         </div>
                     </div>
                     {error && <div style={{ position: 'fixed', bottom: 20, right: 20, background: '#e74c3c', color: 'white', padding: '10px 20px', borderRadius: '4px', boxShadow: '0 2px 10px rgba(0,0,0,0.2)' }}>❌ {error}</div>}
+                    {infoMessage && (
+                        <div style={{
+                            position: 'fixed', bottom: 20, left: 20,
+                            background: infoMessage.startsWith('SUCCESS') ? '#27ae60' : '#3498db', 
+                            color: 'white',
+                            padding: '12px 24px', borderRadius: '4px',
+                            boxShadow: '0 4px 15px rgba(0,0,0,0.3)', zIndex: 1000,
+                            fontWeight: 'bold',
+                            border: '1px solid rgba(255,255,255,0.2)'
+                        }}>
+                            {infoMessage}
+                        </div>
+                    )}
                 </div >
             );
         }

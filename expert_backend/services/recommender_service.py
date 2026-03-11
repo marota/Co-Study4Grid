@@ -114,7 +114,7 @@ class RecommenderService:
     def update_config(self, settings):
         # Update the global config of the package
         path_obj = Path(settings.network_path)
-        config.ENV_NAME = path_obj.stem
+        config.ENV_NAME = path_obj.name
         config.ENV_FOLDER = path_obj.parent
         config.ENV_PATH = path_obj
         
@@ -504,8 +504,20 @@ class RecommenderService:
         import pypowsybl as pp
 
         network_file = config.ENV_PATH
+        if network_file.is_dir():
+            files = [f for f in network_file.iterdir() if f.suffix.lower() in ['.xiidm', '.iidm', '.xml']]
+            if files:
+                network_file = files[0]
+            else:
+                # Also check in grid/ subfolder
+                grid_folder = network_file / "grid"
+                if grid_folder.is_dir():
+                    files = [f for f in grid_folder.iterdir() if f.suffix.lower() in ['.xiidm', '.iidm', '.xml']]
+                    if files:
+                        network_file = files[0]
+
         if not network_file.exists():
-            raise FileNotFoundError(f"Network file not found: {config.ENV_PATH}")
+            raise FileNotFoundError(f"Network file not found: {network_file}")
         
         n = pp.network.load(str(network_file))
         # Convenience method not in pypowsybl API: return line IDs as a list

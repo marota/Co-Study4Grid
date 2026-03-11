@@ -1,0 +1,25 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="docutils" />
+          <option value="graphviz" />
+          <option value="Grid2Op" />
+          <option value="lightsim2grid" />
+          <option value="networkx" />
+          <option value="numpy" />
+          <option value="pandapower" />
+          <option value="scipy" />
+          <option value="pandas" />
+          <option value="pathlib" />
+          <option value="pydot" />
+          <option value="matplotlib" />
+          <option value="pytest" />
+          <option value="Sphinx" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>

@@ -921,4 +921,45 @@ describe('Settings Modal Enhancements', () => {
     const bannerInput = headerBannerLabel?.parentElement?.querySelector('input');
     expect(bannerInput).toHaveAttribute('placeholder', 'load your grid xiidm file path');
   });
+
+  describe('Processing State UI', () => {
+    it('shows yellow "Running..." button during analysis', async () => {
+      render(<App />);
+      await loadStudy(); // Custom helper or inline:
+      
+      // Select branch
+      const branchInput = screen.getByPlaceholderText('Search line/bus...');
+      await userEvent.type(branchInput, 'BRANCH_A');
+      await waitFor(() => expect(mockApi.getN1Diagram).toHaveBeenCalledWith('BRANCH_A'));
+
+      // Setup streaming mock for step2
+      const mockResponse = new ReadableStream({
+        start(controller) {
+          // Keep it open to simulate "Running" state
+        },
+      });
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        body: mockResponse,
+      }));
+
+      const runBtn = screen.getByText('🚀 Run Analysis');
+      await userEvent.click(runBtn);
+
+      // Button should change to "⚙️ Running..." and turn yellow
+      const runningBtn = await screen.findByText('⚙️ Running...');
+      expect(runningBtn).toBeInTheDocument();
+      expect(runningBtn.style.background).toBe('rgb(241, 196, 15)'); // #f1c40f
+      expect(runningBtn.style.color).toBe('rgb(133, 100, 4)'); // #856404
+    });
+  });
 });
+
+// Helper for repeated logic in new tests if needed
+async function loadStudy() {
+  const loadBtn = screen.getByText('🔄 Load Study');
+  await userEvent.click(loadBtn);
+  await waitFor(() => {
+    expect(screen.getByPlaceholderText('Search line/bus...')).toBeInTheDocument();
+  });
+}

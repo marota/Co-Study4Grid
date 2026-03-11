@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
 import userEvent from '@testing-library/user-event';
 import { createRef } from 'react';
 import VisualizationPanel from './VisualizationPanel';
@@ -38,6 +39,9 @@ const createDefaultProps = (overrides: Record<string, unknown> = {}) => ({
     onOverlaySldTabChange: vi.fn(),
     voltageLevels: [] as string[],
     onVlOpen: vi.fn(),
+    networkPath: '',
+    layoutPath: '',
+    onOpenSettings: vi.fn(),
     ...overrides,
 });
 
@@ -175,12 +179,17 @@ describe('VisualizationPanel', () => {
         expect(screen.queryByPlaceholderText(/Inspect/)).not.toBeInTheDocument();
     });
 
-    it('shows analysis loading text in overflow tab', () => {
+    it('shows analysis loading text in overflow tab with yellow theme', () => {
         render(<VisualizationPanel {...createDefaultProps({
             activeTab: 'overflow',
             analysisLoading: true,
         })} />);
         expect(screen.getByText('Processing Analysis...')).toBeInTheDocument();
+        const placeholder = screen.getByText('Processing Analysis...').parentElement;
+        if (placeholder) {
+            expect(placeholder.style.backgroundColor).toBe('rgb(255, 243, 205)'); // #fff3cd
+            expect(placeholder.style.color).toBe('rgb(133, 100, 4)'); // #856404
+        }
     });
 
     it('keeps overflow tab visible when result has pdf_url and activeTab is overflow', () => {
