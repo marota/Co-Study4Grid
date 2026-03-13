@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 
@@ -65,6 +65,7 @@ const mockApi = vi.hoisted(() => ({
   getNetworkDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
   getN1Diagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] }),
   pickPath: vi.fn(),
+  uploadNetworkFile: vi.fn().mockResolvedValue('/uploads/grid.xiidm'),
   runAnalysisStep1: vi.fn().mockResolvedValue({ can_proceed: true, lines_overloaded: ['LINE_OL1'] }),
   getActionVariantDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
   getNSld: vi.fn(),
@@ -963,3 +964,148 @@ async function loadStudy() {
     expect(screen.getByPlaceholderText('Search line/bus...')).toBeInTheDocument();
   });
 }
+
+// ─── Helper: create a synthetic drag event with a single file ───────────────
+function makeDragEvent(fileName: string, fileContent = 'data'): Partial<React.DragEvent> {
+  const file = new File([fileContent], fileName, { type: 'application/octet-stream' });
+  return {
+    preventDefault: vi.fn(),
+    dataTransfer: {
+      files: [file] as unknown as FileList,
+      dropEffect: 'none',
+      items: {} as DataTransferItemList,
+      types: [],
+      clearData: vi.fn(),
+      getData: vi.fn(),
+      setData: vi.fn(),
+      setDragImage: vi.fn(),
+    } as unknown as DataTransfer,
+  };
+}
+
+describe('Network File Drag-and-Drop', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  function getBannerNetworkInput() {
+    // The banner input has a unique placeholder with "— or drop"
+    return screen.getByPlaceholderText(/drop a \.xiidm file here/i, { selector: 'input' });
+  }
+
+  it('accepts a .xiidm file drop and sets networkPath via uploadNetworkFile', async () => {
+    mockApi.uploadNetworkFile.mockResolvedValue('/uploads/my_grid.xiidm');
+    render(<App />);
+
+    const input = getBannerNetworkInput();
+    const wrapper = input.parentElement!;
+
+    await act(async () => {
+      fireEvent.dragOver(wrapper, makeDragEvent('my_grid.xiidm'));
+    });
+    await act(async () => {
+      fireEvent.drop(wrapper, makeDragEvent('my_grid.xiidm'));
+    });
+
+    await waitFor(() => {
+      expect(mockApi.uploadNetworkFile).toHaveBeenCalledOnce();
+    });
+
+    await waitFor(() => {
+      expect(getBannerNetworkInput()).toHaveValue('/uploads/my_grid.xiidm');
+    });
+  });
+
+  it('shows an error when a non-.xiidm file is dropped', async () => {
+    render(<App />);
+
+    const input = getBannerNetworkInput();
+    const wrapper = input.parentElement!;
+
+    await act(async () => {
+      fireEvent.drop(wrapper, makeDragEvent('network.json'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Only \.xiidm files can be dropped here/i)).toBeInTheDocument();
+    });
+    expect(mockApi.uploadNetworkFile).not.toHaveBeenCalled();
+  });
+
+  it('shows "Uploading..." while the upload is in progress', async () => {
+    let resolveUpload!: (path: string) => void;
+    mockApi.uploadNetworkFile.mockReturnValue(
+      new Promise<string>((res) => { resolveUpload = res; })
+    );
+    render(<App />);
+
+    const input = getBannerNetworkInput();
+    const wrapper = input.parentElement!;
+
+    await act(async () => {
+      fireEvent.drop(wrapper, makeDragEvent('grid.xiidm'));
+    });
+
+    // Input should show "Uploading..." synchronously after drop
+    expect(getBannerNetworkInput()).toHaveValue('Uploading...');
+    expect(getBannerNetworkInput()).toHaveAttribute('readOnly');
+
+    // Resolve the upload
+    await act(async () => {
+      resolveUpload('/uploads/grid.xiidm');
+    });
+
+    await waitFor(() => {
+      expect(getBannerNetworkInput()).toHaveValue('/uploads/grid.xiidm');
+    });
+    expect(getBannerNetworkInput()).not.toHaveAttribute('readOnly');
+  });
+
+  it('applies drag-over highlight style when dragging over the input', async () => {
+    render(<App />);
+
+    const input = getBannerNetworkInput();
+    const wrapper = input.parentElement!;
+
+    await act(async () => {
+      fireEvent.dragOver(wrapper, makeDragEvent('grid.xiidm'));
+    });
+
+    // Input border should switch to the drag-over colour
+    expect(input.style.border).toContain('#3498db');
+
+    await act(async () => {
+      fireEvent.dragLeave(wrapper, { preventDefault: vi.fn() });
+    });
+
+    // Highlight removed
+    expect(input.style.border).not.toContain('#3498db');
+  });
+
+  it('does nothing when drop contains no files', async () => {
+    render(<App />);
+
+    const wrapper = getBannerNetworkInput().parentElement!;
+    const emptyDrop: Partial<React.DragEvent> = {
+      preventDefault: vi.fn(),
+      dataTransfer: {
+        files: [] as unknown as FileList,
+        dropEffect: 'none',
+        items: {} as DataTransferItemList,
+        types: [],
+        clearData: vi.fn(),
+        getData: vi.fn(),
+        setData: vi.fn(),
+        setDragImage: vi.fn(),
+      } as unknown as DataTransfer,
+    };
+
+    await act(async () => {
+      fireEvent.drop(wrapper, emptyDrop);
+    });
+
+    expect(mockApi.uploadNetworkFile).not.toHaveBeenCalled();
+  });
+});
