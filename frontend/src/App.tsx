@@ -67,20 +67,17 @@ function App() {
 
   const handleNetworkDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
     setNetworkDragOver(true);
   }, []);
 
   const handleNetworkDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     setNetworkDragOver(false);
   }, []);
 
   const handleNetworkDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     setNetworkDragOver(false);
     const file = e.dataTransfer.files[0];
     if (!file) return;
@@ -127,15 +124,14 @@ function App() {
   }, [infoMessage]);
 
   // Prevent the browser from opening dropped files in a new tab.
-  // preventDefault() on the input alone is insufficient — the browser fires
-  // its own drop handler at the window level independently.
+  // Capture phase (true) fires before any element's native handler.
   useEffect(() => {
     const suppress = (e: DragEvent) => e.preventDefault();
-    window.addEventListener('dragover', suppress);
-    window.addEventListener('drop', suppress);
+    window.addEventListener('dragover', suppress, true);
+    window.addEventListener('drop', suppress, true);
     return () => {
-      window.removeEventListener('dragover', suppress);
-      window.removeEventListener('drop', suppress);
+      window.removeEventListener('dragover', suppress, true);
+      window.removeEventListener('drop', suppress, true);
     };
   }, []);
   
@@ -1373,13 +1369,15 @@ function App() {
 
         <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
           <label style={{ fontSize: '0.7rem', opacity: 0.8, whiteSpace: 'nowrap' }}>Network Path</label>
-          <div style={{ display: 'flex', gap: '4px' }}>
+          <div
+            style={{ display: 'flex', gap: '4px' }}
+            onDragOver={handleNetworkDragOver}
+            onDragLeave={handleNetworkDragLeave}
+            onDrop={handleNetworkDrop}
+          >
             <input
               type="text" value={networkUploading ? 'Uploading...' : networkPath}
               onChange={e => setNetworkPath(e.target.value)}
-              onDragOver={handleNetworkDragOver}
-              onDragLeave={handleNetworkDragLeave}
-              onDrop={handleNetworkDrop}
               placeholder="load your grid xiidm file path — or drop a .xiidm file here"
               readOnly={networkUploading}
               style={{
@@ -1390,6 +1388,7 @@ function App() {
                 color: 'white', fontSize: '0.8rem',
                 transition: 'border-color 0.15s, background 0.15s',
                 cursor: networkUploading ? 'wait' : 'text',
+                pointerEvents: networkDragOver ? 'none' : 'auto',
               }}
             />
             <button
@@ -1488,14 +1487,16 @@ function App() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   <label htmlFor="networkPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network File Path (.xiidm)</label>
                   <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Synchronized with the banner field — or drop a .xiidm file here</div>
-                  <div style={{ display: 'flex', gap: '5px' }}>
+                  <div
+                    style={{ display: 'flex', gap: '5px' }}
+                    onDragOver={handleNetworkDragOver}
+                    onDragLeave={handleNetworkDragLeave}
+                    onDrop={handleNetworkDrop}
+                  >
                     <input
                       id="networkPathInput" type="text"
                       value={networkUploading ? 'Uploading...' : networkPath}
                       onChange={e => setNetworkPath(e.target.value)}
-                      onDragOver={handleNetworkDragOver}
-                      onDragLeave={handleNetworkDragLeave}
-                      onDrop={handleNetworkDrop}
                       placeholder="load your grid xiidm file path — or drop a .xiidm file here"
                       readOnly={networkUploading}
                       style={{
@@ -1505,6 +1506,7 @@ function App() {
                         background: networkDragOver ? '#eaf4fb' : undefined,
                         transition: 'border-color 0.15s, background 0.15s',
                         cursor: networkUploading ? 'wait' : 'text',
+                        pointerEvents: networkDragOver ? 'none' : 'auto',
                       }}
                     />
                     <button onClick={() => pickSettingsPath('file', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📄</button>

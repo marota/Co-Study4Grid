@@ -991,21 +991,25 @@ describe('Network File Drag-and-Drop', () => {
   });
 
   function getBannerNetworkInput() {
-    // The banner input has a unique placeholder with "— or drop"
     return screen.getByPlaceholderText(/drop a \.xiidm file here/i, { selector: 'input' });
+  }
+
+  function getBannerDropZone() {
+    // Handlers are on the wrapper div; fire events on the div so they reach the handler directly.
+    return getBannerNetworkInput().parentElement!;
   }
 
   it('accepts a .xiidm file drop and sets networkPath via uploadNetworkFile', async () => {
     mockApi.uploadNetworkFile.mockResolvedValue('/uploads/my_grid.xiidm');
     render(<App />);
 
-    const input = getBannerNetworkInput();
+    const zone = getBannerDropZone();
 
     await act(async () => {
-      fireEvent.dragOver(input, makeDragEvent('my_grid.xiidm'));
+      fireEvent.dragOver(zone, makeDragEvent('my_grid.xiidm'));
     });
     await act(async () => {
-      fireEvent.drop(input, makeDragEvent('my_grid.xiidm'));
+      fireEvent.drop(zone, makeDragEvent('my_grid.xiidm'));
     });
 
     await waitFor(() => {
@@ -1020,10 +1024,8 @@ describe('Network File Drag-and-Drop', () => {
   it('shows an error when a non-.xiidm file is dropped', async () => {
     render(<App />);
 
-    const input = getBannerNetworkInput();
-
     await act(async () => {
-      fireEvent.drop(input, makeDragEvent('network.json'));
+      fireEvent.drop(getBannerDropZone(), makeDragEvent('network.json'));
     });
 
     await waitFor(() => {
@@ -1039,10 +1041,8 @@ describe('Network File Drag-and-Drop', () => {
     );
     render(<App />);
 
-    const input = getBannerNetworkInput();
-
     await act(async () => {
-      fireEvent.drop(input, makeDragEvent('grid.xiidm'));
+      fireEvent.drop(getBannerDropZone(), makeDragEvent('grid.xiidm'));
     });
 
     // Input should show "Uploading..." synchronously after drop
@@ -1060,20 +1060,21 @@ describe('Network File Drag-and-Drop', () => {
     expect(getBannerNetworkInput()).not.toHaveAttribute('readOnly');
   });
 
-  it('applies drag-over highlight style when dragging over the input', async () => {
+  it('applies drag-over highlight style when dragging over the drop zone', async () => {
     render(<App />);
 
+    const zone = getBannerDropZone();
     const input = getBannerNetworkInput();
 
     await act(async () => {
-      fireEvent.dragOver(input, makeDragEvent('grid.xiidm'));
+      fireEvent.dragOver(zone, makeDragEvent('grid.xiidm'));
     });
 
     // Input border should switch to the drag-over colour
     expect(input.style.border).toContain('#3498db');
 
     await act(async () => {
-      fireEvent.dragLeave(input, { preventDefault: vi.fn() });
+      fireEvent.dragLeave(zone, { preventDefault: vi.fn() });
     });
 
     // Highlight removed
@@ -1083,7 +1084,6 @@ describe('Network File Drag-and-Drop', () => {
   it('does nothing when drop contains no files', async () => {
     render(<App />);
 
-    const input = getBannerNetworkInput();
     const emptyDrop: Partial<React.DragEvent> = {
       preventDefault: vi.fn(),
       dataTransfer: {
@@ -1099,7 +1099,7 @@ describe('Network File Drag-and-Drop', () => {
     };
 
     await act(async () => {
-      fireEvent.drop(input, emptyDrop);
+      fireEvent.drop(getBannerDropZone(), emptyDrop);
     });
 
     expect(mockApi.uploadNetworkFile).not.toHaveBeenCalled();
