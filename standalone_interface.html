@@ -418,7 +418,7 @@
             max-width: 900px;
             max-height: 80vh;
             overflow-y: auto;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
             position: relative;
         }
 
@@ -446,7 +446,8 @@
             font-size: 13px;
         }
 
-        .action-table th, .action-table td {
+        .action-table th,
+        .action-table td {
             padding: 8px;
             text-align: left;
             border-bottom: 1px solid #eee;
@@ -1796,7 +1797,7 @@
                         disconnected_element: selectedBranch
                     });
                     const res1 = response1.data;
-                    
+
                     if (!res1.can_proceed) {
                         setError(res1.message || 'Analysis cannot proceed.');
                         if (res1.message) setInfoMessage(res1.message);
@@ -1806,7 +1807,7 @@
 
                     const detected = res1.lines_overloaded || [];
                     setAvailableOverloads(detected);
-                    
+
                     // Resolve: selected overloads focus the analysis.
                     let primaryOverloads = detected;
                     if (selectedOverloads.size > 0) {
@@ -1835,7 +1836,7 @@
                     const response2 = await fetch(API_BASE + '/api/run-analysis-step2', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
+                        body: JSON.stringify({
                             selected_overloads: toResolve,
                             all_overloads: detected,
                             monitor_deselected: monitorDeselected,
@@ -1857,10 +1858,10 @@
                             try {
                                 const event = JSON.parse(line);
                                 if (event.type === 'pdf') {
-                                    setResult(p => ({ 
-                                        ...(p || {}), 
+                                    setResult(p => ({
+                                        ...(p || {}),
                                         pdf_url: event.pdf_url,
-                                        pdf_path: event.pdf_path 
+                                        pdf_path: event.pdf_path
                                     }));
                                     setActiveTab('overflow');
                                 }
@@ -1908,6 +1909,9 @@
                                 ...data,
                                 is_manual: false,
                                 is_precomputed: true,
+                                // Store estimation in separate fields to avoid collision with simulation data
+                                estimated_max_rho: data.estimated_max_rho ?? data.max_rho,
+                                estimated_max_rho_line: data.estimated_max_rho_line ?? data.max_rho_line,
                                 description_unitaire: data.description || `Combination of ${data.action1_id} and ${data.action2_id}`
                             };
                         }
@@ -2453,11 +2457,11 @@
                     });
                     console.log('[handleAddManualAction] Simulation result received:', res.data);
                     const detail = res.data;
-                    
+
                     // Track this as a manually added action
                     setManualActionIds(prev => new Set([...prev, actionId]));
                     setManuallyAddedIds(prev => new Set([...prev, actionId]));
-                    
+
                     const isCombined = actionId.includes('+');
 
                     // Merge into result
@@ -2477,7 +2481,8 @@
                                     max_rho_line: detail.max_rho_line,
                                     is_rho_reduction: detail.is_rho_reduction,
                                     is_manual: true,
-                                    is_estimated: false, // CRITICAL: It is now simulated
+                                    is_estimated: false,
+                                    non_convergence: detail.non_convergence,
                                     is_precomputed: isCombined ? true : (base.actions?.[actionId]?.is_precomputed || false)
                                 }
                             }
@@ -2491,7 +2496,7 @@
                         const diagRes = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: actionId });
                         const { svg, viewBox } = processSvg(diagRes.data.svg, voltageLevels.length);
                         const prefetched = { ...diagRes.data, svg, originalViewBox: viewBox };
-                        
+
                         actionSyncSourceRef.current =
                             (activeTabRef.current === 'action' ? actionPZ.viewBox : null)
                             || n1PZ.viewBox || nPZ.viewBox;
@@ -2540,7 +2545,7 @@
                     });
                     const combinedId = selectedCombineActionIds.join('+');
                     setSuperpositionResult(res.data);
-                    
+
                     // Feed the first tab with estimated result
                     setResult(prev => {
                         if (!prev) return prev;
@@ -2552,6 +2557,9 @@
                                     ...res.data,
                                     is_manual: true,
                                     is_estimated: true,
+                                    // Store as explicit estimation fields
+                                    estimated_max_rho: res.data.max_rho,
+                                    estimated_max_rho_line: res.data.max_rho_line,
                                     description_unitaire: `[ESTIMATED] Combination of ${selectedCombineActionIds.join(' and ')}`
                                 }
                             }
@@ -2610,7 +2618,7 @@
                 try {
                     setManualActionIds(prev => new Set([...prev, combinedId]));
                     setManuallyAddedIds(prev => new Set([...prev, combinedId]));
-                    
+
                     // Add dummy entry for immediate visual feedback in the background
                     setResult(prev => {
                         const base = prev || { actions: {}, lines_overloaded: [] };
@@ -2719,7 +2727,7 @@
                         const actionDesc = (actionDetail?.description_unitaire || '').toLowerCase();
                         const aid = actionId.toLowerCase();
                         const t = type.toLowerCase();
-                        
+
                         const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
                         const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
                         const isOpenCoupling = t.includes('open_coupling');
@@ -2738,7 +2746,7 @@
 
                         // Filter out combined actions that are only estimations
                         if (actionId.includes('+') && (actionDetail?.is_estimated || !actionDetail?.rho_after || actionDetail?.rho_after.length === 0)) continue;
-                        
+
                         list.push({ actionId, score, type });
                     }
                 }
@@ -3257,8 +3265,8 @@
                                         <iframe src={API_BASE + result.pdf_url} key={result.pdf_url} style={{ width: '100%', height: '100%', border: 'none' }} />
                                         : <iframe srcDoc={result.plot_html} style={{ width: '100%', height: '100%', border: 'none' }} />
                                 ) : (
-                                    <div style={{ 
-                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', 
+                                    <div style={{
+                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%',
                                         color: analysisLoading ? '#856404' : '#999',
                                         background: analysisLoading ? '#fff3cd' : 'white',
                                         fontWeight: analysisLoading ? 600 : 'normal',
@@ -3502,13 +3510,13 @@
                         const isCombined = id.includes('+');
                         // Always show manually added IDs
                         if (manualActionIds.has(id)) return true;
-                        
+
                         if (!isCombined) return true;
-                        
+
                         // For combined actions:
                         // Only show if fully simulated (not estimated)
                         if (details.is_estimated) return false;
-                        
+
                         // Ensure we have some data or it's been manually triggered
                         return (details.rho_after && details.rho_after.length > 0) || details.is_manual;
                     })
@@ -3549,151 +3557,151 @@
                     return entries.map(([id, details], index) => {
                         if (!details) return null;
                         const maxRhoPct = details.max_rho != null ? (details.max_rho * 100).toFixed(1) : null;
-                    const overloadedLines = result.lines_overloaded || [];
-                    // Tri-color severity: red (>100%), orange (>90%), green (<=90%)
-                    const severity = details.max_rho != null
-                        ? (details.max_rho > monitoringFactor ? 'red' : details.max_rho > (monitoringFactor - 0.05) ? 'orange' : 'green')
-                        : (details.is_rho_reduction ? 'green' : 'red');
-                    const severityColors = {
-                        green: { border: '#28a745', badgeBg: '#d4edda', badgeText: '#155724', label: 'Solves overload' },
-                        orange: { border: '#f0ad4e', badgeBg: '#fff3cd', badgeText: '#856404', label: 'Solved — low margin' },
-                        red: { border: '#dc3545', badgeBg: '#f8d7da', badgeText: '#721c24', label: details.is_rho_reduction ? 'Still overloaded' : 'No reduction' }
-                    };
-                    const sc = details.non_convergence 
-                        ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'divergent' }
-                        : severityColors[severity];
-                    const clickableLinkStyle = { background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted' };
-                    const renderRho = (arr, tab) => {
-                        if (!arr || arr.length === 0) return '—';
-                        return arr.map((v, i) => {
-                            const lineName = overloadedLines[i] || `line ${i}`;
-                            return (
-                                <React.Fragment key={i}>
-                                    {i > 0 && ', '}
-                                    <button style={clickableLinkStyle} title={`Zoom to ${lineName}`}
-                                        onClick={(e) => { e.stopPropagation(); handleAssetClick(id, lineName, tab); }}
-                                    >{lineName}</button>
-                                    {`: ${(v * 100).toFixed(1)}%`}
-                                </React.Fragment>
-                            );
-                        });
-                    };
-                    const isSelected = selectedActionId === id;
-                    return (
-                        <div key={id} className="card" onClick={() => handleActionSelect(id)} style={{
-                            borderLeftColor: isSelected ? '#007bff' : sc.border,
-                            cursor: 'pointer',
-                            background: isSelected ? '#e7f1ff' : (details.non_convergence ? '#fff5f5' : 'white'),
-                            borderRight: details.non_convergence ? '1px solid #f8d7da' : 'none',
-                            borderTop: details.non_convergence ? '1px solid #f8d7da' : 'none',
-                            borderBottom: details.non_convergence ? '1px solid #f8d7da' : 'none',
-                            boxShadow: isSelected ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
-                            transition: 'all 0.15s ease'
-                        }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <h4 style={{ margin: 0, color: isSelected ? '#0056b3' : undefined }}>#{index + 1} — {id}</h4>
-                                <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                                    {isSelected && (
-                                        <span style={{ fontSize: '10px', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', background: '#007bff', color: 'white' }}>
-                                            VIEWING
+                        const overloadedLines = result.lines_overloaded || [];
+                        // Tri-color severity: red (>100%), orange (>90%), green (<=90%)
+                        const severity = details.max_rho != null
+                            ? (details.max_rho > monitoringFactor ? 'red' : details.max_rho > (monitoringFactor - 0.05) ? 'orange' : 'green')
+                            : (details.is_rho_reduction ? 'green' : 'red');
+                        const severityColors = {
+                            green: { border: '#28a745', badgeBg: '#d4edda', badgeText: '#155724', label: 'Solves overload' },
+                            orange: { border: '#f0ad4e', badgeBg: '#fff3cd', badgeText: '#856404', label: 'Solved — low margin' },
+                            red: { border: '#dc3545', badgeBg: '#f8d7da', badgeText: '#721c24', label: details.is_rho_reduction ? 'Still overloaded' : 'No reduction' }
+                        };
+                        const sc = details.non_convergence
+                            ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'divergent' }
+                            : severityColors[severity];
+                        const clickableLinkStyle = { background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted' };
+                        const renderRho = (arr, tab) => {
+                            if (!arr || arr.length === 0) return '—';
+                            return arr.map((v, i) => {
+                                const lineName = overloadedLines[i] || `line ${i}`;
+                                return (
+                                    <React.Fragment key={i}>
+                                        {i > 0 && ', '}
+                                        <button style={clickableLinkStyle} title={`Zoom to ${lineName}`}
+                                            onClick={(e) => { e.stopPropagation(); handleAssetClick(id, lineName, tab); }}
+                                        >{lineName}</button>
+                                        {`: ${(v * 100).toFixed(1)}%`}
+                                    </React.Fragment>
+                                );
+                            });
+                        };
+                        const isSelected = selectedActionId === id;
+                        return (
+                            <div key={id} className="card" onClick={() => handleActionSelect(id)} style={{
+                                borderLeftColor: isSelected ? '#007bff' : sc.border,
+                                cursor: 'pointer',
+                                background: isSelected ? '#e7f1ff' : (details.non_convergence ? '#fff5f5' : 'white'),
+                                borderRight: details.non_convergence ? '1px solid #f8d7da' : 'none',
+                                borderTop: details.non_convergence ? '1px solid #f8d7da' : 'none',
+                                borderBottom: details.non_convergence ? '1px solid #f8d7da' : 'none',
+                                boxShadow: isSelected ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
+                                transition: 'all 0.15s ease'
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <h4 style={{ margin: 0, color: isSelected ? '#0056b3' : undefined }}>#{index + 1} — {id}</h4>
+                                    <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                                        {isSelected && (
+                                            <span style={{ fontSize: '10px', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', background: '#007bff', color: 'white' }}>
+                                                VIEWING
+                                            </span>
+                                        )}
+                                        <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '12px', background: sc.badgeBg, color: sc.badgeText }}>
+                                            {sc.label}
                                         </span>
-                                    )}
-                                    <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '12px', background: sc.badgeBg, color: sc.badgeText }}>
-                                        {sc.label}
-                                    </span>
+                                    </div>
                                 </div>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', margin: '4px 0 5px' }}>
-                                <p style={{ fontSize: '13px', margin: 0, flex: 1 }}>{details.description_unitaire}</p>
-                                {(() => {
-                                    const nodeMeta = nMetaIndex && nMetaIndex.nodesByEquipmentId;
-                                    const edgeMeta = nMetaIndex && nMetaIndex.edgesByEquipmentId;
-                                    const vlName = nodeMeta ? getActionTargetVoltageLevel(details, id, nodeMeta) : null;
-                                    if (vlName) {
-                                        return (
-                                            <button
-                                                style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, backgroundColor: '#d1fae5', color: '#065f46', textDecoration: 'underline dotted', flexShrink: 0 }}
-                                                title={`Click: zoom to ${vlName} | Double-click: open focused diagram`}
-                                                onClick={(e) => { e.stopPropagation(); handleAssetClick(id, vlName, 'action'); }}
-                                                onDoubleClick={(e) => { e.stopPropagation(); handleVlDoubleClick(id, vlName); }}>
-                                                {vlName}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', margin: '4px 0 5px' }}>
+                                    <p style={{ fontSize: '13px', margin: 0, flex: 1 }}>{details.description_unitaire}</p>
+                                    {(() => {
+                                        const nodeMeta = nMetaIndex && nMetaIndex.nodesByEquipmentId;
+                                        const edgeMeta = nMetaIndex && nMetaIndex.edgesByEquipmentId;
+                                        const vlName = nodeMeta ? getActionTargetVoltageLevel(details, id, nodeMeta) : null;
+                                        if (vlName) {
+                                            return (
+                                                <button
+                                                    style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, backgroundColor: '#d1fae5', color: '#065f46', textDecoration: 'underline dotted', flexShrink: 0 }}
+                                                    title={`Click: zoom to ${vlName} | Double-click: open focused diagram`}
+                                                    onClick={(e) => { e.stopPropagation(); handleAssetClick(id, vlName, 'action'); }}
+                                                    onDoubleClick={(e) => { e.stopPropagation(); handleVlDoubleClick(id, vlName); }}>
+                                                    {vlName}
+                                                </button>
+                                            );
+                                        }
+                                        const badgeBtn = (name, bg, color, title) => (
+                                            <button key={name}
+                                                style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, textDecoration: 'underline dotted', flexShrink: 0, backgroundColor: bg, color }}
+                                                title={title}
+                                                onClick={(e) => { e.stopPropagation(); handleAssetClick(id, name, 'action'); }}>
+                                                {name}
                                             </button>
                                         );
-                                    }
-                                    const badgeBtn = (name, bg, color, title) => (
-                                        <button key={name}
-                                            style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, textDecoration: 'underline dotted', flexShrink: 0, backgroundColor: bg, color }}
-                                            title={title}
-                                            onClick={(e) => { e.stopPropagation(); handleAssetClick(id, name, 'action'); }}>
-                                            {name}
-                                        </button>
-                                    );
-                                    const lineNames = edgeMeta
-                                        ? getActionTargetLines(details, id, edgeMeta)
-                                        : Array.from(new Set([
-                                            ...Object.keys(details.action_topology?.lines_ex_bus || {}),
-                                            ...Object.keys(details.action_topology?.lines_or_bus || {}),
-                                        ]));
-                                    if (lineNames.length > 0) return (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0 }}>
-                                            {lineNames.map(name => badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to line ${name}`))}
-                                        </div>
-                                    );
-                                    // Fallback: gen/load equipment names from topology
-                                    const topo = details.action_topology;
-                                    const equipNames = [
-                                        ...Object.keys(topo?.gens_bus || {}),
-                                        ...Object.keys(topo?.loads_bus || {}),
-                                    ];
-                                    if (equipNames.length > 0) return (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0 }}>
-                                            {equipNames.map(name => badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`))}
-                                        </div>
-                                    );
-                                    return null;
-                                })()}
-                            </div>
-                            {details.non_convergence && (
-                                <div style={{ fontSize: '12px', background: '#fff8f1', color: '#9a3412', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #ffedd5', fontWeight: 500 }}>
-                                    ⚠️ <strong>LoadFlow Failure:</strong> {details.non_convergence}
+                                        const lineNames = edgeMeta
+                                            ? getActionTargetLines(details, id, edgeMeta)
+                                            : Array.from(new Set([
+                                                ...Object.keys(details.action_topology?.lines_ex_bus || {}),
+                                                ...Object.keys(details.action_topology?.lines_or_bus || {}),
+                                            ]));
+                                        if (lineNames.length > 0) return (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0 }}>
+                                                {lineNames.map(name => badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to line ${name}`))}
+                                            </div>
+                                        );
+                                        // Fallback: gen/load equipment names from topology
+                                        const topo = details.action_topology;
+                                        const equipNames = [
+                                            ...Object.keys(topo?.gens_bus || {}),
+                                            ...Object.keys(topo?.loads_bus || {}),
+                                        ];
+                                        if (equipNames.length > 0) return (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0 }}>
+                                                {equipNames.map(name => badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`))}
+                                            </div>
+                                        );
+                                        return null;
+                                    })()}
                                 </div>
-                            )}
-                            <div style={{ fontSize: '12px', background: isSelected ? '#dce8f7' : '#f8f9fa', padding: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                                <div>
-                                    <div>Loading before: {renderRho(details.rho_before, 'n-1')}</div>
-                                    <div>Loading after: {renderRho(details.rho_after, 'action')}</div>
-                                    {maxRhoPct != null && (
-                                        <div style={{ marginTop: '3px' }}>
-                                            Max loading: <strong style={{ color: sc.border }}>{maxRhoPct}%</strong>
-                                            {details.max_rho_line && (
-                                                <span style={{ color: '#888' }}> on <button
-                                                    style={clickableLinkStyle} title={`Zoom to ${details.max_rho_line}`}
-                                                    onClick={(e) => { e.stopPropagation(); handleAssetClick(id, details.max_rho_line, 'action'); }}
-                                                >{details.max_rho_line}</button></span>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                                <div style={{ display: 'flex', gap: '4px', flexShrink: 0, paddingBottom: '2px' }}>
-                                    {!manualActionIds.has(id) && (
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleActionFavorite(id); }}
-                                            style={{ background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                            title="Select this action"
-                                        ><span style={{ fontSize: '14px' }}>⭐</span></button>
-                                    )}
-                                    {!rejectedActionIds.has(id) && (
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleActionReject(id); }}
-                                            style={{ background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                            title={manualActionIds.has(id) ? "Remove from selected" : "Reject this action"}
-                                        ><span style={{ fontSize: '14px' }}>❌</span></button>
-                                    )}
+                                {details.non_convergence && (
+                                    <div style={{ fontSize: '12px', background: '#fff8f1', color: '#9a3412', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #ffedd5', fontWeight: 500 }}>
+                                        ⚠️ <strong>LoadFlow Failure:</strong> {details.non_convergence}
+                                    </div>
+                                )}
+                                <div style={{ fontSize: '12px', background: isSelected ? '#dce8f7' : '#f8f9fa', padding: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                                    <div>
+                                        <div>Loading before: {renderRho(details.rho_before, 'n-1')}</div>
+                                        <div>Loading after: {renderRho(details.rho_after, 'action')}</div>
+                                        {maxRhoPct != null && (
+                                            <div style={{ marginTop: '3px' }}>
+                                                Max loading: <strong style={{ color: sc.border }}>{maxRhoPct}%</strong>
+                                                {details.max_rho_line && (
+                                                    <span style={{ color: '#888' }}> on <button
+                                                        style={clickableLinkStyle} title={`Zoom to ${details.max_rho_line}`}
+                                                        onClick={(e) => { e.stopPropagation(); handleAssetClick(id, details.max_rho_line, 'action'); }}
+                                                    >{details.max_rho_line}</button></span>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '4px', flexShrink: 0, paddingBottom: '2px' }}>
+                                        {!manualActionIds.has(id) && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleActionFavorite(id); }}
+                                                style={{ background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                title="Select this action"
+                                            ><span style={{ fontSize: '14px' }}>⭐</span></button>
+                                        )}
+                                        {!rejectedActionIds.has(id) && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleActionReject(id); }}
+                                                style={{ background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                title={manualActionIds.has(id) ? "Remove from selected" : "Reject this action"}
+                                            ><span style={{ fontSize: '14px' }}>❌</span></button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    );
-                });
+                        );
+                    });
                 } catch (err) {
                     console.error('[renderActionList] crash:', err);
                     return <div className="error-box">Render Error in list</div>;
@@ -3902,13 +3910,13 @@
                                     <button
                                         onClick={handleRunAnalysis}
                                         disabled={!selectedBranch || analysisLoading}
-                                        style={{ 
-                                            marginTop: '8px', width: '100%', padding: '8px', 
-                                            background: analysisLoading ? '#f1c40f' : (!selectedBranch ? '#95a5a6' : '#27ae60'), 
-                                            color: analysisLoading ? '#856404' : 'white', 
-                                            border: 'none', borderRadius: '4px', 
-                                            cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer', 
-                                            fontWeight: 'bold', fontSize: '0.85rem' 
+                                        style={{
+                                            marginTop: '8px', width: '100%', padding: '8px',
+                                            background: analysisLoading ? '#f1c40f' : (!selectedBranch ? '#95a5a6' : '#27ae60'),
+                                            color: analysisLoading ? '#856404' : 'white',
+                                            border: 'none', borderRadius: '4px',
+                                            cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer',
+                                            fontWeight: 'bold', fontSize: '0.85rem'
                                         }}
                                     >
                                         {analysisLoading ? '⚙️ Running...' : '🚀 Run Analysis'}
@@ -3970,18 +3978,18 @@
                                         lineHeight: '1.6'
                                     }}>
                                         <strong style={{ whiteSpace: 'nowrap', marginRight: '4px' }}>N-1 Overloads:</strong>
-                                        <span 
-                                            title="Double-click on an overload name to toggle its inclusion in the analysis. Selected overloads are blue; unselected are light grey." 
-                                            style={{ 
-                                                display: 'inline-flex', 
-                                                alignItems: 'center', 
-                                                justifyContent: 'center', 
-                                                width: '14px', 
-                                                height: '14px', 
-                                                borderRadius: '50%', 
-                                                background: '#6c757d', 
-                                                color: 'white', 
-                                                fontSize: '10px', 
+                                        <span
+                                            title="Double-click on an overload name to toggle its inclusion in the analysis. Selected overloads are blue; unselected are light grey."
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                width: '14px',
+                                                height: '14px',
+                                                borderRadius: '50%',
+                                                background: '#6c757d',
+                                                color: 'white',
+                                                fontSize: '10px',
                                                 cursor: 'help',
                                                 verticalAlign: 'middle',
                                                 marginRight: '4px'
@@ -4022,24 +4030,24 @@
                                                     return (
                                                         <React.Fragment key={lvl}>
                                                             {i > 0 && ', '}
-                                                            <button 
+                                                            <button
                                                                 onClick={(e) => { e.stopPropagation(); handleAssetClick(null, lvl, 'n-1'); }}
-                                                                onDoubleClick={(e) => { 
-                                                                    e.stopPropagation(); 
+                                                                onDoubleClick={(e) => {
+                                                                    e.stopPropagation();
                                                                     const next = new Set(selectedOverloads);
                                                                     if (next.has(lvl)) next.delete(lvl);
                                                                     else next.add(lvl);
                                                                     setSelectedOverloads(next);
                                                                 }}
-                                                                style={{ 
-                                                                    background: 'none', 
-                                                                    border: 'none', 
-                                                                    cursor: 'pointer', 
-                                                                    padding: 0, 
-                                                                    fontSize: 'inherit', 
-                                                                    color: isSelected ? '#1e40af' : '#bdc3c7', 
-                                                                    fontWeight: isSelected ? 600 : 400, 
-                                                                    textDecoration: isSelected ? 'underline dotted' : 'none', 
+                                                                style={{
+                                                                    background: 'none',
+                                                                    border: 'none',
+                                                                    cursor: 'pointer',
+                                                                    padding: 0,
+                                                                    fontSize: 'inherit',
+                                                                    color: isSelected ? '#1e40af' : '#bdc3c7',
+                                                                    fontWeight: isSelected ? 600 : 400,
+                                                                    textDecoration: isSelected ? 'underline dotted' : 'none',
                                                                     display: 'inline'
                                                                 }}
                                                                 title={isSelected ? `Zoom to ${lvl} (Double-click to unselect)` : `Zoom to ${lvl} (Double-click to select)`}
@@ -4293,11 +4301,11 @@
 
                             {/* Action Dict Info Warning */}
                             {showActionDictWarning && !simulatingActionId && !pendingAnalysisResult && Object.keys(result?.actions || {}).length === 0 && actionDictFileName && actionDictStats && (
-                                <div style={{ 
-                                    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', 
-                                    gap: '8px', padding: '8px 10px', 
-                                    background: '#fff3cd', border: '1px solid #ffeeba', 
-                                    borderRadius: '6px', marginBottom: '10px', fontSize: '12px', color: '#856404' 
+                                <div style={{
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                                    gap: '8px', padding: '8px 10px',
+                                    background: '#fff3cd', border: '1px solid #ffeeba',
+                                    borderRadius: '6px', marginBottom: '10px', fontSize: '12px', color: '#856404'
                                 }}>
                                     <div style={{ flex: 1 }}>
                                         <div style={{ fontWeight: 600, marginBottom: '4px' }}>ℹ️ Action dictionary: <code style={{ fontFamily: 'monospace', background: '#fcf3cf', padding: '1px 4px', borderRadius: '3px', border: '1px solid #f9e79f' }}>{actionDictFileName}</code></div>
@@ -4372,50 +4380,50 @@
                                     >Rejected Actions {rejectedEntries.length > 0 && <span style={{ background: suggestedTab === 'rejected' ? '#fdecea' : '#f8f9fa', color: suggestedTab === 'rejected' ? '#e74c3c' : '#6c757d', fontSize: '11px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>{rejectedEntries.length}</span>}</button>
                                 </div>
 
-                                    {analysisLoading && (
-                                        <div style={{ 
-                                            padding: '12px', 
-                                            background: '#fff3cd', 
-                                            border: '1px solid #ffeeba', 
-                                            borderRadius: '8px', 
-                                            marginBottom: '15px', 
-                                            textAlign: 'center', 
-                                            color: '#856404', 
-                                            fontWeight: 600, 
+                                {analysisLoading && (
+                                    <div style={{
+                                        padding: '12px',
+                                        background: '#fff3cd',
+                                        border: '1px solid #ffeeba',
+                                        borderRadius: '8px',
+                                        marginBottom: '15px',
+                                        textAlign: 'center',
+                                        color: '#856404',
+                                        fontWeight: 600,
+                                        fontSize: '14px',
+                                        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                                        animation: 'pulse 2s infinite ease-in-out'
+                                    }}>
+                                        ⚙️ Processing analysis...
+                                    </div>
+                                )}
+
+                                {/* Display prioritized actions button inside Suggested Actions section */}
+                                {pendingAnalysisResult && !analysisLoading && (
+                                    <button
+                                        onClick={handleDisplayPrioritizedActions}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 16px',
+                                            margin: '0 0 10px 0',
+                                            background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
                                             fontSize: '14px',
-                                            boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                                            animation: 'pulse 2s infinite ease-in-out'
-                                        }}>
-                                            ⚙️ Processing analysis...
-                                        </div>
-                                    )}
+                                            fontWeight: 700,
+                                            boxShadow: '0 2px 8px rgba(39,174,96,0.3)',
+                                            transition: 'transform 0.1s',
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                                        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                                    >
+                                        📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
+                                    </button>
+                                )}
 
-                                    {/* Display prioritized actions button inside Suggested Actions section */}
-                                    {pendingAnalysisResult && !analysisLoading && (
-                                        <button
-                                            onClick={handleDisplayPrioritizedActions}
-                                            style={{
-                                                width: '100%',
-                                                padding: '10px 16px',
-                                                margin: '0 0 10px 0',
-                                                background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
-                                                color: 'white',
-                                                border: 'none',
-                                                borderRadius: '8px',
-                                                cursor: 'pointer',
-                                                fontSize: '14px',
-                                                fontWeight: 700,
-                                                boxShadow: '0 2px 8px rgba(39,174,96,0.3)',
-                                                transition: 'transform 0.1s',
-                                            }}
-                                            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
-                                            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                                        >
-                                            📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
-                                        </button>
-                                    )}
-
-                                    {suggestedTab === 'prioritized' && (
+                                {suggestedTab === 'prioritized' && (
                                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
                                         !analysisLoading ? (
                                             <div style={{ textAlign: 'center' }}>
@@ -4434,7 +4442,7 @@
                                                         textAlign: 'left',
                                                         position: 'relative'
                                                     }}>
-                                                        <button 
+                                                        <button
                                                             onClick={() => setDismissedRecommenderWarning(true)}
                                                             style={{
                                                                 position: 'absolute',
@@ -4581,7 +4589,7 @@
                                             <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                 <span>⚠️</span> Configuration Paths
                                             </div>
-                                            <button 
+                                            <button
                                                 onClick={() => setShowPathWarning(false)}
                                                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', color: '#856404' }}
                                             >✕</button>
@@ -4593,8 +4601,8 @@
                                             <strong>Output Folder:</strong> {networkPath ? networkPath.substring(0, networkPath.lastIndexOf('/')) : 'Not set'}
                                         </div>
                                         <div style={{ marginTop: '4px' }}>
-                                            <a 
-                                                href="#" 
+                                            <a
+                                                href="#"
                                                 onClick={(e) => { e.preventDefault(); setSettingsTab('paths'); setIsSettingsOpen(true); }}
                                                 style={{ color: '#0056b3', textDecoration: 'underline', fontWeight: 500 }}
                                             >
@@ -4726,7 +4734,7 @@
                     {infoMessage && (
                         <div style={{
                             position: 'fixed', bottom: 20, left: 20,
-                            background: infoMessage.startsWith('SUCCESS') ? '#27ae60' : '#3498db', 
+                            background: infoMessage.startsWith('SUCCESS') ? '#27ae60' : '#3498db',
                             color: 'white',
                             padding: '12px 24px', borderRadius: '4px',
                             boxShadow: '0 4px 15px rgba(0,0,0,0.3)', zIndex: 1000,
@@ -4745,7 +4753,7 @@
                                 </div>
 
                                 <div className="modal-tabs">
-                                    <div 
+                                    <div
                                         className={`modal-tab ${combineModalTab === 'computed' ? 'active' : ''}`}
                                         onClick={() => {
                                             setCombineModalTab('computed');
@@ -4755,7 +4763,7 @@
                                     >
                                         Computed Pairs
                                     </div>
-                                    <div 
+                                    <div
                                         className={`modal-tab ${combineModalTab === 'explore' ? 'active' : ''}`}
                                         onClick={() => {
                                             setCombineModalTab('explore');
@@ -4789,6 +4797,9 @@
                                                     .map(([id, data]) => {
                                                         const parts = id.split('+').map(p => p.trim());
                                                         const isSimulated = !data.is_estimated && data.rho_after && data.rho_after.length > 0;
+                                                        const estMaxRho = data.estimated_max_rho ?? data.max_rho;
+                                                        const estMaxRhoLine = data.estimated_max_rho_line ?? data.max_rho_line;
+
                                                         return (
                                                             <tr key={id}>
                                                                 <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{parts[0]}</td>
@@ -4797,35 +4808,39 @@
                                                                     {data.betas ? (Array.isArray(data.betas) ? data.betas : Object.values(data.betas)).map(b => b.toFixed(2)).join(', ') : '-'}
                                                                 </td>
                                                                 <td>
-                                                                    <span className="metric-badge metric-rho" style={{ 
-                                                                        background: data.is_rho_reduction ? '#e8f5e9' : '#ffebee', 
-                                                                        color: data.is_rho_reduction ? '#2e7d32' : '#c62828',
+                                                                    <span className="metric-badge metric-rho" style={{
+                                                                        background: '#f1f8e9',
+                                                                        color: '#388e3c',
                                                                         fontWeight: 'bold',
-                                                                        opacity: 0.8
+                                                                        opacity: 0.9,
+                                                                        border: '1px dashed #388e3c'
                                                                     }}>
-                                                                        {(data.max_rho * 100).toFixed(1)}%
+                                                                        {(estMaxRho * 100).toFixed(1)}%
                                                                     </span>
                                                                 </td>
-                                                                <td style={{ fontSize: '11px', color: '#555' }}>{data.max_rho_line}</td>
-                                                                
+                                                                <td style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>{estMaxRhoLine || 'N/A'}</td>
+
                                                                 <td style={{ textAlign: 'center' }}>
                                                                     {isSimulated ? (
-                                                                        <span className="metric-badge metric-rho" style={{ 
+                                                                        <span className="metric-badge metric-rho" style={{
                                                                             fontWeight: 'bold',
-                                                                            fontSize: '13px'
+                                                                            fontSize: '13px',
+                                                                            background: data.is_rho_reduction ? '#e8f5e9' : '#ffebee',
+                                                                            color: data.is_rho_reduction ? '#2e7d32' : '#c62828'
                                                                         }}>
                                                                             {(data.max_rho * 100).toFixed(1)}%
                                                                         </span>
-                                                                    ) : '-'}
+                                                                    ) : (
+                                                                        <span style={{ color: '#aaa', fontSize: '11px' }}>Not simulated</span>
+                                                                    )}
                                                                 </td>
                                                                 <td style={{ fontSize: '11px', color: '#333', fontWeight: isSimulated ? 'bold' : 'normal' }}>
                                                                     {isSimulated ? data.max_rho_line : '-'}
                                                                 </td>
 
                                                                 <td>
-                                                                    <button 
+                                                                    <button
                                                                         onClick={() => {
-                                                                            setIsCombineModalOpen(false);
                                                                             handleAddManualAction(id);
                                                                         }}
                                                                         style={{ padding: '6px 14px', background: isSimulated ? '#3498db' : '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
@@ -4840,7 +4855,7 @@
                                                 {Object.entries(result?.actions || {}).filter(([id, data]) => id.includes('+') || data.is_precomputed).length === 0 && (
                                                     <tr>
                                                         <td colSpan="6" style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', padding: '40px 20px' }}>
-                                                            No computed combinations found.<br/>Go to <strong>Explore Pairs</strong> to create new ones.
+                                                            No computed combinations found.<br />Go to <strong>Explore Pairs</strong> to create new ones.
                                                         </td>
                                                     </tr>
                                                 )}
@@ -4852,7 +4867,7 @@
                                         <div style={{ background: '#f8f9fa', padding: '10px', borderRadius: '6px', marginBottom: '15px', border: '1px solid #e9ecef' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                                 <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#444' }}>Selected Actions ({selectedCombineActionIds.length}/2)</div>
-                                                <button 
+                                                <button
                                                     onClick={() => setSelectedCombineActionIds([])}
                                                     disabled={selectedCombineActionIds.length === 0}
                                                     style={{ background: 'none', border: 'none', color: '#007bff', fontSize: '11px', cursor: 'pointer', padding: 0 }}
@@ -4899,60 +4914,60 @@
                                             {Array.from(new Set(scoredActionsList.map(item => item.type)))
                                                 .filter(type => exploreFilter === 'all' || type.includes(exploreFilter))
                                                 .map(type => (
-                                                <div key={type} style={{ marginBottom: '1px' }}>
-                                                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#444', backgroundColor: '#f0f2f5', padding: '4px 8px', borderBottom: '1px solid #e1e4e8', display: 'flex', justifyContent: 'space-between' }}>
-                                                        <span>{type.replace('_', ' ').toUpperCase()}</span>
-                                                        <span>{scoredActionsList.filter(item => item.type === type).length} actions</span>
-                                                    </div>
-                                                    <table className="action-table" style={{ margin: 0, border: 'none' }}>
-                                                        <tbody>
-                                                            {scoredActionsList
-                                                                .filter(item => item.type === type)
-                                                                .map(({actionId, score}) => {
-                                                                    const data = result?.actions?.[actionId];
-                                                                    const isSelected = selectedCombineActionIds.includes(actionId);
-                                                                    return (
-                                                                        <tr 
-                                                                            key={actionId} 
-                                                                            className={isSelected ? 'selected' : ''}
-                                                                            onClick={() => toggleActionSelection(actionId)}
-                                                                            style={{ cursor: 'pointer', background: isSelected ? '#fff9db' : (data ? '#fdfdfd' : 'white') }}
-                                                                        >
-                                                                            <td style={{ width: '10px', paddingRight: 0 }}>
-                                                                                <input type="checkbox" checked={isSelected} readOnly style={{ cursor: 'pointer' }} />
-                                                                            </td>
-                                                                            <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{actionId}</td>
-                                                                            <td style={{ width: '60px' }}>
-                                                                                <span className="metric-badge metric-score" style={{ scale: '0.9' }}>
-                                                                                    {score.toFixed(2)}
-                                                                                </span>
-                                                                            </td>
-                                                                            <td style={{ width: '80px' }}>
-                                                                                {data ? (
-                                                                                    <span className="metric-badge metric-rho" style={{ scale: '0.9' }}>
-                                                                                        {(data.max_rho * 100).toFixed(1)}%
+                                                    <div key={type} style={{ marginBottom: '1px' }}>
+                                                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#444', backgroundColor: '#f0f2f5', padding: '4px 8px', borderBottom: '1px solid #e1e4e8', display: 'flex', justifyContent: 'space-between' }}>
+                                                            <span>{type.replace('_', ' ').toUpperCase()}</span>
+                                                            <span>{scoredActionsList.filter(item => item.type === type).length} actions</span>
+                                                        </div>
+                                                        <table className="action-table" style={{ margin: 0, border: 'none' }}>
+                                                            <tbody>
+                                                                {scoredActionsList
+                                                                    .filter(item => item.type === type)
+                                                                    .map(({ actionId, score }) => {
+                                                                        const data = result?.actions?.[actionId];
+                                                                        const isSelected = selectedCombineActionIds.includes(actionId);
+                                                                        return (
+                                                                            <tr
+                                                                                key={actionId}
+                                                                                className={isSelected ? 'selected' : ''}
+                                                                                onClick={() => toggleActionSelection(actionId)}
+                                                                                style={{ cursor: 'pointer', background: isSelected ? '#fff9db' : (data ? '#fdfdfd' : 'white') }}
+                                                                            >
+                                                                                <td style={{ width: '10px', paddingRight: 0 }}>
+                                                                                    <input type="checkbox" checked={isSelected} readOnly style={{ cursor: 'pointer' }} />
+                                                                                </td>
+                                                                                <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{actionId}</td>
+                                                                                <td style={{ width: '60px' }}>
+                                                                                    <span className="metric-badge metric-score" style={{ scale: '0.9' }}>
+                                                                                        {score.toFixed(2)}
                                                                                     </span>
-                                                                                ) : (
-                                                                                    <span style={{ color: '#aaa', fontStyle: 'italic', fontSize: '10px' }}>Untested</span>
-                                                                                )}
-                                                                            </td>
-                                                                            <td onClick={(e) => e.stopPropagation()} style={{ width: '90px' }}>
-                                                                                <button 
-                                                                                    onClick={() => handleSimulateUnitaryFromModal(actionId)}
-                                                                                    disabled={simulatingActionId === actionId}
-                                                                                    style={{ padding: '3px 8px', background: data ? '#95a5a6' : '#2980b9', color: 'white', border: 'none', borderRadius: '4px', cursor: (simulatingActionId === actionId) ? 'not-allowed' : 'pointer', fontSize: '10px' }}
-                                                                                >
-                                                                                    {simulatingActionId === actionId ? '...' : (data ? 'Re-run' : 'Simulate')}
-                                                                                </button>
-                                                                            </td>
-                                                                        </tr>
-                                                                    );
-                                                                })
-                                                            }
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            ))}
+                                                                                </td>
+                                                                                <td style={{ width: '80px' }}>
+                                                                                    {data ? (
+                                                                                        <span className="metric-badge metric-rho" style={{ scale: '0.9' }}>
+                                                                                            {(data.max_rho * 100).toFixed(1)}%
+                                                                                        </span>
+                                                                                    ) : (
+                                                                                        <span style={{ color: '#aaa', fontStyle: 'italic', fontSize: '10px' }}>Untested</span>
+                                                                                    )}
+                                                                                </td>
+                                                                                <td onClick={(e) => e.stopPropagation()} style={{ width: '90px' }}>
+                                                                                    <button
+                                                                                        onClick={() => handleSimulateUnitaryFromModal(actionId)}
+                                                                                        disabled={simulatingActionId === actionId}
+                                                                                        style={{ padding: '3px 8px', background: data ? '#95a5a6' : '#2980b9', color: 'white', border: 'none', borderRadius: '4px', cursor: (simulatingActionId === actionId) ? 'not-allowed' : 'pointer', fontSize: '10px' }}
+                                                                                    >
+                                                                                        {simulatingActionId === actionId ? '...' : (data ? 'Re-run' : 'Simulate')}
+                                                                                    </button>
+                                                                                </td>
+                                                                            </tr>
+                                                                        );
+                                                                    })
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                ))}
                                             {scoredActionsList.length === 0 && (
                                                 <div style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', padding: '40px 20px' }}>
                                                     No scored actions available. Run analysis first.
@@ -4962,17 +4977,17 @@
 
                                         <div style={{ marginTop: '15px' }}>
                                             {!superpositionResult ? (
-                                                <button 
+                                                <button
                                                     onClick={handleComputeSuperposition}
                                                     disabled={selectedCombineActionIds.length !== 2 || isComputingSuperposition}
-                                                    style={{ 
-                                                        width: '100%', 
-                                                        padding: '12px', 
-                                                        background: selectedCombineActionIds.length === 2 ? '#3498db' : '#ecf0f1', 
-                                                        color: selectedCombineActionIds.length === 2 ? 'white' : '#bdc3c7', 
-                                                        border: 'none', 
-                                                        borderRadius: '6px', 
-                                                        cursor: (selectedCombineActionIds.length !== 2 || isComputingSuperposition) ? 'not-allowed' : 'pointer', 
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '12px',
+                                                        background: selectedCombineActionIds.length === 2 ? '#3498db' : '#ecf0f1',
+                                                        color: selectedCombineActionIds.length === 2 ? 'white' : '#bdc3c7',
+                                                        border: 'none',
+                                                        borderRadius: '6px',
+                                                        cursor: (selectedCombineActionIds.length !== 2 || isComputingSuperposition) ? 'not-allowed' : 'pointer',
                                                         fontWeight: 'bold',
                                                         fontSize: '14px',
                                                         transition: 'all 0.2s'
@@ -4992,7 +5007,7 @@
                                                             ) : (
                                                                 <div style={{ fontSize: '13px', lineHeight: '1.5' }}>
                                                                     Max loading estimated at <strong style={{ color: '#d35400', fontSize: '15px' }}>{(superpositionResult.max_rho * 100).toFixed(1)}%</strong>
-                                                                    <br/>
+                                                                    <br />
                                                                     Line: <strong>{superpositionResult.max_rho_line}</strong>
                                                                 </div>
                                                             )}
@@ -5003,11 +5018,11 @@
                                                             )}
                                                         </div>
                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                            <button 
+                                                            <button
                                                                 onClick={() => setSuperpositionResult(null)}
                                                                 style={{ padding: '4px 10px', background: 'none', border: '1px solid #0288d1', color: '#0288d1', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}
                                                             >Modify</button>
-                                                            <button 
+                                                            <button
                                                                 onClick={handleSimulateCombined}
                                                                 disabled={simulatingActionId !== null}
                                                                 style={{ padding: '10px 20px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: (simulatingActionId !== null) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '14px', boxShadow: '0 4px 6px rgba(39,174,96,0.3)' }}
