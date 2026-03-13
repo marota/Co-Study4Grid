@@ -1000,13 +1000,12 @@ describe('Network File Drag-and-Drop', () => {
     render(<App />);
 
     const input = getBannerNetworkInput();
-    const wrapper = input.parentElement!;
 
     await act(async () => {
-      fireEvent.dragOver(wrapper, makeDragEvent('my_grid.xiidm'));
+      fireEvent.dragOver(input, makeDragEvent('my_grid.xiidm'));
     });
     await act(async () => {
-      fireEvent.drop(wrapper, makeDragEvent('my_grid.xiidm'));
+      fireEvent.drop(input, makeDragEvent('my_grid.xiidm'));
     });
 
     await waitFor(() => {
@@ -1022,10 +1021,9 @@ describe('Network File Drag-and-Drop', () => {
     render(<App />);
 
     const input = getBannerNetworkInput();
-    const wrapper = input.parentElement!;
 
     await act(async () => {
-      fireEvent.drop(wrapper, makeDragEvent('network.json'));
+      fireEvent.drop(input, makeDragEvent('network.json'));
     });
 
     await waitFor(() => {
@@ -1042,10 +1040,9 @@ describe('Network File Drag-and-Drop', () => {
     render(<App />);
 
     const input = getBannerNetworkInput();
-    const wrapper = input.parentElement!;
 
     await act(async () => {
-      fireEvent.drop(wrapper, makeDragEvent('grid.xiidm'));
+      fireEvent.drop(input, makeDragEvent('grid.xiidm'));
     });
 
     // Input should show "Uploading..." synchronously after drop
@@ -1067,17 +1064,16 @@ describe('Network File Drag-and-Drop', () => {
     render(<App />);
 
     const input = getBannerNetworkInput();
-    const wrapper = input.parentElement!;
 
     await act(async () => {
-      fireEvent.dragOver(wrapper, makeDragEvent('grid.xiidm'));
+      fireEvent.dragOver(input, makeDragEvent('grid.xiidm'));
     });
 
     // Input border should switch to the drag-over colour
     expect(input.style.border).toContain('#3498db');
 
     await act(async () => {
-      fireEvent.dragLeave(wrapper, { preventDefault: vi.fn() });
+      fireEvent.dragLeave(input, { preventDefault: vi.fn() });
     });
 
     // Highlight removed
@@ -1087,7 +1083,7 @@ describe('Network File Drag-and-Drop', () => {
   it('does nothing when drop contains no files', async () => {
     render(<App />);
 
-    const wrapper = getBannerNetworkInput().parentElement!;
+    const input = getBannerNetworkInput();
     const emptyDrop: Partial<React.DragEvent> = {
       preventDefault: vi.fn(),
       dataTransfer: {
@@ -1103,7 +1099,7 @@ describe('Network File Drag-and-Drop', () => {
     };
 
     await act(async () => {
-      fireEvent.drop(wrapper, emptyDrop);
+      fireEvent.drop(input, emptyDrop);
     });
 
     expect(mockApi.uploadNetworkFile).not.toHaveBeenCalled();

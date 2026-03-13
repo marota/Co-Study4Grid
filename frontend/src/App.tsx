@@ -67,17 +67,20 @@ function App() {
 
   const handleNetworkDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
     setNetworkDragOver(true);
   }, []);
 
   const handleNetworkDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setNetworkDragOver(false);
   }, []);
 
   const handleNetworkDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setNetworkDragOver(false);
     const file = e.dataTransfer.files[0];
     if (!file) return;
@@ -1357,15 +1360,13 @@ function App() {
 
         <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
           <label style={{ fontSize: '0.7rem', opacity: 0.8, whiteSpace: 'nowrap' }}>Network Path</label>
-          <div
-            style={{ display: 'flex', gap: '4px' }}
-            onDragOver={handleNetworkDragOver}
-            onDragLeave={handleNetworkDragLeave}
-            onDrop={handleNetworkDrop}
-          >
+          <div style={{ display: 'flex', gap: '4px' }}>
             <input
               type="text" value={networkUploading ? 'Uploading...' : networkPath}
               onChange={e => setNetworkPath(e.target.value)}
+              onDragOver={handleNetworkDragOver}
+              onDragLeave={handleNetworkDragLeave}
+              onDrop={handleNetworkDrop}
               placeholder="load your grid xiidm file path — or drop a .xiidm file here"
               readOnly={networkUploading}
               style={{
@@ -1474,16 +1475,14 @@ function App() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   <label htmlFor="networkPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network File Path (.xiidm)</label>
                   <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Synchronized with the banner field — or drop a .xiidm file here</div>
-                  <div
-                    style={{ display: 'flex', gap: '5px' }}
-                    onDragOver={handleNetworkDragOver}
-                    onDragLeave={handleNetworkDragLeave}
-                    onDrop={handleNetworkDrop}
-                  >
+                  <div style={{ display: 'flex', gap: '5px' }}>
                     <input
                       id="networkPathInput" type="text"
                       value={networkUploading ? 'Uploading...' : networkPath}
                       onChange={e => setNetworkPath(e.target.value)}
+                      onDragOver={handleNetworkDragOver}
+                      onDragLeave={handleNetworkDragLeave}
+                      onDrop={handleNetworkDrop}
                       placeholder="load your grid xiidm file path — or drop a .xiidm file here"
                       readOnly={networkUploading}
                       style={{
