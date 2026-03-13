@@ -1516,8 +1516,18 @@ class RecommenderService:
         max_rho = 0.0
         max_rho_line = "N/A"
         is_rho_reduction = False
+        is_islanded = False
+        n_components_after = 1
+        disconnected_mw = 0.0
 
         if not info_action["exception"]:
+            # Check for islanding compared to N state or N-1 state
+            n_components_after = obs_simu_action.n_components
+            if n_components_after > obs.n_components or n_components_after > obs_simu_defaut.n_components:
+                is_islanded = True
+                # Compute disconnected MW
+                disconnected_mw = float(max(0.0, obs_simu_defaut.main_component_load_mw - obs_simu_action.main_component_load_mw))
+            
             rho_after = (obs_simu_action.rho[lines_overloaded_ids] * monitoring_factor).tolist()
             if rho_before:
                 is_rho_reduction = bool(np.all(np.array(rho_after) + 0.01 < np.array(rho_before)))
@@ -1571,6 +1581,7 @@ class RecommenderService:
                 "max_rho": max_rho,
                 "max_rho_line": max_rho_line,
                 "is_rho_reduction": is_rho_reduction,
+                "is_islanded": is_islanded,
                 "non_convergence": non_convergence,
                 "is_estimated": False,
             }
@@ -1583,6 +1594,9 @@ class RecommenderService:
             "max_rho": sanitize_for_json(max_rho),
             "max_rho_line": max_rho_line,
             "is_rho_reduction": is_rho_reduction,
+            "is_islanded": is_islanded,
+            "n_components": n_components_after,
+            "disconnected_mw": disconnected_mw,
             "non_convergence": non_convergence,
             "lines_overloaded": sanitize_for_json(lines_overloaded_names),
         }
@@ -1674,7 +1688,8 @@ class RecommenderService:
             act1_line_idxs=line_idxs1,
             act1_sub_idxs=sub_idxs1,
             act2_line_idxs=line_idxs2,
-            act2_sub_idxs=sub_idxs2
+            act2_sub_idxs=sub_idxs2,
+            obs_combined=all_actions.get(f"{action1_id}+{action2_id}", {}).get("observation")
         )
         
         if "error" not in result:

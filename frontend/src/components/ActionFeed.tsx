@@ -122,7 +122,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 const t = (a.type || 'unknown').toLowerCase();
                 const actionId = a.id.toLowerCase();
                 const actionDesc = (a.description || '').toLowerCase();
-                
+
                 const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
                 const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
                 const isOpenCoupling = t.includes('open_coupling');
@@ -153,13 +153,13 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             const isOpenType = type === 'open_coupling';
             const isCloseType = type === 'close_coupling';
             const isPstType = type === 'pst_tap_change' || type.includes('pst');
-            
+
             if (isDiscoType && !typeFilters.disco) continue;
             if (isRecoType && !typeFilters.reco) continue;
             if (isOpenType && !typeFilters.open) continue;
             if (isCloseType && !typeFilters.close) continue;
             if (isPstType && !typeFilters.pst) continue;
-            
+
             // If it's a known type but its filter is off, it's already skipped.
             // If it's an unknown type, we show it only if ALL filters are active.
             const isKnownType = isDiscoType || isRecoType || isOpenType || isCloseType || isPstType;
@@ -174,7 +174,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 const actionDesc = (actionDetail?.description_unitaire || '').toLowerCase();
                 const aid = actionId.toLowerCase();
                 const t = type.toLowerCase();
-                
+
                 const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
                 const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
                 const isOpenCoupling = t.includes('open_coupling');
@@ -190,7 +190,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 else shouldShow = typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
 
                 if (!shouldShow) continue;
-                
+
                 list.push({ type, actionId, score: Number(score) });
             }
         }
@@ -234,6 +234,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 max_rho: result.max_rho,
                 max_rho_line: result.max_rho_line,
                 is_rho_reduction: result.is_rho_reduction,
+                is_islanded: result.is_islanded,
+                n_components: result.n_components,
+                disconnected_mw: result.disconnected_mw,
                 non_convergence: result.non_convergence,
             };
             onManualActionAdded(actionId, detail, result.lines_overloaded || []);
@@ -331,22 +334,24 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             };
             const sc = details.non_convergence
                 ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'divergent' }
-                : severityColors[severity];
+                : details.is_islanded
+                    ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'islanded' }
+                    : severityColors[severity];
             const isSelected = selectedActionId === id;
-             return (
-                 <div key={id} 
+            return (
+                <div key={id}
                     data-testid={`action-card-${id}`}
                     style={{
-                     background: details.non_convergence ? '#fff5f5' : (isSelected ? '#e7f1ff' : 'white'),
-                     border: details.non_convergence ? '1px solid #dc3545' : '1px solid #ddd',
-                     borderRadius: '8px',
-                     padding: '10px',
-                     marginBottom: '10px',
-                     boxShadow: isSelected ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
-                     borderLeft: `5px solid ${isSelected ? '#007bff' : sc.border}`,
-                     cursor: 'pointer',
-                     transition: 'all 0.15s ease',
-                 }} onClick={() => onActionSelect(id)}>
+                        background: (details.non_convergence || details.is_islanded) ? '#fff5f5' : (isSelected ? '#e7f1ff' : 'white'),
+                        border: (details.non_convergence || details.is_islanded) ? '1px solid #dc3545' : '1px solid #ddd',
+                        borderRadius: '8px',
+                        padding: '10px',
+                        marginBottom: '10px',
+                        boxShadow: isSelected ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
+                        borderLeft: `5px solid ${isSelected ? '#007bff' : sc.border}`,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                    }} onClick={() => onActionSelect(id)}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <h4 style={{ margin: 0, fontSize: '14px', color: isSelected ? '#0056b3' : undefined }}>
                             #{index + 1} {'\u2014'} {id}
@@ -368,6 +373,11 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                             {details.non_convergence && (
                                 <div style={{ fontSize: '11px', color: '#9a3412', backgroundColor: '#fff8f1', padding: '2px 6px', borderRadius: '4px', marginTop: '4px', border: '1px solid #ffedd5', display: 'inline-block' }}>
                                     ⚠️ LoadFlow failure: {details.non_convergence}
+                                </div>
+                            )}
+                            {details.is_islanded && (
+                                <div style={{ fontSize: '12px', background: '#fff5f5', color: '#dc3545', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #dc3545', fontWeight: 500 }}>
+                                    🏝️ Islanding detected ({details.disconnected_mw?.toFixed(1)} MW disconnected)
                                 </div>
                             )}
                         </div>
@@ -636,6 +646,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                                                 {isComputed && (
                                                                                     actions[item.actionId]?.non_convergence ? (
                                                                                         <span data-testid={`badge-divergent-${item.actionId}`} style={{ marginLeft: '4px', background: '#dc3545', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }} title={actions[item.actionId].non_convergence || undefined}>divergent</span>
+                                                                                    ) : actions[item.actionId]?.is_islanded ? (
+                                                                                        <span data-testid={`badge-islanded-${item.actionId}`} style={{ marginLeft: '4px', background: '#dc3545', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }} title={`Islanding detected: ${actions[item.actionId].disconnected_mw?.toFixed(1)} MW disconnected`}>islanded</span>
                                                                                     ) : (
                                                                                         <span data-testid={`badge-computed-${item.actionId}`} style={{ marginLeft: '4px', background: '#28a745', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', opacity: 0.8 }}>computed</span>
                                                                                     )
@@ -648,8 +660,13 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                                                             <>
                                                                                                 <div style={{ fontWeight: 700, marginBottom: '2px', borderBottom: '1px solid #555', paddingBottom: '2px' }}>Parameters</div>
                                                                                                 {typeData.non_convergence?.[item.actionId] && (
-                                                                                                    <div style={{ color: '#ffc107', fontWeight: 600, marginBottom: '4px', padding: '2px 4px', border: '1px solid #ffc107', borderRadius: '4px' }}>
+                                                                                                    <div style={{ fontSize: '10px', color: '#dc3545' }}>
                                                                                                         ⚠️ Non-convergence: {typeData.non_convergence[item.actionId]}
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                {(actions[item.actionId]?.is_islanded) && (
+                                                                                                    <div style={{ fontSize: '10px', color: '#c2410c' }}>
+                                                                                                        🏝️ Islanding: {actions[item.actionId].n_components} components
                                                                                                     </div>
                                                                                                 )}
                                                                                                 {Object.entries(typeData.params![item.actionId]).map(([k, v]) => (
@@ -821,7 +838,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
                     </button>
                 )}
- 
+
                 {suggestedTab === 'prioritized' && (
                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
                         !analysisLoading ? (
@@ -919,6 +936,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 analysisResult={pendingAnalysisResult}
                 disconnectedElement={disconnectedElement}
                 onSimulateCombined={handleAddAction}
+                monitoringFactor={monitoringFactor}
             />
         </div>
     );

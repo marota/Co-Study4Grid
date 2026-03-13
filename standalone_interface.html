@@ -2482,6 +2482,9 @@
                                     is_rho_reduction: detail.is_rho_reduction,
                                     is_manual: true,
                                     is_estimated: false,
+                                    is_islanded: detail.is_islanded,
+                                    n_components: detail.n_components,
+                                    disconnected_mw: detail.disconnected_mw,
                                     non_convergence: detail.non_convergence,
                                     is_precomputed: isCombined ? true : (base.actions?.[actionId]?.is_precomputed || false)
                                 }
@@ -3569,7 +3572,9 @@
                         };
                         const sc = details.non_convergence
                             ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'divergent' }
-                            : severityColors[severity];
+                            : details.is_islanded
+                                ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'islanded' }
+                                : severityColors[severity];
                         const clickableLinkStyle = { background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted' };
                         const renderRho = (arr, tab) => {
                             if (!arr || arr.length === 0) return '—';
@@ -3591,10 +3596,10 @@
                             <div key={id} className="card" onClick={() => handleActionSelect(id)} style={{
                                 borderLeftColor: isSelected ? '#007bff' : sc.border,
                                 cursor: 'pointer',
-                                background: isSelected ? '#e7f1ff' : (details.non_convergence ? '#fff5f5' : 'white'),
-                                borderRight: details.non_convergence ? '1px solid #f8d7da' : 'none',
-                                borderTop: details.non_convergence ? '1px solid #f8d7da' : 'none',
-                                borderBottom: details.non_convergence ? '1px solid #f8d7da' : 'none',
+                                background: isSelected ? '#e7f1ff' : ((details.non_convergence || details.is_islanded) ? '#fff5f5' : 'white'),
+                                borderRight: (details.non_convergence || details.is_islanded) ? '1px solid #f8d7da' : 'none',
+                                borderTop: (details.non_convergence || details.is_islanded) ? '1px solid #f8d7da' : 'none',
+                                borderBottom: (details.non_convergence || details.is_islanded) ? '1px solid #f8d7da' : 'none',
                                 boxShadow: isSelected ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
                                 transition: 'all 0.15s ease'
                             }}>
@@ -3664,6 +3669,11 @@
                                 {details.non_convergence && (
                                     <div style={{ fontSize: '12px', background: '#fff8f1', color: '#9a3412', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #ffedd5', fontWeight: 500 }}>
                                         ⚠️ <strong>LoadFlow Failure:</strong> {details.non_convergence}
+                                    </div>
+                                )}
+                                {details.is_islanded && (
+                                    <div style={{ fontSize: '12px', background: '#fff5f5', color: '#dc3545', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #dc3545', fontWeight: 500 }}>
+                                        🏝️ <strong>Islanding Detected:</strong> {details.disconnected_mw?.toFixed(1)} MW disconnected
                                     </div>
                                 )}
                                 <div style={{ fontSize: '12px', background: isSelected ? '#dce8f7' : '#f8f9fa', padding: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
@@ -4809,11 +4819,11 @@
                                                                 </td>
                                                                 <td>
                                                                     <span className="metric-badge metric-rho" style={{
-                                                                        background: '#f1f8e9',
-                                                                        color: '#388e3c',
+                                                                        background: estMaxRho > monitoringFactor ? '#ffebee' : estMaxRho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
+                                                                        color: estMaxRho > monitoringFactor ? '#c62828' : estMaxRho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32',
                                                                         fontWeight: 'bold',
                                                                         opacity: 0.9,
-                                                                        border: '1px dashed #388e3c'
+                                                                        border: estMaxRho > monitoringFactor ? '1px solid #c62828' : estMaxRho > (monitoringFactor - 0.05) ? '1px solid #856404' : '1px dashed #2e7d32'
                                                                     }}>
                                                                         {(estMaxRho * 100).toFixed(1)}%
                                                                     </span>
@@ -4825,10 +4835,13 @@
                                                                         <span className="metric-badge metric-rho" style={{
                                                                             fontWeight: 'bold',
                                                                             fontSize: '13px',
-                                                                            background: data.is_rho_reduction ? '#e8f5e9' : '#ffebee',
-                                                                            color: data.is_rho_reduction ? '#2e7d32' : '#c62828'
+                                                                            background: data.max_rho > monitoringFactor ? '#ffebee' : data.max_rho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
+                                                                            color: data.max_rho > monitoringFactor ? '#c62828' : data.max_rho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32'
                                                                         }}>
                                                                             {(data.max_rho * 100).toFixed(1)}%
+                                                                            {data.is_islanded && (
+                                                                                <span style={{ fontSize: '10px', marginLeft: '4px', border: '1px solid #721c24', padding: '1px 3px', borderRadius: '3px', color: '#721c24', background: '#f8d7da' }} title={`Islanding: ${data.disconnected_mw?.toFixed(1)} MW disconnected`}>🏝️</span>
+                                                                            )}
                                                                         </span>
                                                                     ) : (
                                                                         <span style={{ color: '#aaa', fontSize: '11px' }}>Not simulated</span>
@@ -4944,7 +4957,11 @@
                                                                                 </td>
                                                                                 <td style={{ width: '80px' }}>
                                                                                     {data ? (
-                                                                                        <span className="metric-badge metric-rho" style={{ scale: '0.9' }}>
+                                                                                        <span className="metric-badge metric-rho" style={{
+                                                                                            scale: '0.9',
+                                                                                            background: data.max_rho > monitoringFactor ? '#ffebee' : data.max_rho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
+                                                                                            color: data.max_rho > monitoringFactor ? '#c62828' : data.max_rho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32'
+                                                                                        }}>
                                                                                             {(data.max_rho * 100).toFixed(1)}%
                                                                                         </span>
                                                                                     ) : (

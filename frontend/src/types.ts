@@ -35,6 +35,9 @@ export interface ActionDetail {
     is_rho_reduction: boolean;
     is_manual?: boolean;
     is_estimated?: boolean;
+    is_islanded?: boolean;
+    n_components?: number;
+    disconnected_mw?: number;
     non_convergence?: string | null;
     action_topology?: ActionTopology;
 }
@@ -50,6 +53,8 @@ export interface CombinedAction {
     description: string;
     rho_after: number[];
     rho_before: number[];
+    is_islanded?: boolean;
+    disconnected_mw?: number;
     error?: string;
 }
 
@@ -205,6 +210,9 @@ export interface SavedActionEntry {
     max_rho: number | null;
     max_rho_line: string;
     is_rho_reduction: boolean;
+    is_islanded?: boolean;
+    n_components?: number;
+    disconnected_mw?: number;
     non_convergence?: string | null;
     action_topology?: ActionTopology;
     status: SavedActionStatus;
