@@ -76,7 +76,7 @@ def test_combined_simulation_manual(analysis_setup):
     if id2 not in recommender_service._dict_action:
         print(f"CRITICAL: {id2} not in _dict_action")
 
-    combined_id = f"{id1}+{id2}"
+    combined_id = "+".join(sorted([id1, id2]))
     
     print(f"Simulating combined action: {combined_id}")
     result = recommender_service.simulate_manual_action(combined_id, contingency)
@@ -95,6 +95,40 @@ def test_combined_simulation_manual(analysis_setup):
         # Use np.allclose to handle floating point
         assert not np.allclose(result["rho_after"], res1["rho_after"], atol=1e-5)
         assert not np.allclose(result["rho_after"], res2["rho_after"], atol=1e-5)
+
+def test_combined_simulation_canonical_ids(analysis_setup):
+    contingency = analysis_setup
+    prioritized = recommender_service._last_result["prioritized_actions"]
+    converged_ids = [aid for aid, d in prioritized.items() if d.get("non_convergence") is None]
+    if len(converged_ids) < 2:
+        pytest.skip("Not enough actions")
+        
+    id1, id2 = converged_ids[0], converged_ids[1]
+    
+    # Simulate with A+B
+    res_ab = recommender_service.simulate_manual_action(f"{id1}+{id2}", contingency)
+    # Simulate with B+A
+    res_ba = recommender_service.simulate_manual_action(f"{id2}+{id1}", contingency)
+    
+    # Both should return same action_id (canonical)
+    assert res_ab["action_id"] == res_ba["action_id"]
+    assert res_ab["max_rho"] == res_ba["max_rho"]
+
+def test_combined_simulation_islanding_mw(analysis_setup):
+    # Try to find actions that cause islanding when combined
+    # For now, just verify the field exists in a normal combined simulation
+    contingency = analysis_setup
+    prioritized = recommender_service._last_result["prioritized_actions"]
+    converged_ids = [aid for aid, d in prioritized.items() if d.get("non_convergence") is None]
+    if len(converged_ids) < 2:
+        pytest.skip("Not enough actions")
+        
+    id1, id2 = converged_ids[0], converged_ids[1]
+    result = recommender_service.simulate_manual_action(f"{id1}+{id2}", contingency)
+    
+    # Field should be present (even if 0.0)
+    assert "disconnected_mw" in result
+    assert isinstance(result["disconnected_mw"], (int, float))
 
 def test_on_demand_superposition(analysis_setup):
     contingency = analysis_setup

@@ -1417,6 +1417,9 @@ class RecommenderService:
         if not self._dict_action:
             raise ValueError("No action dictionary loaded. Load a config first.")
 
+        if "+" in action_id:
+            action_id = "+".join(sorted(action_id.split("+")))
+        
         action_ids = action_id.split("+")
         recent_actions = self._last_result.get("prioritized_actions", {}) if self._last_result else {}
         

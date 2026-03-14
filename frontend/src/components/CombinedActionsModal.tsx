@@ -97,9 +97,8 @@ const CombinedActionsModal: React.FC<Props> = ({
                 const [id1, id2] = Array.from(selectedIds);
 
                 // Check if already in analysisResult.combined_actions
-                const pairKey1 = `${id1}+${id2}`;
-                const pairKey2 = `${id2}+${id1}`;
-                const preComputed = analysisResult?.combined_actions?.[pairKey1] || analysisResult?.combined_actions?.[pairKey2];
+                const pairKey = [id1, id2].sort().join('+');
+                const preComputed = analysisResult?.combined_actions?.[pairKey];
 
                 if (preComputed) {
                     setPreview(preComputed);
@@ -146,7 +145,7 @@ const CombinedActionsModal: React.FC<Props> = ({
     };
 
     const handleSimulate = async (actionId?: string) => {
-        const idToSimulate = actionId || Array.from(selectedIds).join('+');
+        const idToSimulate = actionId ? (actionId.includes('+') ? actionId.split('+').sort().join('+') : actionId) : Array.from(selectedIds).sort().join('+');
         if (!idToSimulate.includes('+') || !disconnectedElement) return;
 
         setSimulating(true);
@@ -398,7 +397,7 @@ const CombinedActionsModal: React.FC<Props> = ({
                                                     Line: {preview.max_rho_line}
                                                 </div>
                                             </div>
-                                            <div style={{ flex: 1 }}>
+                                            <div style={{ flex: 1 }} data-testid="simulation-feedback">
                                                 <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '6px' }}>Simulation Feedback</div>
                                                 {simulating && (
                                                     <div style={{ color: '#0056b3', fontSize: '13px' }}>Simulating...</div>
