@@ -5079,7 +5079,7 @@
                                                                 style={{ padding: '4px 10px', background: 'none', border: '1px solid #0288d1', color: '#0288d1', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}
                                                             >Modify</button>
                                                             <button
-                                                                onClick={handleSimulateCombined}
+                                                                onClick={() => handleSimulateCombined()}
                                                                 disabled={isSimulatingCombined}
                                                                 style={{ padding: '10px 20px', background: isSimulatingCombined ? '#6c757d' : '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: isSimulatingCombined ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '14px', boxShadow: '0 4px 6px rgba(39,174,96,0.3)' }}
                                                             >
