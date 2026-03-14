@@ -1164,6 +1164,8 @@
             const [isComputingSuperposition, setIsComputingSuperposition] = useState(false);
             const [exploreFilter, setExploreFilter] = React.useState('all');
             const [combineModalTab, setCombineModalTab] = useState('computed'); // 'computed' | 'explore'
+            const [combinedSimulationFeedback, setCombinedSimulationFeedback] = useState(null);
+            const [isSimulatingCombined, setIsSimulatingCombined] = useState(false);
 
             const handleOpenSettings = (tab = 'paths') => {
                 setSettingsBackup({
@@ -2521,11 +2523,14 @@
             const handleOpenCombineModal = () => {
                 setSelectedCombineActionIds([]);
                 setSuperpositionResult(null);
+                setCombinedSimulationFeedback(null);
                 setCombineModalTab('computed');
                 setIsCombineModalOpen(true);
             };
 
             const toggleActionSelection = (actionId) => {
+                setSuperpositionResult(null);
+                setCombinedSimulationFeedback(null);
                 setSelectedCombineActionIds(prev => {
                     if (prev.includes(actionId)) {
                         return prev.filter(id => id !== actionId);
@@ -2540,6 +2545,7 @@
             const handleComputeSuperposition = async () => {
                 if (selectedCombineActionIds.length !== 2) return;
                 setIsComputingSuperposition(true);
+                setCombinedSimulationFeedback(null);
                 try {
                     const res = await axios.post(API_BASE + '/api/compute-superposition', {
                         action1_id: selectedCombineActionIds[0],
@@ -2618,46 +2624,38 @@
                 if (actionIds.length !== 2) return;
                 const combinedId = actionIds.join('+');
                 setSimulatingActionId(combinedId);
+                setIsSimulatingCombined(true);
+                setCombinedSimulationFeedback(null);
                 try {
                     setManualActionIds(prev => new Set([...prev, combinedId]));
                     setManuallyAddedIds(prev => new Set([...prev, combinedId]));
-
-                    // Add dummy entry for immediate visual feedback in the background
-                    setResult(prev => {
-                        const base = prev || { actions: {}, lines_overloaded: [] };
-                        return {
-                            ...base,
-                            actions: {
-                                ...(base.actions || {}),
-                                [combinedId]: {
-                                    description_unitaire: `Combined Action (${combinedId})`,
-                                    is_manual: true,
-                                    is_simulating: true, // Custom flag for UI feedback
-                                    rho_before: [],
-                                    rho_after: [],
-                                    max_rho: 0,
-                                }
-                            }
-                        };
-                    });
-
-                    // Close modal IMMEDIATELY as per requirement
-                    setIsCombineModalOpen(false);
-                    // Clear estimation result for next time
-                    setSuperpositionResult(null);
 
                     const res = await axios.post(API_BASE + '/api/simulate-manual-action', {
                         action_id: combinedId,
                         disconnected_element: selectedBranch
                     });
                     const detail = res.data;
+
+                    // Store simulation feedback for display in the modal
+                    setCombinedSimulationFeedback({
+                        max_rho: detail.max_rho,
+                        max_rho_line: detail.max_rho_line,
+                        is_rho_reduction: detail.is_rho_reduction,
+                        is_islanded: detail.is_islanded,
+                        disconnected_mw: detail.disconnected_mw,
+                        non_convergence: detail.non_convergence,
+                    });
+
+                    // Also update result.actions with the full simulation data
                     setResult(prev => {
                         const base = prev || { actions: {}, lines_overloaded: [] };
                         return {
                             ...base,
+                            lines_overloaded: (base.lines_overloaded && base.lines_overloaded.length > 0) ? base.lines_overloaded : (detail.lines_overloaded || []),
                             actions: {
                                 ...(base.actions || {}),
                                 [combinedId]: {
+                                    ...(base.actions?.[combinedId] || {}),
                                     description_unitaire: detail.description_unitaire,
                                     rho_before: detail.rho_before,
                                     rho_after: detail.rho_after,
@@ -2665,16 +2663,20 @@
                                     max_rho_line: detail.max_rho_line,
                                     is_rho_reduction: detail.is_rho_reduction,
                                     is_manual: true,
+                                    is_estimated: false,
+                                    is_islanded: detail.is_islanded,
+                                    n_components: detail.n_components,
+                                    disconnected_mw: detail.disconnected_mw,
+                                    non_convergence: detail.non_convergence,
                                 }
                             }
                         };
                     });
-                    // Select the action after simulation is done
-                    handleActionSelect(combinedId);
                 } catch (err) {
                     setError('Failed to simulate combined action: ' + (err.response?.data?.detail || err.message));
                 } finally {
                     setSimulatingActionId(null);
+                    setIsSimulatingCombined(false);
                 }
             };
 
@@ -5016,35 +5018,72 @@
                                                 <div style={{ padding: '15px', background: superpositionResult.error ? '#fff3cd' : '#e1f5fe', borderRadius: '8px', borderLeft: '5px solid ' + (superpositionResult.error ? '#856404' : '#0288d1'), boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                                         <div style={{ flex: 1 }}>
-                                                            <div style={{ fontWeight: 800, color: superpositionResult.error ? '#856404' : '#01579b', marginBottom: '8px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                <span>{superpositionResult.error ? '⚠️ Estimation Failed' : '✅ Superposition Estimation Result'}</span>
+                                                            <div style={{ fontWeight: 800, color: superpositionResult.error ? '#856404' : '#01579b', marginBottom: '8px', fontSize: '14px' }}>
+                                                                {superpositionResult.error ? '⚠️ Estimation Failed' : 'Combined action result'}
                                                             </div>
                                                             {superpositionResult.error ? (
                                                                 <div style={{ fontSize: '13px', color: '#856404' }}>{superpositionResult.error}</div>
                                                             ) : (
-                                                                <div style={{ fontSize: '13px', lineHeight: '1.5' }}>
-                                                                    Max loading estimated at <strong style={{ color: '#d35400', fontSize: '15px' }}>{(superpositionResult.max_rho * 100).toFixed(1)}%</strong>
-                                                                    <br />
-                                                                    Line: <strong>{superpositionResult.max_rho_line}</strong>
-                                                                </div>
-                                                            )}
-                                                            {superpositionResult.betas && (
-                                                                <div style={{ marginTop: '8px', fontSize: '11px', color: '#666', background: 'rgba(255,255,255,0.5)', padding: '4px 8px', borderRadius: '4px', display: 'inline-block' }}>
-                                                                    <strong>Betas:</strong> {superpositionResult.betas.map(b => b.toFixed(3)).join(', ')}
-                                                                </div>
+                                                                <>
+                                                                    {superpositionResult.betas && (
+                                                                        <div style={{ marginBottom: '12px', fontSize: '12px', color: '#666', background: 'rgba(255,255,255,0.5)', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                                                                            Betas: {superpositionResult.betas.map(b => b.toFixed(3)).join(', ')}
+                                                                        </div>
+                                                                    )}
+                                                                    <div style={{ display: 'flex', gap: '24px' }}>
+                                                                        <div style={{ flex: 1 }}>
+                                                                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '6px' }}>Estimation</div>
+                                                                            <div style={{ fontSize: '13px', marginBottom: '4px' }}>
+                                                                                Max loading estimated by superposition: <strong style={{ color: superpositionResult.max_rho <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '15px' }}>{(superpositionResult.max_rho * 100).toFixed(1)}%</strong>
+                                                                            </div>
+                                                                            <div style={{ fontSize: '12px', color: '#666' }}>
+                                                                                Line: {superpositionResult.max_rho_line}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div style={{ flex: 1 }}>
+                                                                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '6px' }}>Simulation Feedback</div>
+                                                                            {isSimulatingCombined && (
+                                                                                <div style={{ color: '#0056b3', fontSize: '13px' }}>Simulating...</div>
+                                                                            )}
+                                                                            {!isSimulatingCombined && combinedSimulationFeedback && (
+                                                                                <>
+                                                                                    <div style={{ fontSize: '13px', marginBottom: '4px' }}>
+                                                                                        Actual Max Loading: <strong style={{ color: (combinedSimulationFeedback.max_rho ?? 1) <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '15px' }}>{combinedSimulationFeedback.max_rho != null ? `${(combinedSimulationFeedback.max_rho * 100).toFixed(1)}%` : 'N/A'}</strong>
+                                                                                    </div>
+                                                                                    <div style={{ fontSize: '12px', color: '#666' }}>
+                                                                                        Line: {combinedSimulationFeedback.max_rho_line}
+                                                                                    </div>
+                                                                                    {combinedSimulationFeedback.is_islanded && (
+                                                                                        <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '4px' }}>
+                                                                                            Islanding detected ({combinedSimulationFeedback.disconnected_mw?.toFixed(1)} MW disconnected)
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {combinedSimulationFeedback.non_convergence && (
+                                                                                        <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '4px' }}>
+                                                                                            Non-convergence: {combinedSimulationFeedback.non_convergence}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </>
+                                                                            )}
+                                                                            {!isSimulatingCombined && !combinedSimulationFeedback && (
+                                                                                <div style={{ color: '#aaa', fontSize: '12px', fontStyle: 'italic' }}>Click "Simulate Combined" to run</div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </>
                                                             )}
                                                         </div>
                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                                             <button
-                                                                onClick={() => setSuperpositionResult(null)}
+                                                                onClick={() => { setSuperpositionResult(null); setCombinedSimulationFeedback(null); }}
                                                                 style={{ padding: '4px 10px', background: 'none', border: '1px solid #0288d1', color: '#0288d1', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}
                                                             >Modify</button>
                                                             <button
                                                                 onClick={handleSimulateCombined}
-                                                                disabled={simulatingActionId !== null}
-                                                                style={{ padding: '10px 20px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: (simulatingActionId !== null) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '14px', boxShadow: '0 4px 6px rgba(39,174,96,0.3)' }}
+                                                                disabled={isSimulatingCombined}
+                                                                style={{ padding: '10px 20px', background: isSimulatingCombined ? '#6c757d' : '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: isSimulatingCombined ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '14px', boxShadow: '0 4px 6px rgba(39,174,96,0.3)' }}
                                                             >
-                                                                {simulatingActionId?.includes('+') ? '⌛ Simulating...' : 'Simulate Combined'}
+                                                                {isSimulatingCombined ? 'Simulating...' : 'Simulate Combined'}
                                                             </button>
                                                         </div>
                                                     </div>

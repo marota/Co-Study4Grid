@@ -1,13 +1,23 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../api';
-import type { AnalysisResult, CombinedAction } from '../types';
+import type { AnalysisResult, CombinedAction, ActionDetail } from '../types';
+
+interface SimulationFeedback {
+    max_rho: number | null;
+    max_rho_line: string;
+    is_rho_reduction: boolean;
+    is_islanded?: boolean;
+    disconnected_mw?: number;
+    non_convergence?: string | null;
+}
 
 interface Props {
     isOpen: boolean;
     onClose: () => void;
     analysisResult: AnalysisResult | null;
     disconnectedElement: string | null;
-    onSimulateCombined: (actionId: string) => void;
+    onSimulateCombined: (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => void;
+    monitoringFactor?: number;
 }
 
 const CombinedActionsModal: React.FC<Props> = ({
@@ -16,12 +26,15 @@ const CombinedActionsModal: React.FC<Props> = ({
     analysisResult,
     disconnectedElement,
     onSimulateCombined,
+    monitoringFactor = 1.0,
 }) => {
     const [activeTab, setActiveTab] = useState<'computed' | 'explore'>('computed');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [preview, setPreview] = useState<CombinedAction | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [simulating, setSimulating] = useState(false);
+    const [simulationFeedback, setSimulationFeedback] = useState<SimulationFeedback | null>(null);
 
     // Get all available computed actions
     const availableActions = useMemo(() => {
@@ -67,8 +80,15 @@ const CombinedActionsModal: React.FC<Props> = ({
             setPreview(null);
             setError(null);
             setActiveTab('computed');
+            setSimulationFeedback(null);
+            setSimulating(false);
         }
     }, [isOpen]);
+
+    // Clear simulation feedback when selection changes
+    useEffect(() => {
+        setSimulationFeedback(null);
+    }, [selectedIds]);
 
     // Fetch superposition preview when exactly 2 are selected
     useEffect(() => {
@@ -125,10 +145,43 @@ const CombinedActionsModal: React.FC<Props> = ({
         setSelectedIds(newSet);
     };
 
-    const handleSimulate = (actionId?: string) => {
+    const handleSimulate = async (actionId?: string) => {
         const idToSimulate = actionId || Array.from(selectedIds).join('+');
-        if (idToSimulate.includes('+')) {
-            onSimulateCombined(idToSimulate);
+        if (!idToSimulate.includes('+') || !disconnectedElement) return;
+
+        setSimulating(true);
+        setSimulationFeedback(null);
+        setError(null);
+        try {
+            const result = await api.simulateManualAction(idToSimulate, disconnectedElement);
+            const feedback: SimulationFeedback = {
+                max_rho: result.max_rho,
+                max_rho_line: result.max_rho_line,
+                is_rho_reduction: result.is_rho_reduction,
+                is_islanded: result.is_islanded,
+                disconnected_mw: result.disconnected_mw,
+                non_convergence: result.non_convergence,
+            };
+            setSimulationFeedback(feedback);
+            // Notify parent to add the action to the main action list
+            const detail: ActionDetail = {
+                description_unitaire: result.description_unitaire,
+                rho_before: result.rho_before,
+                rho_after: result.rho_after,
+                max_rho: result.max_rho,
+                max_rho_line: result.max_rho_line,
+                is_rho_reduction: result.is_rho_reduction,
+                is_islanded: result.is_islanded,
+                n_components: result.n_components,
+                disconnected_mw: result.disconnected_mw,
+                non_convergence: result.non_convergence,
+            };
+            onSimulateCombined(idToSimulate, detail, result.lines_overloaded || []);
+        } catch (e: unknown) {
+            const err = e as { response?: { data?: { detail?: string } }, message?: string };
+            setError(err?.response?.data?.detail || err?.message || 'Simulation failed');
+        } finally {
+            setSimulating(false);
         }
     };
 
@@ -307,40 +360,76 @@ const CombinedActionsModal: React.FC<Props> = ({
                                 </div>
                             </div>
 
-                            <div style={{ background: '#f8f9fa', border: '1px solid #ddd', borderRadius: '8px', padding: '20px', minHeight: '120px' }}>
-                                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#333' }}>Superposition Preview</h4>
-
-                                {selectedIds.size < 2 && (
+                            <div style={{ background: preview ? '#e1f5fe' : '#f8f9fa', border: '1px solid #ddd', borderRadius: '8px', padding: '20px', minHeight: '120px', borderLeft: preview ? '5px solid #0288d1' : undefined }}>
+                                {selectedIds.size < 2 && !preview && (
                                     <div style={{ color: '#888', fontStyle: 'italic', fontSize: '13px' }}>Select two actions to see their estimated combined effect.</div>
                                 )}
 
                                 {selectedIds.size === 2 && loading && (
-                                    <div style={{ color: '#0056b3', fontSize: '14px', fontWeight: 500 }}>⏳ Computing superposition...</div>
+                                    <div style={{ color: '#0056b3', fontSize: '14px', fontWeight: 500 }}>Computing superposition...</div>
                                 )}
 
                                 {selectedIds.size === 2 && error && (
                                     <div style={{ color: '#dc3545', fontSize: '13px', background: '#f8d7da', padding: '12px', borderRadius: '6px', border: '1px solid #f5c6cb' }}>
-                                        ⚠️ {error}
+                                        {error}
                                     </div>
                                 )}
 
                                 {selectedIds.size === 2 && preview && (
                                     <div>
-                                        <div style={{ fontSize: '13px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <strong>Betas:</strong>
-                                            <span style={{ fontFamily: 'monospace', background: 'white', padding: '2px 8px', borderRadius: '4px', border: '1px solid #ddd' }}>
-                                                [{preview.betas.map(b => b.toFixed(4)).join(', ')}]
+                                        <div style={{ fontWeight: 800, color: '#01579b', marginBottom: '8px', fontSize: '14px' }}>
+                                            Combined action result
+                                        </div>
+                                        <div style={{ fontSize: '12px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.5)', padding: '2px 8px', borderRadius: '4px', border: '1px solid #ddd' }}>
+                                                Betas: {preview.betas.map(b => b.toFixed(3)).join(', ')}
                                             </span>
                                         </div>
-                                        <div style={{ fontSize: '13px', marginBottom: '10px' }}>
-                                            <strong>A priori max loading:</strong> <span style={{
-                                                color: preview.is_rho_reduction ? '#28a745' : '#dc3545',
-                                                fontWeight: 'bold',
-                                                fontSize: '15px'
-                                            }}>{(preview.max_rho * 100).toFixed(1)}%</span> {preview.max_rho_line !== 'N/A' && `on ${preview.max_rho_line}`}
-                                        </div>
-                                        <div style={{ fontSize: '13px' }}>
-                                            <strong>Solves primary overload:</strong> {preview.is_rho_reduction ? <span style={{ color: '#28a745', fontWeight: 'bold' }}>✅ Yes</span> : <span style={{ color: '#dc3545', fontWeight: 'bold' }}>❌ No</span>}
+                                        <div style={{ display: 'flex', gap: '24px' }}>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '6px' }}>Estimation</div>
+                                                <div style={{ fontSize: '13px', marginBottom: '4px' }}>
+                                                    Max loading estimated by superposition: <strong style={{
+                                                        color: preview.max_rho <= monitoringFactor ? '#28a745' : '#dc3545',
+                                                        fontSize: '15px'
+                                                    }}>{(preview.max_rho * 100).toFixed(1)}%</strong>
+                                                </div>
+                                                <div style={{ fontSize: '12px', color: '#666' }}>
+                                                    Line: {preview.max_rho_line}
+                                                </div>
+                                            </div>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '6px' }}>Simulation Feedback</div>
+                                                {simulating && (
+                                                    <div style={{ color: '#0056b3', fontSize: '13px' }}>Simulating...</div>
+                                                )}
+                                                {!simulating && simulationFeedback && (
+                                                    <>
+                                                        <div style={{ fontSize: '13px', marginBottom: '4px' }}>
+                                                            Actual Max Loading: <strong style={{
+                                                                color: (simulationFeedback.max_rho ?? 1) <= monitoringFactor ? '#28a745' : '#dc3545',
+                                                                fontSize: '15px'
+                                                            }}>{simulationFeedback.max_rho != null ? `${(simulationFeedback.max_rho * 100).toFixed(1)}%` : 'N/A'}</strong>
+                                                        </div>
+                                                        <div style={{ fontSize: '12px', color: '#666' }}>
+                                                            Line: {simulationFeedback.max_rho_line}
+                                                        </div>
+                                                        {simulationFeedback.is_islanded && (
+                                                            <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '4px' }}>
+                                                                Islanding detected ({simulationFeedback.disconnected_mw?.toFixed(1)} MW disconnected)
+                                                            </div>
+                                                        )}
+                                                        {simulationFeedback.non_convergence && (
+                                                            <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '4px' }}>
+                                                                Non-convergence: {simulationFeedback.non_convergence}
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                )}
+                                                {!simulating && !simulationFeedback && (
+                                                    <div style={{ color: '#aaa', fontSize: '12px', fontStyle: 'italic' }}>Click "Simulate Combined" to run</div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -351,23 +440,23 @@ const CombinedActionsModal: React.FC<Props> = ({
 
                 <div style={{ padding: '16px 24px', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: '#fcfcfc' }}>
                     <button onClick={onClose} style={{ padding: '10px 20px', background: 'white', border: '1px solid #ccc', borderRadius: '6px', cursor: 'pointer', fontWeight: 500, color: '#666' }}>Close</button>
-                    {activeTab === 'explore' && (
+                    {activeTab === 'explore' && preview && (
                         <button
                             onClick={() => handleSimulate()}
-                            disabled={selectedIds.size !== 2}
+                            disabled={selectedIds.size !== 2 || simulating}
                             style={{
                                 padding: '10px 24px',
-                                background: '#007bff',
+                                background: simulating ? '#6c757d' : '#27ae60',
                                 color: 'white',
                                 border: 'none',
                                 borderRadius: '6px',
-                                cursor: selectedIds.size !== 2 ? 'not-allowed' : 'pointer',
-                                opacity: selectedIds.size !== 2 ? 0.6 : 1,
+                                cursor: (selectedIds.size !== 2 || simulating) ? 'not-allowed' : 'pointer',
+                                opacity: (selectedIds.size !== 2 || simulating) ? 0.6 : 1,
                                 fontWeight: 'bold',
-                                boxShadow: '0 4px 10px rgba(0,123,255,0.2)'
+                                boxShadow: '0 4px 10px rgba(39,174,96,0.2)'
                             }}
                         >
-                            Simulate Manual Combination
+                            {simulating ? 'Simulating...' : 'Simulate Combined'}
                         </button>
                     )}
                 </div>

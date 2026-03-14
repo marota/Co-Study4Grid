@@ -487,21 +487,6 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     Combine
                 </button>
                 <button
-                    onClick={() => setCombineModalOpen(true)}
-                    style={{
-                        background: '#17a2b8',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        padding: '4px 10px',
-                        cursor: 'pointer',
-                        fontSize: '13px',
-                        fontWeight: 600,
-                    }}
-                >
-                    Combine
-                </button>
-                <button
                     onClick={handleOpenSearch}
                     style={{
                         background: searchOpen ? '#007bff' : '#e9ecef',
@@ -935,7 +920,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 onClose={() => setCombineModalOpen(false)}
                 analysisResult={pendingAnalysisResult}
                 disconnectedElement={disconnectedElement}
-                onSimulateCombined={handleAddAction}
+                onSimulateCombined={onManualActionAdded}
                 monitoringFactor={monitoringFactor}
             />
         </div>
