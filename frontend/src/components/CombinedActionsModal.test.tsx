@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import '@testing-library/jest-dom/vitest';
 import CombinedActionsModal from './CombinedActionsModal';
 import { api } from '../api';
-import type { AnalysisResult } from '../types';
+import type { AnalysisResult, CombinedAction } from '../types';
 
 // Mock API
 vi.mock('../api', () => ({
@@ -13,12 +13,14 @@ vi.mock('../api', () => ({
     }
 }));
 
+type SimulateResult = Awaited<ReturnType<typeof api.simulateManualAction>>;
+
 describe('CombinedActionsModal', () => {
     const mockAnalysisResult: AnalysisResult = {
         actions: {
-            'act1': { description_unitaire: 'Action 1', max_rho: 0.8, rho_before: [0.8], rho_after: [0.7], max_rho_line: 'L1', is_rho_reduction: true },
-            'act2': { description_unitaire: 'Action 2', max_rho: 0.9, rho_before: [0.9], rho_after: [0.8], max_rho_line: 'L2', is_rho_reduction: true },
-            'act3': { description_unitaire: 'Action 3', max_rho: 0.85, rho_before: [0.85], rho_after: [0.8], max_rho_line: 'L3', is_rho_reduction: true },
+            'act1': { description_unitaire: 'Action 1', max_rho: 0.8, rho_before: [0.8], rho_after: [0.7], max_rho_line: 'L1', is_rho_reduction: true, action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} } },
+            'act2': { description_unitaire: 'Action 2', max_rho: 0.9, rho_before: [0.9], rho_after: [0.8], max_rho_line: 'L2', is_rho_reduction: true, action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} } },
+            'act3': { description_unitaire: 'Action 3', max_rho: 0.85, rho_before: [0.85], rho_after: [0.8], max_rho_line: 'L3', is_rho_reduction: true, action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} } },
         },
         combined_actions: {
             'act1+act2': {
@@ -28,12 +30,18 @@ describe('CombinedActionsModal', () => {
                 max_rho: 0.75,
                 max_rho_line: 'L3',
                 is_rho_reduction: true,
-                description: 'Pre-computed Pair'
+                description: 'Pre-computed Pair',
+                p_or_combined: [],
+                rho_before: [0.75],
+                rho_after: [0.72]
             }
         },
         lines_overloaded: [],
-        topo_info: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} }
-    } as any;
+        message: 'done',
+        dc_fallback: false,
+        pdf_path: null,
+        pdf_url: null,
+    };
 
     const defaultProps = {
         isOpen: true,
@@ -62,14 +70,16 @@ describe('CombinedActionsModal', () => {
                 ...mockAnalysisResult.actions,
                 'act1+act2': {
                     description_unitaire: 'Simulated',
+                    rho_before: [0.75],
                     max_rho: 0.72,
                     max_rho_line: 'L3',
                     rho_after: [0.72],
+                    is_rho_reduction: true,
                     is_estimated: false
                 }
             }
         };
-        render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithSim as any} />);
+        render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithSim as AnalysisResult} />);
 
         expect(screen.getByText('75.0%')).toBeInTheDocument();
         expect(screen.getByText('72.0%')).toBeInTheDocument();
@@ -119,10 +129,12 @@ describe('CombinedActionsModal', () => {
             max_rho_line: 'L_NEW',
             is_rho_reduction: true,
             p_or_combined: [],
-            rho_after: [0.85]
-        } as any);
+            rho_after: [0.85],
+            description: 'Computed',
+            rho_before: [0.9]
+        } as unknown as CombinedAction);
 
-        render(<CombinedActionsModal {...defaultProps} analysisResult={emptyResult as any} />);
+        render(<CombinedActionsModal {...defaultProps} analysisResult={emptyResult as AnalysisResult} />);
 
         fireEvent.click(getExploreTab());
         fireEvent.click(screen.getByText('act1'));
@@ -146,8 +158,9 @@ describe('CombinedActionsModal', () => {
             rho_before: [0.8],
             rho_after: [0.73],
             non_convergence: null,
-            lines_overloaded: []
-        } as any);
+            lines_overloaded: [],
+            is_estimated: false
+        } as unknown as SimulateResult);
 
         render(<CombinedActionsModal {...defaultProps} />);
 
@@ -162,13 +175,13 @@ describe('CombinedActionsModal', () => {
             const feedback = screen.getByTestId('simulation-feedback');
             expect(within(feedback).getByText('73.0%')).toBeInTheDocument();
             expect(within(feedback).getByText(/Line: L3_SIM/)).toBeInTheDocument();
-        }, { timeout: 3000 });
+        });
     });
 
     it('disables simulation button while simulating', async () => {
-        let resolveSim: (val: any) => void;
-        const simPromise = new Promise(resolve => { resolveSim = resolve; });
-        vi.mocked(api.simulateManualAction).mockReturnValueOnce(simPromise as any);
+        let resolveSim: (val: unknown) => void;
+        const simPromise = new Promise<unknown>(resolve => { resolveSim = resolve; });
+        vi.mocked(api.simulateManualAction).mockReturnValueOnce(simPromise as unknown as Promise<SimulateResult>);
 
         render(<CombinedActionsModal {...defaultProps} />);
         fireEvent.click(getExploreTab());

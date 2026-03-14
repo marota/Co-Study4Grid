@@ -421,7 +421,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
 
                             lineNames.forEach(name => {
                                 // Avoid duplicates if already added as VL (unlikely but possible)
-                                if (badges.some(b => (b as any)?.key === name)) return;
+                                if (badges.some(b => React.isValidElement(b) && b.key === name)) return;
                                 badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
                             });
 

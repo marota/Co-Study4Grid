@@ -137,8 +137,14 @@ describe('ActionFeed', () => {
             ...defaultProps,
             analysisLoading: false,
             pendingAnalysisResult: {
-                actions: { 'new_act': { description_unitaire: 'New', rho_before: [], rho_after: [], max_rho: 0.5, max_rho_line: '', is_rho_reduction: true } }
-            } as unknown as AnalysisResult,
+                actions: { 'new_act': { description_unitaire: 'New', rho_before: [], rho_after: [], max_rho: 0.5, max_rho_line: '', is_rho_reduction: true, action_topology: emptyTopo } },
+                lines_overloaded: [],
+                topo_info: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} },
+                pdf_path: null,
+                pdf_url: null,
+                message: 'done',
+                dc_fallback: false
+            } as AnalysisResult,
         };
         render(<ActionFeed {...props} />);
 
@@ -152,8 +158,14 @@ describe('ActionFeed', () => {
             analysisLoading: false,
             onDisplayPrioritizedActions: onDisplay,
             pendingAnalysisResult: {
-                actions: { 'new_act': { description_unitaire: 'New', rho_before: [], rho_after: [], max_rho: 0.5, max_rho_line: '', is_rho_reduction: true } }
-            } as unknown as AnalysisResult,
+                actions: { 'new_act': { description_unitaire: 'New', rho_before: [], rho_after: [], max_rho: 0.5, max_rho_line: '', is_rho_reduction: true, action_topology: emptyTopo } },
+                lines_overloaded: [],
+                topo_info: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} },
+                pdf_path: null,
+                pdf_url: null,
+                message: 'done',
+                dc_fallback: false
+            } as AnalysisResult,
         };
         render(<ActionFeed {...props} />);
 
@@ -491,6 +503,7 @@ describe('ActionFeed', () => {
             max_rho: 0.8,
             max_rho_line: 'LINE_A',
             is_rho_reduction: true,
+            action_id: actionId,
             lines_overloaded: []
         };
 
@@ -501,7 +514,12 @@ describe('ActionFeed', () => {
         vi.mocked(api.simulateManualAction).mockImplementation(async () => {
             await new Promise(resolve => setTimeout(resolve, 50));
             simulationFinished = true;
-            return mockResult as any;
+            return {
+                ...mockResult,
+                non_convergence: null,
+                is_estimated: false,
+                lines_overloaded: []
+            } as { action_id: string; description_unitaire: string; rho_before: number[] | null; rho_after: number[] | null; max_rho: number | null; max_rho_line: string; is_rho_reduction: boolean; is_islanded?: boolean; n_components?: number; disconnected_mw?: number; non_convergence: string | null; lines_overloaded: string[]; };
         });
 
         const props = {

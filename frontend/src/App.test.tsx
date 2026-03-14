@@ -7,19 +7,24 @@ import App from './App';
 // ===== Mocks =====
 
 // Mock child components to avoid their complexity
-vi.mock('./components/VisualizationPanel', () => ({
-  default: ({ nDiagram, configLoading, networkPath, layoutPath, onOpenSettings }: any) => {
-    const [showPathWarning, setShowPathWarning] = React.useState(true);
-    React.useEffect(() => {
-      if (nDiagram?.svg) setShowPathWarning(false);
-    }, [nDiagram?.svg]);
+vi.mock('./components/VisualizationPanel', () => {
+  const MockVisualizationPanel = ({ nDiagram, configLoading, networkPath, layoutPath, onOpenSettings }: {
+    nDiagram: { svg: string } | null;
+    configLoading: boolean;
+    networkPath: string;
+    layoutPath: string;
+    onOpenSettings: (tab: string) => void;
+  }) => {
+    const [warningDismissed, setWarningDismissed] = React.useState(false);
+    const hasAnyDiagram = !!nDiagram?.svg;
+    const showPathWarning = !warningDismissed && !hasAnyDiagram;
 
     return (
       <div data-testid="visualization-panel">
         {!nDiagram?.svg && !configLoading && showPathWarning && (
           <div>
             <div>Configuration Paths</div>
-            <button onClick={() => setShowPathWarning(false)}>✕</button>
+            <button onClick={() => setWarningDismissed(true)}>✕</button>
             <div>Layout Path: {layoutPath}</div>
             <div>Output Folder: {networkPath ? (networkPath.includes('/') ? networkPath.substring(0, networkPath.lastIndexOf('/')) : networkPath) : 'Not set'}</div>
             <button onClick={() => onOpenSettings('paths')}>Change in settings</button>
@@ -27,8 +32,9 @@ vi.mock('./components/VisualizationPanel', () => ({
         )}
       </div>
     );
-  },
-}));
+  };
+  return { default: MockVisualizationPanel };
+});
 vi.mock('./components/ActionFeed', () => ({
   default: () => <div data-testid="action-feed" />,
 }));
@@ -605,7 +611,7 @@ describe('Save Results button', () => {
     localStorage.clear();
     vi.unstubAllGlobals();
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
-    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => { });
   });
 
   it('is present in the header after study load', async () => {
@@ -665,7 +671,7 @@ describe('Save Results button', () => {
     const origCreate = document.createElement.bind(document);
     vi.spyOn(document, 'createElement').mockImplementation((tag) => {
       const el = origCreate(tag as keyof HTMLElementTagNameMap);
-      if (tag === 'a') vi.spyOn(el as HTMLAnchorElement, 'click').mockImplementation(() => {});
+      if (tag === 'a') vi.spyOn(el as HTMLAnchorElement, 'click').mockImplementation(() => { });
       return el;
     });
 
@@ -701,7 +707,7 @@ describe('Save Results button', () => {
     const origCreate = document.createElement.bind(document);
     vi.spyOn(document, 'createElement').mockImplementation((tag) => {
       const el = origCreate(tag as keyof HTMLElementTagNameMap);
-      if (tag === 'a') vi.spyOn(el as HTMLAnchorElement, 'click').mockImplementation(() => {});
+      if (tag === 'a') vi.spyOn(el as HTMLAnchorElement, 'click').mockImplementation(() => { });
       return el;
     });
 
@@ -805,11 +811,11 @@ describe('Settings Modal Enhancements', () => {
   it('shows path warning when no network is loaded and allows dismissal', async () => {
     // Initial render should show the warning since no diagram is loaded
     render(<App />);
-    
+
     await waitFor(() => {
       expect(screen.getByText(/Configuration Paths/i)).toBeInTheDocument();
     });
-    
+
     expect(screen.getByText(/Layout Path:/i)).toBeInTheDocument();
     expect(screen.getByText(/Output Folder:/i)).toBeInTheDocument();
 
@@ -824,7 +830,7 @@ describe('Settings Modal Enhancements', () => {
 
   it('hides path warning when a network diagram is loaded', async () => {
     render(<App />);
-    
+
     // Warning should be present initially
     await waitFor(() => {
       expect(screen.getByText(/Configuration Paths/i)).toBeInTheDocument();
@@ -833,7 +839,7 @@ describe('Settings Modal Enhancements', () => {
     // Simulate loading a study which will set nDiagram
     const settingsBtn = screen.getByTitle('Settings');
     await userEvent.click(settingsBtn);
-    
+
     const applyBtn = screen.getByText('Apply');
     await userEvent.click(applyBtn);
 
@@ -856,7 +862,7 @@ describe('Settings Modal Enhancements', () => {
 
     // Should open settings modal
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    
+
     // Should be on Paths tab (default for settings modal anyway, but let's be sure)
     expect(screen.getByLabelText(/Network File Path/i)).toBeInTheDocument();
   });
@@ -866,7 +872,7 @@ describe('Settings Modal Enhancements', () => {
     // But networkPath is state initialized from localStorage or empty
     // Let's just check the existing banner in the initial render if we can mock the initial state
     // Or just check if the warning banner (which we already test) shows the derived path
-    
+
     // In our tests, we can clear localStorage and then render
     localStorage.setItem('networkPath', '/home/user/data/grid.xiidm');
     render(<App />);
@@ -926,7 +932,7 @@ describe('Settings Modal Enhancements', () => {
     it('shows yellow "Running..." button during analysis', async () => {
       render(<App />);
       await loadStudy(); // Custom helper or inline:
-      
+
       // Select branch
       const branchInput = screen.getByPlaceholderText('Search line/bus...');
       await userEvent.type(branchInput, 'BRANCH_A');
@@ -934,7 +940,7 @@ describe('Settings Modal Enhancements', () => {
 
       // Setup streaming mock for step2
       const mockResponse = new ReadableStream({
-        start(controller) {
+        start() {
           // Keep it open to simulate "Running" state
         },
       });

@@ -548,14 +548,10 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     layoutPath,
     onOpenSettings,
 }) => {
-    const [showPathWarning, setShowPathWarning] = useState(true);
+    const [warningDismissed, setWarningDismissed] = useState(false);
 
-    // Hide warning as soon as a diagram is rendered
-    useEffect(() => {
-        if (nDiagram?.svg || n1Diagram?.svg || actionDiagram?.svg) {
-            setShowPathWarning(false);
-        }
-    }, [nDiagram?.svg, n1Diagram?.svg, actionDiagram?.svg]);
+    const hasAnyDiagram = !!(nDiagram?.svg || n1Diagram?.svg || actionDiagram?.svg);
+    const showPathWarning = !warningDismissed && !hasAnyDiagram;
 
     const showViewModeToggle = activeTab !== 'overflow' && (
         (activeTab === 'n' && !!nDiagram?.svg) ||
@@ -687,8 +683,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span>⚠️</span> Configuration Paths
                             </div>
-                            <button 
-                                onClick={() => setShowPathWarning(false)}
+                            <button
+                                onClick={() => setWarningDismissed(true)}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', color: '#856404' }}
                             >✕</button>
                         </div>
@@ -699,8 +695,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             <strong>Output Folder:</strong> {networkPath ? networkPath.substring(0, networkPath.lastIndexOf('/')) : 'Not set'}
                         </div>
                         <div style={{ marginTop: '4px' }}>
-                            <a 
-                                href="#" 
+                            <a
+                                href="#"
                                 onClick={(e) => { e.preventDefault(); onOpenSettings('paths'); }}
                                 style={{ color: '#0056b3', textDecoration: 'underline', fontWeight: 500 }}
                             >
@@ -725,8 +721,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                 title="Overflow Graph"
                             />
                         ) : (
-                            <div style={{ 
-                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', 
+                            <div style={{
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%',
                                 color: analysisLoading ? '#856404' : '#999',
                                 background: analysisLoading ? '#fff3cd' : 'white',
                                 fontWeight: analysisLoading ? 600 : 'normal',
