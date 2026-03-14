@@ -4830,7 +4830,7 @@
                                             <tbody>
                                                 {Object.entries(result?.actions || {})
                                                     .filter(([id, data]) => id.includes('+') || data.is_precomputed)
-                                                    .sort((a, b) => (a[1].max_rho ?? 999) - (b[1].max_rho ?? 999))
+                                                    .sort((a, b) => ((a[1].estimated_max_rho ?? a[1].max_rho) ?? 999) - ((b[1].estimated_max_rho ?? b[1].max_rho) ?? 999))
                                                     .map(([id, data]) => {
                                                         const parts = id.split('+').map(p => p.trim());
                                                         const isSimulated = !data.is_estimated && data.rho_after && data.rho_after.length > 0;
