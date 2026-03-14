@@ -41,8 +41,8 @@ Both approaches are exposed through a two-tab modal ("Computed Pairs" and "Explo
 │  POST /api/simulate-manual-action                        │
 │  action_id = "act1+act2"                                 │
 │                                                          │
-│  Backend splits on '+', combines grid2op action objects,  │
-│  runs full AC (or DC fallback) simulation                │
+│  Backend splits on '+', combines grid2op action like     │
+│  objects, runs full AC (or DC fallback) simulation       │
 │  ──► Returns is_estimated=False with full rho data       │
 └──────────────────────────────────────────────────────────┘
 ```

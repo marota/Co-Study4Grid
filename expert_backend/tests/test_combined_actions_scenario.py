@@ -290,6 +290,7 @@ def test_action_simulation_consistency(scenario_data, analysis_results):
 
 def test_combined_actions_superposition(scenario_data, analysis_results):
     """Verify that combined_actions is produced with valid beta coefficients."""
+    # Check if combined actions were produced
     combined = analysis_results.get("combined_actions", {})
     prioritized = analysis_results.get("prioritized_actions", {})
 
