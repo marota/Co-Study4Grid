@@ -8,6 +8,18 @@ from expert_op4grid_recommender import config as recommender_config
 class TestDirectFileLoading(unittest.TestCase):
     def setUp(self):
         self.service = RecommenderService()
+        self.original_config = {
+            'ENV_FOLDER': recommender_config.ENV_FOLDER,
+            'ENV_NAME': recommender_config.ENV_NAME,
+            'ENV_PATH': recommender_config.ENV_PATH,
+            'ACTION_FILE_PATH': recommender_config.ACTION_FILE_PATH,
+        }
+
+    def tearDown(self):
+        recommender_config.ENV_FOLDER = self.original_config['ENV_FOLDER']
+        recommender_config.ENV_NAME = self.original_config['ENV_NAME']
+        recommender_config.ENV_PATH = self.original_config['ENV_PATH']
+        recommender_config.ACTION_FILE_PATH = self.original_config['ACTION_FILE_PATH']
 
     @patch("expert_backend.services.recommender_service.load_actions")
     @patch("expert_backend.services.recommender_service.enrich_actions_lazy")

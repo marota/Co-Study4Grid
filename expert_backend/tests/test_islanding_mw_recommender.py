@@ -40,7 +40,9 @@ class TestIslandingMWReporting:
         env.get_obs.side_effect = [obs, obs_n1]
 
         with patch.object(self.service, "_get_monitoring_parameters", return_value=(set(), set())), \
-             patch.object(self.service, "_compute_deltas", return_value={}):
+             patch.object(self.service, "_compute_deltas", return_value={}), \
+             patch.object(self.service, "_get_n_variant", return_value="variant_n"), \
+             patch.object(self.service, "_get_n1_variant", return_value="variant_n1"):
             
             # Execute
             result = self.service.simulate_manual_action("action_1", "LINE_1")
@@ -79,7 +81,9 @@ class TestIslandingMWReporting:
         env.get_obs.side_effect = [obs, obs_n1]
 
         with patch.object(self.service, "_get_monitoring_parameters", return_value=(set(), set())), \
-             patch.object(self.service, "_compute_deltas", return_value={}):
+             patch.object(self.service, "_compute_deltas", return_value={}), \
+             patch.object(self.service, "_get_n_variant", return_value="variant_n"), \
+             patch.object(self.service, "_get_n1_variant", return_value="variant_n1"):
             
             result = self.service.simulate_manual_action("action_1", "LINE_1")
             
