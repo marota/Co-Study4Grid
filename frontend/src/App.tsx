@@ -68,6 +68,8 @@ function App() {
 
   // ===== Analysis State =====
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const prevResultRef = useRef<AnalysisResult | null>(result);
+  useEffect(() => { prevResultRef.current = result; }, [result]);
   const [pendingAnalysisResult, setPendingAnalysisResult] = useState<AnalysisResult | null>(null);
   const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
   const [manuallyAddedIds, setManuallyAddedIds] = useState<Set<string>>(new Set());
@@ -616,7 +618,14 @@ function App() {
               // Mark all recommended actions as NOT manual
               const actionsWithFlags = { ...event.actions };
               for (const id in actionsWithFlags) {
-                actionsWithFlags[id].is_manual = false;
+                const existing = prevResultRef.current?.actions?.[id] || {};
+                actionsWithFlags[id] = {
+                  ...actionsWithFlags[id],
+                  is_manual: false,
+                  is_islanded: existing.is_islanded ?? actionsWithFlags[id].is_islanded,
+                  estimated_max_rho: existing.estimated_max_rho ?? actionsWithFlags[id].max_rho,
+                  estimated_max_rho_line: existing.estimated_max_rho_line ?? actionsWithFlags[id].max_rho_line,
+                };
               }
               // Record all IDs returned by the recommender — accumulate across re-runs
               // so that re-analysis for the same contingency still marks prior suggestions.
@@ -651,10 +660,23 @@ function App() {
           }
         }
       }
+
+      // Merge new actions with existing ones to preserve estimation data if it was already updated
+      const mergedActions = { ...pendingAnalysisResult.actions };
+      for (const [id, data] of Object.entries(mergedActions)) {
+        const existing = (prev?.actions?.[id] || {}) as any;
+        mergedActions[id] = {
+          ...data,
+          is_islanded: existing.is_islanded ?? data.is_islanded,
+          estimated_max_rho: existing.estimated_max_rho ?? data.estimated_max_rho,
+          estimated_max_rho_line: existing.estimated_max_rho_line ?? data.estimated_max_rho_line,
+        };
+      }
+
       return {
         ...prev,                   // keep existing fields (pdf_url, etc.)
         ...pendingAnalysisResult,  // overlay with analysis result
-        actions: { ...pendingAnalysisResult.actions, ...manualActionsData },
+        actions: { ...mergedActions, ...manualActionsData },
       };
     });
     setPendingAnalysisResult(null);

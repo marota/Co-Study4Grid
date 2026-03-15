@@ -75,11 +75,15 @@ const CombinedActionsModal: React.FC<Props> = ({
                 action1: parts[0] || 'N/A',
                 action2: parts[1] || 'N/A',
                 betas: data.betas,
-                max_rho: data.max_rho,
+                // These are simulation data (if simulated) or estimated data (from backend)
+                max_rho: data.rho_after && data.rho_after.length > 0 ? data.max_rho : null,
                 max_rho_line: data.max_rho_line,
                 is_rho_reduction: data.is_rho_reduction,
                 is_suspect: !!data.is_islanded,
                 isSimulated,
+                // Explicitly use estimation fields for the "Est." column
+                estimated_max_rho: data.estimated_max_rho,
+                estimated_max_rho_line: data.estimated_max_rho_line,
                 simulated_max_rho: simMaxRho,
                 simulated_max_rho_line: simMaxRhoLine
             };
@@ -286,22 +290,26 @@ const CombinedActionsModal: React.FC<Props> = ({
                                                     </td>
                                                     <td style={cellStyle}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                            <span style={{
-                                                                fontWeight: 'bold',
-                                                                color: p.is_rho_reduction ? '#28a745' : '#dc3545',
-                                                                background: p.is_rho_reduction ? '#e8f5e9' : '#ffebee',
-                                                                padding: '2px 6px',
-                                                                borderRadius: '4px',
-                                                                opacity: 0.8
-                                                            }}>
-                                                                {(p.max_rho * 100).toFixed(1)}%
-                                                            </span>
-                                                            {p.is_suspect && (
-                                                                <span title="Suspect estimation (islanding detected during analysis)" style={{ cursor: 'help' }}>⚠️</span>
-                                                            )}
+                                                            {p.estimated_max_rho != null && !isNaN(p.estimated_max_rho) ? (
+                                                                <>
+                                                                    <span style={{
+                                                                        fontWeight: 'bold',
+                                                                        color: p.estimated_max_rho <= monitoringFactor ? '#28a745' : '#dc3545',
+                                                                        background: p.estimated_max_rho <= monitoringFactor ? '#e8f5e9' : '#ffebee',
+                                                                        padding: '2px 6px',
+                                                                        borderRadius: '4px',
+                                                                        opacity: 0.8
+                                                                    }}>
+                                                                        {(p.estimated_max_rho * 100).toFixed(1)}%
+                                                                    </span>
+                                                                    {p.is_suspect && (
+                                                                        <span title="Suspect estimation (islanding detected or linear superposition breakdown)" style={{ cursor: 'help' }}>⚠️</span>
+                                                                    )}
+                                                                </>
+                                                            ) : '\u2014'}
                                                         </div>
                                                     </td>
-                                                    <td style={{ ...cellStyle, fontSize: '12px', color: '#666' }}>{p.max_rho_line}</td>
+                                                    <td style={{ ...cellStyle, fontSize: '12px', color: '#666' }}>{p.estimated_max_rho_line || '\u2014'}</td>
 
                                                     <td style={{ ...cellStyle, textAlign: 'center' }}>
                                                         {p.isSimulated ? (

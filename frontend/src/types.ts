@@ -57,6 +57,8 @@ export interface CombinedAction {
     rho_before: number[];
     is_islanded?: boolean;
     disconnected_mw?: number;
+    estimated_max_rho?: number | null;
+    estimated_max_rho_line?: string;
     error?: string;
 }
 
