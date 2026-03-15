@@ -1902,18 +1902,33 @@
                             }
                         }
                     }
+                    const actionsData = {};
+                    if (pendingAnalysisResult?.actions) {
+                        for (const [id, data] of Object.entries(pendingAnalysisResult.actions)) {
+                            const existing = prev?.actions?.[id] || {};
+                            actionsData[id] = {
+                                ...data,
+                                is_manual: false,
+                                is_islanded: existing.is_islanded ?? data.is_islanded,
+                                estimated_max_rho: existing.estimated_max_rho ?? data.max_rho,
+                                estimated_max_rho_line: existing.estimated_max_rho_line ?? data.max_rho_line,
+                            };
+                        }
+                    }
                     const combinedActionsData = {};
                     if (pendingAnalysisResult?.combined_actions) {
                         for (const [id, data] of Object.entries(pendingAnalysisResult.combined_actions)) {
                             const canonicalId = canonicalizeId(id);
+                            const existing = prev?.actions?.[canonicalId] || {};
                             combinedActionsData[canonicalId] = {
                                 ...data,
                                 is_manual: false,
                                 is_precomputed: true,
-                                is_estimated: true,
+                                is_estimated: existing.is_estimated ?? true,
+                                is_islanded: existing.is_islanded ?? data.is_islanded,
                                 // Store estimation in separate fields to avoid collision with simulation data
-                                estimated_max_rho: data.estimated_max_rho ?? data.max_rho,
-                                estimated_max_rho_line: data.estimated_max_rho_line ?? data.max_rho_line,
+                                estimated_max_rho: existing.estimated_max_rho ?? (data.estimated_max_rho ?? data.max_rho),
+                                estimated_max_rho_line: existing.estimated_max_rho_line ?? (data.estimated_max_rho_line ?? data.max_rho_line),
                                 description_unitaire: data.description || `Combination of ${data.action1_id} and ${data.action2_id}`
                             };
                         }
@@ -1921,7 +1936,7 @@
                     return {
                         ...prev,
                         ...pendingAnalysisResult,
-                        actions: { ...pendingAnalysisResult.actions, ...combinedActionsData, ...manualActionsData },
+                        actions: { ...actionsData, ...combinedActionsData, ...manualActionsData },
                     };
                 });
                 setPendingAnalysisResult(null);
@@ -2565,6 +2580,8 @@
                     // Feed the first tab with estimated result
                     setResult(prev => {
                         if (!prev) return prev;
+                        const combinedId = canonicalizeId(selectedCombineActionIds.join('+'));
+                        const existing = prev.actions?.[combinedId] || {};
                         return {
                             ...prev,
                             actions: {
@@ -2573,9 +2590,10 @@
                                     ...res.data,
                                     is_manual: true,
                                     is_estimated: true,
-                                    // Store as explicit estimation fields
-                                    estimated_max_rho: res.data.max_rho,
-                                    estimated_max_rho_line: res.data.max_rho_line,
+                                    is_islanded: existing.is_islanded ?? res.data.is_islanded,
+                                    // Store as explicit estimation fields, preserving if they somehow exist
+                                    estimated_max_rho: existing.estimated_max_rho ?? res.data.max_rho,
+                                    estimated_max_rho_line: existing.estimated_max_rho_line ?? res.data.max_rho_line,
                                     description_unitaire: `[ESTIMATED] Combination of ${selectedCombineActionIds.join(' and ')}`
                                 }
                             }
@@ -4843,8 +4861,8 @@
                                                     .map(([id, data]) => {
                                                         const parts = id.split('+').map(p => p.trim());
                                                         const isSimulated = !data.is_estimated && data.rho_after && data.rho_after.length > 0;
-                                                        const estMaxRho = data.estimated_max_rho ?? data.max_rho;
-                                                        const estMaxRhoLine = data.estimated_max_rho_line ?? data.max_rho_line;
+                                                        const estMaxRho = data.estimated_max_rho;
+                                                        const estMaxRhoLine = data.estimated_max_rho_line;
 
                                                         return (
                                                             <tr key={id}>
@@ -4861,7 +4879,7 @@
                                                                         opacity: 0.9,
                                                                         border: estMaxRho > monitoringFactor ? '1px solid #c62828' : estMaxRho > (monitoringFactor - 0.05) ? '1px solid #856404' : '1px dashed #2e7d32'
                                                                     }}>
-                                                                        {(estMaxRho * 100).toFixed(1)}%
+                                                                        {estMaxRho != null && !isNaN(estMaxRho) ? `${(estMaxRho * 100).toFixed(1)}%` : '—'}
                                                                         {data.is_islanded && (
                                                                             <span style={{ marginLeft: '4px' }} title="Estimation suspect due to islanding or linear superposition breakdown">⚠️</span>
                                                                         )}
