@@ -1910,6 +1910,7 @@
                                 ...data,
                                 is_manual: false,
                                 is_precomputed: true,
+                                is_estimated: true,
                                 // Store estimation in separate fields to avoid collision with simulation data
                                 estimated_max_rho: data.estimated_max_rho ?? data.max_rho,
                                 estimated_max_rho_line: data.estimated_max_rho_line ?? data.max_rho_line,
@@ -2446,8 +2447,8 @@
             };
 
             const canonicalizeId = (id) => {
-                if (!id || !id.includes('+')) return id;
-                return id.split('+').sort().join('+');
+                if (!id || typeof id !== 'string' || !id.includes('+')) return id;
+                return id.split('+').map(p => p.trim()).sort().join('+');
             };
 
             const handleAddManualAction = async (rawActionId) => {
@@ -3533,6 +3534,8 @@
                         return (details.rho_after && details.rho_after.length > 0) || details.is_manual;
                     })
                     .sort(([, a], [, b]) => {
+                        if (a.is_islanded && !b.is_islanded) return 1;
+                        if (!a.is_islanded && b.is_islanded) return -1;
                         if (a.non_convergence && !b.non_convergence) return 1;
                         if (!a.non_convergence && b.non_convergence) return -1;
                         return (a.max_rho ?? 999) - (b.max_rho ?? 999);
@@ -3716,6 +3719,12 @@
                                                         onClick={(e) => { e.stopPropagation(); handleAssetClick(id, details.max_rho_line, 'action'); }}
                                                     >{details.max_rho_line}</button></span>
                                                 )}
+                                            </div>
+                                        )}
+                                        {details.estimated_max_rho != null && (
+                                            <div style={{ fontSize: '11px', color: '#666', marginTop: '2px', fontStyle: 'italic' }}>
+                                                Estimation: {(details.estimated_max_rho * 100).toFixed(1)}%
+                                                {details.estimated_max_rho_line && ` on ${details.estimated_max_rho_line}`}
                                             </div>
                                         )}
                                     </div>
@@ -4853,6 +4862,9 @@
                                                                         border: estMaxRho > monitoringFactor ? '1px solid #c62828' : estMaxRho > (monitoringFactor - 0.05) ? '1px solid #856404' : '1px dashed #2e7d32'
                                                                     }}>
                                                                         {(estMaxRho * 100).toFixed(1)}%
+                                                                        {data.is_islanded && (
+                                                                            <span style={{ marginLeft: '4px' }} title="Estimation suspect due to islanding or linear superposition breakdown">⚠️</span>
+                                                                        )}
                                                                     </span>
                                                                 </td>
                                                                 <td style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>{estMaxRhoLine || 'N/A'}</td>
