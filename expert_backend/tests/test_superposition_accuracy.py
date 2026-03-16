@@ -29,6 +29,7 @@ def test_superposition_vs_simulation_discrepancy(service, mock_env):
     obs_n1.rho = np.array([0.5, 0.5, 0.5])
     obs_n1.name_line = ["LINE1", "LINE2", "LINE3"]
     obs_n1.p_or = np.array([50.0, 50.0, 50.0])
+    obs_n1.n_components = 1
     
     # Mock observation for Action 1
     obs_act1 = MagicMock()
@@ -66,14 +67,14 @@ def test_superposition_vs_simulation_discrepancy(service, mock_env):
     # If we use betas [1.0, 1.0], it would be: -1.0*rho_start + 1.0*rho_act1 + 1.0*rho_act2
     # = - [0.5, 0.5, 0.5] + [0.4, 0.6, 0.5] + [0.6, 0.4, 0.5] = [0.5, 0.5, 0.5]
     
-    with patch('expert_op4grid_recommender.utils.superposition.compute_combined_pair_superposition') as mock_super:
+    with patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_super:
         mock_super.return_value = {
             "betas": [1.0, 1.0],
             "p_or_combined": [50.0, 50.0, 50.0]
         }
         
         # We need to mock _identify_action_elements too
-        with patch('expert_op4grid_recommender.utils.superposition._identify_action_elements', return_value=([0], [])):
+        with patch('expert_backend.services.recommender_service._identify_action_elements', return_value=([0], [])):
             with patch('expert_backend.services.recommender_service.config') as mock_config:
                 mock_config.MONITORING_FACTOR_THERMAL_LIMITS = 1.0
                 mock_config.PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD = 0.02
@@ -91,6 +92,7 @@ def test_superposition_vs_simulation_discrepancy(service, mock_env):
                 obs_n = MagicMock()
                 obs_n.rho = np.array([0.3, 0.3, 0.3])
                 obs_n.name_line = ["LINE1", "LINE2", "LINE3"]
+                obs_n.n_components = 1
                 
                 # compute_superposition calls get_obs twice (N-1 then N)
                 # simulate_manual_action calls get_obs twice (N then N-1)
@@ -105,6 +107,7 @@ def test_superposition_vs_simulation_discrepancy(service, mock_env):
                 obs_sim = MagicMock()
                 obs_sim.rho = np.array([0.55, 0.45, 0.5]) # Slightly different from 0.5
                 obs_sim.name_line = ["LINE1", "LINE2", "LINE3"]
+                obs_sim.n_components = 1
                 
                 obs_n1.simulate.return_value = (obs_sim, None, None, {"exception": None})
                 

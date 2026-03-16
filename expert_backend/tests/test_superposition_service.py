@@ -34,8 +34,8 @@ def test_compute_superposition_on_demand(recommender):
     env.get_obs.return_value = obs_start # Simplified mock for this test
     
     # Mock library functions
-    with patch('expert_op4grid_recommender.utils.superposition._identify_action_elements', return_value=([0], [])), \
-         patch('expert_op4grid_recommender.utils.superposition.compute_combined_pair_superposition') as mock_combine:
+    with patch('expert_backend.services.recommender_service._identify_action_elements', return_value=([0], [])), \
+         patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_combine:
         
         mock_combine.return_value = {
             "betas": [0.5, 0.5],
@@ -90,8 +90,8 @@ def test_compute_superposition_triggers_simulation(recommender):
     obs_start.rho = np.array([1.1])
     env.get_obs.return_value = obs_start
 
-    with patch('expert_op4grid_recommender.utils.superposition._identify_action_elements', return_value=([0], [])), \
-         patch('expert_op4grid_recommender.utils.superposition.compute_combined_pair_superposition') as mock_combine:
+    with patch('expert_backend.services.recommender_service._identify_action_elements', return_value=([0], [])), \
+         patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_combine:
         
         mock_combine.return_value = {"betas": [0.5, 0.5]}
         recommender._last_result["prioritized_actions"][aid1]["observation"].rho = np.array([0.9])

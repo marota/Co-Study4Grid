@@ -38,6 +38,7 @@ def analysis_setup():
             self.pre_existing_overload_threshold = 0.02
             self.lines_monitoring_path = None
             self.pypowsybl_fast_mode = False # Disable fast mode for better consistency
+            self.do_visualization = False  # Skip visualization in tests
 
     from expert_backend.services.network_service import network_service
     network_service.load_network(str(network_path))
