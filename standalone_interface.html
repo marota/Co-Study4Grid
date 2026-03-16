@@ -2207,8 +2207,48 @@
                     const { svg, viewBox } = processSvg(res.data.svg, voltageLevels.length);
                     setActionDiagram({ ...res.data, svg, originalViewBox: viewBox });
                 } catch (err) {
-                    console.error('Failed to fetch action variant diagram:', err);
-                    setError('Failed to fetch action variant diagram for ' + actionId);
+                    // Diagram not in backend memory (e.g. after session restore) — simulate first
+                    if (selectedBranch) {
+                        try {
+                            const simRes = await axios.post(API_BASE + '/api/simulate-manual-action', {
+                                action_id: actionId, disconnected_element: selectedBranch
+                            });
+                            const detail = simRes.data;
+                            // Update the action detail with fresh simulation data
+                            setResult(prev => {
+                                if (!prev) return prev;
+                                return {
+                                    ...prev,
+                                    actions: {
+                                        ...prev.actions,
+                                        [actionId]: {
+                                            ...(prev.actions[actionId] || {}),
+                                            description_unitaire: detail.description_unitaire,
+                                            rho_before: detail.rho_before,
+                                            rho_after: detail.rho_after,
+                                            max_rho: detail.max_rho,
+                                            max_rho_line: detail.max_rho_line,
+                                            is_rho_reduction: detail.is_rho_reduction,
+                                            non_convergence: detail.non_convergence,
+                                            is_islanded: detail.is_islanded,
+                                            n_components: detail.n_components,
+                                            disconnected_mw: detail.disconnected_mw,
+                                        },
+                                    },
+                                };
+                            });
+                            // Now try fetching the diagram again
+                            const res2 = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: actionId });
+                            const { svg, viewBox } = processSvg(res2.data.svg, voltageLevels.length);
+                            setActionDiagram({ ...res2.data, svg, originalViewBox: viewBox });
+                        } catch (simErr) {
+                            console.error('Failed to simulate and fetch diagram for', actionId, simErr);
+                            setError('Failed to load action diagram for ' + actionId);
+                        }
+                    } else {
+                        console.error('Failed to fetch action variant diagram:', err);
+                        setError('Failed to fetch action variant diagram for ' + actionId);
+                    }
                 } finally {
                     setActionDiagramLoading(false);
                 }
@@ -4913,7 +4953,7 @@
                                         Action: {selectedActionId}
                                     </button>
                                 )}
-                                {analysisRan && result && (
+                                {result?.pdf_url && (
                                     <button
                                         onClick={() => setActiveTab('overflow')}
                                         style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'overflow' ? 'white' : '#ecf0f1', color: activeTab === 'overflow' ? '#2c3e50' : '#7f8c8d', borderBottom: activeTab === 'overflow' ? '3px solid #27ae60' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'overflow' ? 'bold' : 400 }}
