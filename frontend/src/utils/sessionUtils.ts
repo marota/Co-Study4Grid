@@ -105,6 +105,7 @@ export function buildSessionResult(input: SessionInput): SessionResult {
                         max_rho: detail.max_rho,
                         max_rho_line: detail.max_rho_line,
                         is_rho_reduction: detail.is_rho_reduction,
+                        is_estimated: detail.is_estimated,
                         non_convergence: detail.non_convergence,
                         action_topology: detail.action_topology,
                         estimated_max_rho: detail.estimated_max_rho,

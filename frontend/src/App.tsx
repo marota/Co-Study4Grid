@@ -998,6 +998,10 @@ function App() {
         const restoredSuggested = new Set<string>();
 
         for (const [id, entry] of Object.entries(a.actions)) {
+          // Skip estimation-only combined-pair entries — they live in combined_actions,
+          // not in the action feed, and should not appear as action cards.
+          if (id.includes('+') && entry.is_estimated && !entry.status.is_manually_simulated) continue;
+
           restoredActions[id] = {
             description_unitaire: entry.description_unitaire,
             rho_before: entry.rho_before,
@@ -1005,6 +1009,7 @@ function App() {
             max_rho: entry.max_rho,
             max_rho_line: entry.max_rho_line,
             is_rho_reduction: entry.is_rho_reduction,
+            is_estimated: entry.is_estimated,
             non_convergence: entry.non_convergence,
             action_topology: entry.action_topology,
             estimated_max_rho: entry.estimated_max_rho,

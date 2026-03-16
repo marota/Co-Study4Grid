@@ -214,6 +214,7 @@ export interface SavedActionEntry {
     max_rho: number | null;
     max_rho_line: string;
     is_rho_reduction: boolean;
+    is_estimated?: boolean;         // true for estimation-only combined pair entries
     estimated_max_rho?: number | null;
     estimated_max_rho_line?: string;
     is_islanded?: boolean;

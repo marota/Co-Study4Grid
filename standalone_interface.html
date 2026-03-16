@@ -1741,6 +1741,7 @@
                                         max_rho: detail.max_rho,
                                         max_rho_line: detail.max_rho_line,
                                         is_rho_reduction: detail.is_rho_reduction,
+                                        is_estimated: detail.is_estimated,
                                         non_convergence: detail.non_convergence,
                                         action_topology: detail.action_topology,
                                         estimated_max_rho: detail.estimated_max_rho,
@@ -1896,6 +1897,8 @@
                         const restoredSuggested = new Set();
 
                         for (const [id, entry] of Object.entries(a.actions)) {
+                            // Skip estimation-only combined-pair entries
+                            if (id.includes('+') && entry.is_estimated && !entry.status.is_manually_simulated) continue;
                             restoredActions[id] = {
                                 description_unitaire: entry.description_unitaire,
                                 rho_before: entry.rho_before,
@@ -1903,6 +1906,7 @@
                                 max_rho: entry.max_rho,
                                 max_rho_line: entry.max_rho_line,
                                 is_rho_reduction: entry.is_rho_reduction,
+                                is_estimated: entry.is_estimated,
                                 non_convergence: entry.non_convergence,
                                 action_topology: entry.action_topology,
                                 estimated_max_rho: entry.estimated_max_rho,
