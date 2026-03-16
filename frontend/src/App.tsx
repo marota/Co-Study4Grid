@@ -726,8 +726,20 @@ function App() {
         try {
           // Pass action_topology so the backend can reconstruct actions
           // not in the dictionary (e.g. node_merging actions from analysis)
-          const actionDetail = result?.actions?.[actionId];
-          const actionContent = actionDetail?.action_topology ?? null;
+          // For combined actions (a+b), pass per-component topologies
+          let actionContent: Record<string, unknown> | null = null;
+          if (actionId.includes('+')) {
+            const parts = actionId.split('+');
+            const perAction: Record<string, unknown> = {};
+            for (const part of parts) {
+              const partDetail = result?.actions?.[part];
+              if (partDetail?.action_topology) perAction[part] = partDetail.action_topology;
+            }
+            if (Object.keys(perAction).length > 0) actionContent = perAction;
+          } else {
+            const detail = result?.actions?.[actionId];
+            actionContent = (detail?.action_topology as Record<string, unknown>) ?? null;
+          }
           const simRes = await api.simulateManualAction(actionId, selectedBranch, actionContent);
           // Update the action detail with fresh simulation data
           setResult(prev => {

@@ -2212,8 +2212,20 @@
                         try {
                             // Pass action_topology so the backend can reconstruct actions
                             // not in the dictionary (e.g. node_merging actions from analysis)
-                            const actionDetail = result?.actions?.[actionId];
-                            const actionContent = actionDetail?.action_topology || null;
+                            // For combined actions (a+b), pass per-component topologies
+                            let actionContent = null;
+                            if (actionId.includes('+')) {
+                                const parts = actionId.split('+');
+                                const perAction = {};
+                                for (const part of parts) {
+                                    const partDetail = result?.actions?.[part];
+                                    if (partDetail?.action_topology) perAction[part] = partDetail.action_topology;
+                                }
+                                if (Object.keys(perAction).length > 0) actionContent = perAction;
+                            } else {
+                                const actionDetail = result?.actions?.[actionId];
+                                actionContent = actionDetail?.action_topology || null;
+                            }
                             const simRes = await axios.post(API_BASE + '/api/simulate-manual-action', {
                                 action_id: actionId, disconnected_element: selectedBranch,
                                 action_content: actionContent,

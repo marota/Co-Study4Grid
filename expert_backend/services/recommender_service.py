@@ -1432,6 +1432,49 @@ class RecommenderService:
             return action_id
         return "+".join(sorted([p.strip() for p in action_id.split("+")]))
 
+    @staticmethod
+    def _build_action_entry_from_topology(action_id, topo):
+        """Build an action dict entry from saved topology fields.
+
+        Converts action_topology (lines_ex_bus, lines_or_bus, gens_bus,
+        loads_bus, substations) back into a content dict that
+        env.action_space(content) can parse.
+        """
+        entry = {"description_unitaire": f"Restored action: {action_id}"}
+        content = {}
+
+        # Build set_bus from element-level topology (dict format, matching raw action files)
+        set_bus = {}
+        topo_to_content = {
+            "lines_ex_bus": "lines_ex_id",
+            "lines_or_bus": "lines_or_id",
+            "gens_bus": "generators_id",
+            "loads_bus": "loads_id",
+        }
+        for topo_field, content_field in topo_to_content.items():
+            vals = topo.get(topo_field) or {}
+            if vals:
+                set_bus[content_field] = {name: int(bus) for name, bus in vals.items()}
+
+        # Include substations (critical for node_merging_* actions)
+        subs = topo.get("substations") or {}
+        if subs:
+            set_bus["substations_id"] = [
+                (int(sub_id), [int(b) for b in bus_array])
+                for sub_id, bus_array in subs.items()
+            ]
+
+        if set_bus:
+            content["set_bus"] = set_bus
+
+        # Include switches if present
+        switches = topo.get("switches") or {}
+        if switches:
+            content["switches"] = switches
+
+        entry["content"] = content if content else {}
+        return entry
+
     def simulate_manual_action(self, raw_action_id: str, disconnected_element: str, action_content=None):
         """Simulate a single or combined action and return its impact.
 
@@ -1447,31 +1490,27 @@ class RecommenderService:
         action_ids = action_id.split("+")
         recent_actions = self._last_result.get("prioritized_actions", {}) if self._last_result else {}
 
-        # If action_content (topology) is provided, inject unknown actions into the dict
+        # If action_content is provided, inject unknown actions into the dict.
+        # action_content can be:
+        #   - A single topology dict (for individual actions)
+        #   - A dict mapping action_id -> topology (for combined actions)
         if action_content:
+            # Normalize: if it looks like a topology dict (has topology keys),
+            # wrap it as {action_id: topology} for uniform handling.
+            topo_keys = {"lines_ex_bus", "lines_or_bus", "gens_bus", "loads_bus", "substations", "switches"}
+            if any(k in action_content for k in topo_keys):
+                # Single topology — apply to all unknown action_ids
+                per_action = {aid: action_content for aid in action_ids}
+            else:
+                # Dict mapping action_id -> topology
+                per_action = action_content
+
             for aid in action_ids:
                 if aid not in self._dict_action and aid not in recent_actions:
-                    entry = {
-                        "description_unitaire": f"Restored action: {aid}",
-                    }
-                    # If switches are provided, use them (LazyActionDict computes content)
-                    if action_content.get("switches"):
-                        entry["switches"] = action_content["switches"]
-                    # Build action content from topology fields (bus assignments)
-                    # These map element_name -> bus_number and can reconstruct the action
-                    set_bus = {}
-                    topo_to_content = {
-                        "lines_ex_bus": "lines_ex_id",
-                        "lines_or_bus": "lines_or_id",
-                        "gens_bus": "generators_id",
-                        "loads_bus": "loads_id",
-                    }
-                    for topo_field, content_field in topo_to_content.items():
-                        vals = action_content.get(topo_field) or {}
-                        if vals:
-                            set_bus[content_field] = [(name, int(bus)) for name, bus in vals.items()]
-                    if set_bus:
-                        entry["content"] = {"set_bus": set_bus}
+                    topo = per_action.get(aid)
+                    if not topo:
+                        continue
+                    entry = self._build_action_entry_from_topology(aid, topo)
                     self._dict_action[aid] = entry
                     print(f"[simulate_manual_action] Injected restored action '{aid}' into dict")
 
