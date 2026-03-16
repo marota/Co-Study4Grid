@@ -12,7 +12,16 @@ import time
 from pathlib import Path
 import numpy as np
 
+from expert_op4grid_recommender.environment import load_interesting_lines
+from expert_op4grid_recommender.utils.superposition import (
+    compute_combined_pair_superposition,
+    _identify_action_elements
+)
+from expert_op4grid_recommender.action_evaluation.classifier import ActionClassifier
+
 def sanitize_for_json(obj):
+    if isinstance(obj, bool):
+        return obj
     if isinstance(obj, (np.integer, int)):
         return int(obj)
     elif isinstance(obj, (np.floating, float)):
@@ -41,6 +50,17 @@ def sanitize_for_json(obj):
 
 class RecommenderService:
     def __init__(self):
+        self._last_result = None
+        self._is_running = False
+        self._generator = None
+        self._base_network = None
+        self._simulation_env = None
+        self._last_disconnected_element = None
+        self._dict_action = None
+        self._analysis_context = None
+
+    def reset(self):
+        """Clear all cached analysis state. Called when loading a new study."""
         self._last_result = None
         self._is_running = False
         self._generator = None
@@ -123,6 +143,14 @@ class RecommenderService:
             config.IGNORE_RECONNECTIONS = settings.ignore_reconnections
         if hasattr(settings, 'pypowsybl_fast_mode') and settings.pypowsybl_fast_mode is not None:
             config.PYPOWSYBL_FAST_MODE = settings.pypowsybl_fast_mode
+        if hasattr(settings, 'min_pst') and settings.min_pst is not None:
+            config.MIN_PST = settings.min_pst
+        
+        # New layout file path
+        if hasattr(settings, 'layout_path') and settings.layout_path:
+            config.LAYOUT_FILE_PATH = Path(settings.layout_path)
+        else:
+            config.LAYOUT_FILE_PATH = None
 
         # Force the requested global flags
         config.MAX_RHO_BOTH_EXTREMITIES = True
@@ -302,6 +330,10 @@ class RecommenderService:
         # Build enriched actions the same way as run_analysis - with monitoring_factor applied and topology
         enriched_actions = self._enrich_actions(results["prioritized_actions"])
 
+        # Safety filter: ensure no combined actions (with '+') leak into the main actions feed during initial analysis
+        # They should only exist in combined_actions as estimations.
+        enriched_actions = {aid: data for aid, data in enriched_actions.items() if "+" not in aid}
+
         # Yield result
         yield sanitize_for_json({
             "type": "result",
@@ -309,6 +341,7 @@ class RecommenderService:
             "action_scores": results["action_scores"],
             "lines_overloaded": results["lines_overloaded_names"],
             "pre_existing_overloads": results.get("pre_existing_overloads", []),
+            "combined_actions": results.get("combined_actions", {}),
             "message": "Analysis completed",
             "dc_fallback": False,
         })
@@ -450,12 +483,22 @@ class RecommenderService:
         else:
             analysis_message = info_msg
 
+        combined_actions = result.get("combined_actions", {}) if result else {}
+        for data in combined_actions.values():
+            data["is_estimated"] = True
+        combined_actions = sanitize_for_json(combined_actions)
+
+        # Safety filter: ensure no combined actions (with '+') leak into the main actions feed during initial analysis
+        # They should only exist in combined_actions as estimations.
+        enriched_actions = {aid: data for aid, data in enriched_actions.items() if "+" not in aid}
+
         yield sanitize_for_json({
             "type": "result",
             "pdf_path": str(shared_state["latest_pdf"]) if shared_state["latest_pdf"] else None,
             "actions": enriched_actions,
             "action_scores": action_scores,
             "lines_overloaded": lines_overloaded,
+            "combined_actions": combined_actions,
             "message": analysis_message,
             "dc_fallback": dc_fallback_used
         })
@@ -484,13 +527,21 @@ class RecommenderService:
 
         import pypowsybl as pp
 
-        network_file = config.ENV_PATH / "grid.xiidm"
-        if not network_file.exists():
-            xiidm_files = list(config.ENV_PATH.glob("*.xiidm"))
-            if xiidm_files:
-                network_file = xiidm_files[0]
+        network_file = config.ENV_PATH
+        if network_file.is_dir():
+            files = [f for f in network_file.iterdir() if f.suffix.lower() in ['.xiidm', '.iidm', '.xml']]
+            if files:
+                network_file = files[0]
             else:
-                raise FileNotFoundError(f"No .xiidm file found in {config.ENV_PATH}")
+                # Also check in grid/ subfolder
+                grid_folder = network_file / "grid"
+                if grid_folder.is_dir():
+                    files = [f for f in grid_folder.iterdir() if f.suffix.lower() in ['.xiidm', '.iidm', '.xml']]
+                    if files:
+                        network_file = files[0]
+
+        if not network_file.exists():
+            raise FileNotFoundError(f"Network file not found: {network_file}")
         
         n = pp.network.load(str(network_file))
         # Convenience method not in pypowsybl API: return line IDs as a list
@@ -550,11 +601,12 @@ class RecommenderService:
 
     def _get_monitoring_parameters(self, obs):
         """Get monitoring parameters (lines_we_care_about, branches_with_limits)."""
-        # 1. Identify branches with permanent limits
+        # 1. Identify branches with permanent limits in pypowsybl
         try:
             n_grid = obs._network_manager.network
             limits = n_grid.get_operational_limits()
             if not limits.empty:
+                # Filter for permanent thermal limits (type=CURRENT, duration=-1)
                 perm_limits = limits[(limits['type'] == 'CURRENT') & (limits['acceptable_duration'] == -1)]
                 branches_with_limits = set(perm_limits['element_id'].unique())
             else:
@@ -563,13 +615,18 @@ class RecommenderService:
             print(f"Warning: Failed to identify branches with limits: {e}")
             branches_with_limits = set(obs.name_line)
 
-        # 2. Get lines we care about from config
+        # 2. Prefer using lines_we_care_about from active analysis context (respects user selection in Suggestions Feed)
+        if self._analysis_context and "lines_we_care_about" in self._analysis_context:
+            care = self._analysis_context["lines_we_care_about"]
+            lines_we_care_about = list(care) if care is not None else list(obs.name_line)
+            return lines_we_care_about, branches_with_limits
+
+        # 3. Fallback to global config or full line list
         if not getattr(config, 'IGNORE_LINES_MONITORING', True) and getattr(config, 'LINES_MONITORING_FILE', None):
             try:
-                from expert_op4grid_recommender.environment import load_interesting_lines
                 lines_we_care_about = list(load_interesting_lines(file_name=config.LINES_MONITORING_FILE))
             except Exception as e:
-                print(f"Failed to load lines_we_care_about: {e}")
+                print(f"Failed to load lines_we_care_about from file: {e}")
                 lines_we_care_about = list(obs.name_line)
         else:
             lines_we_care_about = list(obs.name_line)
@@ -581,8 +638,8 @@ class RecommenderService:
         import pandas as pd
         import json
 
-        layout_file = config.ENV_PATH / "grid_layout.json"
-        if layout_file.exists():
+        layout_file = getattr(config, 'LAYOUT_FILE_PATH', None)
+        if layout_file and layout_file.exists():
             try:
                 with open(layout_file, 'r') as f:
                     layout_data = json.load(f)
@@ -1369,18 +1426,28 @@ class RecommenderService:
             })
         return result
 
-    def simulate_manual_action(self, action_id: str, disconnected_element: str):
-        """Simulate a single action from the loaded dictionary and return its impact.
+    @staticmethod
+    def _canonicalize_id(action_id: str) -> str:
+        if not action_id or "+" not in action_id:
+            return action_id
+        return "+".join(sorted([p.strip() for p in action_id.split("+")]))
 
-        Reuses the network variants from the last analysis when possible.
-        Starting from the converged N-1 state for faster and more consistent results.
+    def simulate_manual_action(self, raw_action_id: str, disconnected_element: str):
+        """Simulate a single or combined action and return its impact.
+
+        raw_action_id can be a single ID or multiple IDs combined with '+' (e.g. 'act1+act2').
         """
         if not self._dict_action:
             raise ValueError("No action dictionary loaded. Load a config first.")
-        if action_id not in self._dict_action:
-            raise ValueError(f"Action '{action_id}' not found in the loaded action dictionary.")
 
-        action_desc = self._dict_action[action_id]
+        action_id = self._canonicalize_id(raw_action_id)
+        
+        action_ids = action_id.split("+")
+        recent_actions = self._last_result.get("prioritized_actions", {}) if self._last_result else {}
+        
+        for aid in action_ids:
+            if aid not in self._dict_action and aid not in recent_actions:
+                raise ValueError(f"Action '{aid}' not found in the loaded action dictionary or recent analysis.")
 
         # Use cached environment
         env = self._get_simulation_env()
@@ -1427,7 +1494,17 @@ class RecommenderService:
 
         # Build the action object
         try:
-            action = env.action_space(action_desc["content"])
+            action = None
+            for aid in action_ids:
+                if aid in self._dict_action:
+                    a_obj = env.action_space(self._dict_action[aid]["content"])
+                else:
+                    a_obj = recent_actions[aid]["action"]
+                
+                if action is None:
+                    action = a_obj
+                else:
+                    action = action + a_obj
         except Exception as e:
             raise ValueError(f"Could not create action from description: {e}")
 
@@ -1443,17 +1520,39 @@ class RecommenderService:
         n.set_working_variant(original_variant) # Restore variant
 
         # Post-process results
-        description_unitaire = action_desc.get(
-            "description_unitaire", action_desc.get("description", "No description")
-        )
+        if len(action_ids) == 1:
+            aid = action_ids[0]
+            if aid in self._dict_action:
+                description_unitaire = self._dict_action[aid].get(
+                    "description_unitaire", self._dict_action[aid].get("description", "No description")
+                )
+            else:
+                description_unitaire = recent_actions[aid].get("description_unitaire", aid)
+        else:
+            def get_desc(aid):
+                if aid in self._dict_action:
+                    return self._dict_action[aid].get("description_unitaire") or self._dict_action[aid].get("description") or aid
+                return recent_actions.get(aid, {}).get("description_unitaire") or recent_actions.get(aid, {}).get("description") or aid
+            
+            description_unitaire = "[COMBINED] " + " + ".join([str(get_desc(aid)) for aid in action_ids])
         
         rho_before = (obs_simu_defaut.rho[lines_overloaded_ids] * monitoring_factor).tolist() if lines_overloaded_ids else []
         rho_after = None
         max_rho = 0.0
         max_rho_line = "N/A"
         is_rho_reduction = False
+        is_islanded = False
+        n_components_after = 1
+        disconnected_mw = 0.0
 
         if not info_action["exception"]:
+            # Check for islanding compared to N state or N-1 state
+            n_components_after = obs_simu_action.n_components
+            if n_components_after > obs.n_components or n_components_after > obs_simu_defaut.n_components:
+                is_islanded = True
+                # Compute disconnected MW
+                disconnected_mw = float(max(0.0, obs_simu_defaut.main_component_load_mw - obs_simu_action.main_component_load_mw))
+            
             rho_after = (obs_simu_action.rho[lines_overloaded_ids] * monitoring_factor).tolist()
             if rho_before:
                 is_rho_reduction = bool(np.all(np.array(rho_after) + 0.01 < np.array(rho_before)))
@@ -1507,7 +1606,9 @@ class RecommenderService:
                 "max_rho": max_rho,
                 "max_rho_line": max_rho_line,
                 "is_rho_reduction": is_rho_reduction,
-                "non_convergence": non_convergence
+                "is_islanded": is_islanded,
+                "non_convergence": non_convergence,
+                "is_estimated": False,
             }
 
         return {
@@ -1518,8 +1619,159 @@ class RecommenderService:
             "max_rho": sanitize_for_json(max_rho),
             "max_rho_line": max_rho_line,
             "is_rho_reduction": is_rho_reduction,
+            "is_islanded": is_islanded,
+            "n_components": n_components_after,
+            "disconnected_mw": disconnected_mw,
             "non_convergence": non_convergence,
             "lines_overloaded": sanitize_for_json(lines_overloaded_names),
         }
+
+    def compute_superposition(self, action1_id: str, action2_id: str, disconnected_element: str):
+        """Compute the combined effect of two actions using the superposition theorem.
+
+        This computes it on-demand, which is useful for actions that weren't part of the
+        initial analysis results (e.g. manually simulated actions).
+        """
+        if not self._last_result or "prioritized_actions" not in self._last_result:
+            # If no analysis run, we might need to get observations first.
+            # But usually this is called when we have some actions already simulated.
+            pass
+
+        # We need the observations for both actions.
+        # If they aren't in self._last_result['prioritized_actions'], they must be in
+        # the global cache of simulated actions or we need to simulate them now.
+        
+        all_actions = self._last_result.get("prioritized_actions", {}) if self._last_result else {}
+        
+        if action1_id not in all_actions or action2_id not in all_actions:
+            # If not in the result, try to simulate them if we have the dictionary entries
+            # (Note: this might be slow, but it's on-demand).
+            # For now, let's assume they are in all_actions (user selects from simulated actions).
+            if action1_id not in all_actions:
+                self.simulate_manual_action(action1_id, disconnected_element)
+                all_actions = self._last_result["prioritized_actions"]
+            if action2_id not in all_actions:
+                self.simulate_manual_action(action2_id, disconnected_element)
+                all_actions = self._last_result["prioritized_actions"]
+
+        env = self._get_simulation_env()
+        classifier = ActionClassifier()
+        
+        # Identify elements for both actions
+        # First check if they have action topology enriched
+        act1_obj = all_actions[action1_id]["action"]
+        act2_obj = all_actions[action2_id]["action"]
+
+        line_idxs1, sub_idxs1 = _identify_action_elements(
+            act1_obj, action1_id, self._dict_action, classifier, env
+        )
+        line_idxs2, sub_idxs2 = _identify_action_elements(
+            act2_obj, action2_id, self._dict_action, classifier, env
+        )
+
+        if not line_idxs1 and not sub_idxs1 and not line_idxs2 and not sub_idxs2:
+             # Fallback: if they are in _dict_action, maybe identify_action_elements needs it
+             # but they were already identified above?
+             pass
+
+        if (not line_idxs1 and not sub_idxs1) or (not line_idxs2 and not sub_idxs2):
+             return {"error": f"Cannot identify elements for one or both actions (Act1: {len(line_idxs1)} lines, {len(sub_idxs1)} subs; Act2: {len(line_idxs2)} lines, {len(sub_idxs2)} subs)"}
+
+
+        # Get obs_start (N-1 state)
+        n = env.network_manager.network
+        original_variant = n.get_working_variant_id()
+        n1_variant_id = self._get_n1_variant(disconnected_element)
+        n.set_working_variant(n1_variant_id)
+        obs_start = env.get_obs()
+        
+        # Get pre-existing rho for reduction calculation
+        n_variant_id = self._get_n_variant()
+        n.set_working_variant(n_variant_id)
+        obs_n = env.get_obs()
+        pre_existing_rho = {i: obs_n.rho[i] for i in range(len(obs_n.rho))}
+        
+        # Filter lines we care about
+        lines_overloaded_ids = []
+        monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
+        for i in range(len(obs_start.rho)):
+            if obs_start.rho[i] >= monitoring_factor:
+                 lines_overloaded_ids.append(i)
+                 
+        lines_we_care_about, branches_with_limits = self._get_monitoring_parameters(obs_start)
+
+        result = compute_combined_pair_superposition(
+            obs_start=obs_start,
+            obs_act1=all_actions[action1_id]["observation"],
+            obs_act2=all_actions[action2_id]["observation"],
+            act1_line_idxs=line_idxs1,
+            act1_sub_idxs=sub_idxs1,
+            act2_line_idxs=line_idxs2,
+            act2_sub_idxs=sub_idxs2,
+            obs_combined=all_actions.get(f"{action1_id}+{action2_id}", {}).get("observation")
+        )
+        
+        if "error" not in result:
+             # Logic to compute max_rho and other details, similar to compute_all_pairs_superposition
+             name_line = list(env.name_line)
+             num_lines = len(name_line)
+             worsening_threshold = getattr(config, 'PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD', 0.02)
+
+             pre_existing_baseline = np.zeros(num_lines)
+             is_pre_existing = np.zeros(num_lines, dtype=bool)
+             for idx, rho_val in pre_existing_rho.items():
+                 pre_existing_baseline[idx] = rho_val
+                 is_pre_existing[idx] = True
+
+             if lines_we_care_about is not None and len(lines_we_care_about) > 0:
+                 care_mask = np.isin(name_line, list(lines_we_care_about))
+             else:
+                 care_mask = np.ones(num_lines, dtype=bool)
+
+             # Filter out branches without explicit thermal limits in pypowsybl (consistency with simulation)
+             for i, l in enumerate(name_line):
+                 if care_mask[i] and l not in branches_with_limits:
+                     care_mask[i] = False
+
+             rho_combined = np.abs(
+                 (1.0 - sum(result["betas"])) * obs_start.rho +
+                 result["betas"][0] * all_actions[action1_id]["observation"].rho +
+                 result["betas"][1] * all_actions[action2_id]["observation"].rho
+             )
+
+             # Max rho among monitored lines
+             worsened_mask = rho_combined > pre_existing_baseline * (1 + worsening_threshold)
+             eligible_mask = care_mask & (~is_pre_existing | worsened_mask)
+
+             max_rho = 0.0
+             max_rho_line = "N/A"
+             if np.any(eligible_mask):
+                 masked_rho = rho_combined[eligible_mask]
+                 max_idx = np.argmax(masked_rho)
+                 max_rho = float(masked_rho[max_idx])
+                 max_rho_line = name_line[np.where(eligible_mask)[0][max_idx]]
+
+             # Scale results by monitoring_factor for consistency with other simulations
+             res_max_rho = max_rho * monitoring_factor
+             res_rho_after = (rho_combined[lines_overloaded_ids] * monitoring_factor).tolist()
+             res_rho_before = (obs_start.rho[lines_overloaded_ids] * monitoring_factor).tolist()
+
+             # Check if it reduces loading on ALL overloaded lines
+             # Use 0.01 (1%) as a robust epsilon for "reduction"
+             rho_after = rho_combined[lines_overloaded_ids]
+             baseline_rho = obs_start.rho[lines_overloaded_ids]
+             is_rho_reduction = bool(np.all(rho_after + 0.01 < baseline_rho))
+
+             result.update({
+                 "max_rho": res_max_rho,
+                 "max_rho_line": max_rho_line,
+                 "is_rho_reduction": is_rho_reduction,
+                 "rho_after": res_rho_after,
+                 "rho_before": res_rho_before,
+                 "is_estimated": True,
+             })
+
+        n.set_working_variant(original_variant)
+        return sanitize_for_json(result)
 
 recommender_service = RecommenderService()

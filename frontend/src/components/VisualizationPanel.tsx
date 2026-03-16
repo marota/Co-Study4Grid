@@ -34,6 +34,9 @@ interface VisualizationPanelProps {
     onOverlaySldTabChange: (tab: SldTab) => void;
     voltageLevels: string[];
     onVlOpen: (vlName: string) => void;
+    networkPath: string;
+    layoutPath: string;
+    onOpenSettings: (tab?: 'recommender' | 'configurations' | 'paths') => void;
 }
 
 // ===== SLD Overlay sub-component =====
@@ -541,7 +544,15 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onOverlaySldTabChange,
     voltageLevels,
     onVlOpen,
+    networkPath,
+    layoutPath,
+    onOpenSettings,
 }) => {
+    const [warningDismissed, setWarningDismissed] = useState(false);
+
+    const hasAnyDiagram = !!(nDiagram?.svg || n1Diagram?.svg || actionDiagram?.svg);
+    const showPathWarning = !warningDismissed && !hasAnyDiagram;
+
     const showViewModeToggle = activeTab !== 'overflow' && (
         (activeTab === 'n' && !!nDiagram?.svg) ||
         (activeTab === 'n-1' && !!n1Diagram?.svg) ||
@@ -648,6 +659,53 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                     </div>
                 )}
 
+                {/* Path Warning Banner */}
+                {!nDiagram?.svg && !configLoading && showPathWarning && (
+                    <div style={{
+                        position: 'absolute',
+                        top: '10px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 150,
+                        backgroundColor: '#fff3cd',
+                        color: '#856404',
+                        padding: '12px 20px',
+                        borderRadius: '8px',
+                        border: '1px solid #ffeeba',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        maxWidth: '80%',
+                        fontSize: '13px'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span>⚠️</span> Configuration Paths
+                            </div>
+                            <button
+                                onClick={() => setWarningDismissed(true)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', color: '#856404' }}
+                            >✕</button>
+                        </div>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <strong>Layout Path:</strong> {layoutPath || 'Not set'}
+                        </div>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <strong>Output Folder:</strong> {networkPath ? networkPath.substring(0, networkPath.lastIndexOf('/')) : 'Not set'}
+                        </div>
+                        <div style={{ marginTop: '4px' }}>
+                            <a
+                                href="#"
+                                onClick={(e) => { e.preventDefault(); onOpenSettings('paths'); }}
+                                style={{ color: '#0056b3', textDecoration: 'underline', fontWeight: 500 }}
+                            >
+                                Change in settings
+                            </a>
+                        </div>
+                    </div>
+                )}
+
                 {/* Overflow Container */}
                 {activeTab === 'overflow' && (
                     <div style={{
@@ -663,8 +721,19 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                 title="Overflow Graph"
                             />
                         ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
-                                {analysisLoading ? 'Processing Analysis...' : 'Run analysis to see overflow graph'}
+                            <div style={{
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%',
+                                color: analysisLoading ? '#856404' : '#999',
+                                background: analysisLoading ? '#fff3cd' : 'white',
+                                fontWeight: analysisLoading ? 600 : 'normal',
+                                gap: '10px'
+                            }}>
+                                {analysisLoading ? (
+                                    <>
+                                        <span style={{ fontSize: '24px' }}>⚙️</span>
+                                        <span>Processing Analysis...</span>
+                                    </>
+                                ) : 'Run analysis to see overflow graph'}
                             </div>
                         )}
                     </div>

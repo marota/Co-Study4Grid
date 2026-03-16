@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { ConfigRequest, AnalysisResult, BranchResponse, DiagramData, FlowDelta, AssetDelta } from './types';
+import type { ConfigRequest, AnalysisResult, BranchResponse, DiagramData, FlowDelta, AssetDelta, AvailableAction } from './types';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -79,8 +79,8 @@ export const api = {
         );
         return response.data;
     },
-    getAvailableActions: async (): Promise<{ id: string; description: string }[]> => {
-        const response = await axios.get<{ actions: { id: string; description: string }[] }>(
+    getAvailableActions: async (): Promise<AvailableAction[]> => {
+        const response = await axios.get<{ actions: AvailableAction[] }>(
             `${API_BASE_URL}/api/actions`
         );
         return response.data.actions;
@@ -93,6 +93,9 @@ export const api = {
         max_rho: number | null;
         max_rho_line: string;
         is_rho_reduction: boolean;
+        is_islanded?: boolean;
+        n_components?: number;
+        disconnected_mw?: number;
         non_convergence: string | null;
         lines_overloaded: string[];
     }> => {
@@ -102,11 +105,30 @@ export const api = {
         );
         return response.data;
     },
+    computeSuperposition: async (action1_id: string, action2_id: string, disconnectedElement: string): Promise<import('./types').CombinedAction> => {
+        const response = await axios.post(
+            `${API_BASE_URL}/api/compute-superposition`,
+            { action1_id, action2_id, disconnected_element: disconnectedElement }
+        );
+        return response.data;
+    },
     pickPath: async (type: 'file' | 'dir'): Promise<string | null> => {
         const response = await axios.get<{ path: string | null }>(
             `${API_BASE_URL}/api/pick-path?type=${type}`
         );
         return response.data.path;
+    },
+    saveSession: async (params: {
+        session_name: string;
+        json_content: string;
+        pdf_path: string | null;
+        output_folder_path: string;
+    }): Promise<{ session_folder: string; pdf_copied: boolean }> => {
+        const response = await axios.post<{ session_folder: string; pdf_copied: boolean }>(
+            `${API_BASE_URL}/api/save-session`,
+            params
+        );
+        return response.data;
     },
     getNSld: async (voltageLevelId: string): Promise<{ svg: string; sld_metadata: string | null; voltage_level_id: string }> => {
         const response = await axios.post<{ svg: string; sld_metadata: string | null; voltage_level_id: string }>(

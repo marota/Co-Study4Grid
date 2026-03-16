@@ -31,12 +31,14 @@ class ConfigRequest(BaseModel):
     min_close_coupling: float = 3.0
     min_open_coupling: float = 2.0
     min_line_disconnections: float = 3.0
+    min_pst: float = 1.0
     n_prioritized_actions: int = 10
     lines_monitoring_path: str | None = None
     monitoring_factor: float = 0.95
     pre_existing_overload_threshold: float = 0.02
     ignore_reconnections: bool = False
     pypowsybl_fast_mode: bool = True
+    layout_path: str | None = None
 
 class AnalysisRequest(BaseModel):
     disconnected_element: str
@@ -55,9 +57,20 @@ class ActionVariantRequest(BaseModel):
     action_id: str
     mode: str = "network"  # "network" or "delta"
 
+class ComputeSuperpositionRequest(BaseModel):
+    action1_id: str
+    action2_id: str
+    disconnected_element: str
+
 class ManualActionRequest(BaseModel):
     action_id: str
     disconnected_element: str
+
+class SaveSessionRequest(BaseModel):
+    session_name: str
+    json_content: str
+    pdf_path: str | None = None
+    output_folder_path: str
 
 last_network_path = None
 
@@ -65,10 +78,12 @@ last_network_path = None
 def update_config(config: ConfigRequest):
     global last_network_path
     try:
-        # Load network first to verify path and get branches
-        if config.network_path != last_network_path:
-            network_service.load_network(config.network_path)
-            last_network_path = config.network_path
+        # Always reload network and reset recommender caches to ensure clean state.
+        # Even if the path is the same, previous analyses may have modified the
+        # in-memory network or left stale simulation environments.
+        recommender_service.reset()
+        network_service.load_network(config.network_path)
+        last_network_path = config.network_path
         # Update recommender config
         recommender_service.update_config(config)
         
@@ -79,12 +94,48 @@ def update_config(config: ConfigRequest):
             monitored_lines = len(network_service.get_monitored_elements())
         else:
             monitored_lines = getattr(recommender_config, 'MONITORED_LINES_COUNT', total_lines)
+
+        # Compute action dictionary statistics using same logic as frontend
+        import os as _os
+        from expert_op4grid_recommender.action_evaluation.classifier import ActionClassifier
+        
+        action_dict = recommender_service._dict_action or {}
+        action_file_name = _os.path.basename(config.action_file_path)
+        
+        n_reco = n_disco = n_pst = n_open_coupling = n_close_coupling = 0
+        classifier = ActionClassifier()
+        
+        for k, v in action_dict.items():
+            action_id = str(k).lower()
+            action_desc = str(v.get("description_unitaire", v.get("description", ""))).lower()
+            t = str(classifier.identify_action_type(v) or "unknown").lower()
             
+            is_disco = 'disco' in t or 'open_line' in t or 'open_load' in t or 'ouverture' in action_desc
+            is_reco = 'reco' in t or 'close_line' in t or 'close_load' in t or 'fermeture' in action_desc
+            is_open_coupling = 'open_coupling' in t
+            is_close_coupling = 'close_coupling' in t
+            is_pst_action = ('pst' in action_id or 'pst' in action_desc or 'pst' in t) and not is_disco and not is_reco and not is_open_coupling and not is_close_coupling
+            
+            if is_disco: n_disco += 1
+            if is_reco: n_reco += 1
+            if is_open_coupling: n_open_coupling += 1
+            if is_close_coupling: n_close_coupling += 1
+            if is_pst_action: n_pst += 1
+
         return {
             "status": "success", 
             "message": "Configuration updated and network loaded",
             "total_lines_count": total_lines,
-            "monitored_lines_count": monitored_lines
+            "monitored_lines_count": monitored_lines,
+            "action_dict_file_name": action_file_name,
+            "action_dict_stats": {
+                "reco": n_reco,
+                "disco": n_disco,
+                "pst": n_pst,
+                "open_coupling": n_open_coupling,
+                "close_coupling": n_close_coupling,
+                "total": len(action_dict)
+            }
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -144,6 +195,49 @@ if path:
     except Exception as e:
         print(f"Error picking path: {e}")
         return {"path": "", "error": str(e)}
+
+@app.post("/api/save-session")
+def save_session(request: SaveSessionRequest):
+    """
+    Saves a session folder to the configured output directory.
+    Creates <output_folder_path>/<session_name>/ and writes:
+      - session.json  (the analysis snapshot)
+      - <overflow>.pdf (copy of the overflow graph PDF, if pdf_path is provided)
+    Returns the absolute path of the created session folder.
+    """
+    import shutil
+
+    if not request.output_folder_path:
+        raise HTTPException(status_code=400, detail="output_folder_path is required")
+
+    session_dir = os.path.join(request.output_folder_path, request.session_name)
+    try:
+        os.makedirs(session_dir, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(status_code=400, detail=f"Cannot create session directory: {e}")
+
+    # Write JSON snapshot
+    json_file = os.path.join(session_dir, "session.json")
+    with open(json_file, "w", encoding="utf-8") as f:
+        f.write(request.json_content)
+
+    # Copy overflow PDF if available
+    pdf_copied = False
+    if request.pdf_path:
+        if os.path.isfile(request.pdf_path):
+            pdf_dest = os.path.join(session_dir, os.path.basename(request.pdf_path))
+            try:
+                shutil.copy2(request.pdf_path, pdf_dest)
+                pdf_copied = True
+            except Exception as e:
+                print(f"Warning: Failed to copy PDF from {request.pdf_path} to {pdf_dest}: {e}")
+        else:
+            print(f"Warning: PDF path provided but file not found: {request.pdf_path}")
+
+    return {
+        "session_folder": session_dir,
+        "pdf_copied": pdf_copied
+    }
 
 from fastapi.responses import StreamingResponse
 import json
@@ -368,6 +462,19 @@ def simulate_manual_action(request: ManualActionRequest):
     try:
         result = recommender_service.simulate_manual_action(
             request.action_id, request.disconnected_element
+        )
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/compute-superposition")
+def compute_superposition(request: ComputeSuperpositionRequest):
+    """Compute the combined effect of two actions using the superposition theorem."""
+    try:
+        result = recommender_service.compute_superposition(
+            request.action1_id, request.action2_id, request.disconnected_element
         )
         return result
     except Exception as e:

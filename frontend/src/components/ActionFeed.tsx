@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult } from '../types';
 import { api } from '../api';
-import { getActionTargetVoltageLevel, getActionTargetLines } from '../utils/svgUtils';
+import { getActionTargetVoltageLevels, getActionTargetLines } from '../utils/svgUtils';
+import CombinedActionsModal from './CombinedActionsModal';
 
 interface ActionFeedProps {
     actions: Record<string, ActionDetail>;
@@ -29,8 +30,11 @@ interface ActionFeedProps {
     minOpenCoupling: number;
     minLineDisconnections: number;
     nPrioritizedActions: number;
+    minPst: number;
     ignoreReconnections: boolean;
-    onOpenSettings?: (tab?: 'recommender' | 'configurations') => void;
+    onOpenSettings?: (tab?: 'recommender' | 'configurations' | 'paths') => void;
+    actionDictFileName?: string | null;
+    actionDictStats?: { reco: number; disco: number; pst: number; open_coupling: number; close_coupling: number; total: number } | null;
 }
 
 const ActionFeed: React.FC<ActionFeedProps> = ({
@@ -58,12 +62,16 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     minCloseCoupling,
     minOpenCoupling,
     minLineDisconnections,
+    minPst,
     nPrioritizedActions,
     ignoreReconnections,
     onOpenSettings,
+    actionDictFileName,
+    actionDictStats,
 }) => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [combineModalOpen, setCombineModalOpen] = useState(false);
     const [availableActions, setAvailableActions] = useState<AvailableAction[]>([]);
     const [loadingActions, setLoadingActions] = useState(false);
     const [simulating, setSimulating] = useState<string | null>(null);
@@ -75,6 +83,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     const [suggestedTab, setSuggestedTab] = useState<'prioritized' | 'rejected'>('prioritized');
     const [dismissedSelectedWarning, setDismissedSelectedWarning] = useState(false);
     const [dismissedRejectedWarning, setDismissedRejectedWarning] = useState(false);
+    const [showActionDictWarning, setShowActionDictWarning] = useState(true);
 
     const showTooltip = (e: React.MouseEvent, content: React.ReactNode) => {
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -113,7 +122,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 const t = (a.type || 'unknown').toLowerCase();
                 const actionId = a.id.toLowerCase();
                 const actionDesc = (a.description || '').toLowerCase();
-                
+
                 const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
                 const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
                 const isOpenCoupling = t.includes('open_coupling');
@@ -144,13 +153,13 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             const isOpenType = type === 'open_coupling';
             const isCloseType = type === 'close_coupling';
             const isPstType = type === 'pst_tap_change' || type.includes('pst');
-            
+
             if (isDiscoType && !typeFilters.disco) continue;
             if (isRecoType && !typeFilters.reco) continue;
             if (isOpenType && !typeFilters.open) continue;
             if (isCloseType && !typeFilters.close) continue;
             if (isPstType && !typeFilters.pst) continue;
-            
+
             // If it's a known type but its filter is off, it's already skipped.
             // If it's an unknown type, we show it only if ALL filters are active.
             const isKnownType = isDiscoType || isRecoType || isOpenType || isCloseType || isPstType;
@@ -165,7 +174,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 const actionDesc = (actionDetail?.description_unitaire || '').toLowerCase();
                 const aid = actionId.toLowerCase();
                 const t = type.toLowerCase();
-                
+
                 const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
                 const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
                 const isOpenCoupling = t.includes('open_coupling');
@@ -181,7 +190,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 else shouldShow = typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
 
                 if (!shouldShow) continue;
-                
+
                 list.push({ type, actionId, score: Number(score) });
             }
         }
@@ -225,6 +234,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 max_rho: result.max_rho,
                 max_rho_line: result.max_rho_line,
                 is_rho_reduction: result.is_rho_reduction,
+                is_islanded: result.is_islanded,
+                n_components: result.n_components,
+                disconnected_mw: result.disconnected_mw,
                 non_convergence: result.non_convergence,
             };
             onManualActionAdded(actionId, detail, result.lines_overloaded || []);
@@ -269,8 +281,23 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     };
 
     // Sort actions by max_rho ascending (matching standalone)
+    // Filter out combined actions that are only estimations (they will have '+' in ID but no rho_after yet)
     const sortedActionEntries = useMemo(() => {
-        return Object.entries(actions).sort(([, a], [, b]) => (a.max_rho ?? 999) - (b.max_rho ?? 999));
+        return Object.entries(actions)
+            .filter(([id, details]) => {
+                const isCombined = id.includes('+');
+                if (!isCombined) return true;
+                // Only show combined if it has been fully simulated (not just estimated)
+                // Simulated actions will NOT have the is_estimated flag set.
+                if (details.is_estimated) return false;
+                return details.rho_after && details.rho_after.length > 0;
+            })
+            .sort(([, a], [, b]) => {
+                const aIslanded = !!a.is_islanded;
+                const bIslanded = !!b.is_islanded;
+                if (aIslanded !== bIslanded) return aIslanded ? 1 : -1;
+                return (a.max_rho ?? 999) - (b.max_rho ?? 999);
+            });
     }, [actions]);
 
     const analysisActionIds = useMemo(() => {
@@ -312,24 +339,33 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             };
             const sc = details.non_convergence
                 ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'divergent' }
-                : severityColors[severity];
+                : details.is_islanded
+                    ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'islanded' }
+                    : severityColors[severity];
             const isSelected = selectedActionId === id;
-             return (
-                 <div key={id} 
+            return (
+                <div key={id}
                     data-testid={`action-card-${id}`}
                     style={{
-                     background: details.non_convergence ? '#fff5f5' : (isSelected ? '#e7f1ff' : 'white'),
-                     border: details.non_convergence ? '1px solid #dc3545' : '1px solid #ddd',
-                     borderRadius: '8px',
-                     padding: '10px',
-                     marginBottom: '10px',
-                     boxShadow: isSelected ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
-                     borderLeft: `5px solid ${isSelected ? '#007bff' : sc.border}`,
-                     cursor: 'pointer',
-                     transition: 'all 0.15s ease',
-                 }} onClick={() => onActionSelect(id)}>
+                        background: (details.non_convergence || details.is_islanded) ? '#fff5f5' : (isSelected ? '#e7f1ff' : 'white'),
+                        border: (details.non_convergence || details.is_islanded) ? '1px solid #dc3545' : '1px solid #ddd',
+                        borderRadius: '8px',
+                        padding: '10px',
+                        marginBottom: '10px',
+                        boxShadow: isSelected ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
+                        borderLeft: `5px solid ${isSelected ? '#007bff' : sc.border}`,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                    }} onClick={() => onActionSelect(id)}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h4 style={{ margin: 0, fontSize: '14px', color: isSelected ? '#0056b3' : undefined }}>
+                        <h4 style={{
+                            margin: 0,
+                            fontSize: '14px',
+                            color: isSelected ? '#0056b3' : undefined,
+                            flex: 1,
+                            minWidth: 0,
+                            overflowWrap: 'anywhere'
+                        }}>
                             #{index + 1} {'\u2014'} {id}
                         </h4>
                         <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
@@ -351,51 +387,66 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                     ⚠️ LoadFlow failure: {details.non_convergence}
                                 </div>
                             )}
+                            {details.is_islanded && (
+                                <div style={{ fontSize: '12px', background: '#fff5f5', color: '#dc3545', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #dc3545', fontWeight: 500 }}>
+                                    🏝️ Islanding detected ({details.disconnected_mw?.toFixed(1)} MW disconnected)
+                                </div>
+                            )}
                         </div>
                         {(() => {
-                            const badgeBtn = (name: string, bg: string, color: string, title: string) => (
+                            const badges: React.ReactNode[] = [];
+                            const badgeBtn = (name: string, bg: string, color: string, title: string, onDoubleClick?: (e: React.MouseEvent) => void) => (
                                 <button key={name}
                                     style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, textDecoration: 'underline dotted', flexShrink: 0, backgroundColor: bg, color }}
                                     title={title}
-                                    onClick={(e) => { e.stopPropagation(); onAssetClick(id, name, 'action'); }}>
+                                    onClick={(e) => { e.stopPropagation(); onAssetClick(id, name, 'action'); }}
+                                    onDoubleClick={onDoubleClick}>
                                     {name}
                                 </button>
                             );
-                            const vlName = nodesByEquipmentId
-                                ? getActionTargetVoltageLevel(details, id, nodesByEquipmentId)
-                                : null;
-                            if (vlName) return (
-                                <button key={vlName}
-                                    style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, textDecoration: 'underline dotted', flexShrink: 0, backgroundColor: '#d1fae5', color: '#065f46' }}
-                                    title={`Click: zoom to ${vlName} | Double-click: open SLD`}
-                                    onClick={(e) => { e.stopPropagation(); onAssetClick(id, vlName, 'action'); }}
-                                    onDoubleClick={(e) => { e.stopPropagation(); onVlDoubleClick?.(id, vlName); }}>
-                                    {vlName}
-                                </button>
-                            );
-                            const lineNames = (edgesByEquipmentId
+
+                            // 1. Substations (VLs)
+                            if (nodesByEquipmentId) {
+                                const vlNames = getActionTargetVoltageLevels(details, id, nodesByEquipmentId);
+                                vlNames.forEach(vlName => {
+                                    badges.push(badgeBtn(vlName, '#d1fae5', '#065f46', `Click: zoom to ${vlName} | Double-click: open SLD`, (e) => {
+                                        e.stopPropagation();
+                                        onVlDoubleClick?.(id, vlName);
+                                    }));
+                                });
+                            }
+
+                            // 2. Lines / Equipments
+                            const lineNames = edgesByEquipmentId
                                 ? getActionTargetLines(details, id, edgesByEquipmentId)
                                 : Array.from(new Set([
                                     ...Object.keys(details.action_topology?.lines_ex_bus || {}),
                                     ...Object.keys(details.action_topology?.lines_or_bus || {}),
-                                ]))) || [];
-                            if (lineNames.length > 0) return (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0 }}>
-                                    {lineNames.map(name => badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to line ${name}`))}
+                                ]));
+
+                            lineNames.forEach(name => {
+                                // Avoid duplicates if already added as VL (unlikely but possible)
+                                if (badges.some(b => React.isValidElement(b) && b.key === name)) return;
+                                badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
+                            });
+
+                            // 3. Fallback: gen/load equipment names from topology
+                            if (badges.length === 0) {
+                                const topo = details.action_topology;
+                                const equipNames = Array.from(new Set([
+                                    ...Object.keys(topo?.gens_bus || {}),
+                                    ...Object.keys(topo?.loads_bus || {}),
+                                ]));
+                                equipNames.forEach(name => {
+                                    badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
+                                });
+                            }
+
+                            return (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0, maxWidth: '180px', justifyContent: 'flex-end' }}>
+                                    {badges}
                                 </div>
                             );
-                            // Fallback: gen/load equipment names from topology
-                            const topo = details.action_topology;
-                            const equipNames = [
-                                ...Object.keys(topo?.gens_bus || {}),
-                                ...Object.keys(topo?.loads_bus || {}),
-                            ];
-                            if (equipNames.length > 0) return (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0 }}>
-                                    {equipNames.map(name => badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`))}
-                                </div>
-                            );
-                            return null;
                         })()}
                     </div>
                     <div style={{ fontSize: '12px', background: isSelected ? '#dce8f7' : '#f8f9fa', padding: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
@@ -432,7 +483,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                             )}
                         </div>
                     </div>
-                </div>
+                </div >
             );
         });
     };
@@ -442,6 +493,21 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             {/* Header with search */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', position: 'relative' }}>
                 <h3 style={{ margin: 0, flex: 1 }}>Simulated Actions</h3>
+                <button
+                    onClick={() => setCombineModalOpen(true)}
+                    style={{
+                        background: '#17a2b8',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '4px 10px',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                    }}
+                >
+                    Combine
+                </button>
                 <button
                     onClick={handleOpenSearch}
                     style={{
@@ -587,6 +653,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                                                 {isComputed && (
                                                                                     actions[item.actionId]?.non_convergence ? (
                                                                                         <span data-testid={`badge-divergent-${item.actionId}`} style={{ marginLeft: '4px', background: '#dc3545', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }} title={actions[item.actionId].non_convergence || undefined}>divergent</span>
+                                                                                    ) : actions[item.actionId]?.is_islanded ? (
+                                                                                        <span data-testid={`badge-islanded-${item.actionId}`} style={{ marginLeft: '4px', background: '#dc3545', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }} title={`Islanding detected: ${actions[item.actionId].disconnected_mw?.toFixed(1)} MW disconnected`}>islanded</span>
                                                                                     ) : (
                                                                                         <span data-testid={`badge-computed-${item.actionId}`} style={{ marginLeft: '4px', background: '#28a745', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', opacity: 0.8 }}>computed</span>
                                                                                     )
@@ -599,8 +667,13 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                                                             <>
                                                                                                 <div style={{ fontWeight: 700, marginBottom: '2px', borderBottom: '1px solid #555', paddingBottom: '2px' }}>Parameters</div>
                                                                                                 {typeData.non_convergence?.[item.actionId] && (
-                                                                                                    <div style={{ color: '#ffc107', fontWeight: 600, marginBottom: '4px', padding: '2px 4px', border: '1px solid #ffc107', borderRadius: '4px' }}>
+                                                                                                    <div style={{ fontSize: '10px', color: '#dc3545' }}>
                                                                                                         ⚠️ Non-convergence: {typeData.non_convergence[item.actionId]}
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                {(actions[item.actionId]?.is_islanded) && (
+                                                                                                    <div style={{ fontSize: '10px', color: '#c2410c' }}>
+                                                                                                        🏝️ Islanding: {actions[item.actionId].n_components} components
                                                                                                     </div>
                                                                                                 )}
                                                                                                 {Object.entries(typeData.params![item.actionId]).map(([k, v]) => (
@@ -670,6 +743,30 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     </div>
                 )}
             </div>
+            {/* Action Dict Info Warning */}
+            {showActionDictWarning && !simulating && !pendingAnalysisResult && Object.keys(actions).length === 0 && actionDictFileName && actionDictStats && (
+                <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                    gap: '8px', padding: '8px 10px',
+                    background: '#fff3cd', border: '1px solid #ffeeba',
+                    borderRadius: '6px', marginBottom: '10px', fontSize: '12px', color: '#856404'
+                }}>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>ℹ️ Action dictionary: <code style={{ fontFamily: 'monospace', background: '#fcf3cf', padding: '1px 4px', borderRadius: '3px', border: '1px solid #f9e79f' }}>{actionDictFileName}</code></div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '4px' }}>
+                            <span>🔄 Reco: <strong>{actionDictStats.reco}</strong></span>
+                            <span>⛔ Disco: <strong>{actionDictStats.disco}</strong></span>
+                            <span>📐 PST: <strong>{actionDictStats.pst}</strong></span>
+                            <span>🔓 Open coupling: <strong>{actionDictStats.open_coupling}</strong></span>
+                            <span>🔒 Close coupling: <strong>{actionDictStats.close_coupling}</strong></span>
+                        </div>
+                        {onOpenSettings && (
+                            <button onClick={() => onOpenSettings('paths')} style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '12px' }}>Change in settings</button>
+                        )}
+                    </div>
+                    <button onClick={() => setShowActionDictWarning(false)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: '#856404' }} title="Dismiss">✕</button>
+                </div>
+            )}
             <div style={{ marginBottom: '15px' }}>
                 <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#333', borderBottom: '1px solid #eee', paddingBottom: '4px', display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '8px' }}>
                     Selected Actions
@@ -706,17 +803,24 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 </div>
 
 
-                {/* Loading indicator shown below existing cards during analysis */}
+                {/* Processing indicator during analysis */}
                 {analysisLoading && (
                     <div style={{
-                        textAlign: 'center', padding: '12px', color: '#856404',
-                        background: '#fff3cd', fontSize: '13px', fontWeight: 600,
-                        borderRadius: '8px', margin: '8px 0',
+                        padding: '12px',
+                        background: '#fff3cd',
+                        border: '1px solid #ffeeba',
+                        borderRadius: '8px',
+                        marginBottom: '15px',
+                        textAlign: 'center',
+                        color: '#856404',
+                        fontWeight: 600,
+                        fontSize: '14px',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                        animation: 'pulse 2s infinite ease-in-out'
                     }}>
                         ⚙️ Processing analysis...
                     </div>
                 )}
- 
                 {/* Display prioritized actions button inside Suggested Actions section */}
                 {pendingAnalysisResult && !analysisLoading && (
                     <button
@@ -741,7 +845,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
                     </button>
                 )}
- 
+
                 {suggestedTab === 'prioritized' && (
                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
                         !analysisLoading ? (
@@ -779,7 +883,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                 </button>
                                             )}
                                         </div>
-                                        <div>• Minimum actions: {minLineReconnections} reco, {minCloseCoupling} close, {minOpenCoupling} open, {minLineDisconnections} disco</div>
+                                        <div>• Minimum actions: {minLineReconnections} reco, {minCloseCoupling} close, {minOpenCoupling} open, {minLineDisconnections} disco, {minPst} PST</div>
                                         <div>• Maximum suggestions: {nPrioritizedActions}</div>
                                         <div>• Ignore reconnections: {ignoreReconnections ? 'Yes' : 'No'}</div>
                                     </div>
@@ -831,6 +935,17 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     {tooltip.content}
                 </div>
             )}
+
+            {/* Combined Actions Modal */}
+            <CombinedActionsModal
+                isOpen={combineModalOpen}
+                onClose={() => setCombineModalOpen(false)}
+                analysisResult={pendingAnalysisResult}
+                simulatedActions={actions}
+                disconnectedElement={disconnectedElement}
+                onSimulateCombined={onManualActionAdded}
+                monitoringFactor={monitoringFactor}
+            />
         </div>
     );
 };

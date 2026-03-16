@@ -4,6 +4,7 @@ import os
 import json
 import re
 import pytest
+import numpy as np
 from pathlib import Path
 
 # Add project root to sys.path
@@ -287,5 +288,49 @@ def test_action_simulation_consistency(scenario_data, analysis_results):
         
     assert np.allclose(obs_simulated.rho, obs_run_analysis.rho, atol=1e-5), "Full rho array mismatch between manual simulation and run_analysis"
 
+def test_combined_actions_superposition(scenario_data, analysis_results):
+    """Verify that combined_actions is produced with valid beta coefficients."""
+    # Check if combined actions were produced
+    combined = analysis_results.get("combined_actions", {})
+    prioritized = analysis_results.get("prioritized_actions", {})
+
+    # Count converged actions
+    converged_ids = [aid for aid, d in prioritized.items() if d.get("non_convergence") is None]
+    n_converged = len(converged_ids)
+    expected_pairs = n_converged * (n_converged - 1) // 2
+
+    print(f"\nConverged actions: {n_converged}, expected pairs: {expected_pairs}")
+    print(f"Actual combined_actions entries: {len(combined)}")
+
+    # Must produce at least some pairs if there are 2+ converged actions
+    if n_converged >= 2:
+        assert len(combined) > 0, "No combined action pairs produced despite having converged actions"
+
+    # Check each pair has valid structure
+    for pair_key, pair_data in combined.items():
+        if "error" in pair_data:
+            # Errors are acceptable (e.g. unidentifiable elements), just ensure they're logged
+            continue
+
+        assert "betas" in pair_data, f"Pair {pair_key} missing betas"
+        assert "p_or_combined" in pair_data, f"Pair {pair_key} missing p_or_combined"
+        assert "max_rho" in pair_data, f"Pair {pair_key} missing max_rho"
+        assert "max_rho_line" in pair_data, f"Pair {pair_key} missing max_rho_line"
+        assert "is_rho_reduction" in pair_data, f"Pair {pair_key} missing is_rho_reduction"
+        assert "action1_id" in pair_data, f"Pair {pair_key} missing action1_id"
+        assert "action2_id" in pair_data, f"Pair {pair_key} missing action2_id"
+
+        betas = pair_data["betas"]
+        assert len(betas) == 2, f"Pair {pair_key} should have exactly 2 betas, got {len(betas)}"
+        # Betas should be finite numbers
+        assert all(np.isfinite(b) for b in betas), f"Pair {pair_key} has non-finite betas: {betas}"
+
+        # max_rho should be non-negative
+        assert pair_data["max_rho"] >= 0, f"Pair {pair_key} has negative max_rho"
+
+        print(f"  {pair_key}: betas={[round(b, 4) for b in betas]}, "
+              f"max_rho={pair_data['max_rho']:.3f}, rho_reduction={pair_data['is_rho_reduction']}")
+
 if __name__ == "__main__":
     pytest.main([__file__])
+

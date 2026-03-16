@@ -395,6 +395,124 @@
             height: auto;
             display: block;
         }
+
+        /* Combined Actions Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 1150px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            position: relative;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+        }
+
+        .modal-footer {
+            margin-top: 20px;
+            border-top: 1px solid #eee;
+            padding-top: 15px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .action-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .action-table th,
+        .action-table td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .action-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+
+        .action-table tr:hover {
+            background: #f1f8ff;
+        }
+
+        .action-table tr.selected {
+            background: #e7f1ff;
+        }
+
+        .beta-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #e9ecef;
+            font-family: monospace;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .modal-tabs {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 15px;
+        }
+
+        .modal-tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            font-weight: bold;
+            color: #666;
+        }
+
+        .modal-tab.active {
+            border-bottom-color: #3498db;
+            color: #3498db;
+            background: #f8f9fa;
+        }
+
+        .metric-badge {
+            display: inline-block;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .metric-score {
+            background: #e1f5fe;
+            color: #01579b;
+        }
+
+        .metric-rho {
+            background: #fff3e0;
+            color: #e65100;
+        }
     </style>
 </head>
 
@@ -777,8 +895,11 @@
         };
 
         // Determine which lines an action acts upon (for line disconnection/reconnection actions).
-        // Returns an array of line names, or empty array if the action is not line-only.
+        // Returns an array of line names.
         const getActionTargetLines = (actionDetail, actionId, edgesByEquipmentId) => {
+            const targets = new Set();
+
+            // 1. From topology
             const topo = actionDetail?.action_topology;
             if (topo) {
                 const lineKeys = new Set([
@@ -788,69 +909,70 @@
                 const genKeys = Object.keys(topo.gens_bus || {});
                 const loadKeys = Object.keys(topo.loads_bus || {});
 
-                // No gen/load changes → line-only action
                 if (lineKeys.size > 0 && genKeys.length === 0 && loadKeys.length === 0) {
-                    return [...lineKeys];
-                }
-
-                // Multiple assets but ALL values are -1 → multiple line disconnections
-                const allValues = [
-                    ...Object.values(topo.lines_ex_bus || {}),
-                    ...Object.values(topo.lines_or_bus || {}),
-                    ...Object.values(topo.gens_bus || {}),
-                    ...Object.values(topo.loads_bus || {}),
-                ];
-                if (allValues.length > 0 && allValues.every(v => v === -1)) {
-                    return [...lineKeys];
-                }
-            }
-
-            // Fallback: parse actionId if topology yielded nothing (e.g. reco_CHALOL31LOUHA)
-            if (actionId) {
-                const parts = actionId.split('_');
-                const candidate = parts[parts.length - 1];
-                if (edgesByEquipmentId && edgesByEquipmentId.has(candidate)) {
-                    return [candidate];
-                }
-            }
-
-            return [];
-        };
-
-        // Extract the voltage level name for nodal actions.
-        const getActionTargetVoltageLevel = (actionDetail, actionId, nodesByEquipmentId) => {
-            const desc = actionDetail?.description_unitaire;
-            if (desc && desc !== 'No description available') {
-                // Try all quoted strings (last-first) — any might be the VL name
-                const quotedMatches = desc.match(/'([^']+)'/g);
-                if (quotedMatches) {
-                    for (let i = quotedMatches.length - 1; i >= 0; i--) {
-                        const vl = quotedMatches[i].replace(/'/g, '');
-                        if (nodesByEquipmentId.has(vl)) return vl;
+                    lineKeys.forEach(l => targets.add(l));
+                } else {
+                    const allValues = [
+                        ...Object.values(topo.lines_ex_bus || {}),
+                        ...Object.values(topo.lines_or_bus || {}),
+                        ...Object.values(topo.gens_bus || {}),
+                        ...Object.values(topo.loads_bus || {}),
+                    ];
+                    if (allValues.length > 0 && allValues.every(v => v === -1)) {
+                        lineKeys.forEach(l => targets.add(l));
                     }
                 }
+            }
+
+            // 2. From action ID (handles combined IDs)
+            if (actionId) {
+                actionId.split('+').forEach(part => {
+                    const subParts = part.split('_');
+                    const candidate = subParts[subParts.length - 1];
+                    if (edgesByEquipmentId && edgesByEquipmentId.has(candidate)) {
+                        targets.add(candidate);
+                    }
+                });
+            }
+
+            return [...targets];
+        };
+
+
+        const getActionTargetVoltageLevels = (actionDetail, actionId, nodesByEquipmentId) => {
+            const targets = new Set();
+            const desc = actionDetail?.description_unitaire;
+            if (desc && desc !== 'No description available') {
+                // Try all quoted strings — any might be the VL name
+                const quotedMatches = desc.match(/'([^']+)'/g);
+                if (quotedMatches) {
+                    quotedMatches.forEach(match => {
+                        const vl = match.replace(/'/g, '');
+                        if (nodesByEquipmentId.has(vl)) targets.add(vl);
+                    });
+                }
                 // Match "dans le poste", "du poste", "au poste", etc.
-                const posteMatch = desc.match(/(?:dans le |du |au )?poste\s+'?(\S+?)'?(?:\s|$|,)/i);
-                if (posteMatch) {
-                    const vl = posteMatch[1].replace(/['"]/g, '');
-                    if (nodesByEquipmentId.has(vl)) return vl;
+                const posteMatches = desc.matchAll(/(?:dans le |du |au )?poste\s+'?(\S+?)'?(?:\s|$|,)/gi);
+                for (const match of posteMatches) {
+                    const vl = match[1].replace(/['"]/g, '');
+                    if (nodesByEquipmentId.has(vl)) targets.add(vl);
                 }
             }
 
             // Fallback: action ID suffix — skip for pure line reconnection actions
-            // (where lines are reconnected to real buses ≥ 0 with no gen/load changes),
-            // because the suffix can coincidentally match a VL name.
             const topo = actionDetail?.action_topology;
             const isLineReconnection = topo
                 && (Object.keys(topo.gens_bus || {}).length === 0 && Object.keys(topo.loads_bus || {}).length === 0)
                 && [...Object.values(topo.lines_ex_bus || {}), ...Object.values(topo.lines_or_bus || {})].some(v => v >= 0);
 
             if (actionId && !isLineReconnection) {
-                const parts = actionId.split('_');
-                const candidate = parts[parts.length - 1];
-                if (nodesByEquipmentId.has(candidate)) return candidate;
+                actionId.split('+').forEach(part => {
+                    const subParts = part.split('_');
+                    const candidate = subParts[subParts.length - 1];
+                    if (nodesByEquipmentId.has(candidate)) targets.add(candidate);
+                });
             }
-            return null;
+            return [...targets];
         };
 
         // Apply yellow fluo halo to action targets: edges (line actions) or nodes (nodal actions)
@@ -914,29 +1036,23 @@
 
             const idMap = getIdMap(container);
 
-            // 1. Try VL detection first (handles nodal AND coupler actions)
-            const vlName = getActionTargetVoltageLevel(actionDetail, actionId, nodesByEquipmentId);
-            console.log('[action-target] VL result:', vlName);
-            if (vlName) {
+            // 1. Identify all VL targets
+            const vlNames = getActionTargetVoltageLevels(actionDetail, actionId, nodesByEquipmentId);
+            vlNames.forEach(vlName => {
                 const node = nodesByEquipmentId.get(vlName);
-                console.log('[action-target] node svgId:', node?.svgId);
                 if (node && node.svgId) {
                     const el = idMap.get(node.svgId);
-                    console.log('[action-target] SVG element found:', !!el);
-                    if (el) {
-                        applyHighlight(el);
-                        return;
-                    }
+                    if (el) applyHighlight(el);
                 }
-            }
+            });
 
-            // 2. Fall back to line action: highlight edges from topology or action ID
+            // 2. Identify all line/equipment targets
             const targetLines = getActionTargetLines(actionDetail, actionId, edgesByEquipmentId);
             targetLines.forEach(lineName => {
                 const edge = edgesByEquipmentId.get(lineName);
                 if (edge && edge.svgId) {
                     const el = idMap.get(edge.svgId);
-                    applyHighlight(el);
+                    if (el) applyHighlight(el);
                 }
             });
         };
@@ -987,15 +1103,16 @@
         };
 
         function App() {
-            const [networkPath, setNetworkPath] = useState(localStorage.getItem('networkPath') || '/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z_dijon_only');
-            const [actionPath, setActionPath] = useState(localStorage.getItem('actionPath') || '/home/marotant/dev/Expert_op4grid_recommender/data/action_space/reduced_model_actions_20240828T0100Z_new_dijon.json');
-            const [linesMonitoringPath, setLinesMonitoringPath] = useState(localStorage.getItem('linesMonitoringPath') || '');
-            const initialMountRef = useRef(true);
-
             const [branches, setBranches] = useState([]);
             const [voltageLevels, setVoltageLevels] = useState([]);
+            const initialMountRef = useRef(true);
 
             // Nominal voltage filter state
+            const [networkPath, setNetworkPath] = useState(localStorage.getItem('networkPath') || '');
+            const [actionPath, setActionPath] = useState(localStorage.getItem('actionPath') || '');
+            const [layoutPath, setLayoutPath] = useState(localStorage.getItem('layoutPath') || '');
+            const [outputFolderPath, setOutputFolderPath] = useState(localStorage.getItem('outputFolderPath') || '');
+            const [linesMonitoringPath, setLinesMonitoringPath] = useState(localStorage.getItem('linesMonitoringPath') || '');
             const [nominalVoltageMap, setNominalVoltageMap] = useState({});  // {vl_id: kv}
             const [uniqueVoltages, setUniqueVoltages] = useState([]);       // sorted [kv1, kv2, ...]
             const [voltageRange, setVoltageRange] = useState([0, 400]);     // [minKv, maxKv] cursor positions
@@ -1007,6 +1124,7 @@
             const [minCloseCoupling, setMinCloseCoupling] = useState(3.0);
             const [minOpenCoupling, setMinOpenCoupling] = useState(2.0);
             const [minLineDisconnections, setMinLineDisconnections] = useState(3.0);
+            const [minPst, setMinPst] = useState(1.0);
             const [nPrioritizedActions, setNPrioritizedActions] = useState(10);
             const [monitoringFactor, setMonitoringFactor] = useState(0.95);
             const [preExistingOverloadThreshold, setPreExistingOverloadThreshold] = useState(0.02);
@@ -1015,23 +1133,44 @@
             const [monitoredLinesCount, setMonitoredLinesCount] = useState(0);
             const [totalLinesCount, setTotalLinesCount] = useState(0);
             const [showMonitoringWarning, setShowMonitoringWarning] = useState(false);
+            const [actionDictFileName, setActionDictFileName] = useState(null);
+            const [actionDictStats, setActionDictStats] = useState(null);
+            const [showActionDictWarning, setShowActionDictWarning] = useState(true);
+
 
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-            const [settingsTab, setSettingsTab] = useState('recommender');
+            const [settingsTab, setSettingsTab] = useState('paths');
             const [settingsBackup, setSettingsBackup] = useState(null);
             const [analysisLoading, setAnalysisLoading] = useState(false);
             const [analysisRan, setAnalysisRan] = useState(false);
             const [manualActionIds, setManualActionIds] = useState(new Set());
             const [manuallyAddedIds, setManuallyAddedIds] = useState(new Set());
             const [rejectedActionIds, setRejectedActionIds] = useState(new Set());
+            // Tracks every action ID ever returned by the recommender — separate from manuallyAddedIds
+            // so an action can be both is_suggested AND is_manually_simulated.
+            const [suggestedByRecommenderIds, setSuggestedByRecommenderIds] = useState(new Set());
             const [suggestedTab, setSuggestedTab] = useState('prioritized');
             const [dismissedSelectedWarning, setDismissedSelectedWarning] = useState(false);
             const [dismissedRejectedWarning, setDismissedRejectedWarning] = useState(false);
             const [dismissedRecommenderWarning, setDismissedRecommenderWarning] = useState(false);
             const [pendingAnalysisResult, setPendingAnalysisResult] = useState(null);
 
-            const handleOpenSettings = (tab = 'recommender') => {
+            // Combined Actions state
+            const [isCombineModalOpen, setIsCombineModalOpen] = useState(false);
+            const [selectedCombineActionIds, setSelectedCombineActionIds] = useState([]);
+            const [superpositionResult, setSuperpositionResult] = useState(null);
+            const [isComputingSuperposition, setIsComputingSuperposition] = useState(false);
+            const [exploreFilter, setExploreFilter] = React.useState('all');
+            const [combineModalTab, setCombineModalTab] = useState('computed'); // 'computed' | 'explore'
+            const [combinedSimulationFeedback, setCombinedSimulationFeedback] = useState(null);
+            const [isSimulatingCombined, setIsSimulatingCombined] = useState(false);
+
+            const handleOpenSettings = (tab = 'paths') => {
                 setSettingsBackup({
+                    networkPath,
+                    actionPath,
+                    layoutPath,
+                    outputFolderPath,
                     minLineReconnections,
                     minCloseCoupling,
                     minOpenCoupling,
@@ -1043,12 +1182,16 @@
                     ignoreReconnections,
                     pypowsyblFastMode
                 });
-                setSettingsTab(tab);
+                setSettingsTab('paths');
                 setIsSettingsOpen(true);
             };
 
             const handleCloseSettings = () => {
                 if (settingsBackup) {
+                    if (settingsBackup.networkPath !== undefined) setNetworkPath(settingsBackup.networkPath);
+                    if (settingsBackup.actionPath !== undefined) setActionPath(settingsBackup.actionPath);
+                    if (settingsBackup.layoutPath !== undefined) setLayoutPath(settingsBackup.layoutPath);
+                    if (settingsBackup.outputFolderPath !== undefined) setOutputFolderPath(settingsBackup.outputFolderPath);
                     setMinLineReconnections(settingsBackup.minLineReconnections);
                     setMinCloseCoupling(settingsBackup.minCloseCoupling);
                     setMinOpenCoupling(settingsBackup.minOpenCoupling);
@@ -1070,33 +1213,50 @@
                     }
                 }
 
-                // Clear previous results to ensure consistency with new settings BEFORE fetching
-                setResult(null);
-                setPendingAnalysisResult(null);
-                setNDiagram(null);
-                setN1Diagram(null);
-                setActionDiagram(null);
+                // ── Clear ALL state for a full reset (same as handleLoadConfig) ──
+                setError(''); setInfoMessage('');
+                setNDiagram(null); setN1Diagram(null); setActionDiagram(null);
+                setOriginalViewBox(null);
+                setResult(null); setPendingAnalysisResult(null);
                 setSelectedActionId(null);
-                setActiveTab('n');
-                setVlOverlay(null);
-                setSelectedBranch('');
-                committedBranchRef.current = '';
-                setAnalysisRan(false);
-                setManualActionIds(new Set());
-                setManuallyAddedIds(new Set());
-                setRejectedActionIds(new Set());
-                setError('');
-                setInfoMessage('');
-                setDismissedSelectedWarning(false);
-                setDismissedRejectedWarning(false);
-                setDismissedRecommenderWarning(false);
-                setShowMonitoringWarning(false);
+                setManualActionIds(new Set()); setManuallyAddedIds(new Set()); setRejectedActionIds(new Set()); setSuggestedByRecommenderIds(new Set());
+                setAnalysisLoading(false); setAnalysisRan(false);
+                setSelectedOverloads(new Set()); setMonitorDeselected(false);
+                setActiveTab('n'); setActionViewMode('network');
+                setVlOverlay(null); setN1Loading(false);
+                setSelectedBranch(''); committedBranchRef.current = '';
                 setInspectQuery('');
+                setShowMonitoringWarning(false);
+                setDismissedSelectedWarning(false); setDismissedRejectedWarning(false); setDismissedRecommenderWarning(false);
+                lastViewStateN.current = null; lastViewStateN1.current = null;
+                lastZoomState.current = { query: '', branch: '' };
+
+                if (!networkPath || !actionPath) {
+                    setSettingsBackup({
+                        networkPath,
+                        actionPath,
+                        layoutPath,
+                        outputFolderPath,
+                        minLineReconnections,
+                        minCloseCoupling,
+                        minOpenCoupling,
+                        minLineDisconnections,
+                        nPrioritizedActions,
+                        linesMonitoringPath,
+                        monitoringFactor,
+                        preExistingOverloadThreshold,
+                        ignoreReconnections,
+                        pypowsyblFastMode
+                    });
+                    setIsSettingsOpen(false);
+                    return;
+                }
 
                 try {
                     const configRes = await axios.post(API_BASE + '/api/config', {
                         network_path: networkPath,
                         action_file_path: actionPath,
+                        layout_path: layoutPath,
                         min_line_reconnections: minLineReconnections,
                         min_close_coupling: minCloseCoupling,
                         min_open_coupling: minOpenCoupling,
@@ -1117,7 +1277,33 @@
                         }
                     }
 
+                    // Fetch study-related data (branches, nominal voltages etc.)
+                    const [branchesRes, vlRes, nomVRes] = await Promise.all([
+                        axios.get(API_BASE + '/api/branches'),
+                        axios.get(API_BASE + '/api/voltage-levels'),
+                        axios.get(API_BASE + '/api/nominal-voltages')
+                    ]);
+
+                    setBranches(branchesRes.data.branches);
+                    setVoltageLevels(vlRes.data.voltage_levels);
+                    setSelectedBranch('');
+
+                    // Set up nominal voltage filter
+                    const nvMap = nomVRes.data.mapping;
+                    const uniqueKv = nomVRes.data.unique_kv;
+                    setNominalVoltageMap(nvMap);
+                    setUniqueVoltages(uniqueKv);
+                    if (uniqueKv.length > 0) {
+                        setVoltageRange([uniqueKv[0], uniqueKv[uniqueKv.length - 1]]);
+                    }
+
+                    fetchBaseDiagram(vlRes.data.voltage_levels.length);
+
                     setSettingsBackup({
+                        networkPath,
+                        actionPath,
+                        layoutPath,
+                        outputFolderPath,
                         minLineReconnections,
                         minCloseCoupling,
                         minOpenCoupling,
@@ -1139,7 +1325,20 @@
             const [error, setError] = useState('');
             const [result, setResult] = useState(null);
             const [infoMessage, setInfoMessage] = useState('');
+
+            useEffect(() => {
+                if (infoMessage) {
+                    const timer = setTimeout(() => {
+                        setInfoMessage('');
+                    }, 3000);
+                    return () => clearTimeout(timer);
+                }
+            }, [infoMessage]);
             const [inspectQuery, setInspectQuery] = useState('');
+            const prevResultRef = useRef(null);
+            useEffect(() => {
+                prevResultRef.current = result;
+            }, [result]);
 
             // Analysis Flow State
             const [availableOverloads, setAvailableOverloads] = useState([]);
@@ -1174,6 +1373,14 @@
             const searchDropdownRef = useRef(null);
             const searchInputRef = useRef(null);
             const [scoreTooltip, setScoreTooltip] = useState(null);
+            const [showPathWarning, setShowPathWarning] = useState(true);
+
+            // Hide warning as soon as a diagram is rendered
+            useEffect(() => {
+                if (nDiagram?.svg || n1Diagram?.svg || actionDiagram?.svg) {
+                    setShowPathWarning(false);
+                }
+            }, [nDiagram?.svg, n1Diagram?.svg, actionDiagram?.svg]);
 
             const showScoreTooltip = (e, content) => {
                 const rect = e.currentTarget.getBoundingClientRect();
@@ -1218,6 +1425,8 @@
 
             useEffect(() => { localStorage.setItem('networkPath', networkPath); }, [networkPath]);
             useEffect(() => { localStorage.setItem('actionPath', actionPath); }, [actionPath]);
+            useEffect(() => { localStorage.setItem('layoutPath', layoutPath); }, [layoutPath]);
+            useEffect(() => { localStorage.setItem('outputFolderPath', outputFolderPath); }, [outputFolderPath]);
             useEffect(() => { localStorage.setItem('linesMonitoringPath', linesMonitoringPath); }, [linesMonitoringPath]);
             useEffect(() => { localStorage.setItem('ignoreReconnections', ignoreReconnections); }, [ignoreReconnections]);
             useEffect(() => { localStorage.setItem('pypowsyblFastMode', pypowsyblFastMode); }, [pypowsyblFastMode]);
@@ -1235,34 +1444,42 @@
                         return;
                     }
                 }
-                setConfigLoading(true); setError(''); setInfoMessage(''); setShowMonitoringWarning(false);
-                setNDiagram(null); setN1Diagram(null); setResult(null);
-                setSelectedActionId(null); setActionDiagram(null);
-                setActiveTab('n');
-                setVlOverlay(null);
-                setSelectedBranch('');
-                committedBranchRef.current = '';
-                setAnalysisRan(false);
-                setPendingAnalysisResult(null);
-                setManualActionIds(new Set());
-                setManuallyAddedIds(new Set());
-                setRejectedActionIds(new Set());
-                setDismissedSelectedWarning(false);
-                setDismissedRejectedWarning(false);
-                setDismissedRecommenderWarning(false);
+                // ── Clear ALL state for a full reset ──
+                setConfigLoading(true);
+                setError(''); setInfoMessage('');
+                // Diagrams
+                setNDiagram(null); setN1Diagram(null); setActionDiagram(null);
+                setOriginalViewBox(null);
+                // Analysis
+                setResult(null); setPendingAnalysisResult(null);
+                setSelectedActionId(null);
+                setManualActionIds(new Set()); setManuallyAddedIds(new Set()); setRejectedActionIds(new Set()); setSuggestedByRecommenderIds(new Set());
+                setAnalysisLoading(false); setAnalysisRan(false);
+                // Analysis flow
+                setSelectedOverloads(new Set()); setMonitorDeselected(false);
+                // Visualization
+                setActiveTab('n'); setActionViewMode('network');
+                setVlOverlay(null); setN1Loading(false);
+                // Branch / contingency
+                setSelectedBranch(''); committedBranchRef.current = '';
                 setInspectQuery('');
-                lastViewStateN.current = null; // Reset view state on new config
-                lastViewStateN1.current = null;
+                // Warnings
+                setShowMonitoringWarning(false);
+                setDismissedSelectedWarning(false); setDismissedRejectedWarning(false); setDismissedRecommenderWarning(false);
+                // Refs
+                lastViewStateN.current = null; lastViewStateN1.current = null;
                 lastZoomState.current = { query: '', branch: '' };
 
                 try {
                     const configRes = await axios.post(API_BASE + '/api/config', {
                         network_path: networkPath,
                         action_file_path: actionPath,
+                        layout_path: layoutPath,
                         min_line_reconnections: minLineReconnections,
                         min_close_coupling: minCloseCoupling,
                         min_open_coupling: minOpenCoupling,
                         min_line_disconnections: minLineDisconnections,
+                        min_pst: minPst,
                         n_prioritized_actions: nPrioritizedActions,
                         lines_monitoring_path: linesMonitoringPath,
                         monitoring_factor: monitoringFactor,
@@ -1271,6 +1488,7 @@
                         pypowsybl_fast_mode: pypowsyblFastMode
                     });
 
+
                     if (configRes.data && configRes.data.total_lines_count !== undefined) {
                         setMonitoredLinesCount(configRes.data.monitored_lines_count);
                         setTotalLinesCount(configRes.data.total_lines_count);
@@ -1278,6 +1496,8 @@
                             setShowMonitoringWarning(true);
                         }
                     }
+                    if (configRes.data?.action_dict_file_name) { setActionDictFileName(configRes.data.action_dict_file_name); setShowActionDictWarning(true); }
+                    if (configRes.data?.action_dict_stats) setActionDictStats(configRes.data.action_dict_stats);
 
                     const [branchesRes, vlRes, nomVRes] = await Promise.all([
                         axios.get(API_BASE + '/api/branches'),
@@ -1397,6 +1617,7 @@
                 setManualActionIds(new Set());
                 setManuallyAddedIds(new Set());
                 setRejectedActionIds(new Set());
+                setSuggestedByRecommenderIds(new Set());
                 setActionDiagram(null);
                 setN1Diagram(null);
                 setActiveTab('n');
@@ -1468,10 +1689,100 @@
                 }
             }, [n1Diagram]);
 
+            const handleSaveSession = async () => {
+                const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                const contingencyLabel = selectedBranch ? `_${selectedBranch.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
+                const sessionName = `expertassist_session${contingencyLabel}_${ts}`;
+
+                // Build the session JSON (same structure as the React app)
+                const session = {
+                    saved_at: new Date().toISOString(),
+                    configuration: {
+                        network_path: networkPath,
+                        action_file_path: actionPath,
+                        min_line_reconnections: minLineReconnections,
+                        min_close_coupling: minCloseCoupling,
+                        min_open_coupling: minOpenCoupling,
+                        min_line_disconnections: minLineDisconnections,
+                        n_prioritized_actions: nPrioritizedActions,
+                        lines_monitoring_path: linesMonitoringPath,
+                        monitoring_factor: monitoringFactor,
+                        pre_existing_overload_threshold: preExistingOverloadThreshold,
+                        ignore_reconnections: ignoreReconnections,
+                        pypowsybl_fast_mode: pypowsyblFastMode,
+                    },
+                    contingency: {
+                        disconnected_element: selectedBranch,
+                        selected_overloads: Array.from(selectedOverloads),
+                        monitor_deselected: monitorDeselected,
+                    },
+                    overloads: {
+                        n_overloads: nDiagram?.lines_overloaded ?? [],
+                        n1_overloads: n1Diagram?.lines_overloaded ?? [],
+                        resolved_overloads: result?.lines_overloaded ?? [],
+                    },
+                    overflow_graph: result?.pdf_url
+                        ? { pdf_url: result.pdf_url, pdf_path: result.pdf_path ?? null }
+                        : null,
+                    analysis: result
+                        ? {
+                            message: result.message,
+                            dc_fallback: result.dc_fallback,
+                            action_scores: result.action_scores,
+                            actions: Object.fromEntries(
+                                Object.entries(result.actions || {}).map(([id, detail]) => [
+                                    id,
+                                    {
+                                        description_unitaire: detail.description_unitaire,
+                                        rho_before: detail.rho_before,
+                                        rho_after: detail.rho_after,
+                                        max_rho: detail.max_rho,
+                                        max_rho_line: detail.max_rho_line,
+                                        is_rho_reduction: detail.is_rho_reduction,
+                                        non_convergence: detail.non_convergence,
+                                        action_topology: detail.action_topology,
+                                        status: {
+                                            is_selected: manualActionIds.has(id),
+                                            is_suggested: suggestedByRecommenderIds.has(id),
+                                            is_rejected: rejectedActionIds.has(id),
+                                            is_manually_simulated: manuallyAddedIds.has(id),
+                                        },
+                                    },
+                                ])
+                            ),
+                        }
+                        : null,
+                };
+
+                if (outputFolderPath) {
+                    try {
+                        const res = await axios.post(API_BASE + '/api/save-session', {
+                            session_name: sessionName,
+                            json_content: JSON.stringify(session, null, 2),
+                            pdf_path: result?.pdf_path ?? null,
+                            output_folder_path: outputFolderPath,
+                        });
+                        const pdfMsg = res.data.pdf_copied ? " (including PDF)" : " (PDF not found)";
+                        setInfoMessage(`SUCCESS: Session saved to: ${res.data.session_folder}${pdfMsg}`);
+                    } catch (err) {
+                        setError('Failed to save session: ' + (err.response?.data?.detail || err.message));
+                    }
+                } else {
+                    // Fallback: browser download of JSON
+                    const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${sessionName}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                }
+            };
+
             const handleRunAnalysis = async () => {
                 if (!selectedBranch) return;
-                setAnalysisLoading(true); 
-                setError(''); 
+                setAnalysisLoading(true);
+                setError('');
                 setInfoMessage('');
                 setAnalysisRan(false);
                 setPendingAnalysisResult(null);
@@ -1490,7 +1801,7 @@
                         disconnected_element: selectedBranch
                     });
                     const res1 = response1.data;
-                    
+
                     if (!res1.can_proceed) {
                         setError(res1.message || 'Analysis cannot proceed.');
                         if (res1.message) setInfoMessage(res1.message);
@@ -1500,7 +1811,7 @@
 
                     const detected = res1.lines_overloaded || [];
                     setAvailableOverloads(detected);
-                    
+
                     // Resolve: selected overloads focus the analysis.
                     let primaryOverloads = detected;
                     if (selectedOverloads.size > 0) {
@@ -1529,7 +1840,7 @@
                     const response2 = await fetch(API_BASE + '/api/run-analysis-step2', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
+                        body: JSON.stringify({
                             selected_overloads: toResolve,
                             all_overloads: detected,
                             monitor_deselected: monitorDeselected,
@@ -1551,15 +1862,27 @@
                             try {
                                 const event = JSON.parse(line);
                                 if (event.type === 'pdf') {
-                                    setResult(p => ({ ...(p || {}), pdf_url: event.pdf_url }));
+                                    setResult(p => ({
+                                        ...(p || {}),
+                                        pdf_url: event.pdf_url,
+                                        pdf_path: event.pdf_path
+                                    }));
                                     setActiveTab('overflow');
                                 }
                                 else if (event.type === 'result') {
                                     // Mark all recommended actions as NOT manual
                                     const actionsWithFlags = { ...event.actions };
                                     for (const id in actionsWithFlags) {
-                                        actionsWithFlags[id].is_manual = false;
+                                        const existing = (prevResultRef && prevResultRef.current && prevResultRef.current.actions) ? prevResultRef.current.actions[id] : {};
+                                        actionsWithFlags[id] = {
+                                            ...actionsWithFlags[id],
+                                            is_manual: false,
+                                            is_islanded: (existing && existing.is_islanded !== undefined) ? existing.is_islanded : actionsWithFlags[id].is_islanded,
+                                            estimated_max_rho: (existing && existing.estimated_max_rho !== undefined) ? existing.estimated_max_rho : actionsWithFlags[id].max_rho,
+                                            estimated_max_rho_line: (existing && existing.estimated_max_rho_line !== undefined) ? existing.estimated_max_rho_line : actionsWithFlags[id].max_rho_line,
+                                        };
                                     }
+                                    setSuggestedByRecommenderIds(prev => new Set([...prev, ...Object.keys(actionsWithFlags)]));
                                     setPendingAnalysisResult({ ...event, actions: actionsWithFlags });
                                     if (event.message) setInfoMessage(event.message);
                                 }
@@ -1590,10 +1913,41 @@
                             }
                         }
                     }
+                    const actionsData = {};
+                    if (pendingAnalysisResult?.actions) {
+                        for (const [id, data] of Object.entries(pendingAnalysisResult.actions)) {
+                            const existing = prev?.actions?.[id] || {};
+                            actionsData[id] = {
+                                ...data,
+                                is_manual: false,
+                                is_islanded: (existing && existing.is_islanded !== undefined) ? existing.is_islanded : data.is_islanded,
+                                estimated_max_rho: (existing && existing.estimated_max_rho !== undefined) ? existing.estimated_max_rho : data.max_rho,
+                                estimated_max_rho_line: (existing && existing.estimated_max_rho_line !== undefined) ? existing.estimated_max_rho_line : data.max_rho_line,
+                            };
+                        }
+                    }
+                    const combinedActionsData = {};
+                    if (pendingAnalysisResult?.combined_actions) {
+                        for (const [id, data] of Object.entries(pendingAnalysisResult.combined_actions)) {
+                            const canonicalId = canonicalizeId(id);
+                            const existing = prev?.actions?.[canonicalId] || {};
+                            combinedActionsData[canonicalId] = {
+                                ...data,
+                                is_manual: false,
+                                is_precomputed: true,
+                                is_estimated: existing.is_estimated ?? true,
+                                is_islanded: existing.is_islanded ?? data.is_islanded,
+                                // Store estimation in separate fields to avoid collision with simulation data
+                                estimated_max_rho: existing.estimated_max_rho ?? (data.estimated_max_rho ?? data.max_rho),
+                                estimated_max_rho_line: existing.estimated_max_rho_line ?? (data.estimated_max_rho_line ?? data.max_rho_line),
+                                description_unitaire: data.description || `Combination of ${data.action1_id} and ${data.action2_id}`
+                            };
+                        }
+                    }
                     return {
-                        ...prev,                   // keep existing fields (pdf_url, etc.)
-                        ...pendingAnalysisResult,  // overlay with analysis result
-                        actions: { ...pendingAnalysisResult.actions, ...manualActionsData },
+                        ...prev,
+                        ...pendingAnalysisResult,
+                        actions: { ...actionsData, ...combinedActionsData, ...manualActionsData },
                     };
                 });
                 setPendingAnalysisResult(null);
@@ -2118,35 +2472,166 @@
                 setTimeout(() => searchInputRef.current?.focus(), 50);
             };
 
-            const handleAddManualAction = async (actionId) => {
+            const canonicalizeId = (id) => {
+                if (!id || typeof id !== 'string' || !id.includes('+')) return id;
+                return id.split('+').map(p => p.trim()).sort().join('+');
+            };
+
+            const handleAddManualAction = async (rawActionId) => {
+                const actionId = canonicalizeId(rawActionId);
                 if (!selectedBranch) { setSearchError('Run an analysis first'); return; }
+                if (simulatingActionId) return; // Prevent concurrent simulations
+                console.log('[handleAddManualAction] Starting simulation for:', actionId);
                 setSimulatingActionId(actionId);
                 setSearchError('');
-
-                // Start fetching the action diagram in parallel with the simulation.
-                // The diagram API is independent of the simulation result.
-                const diagramPromise = axios.post(API_BASE + '/api/action-variant-diagram', { action_id: actionId })
-                    .then(res => {
-                        const { svg, viewBox } = processSvg(res.data.svg, voltageLevels.length);
-                        return { ...res.data, svg, originalViewBox: viewBox };
-                    })
-                    .catch(() => null);
 
                 try {
                     const res = await axios.post(API_BASE + '/api/simulate-manual-action', {
                         action_id: actionId,
                         disconnected_element: selectedBranch
                     });
+                    console.log('[handleAddManualAction] Simulation result received:', res.data);
                     const detail = res.data;
+
                     // Track this as a manually added action
                     setManualActionIds(prev => new Set([...prev, actionId]));
                     setManuallyAddedIds(prev => new Set([...prev, actionId]));
+
+                    const isCombined = actionId.includes('+');
+
                     // Merge into result
                     setResult(prev => {
                         const base = prev || { actions: {}, lines_overloaded: [] };
                         return {
                             ...base,
                             lines_overloaded: (base.lines_overloaded && base.lines_overloaded.length > 0) ? base.lines_overloaded : (detail.lines_overloaded || []),
+                            actions: {
+                                ...(base.actions || {}),
+                                [actionId]: {
+                                    ...(base.actions?.[actionId] || {}), // Keep existing betas/estimations if present
+                                    description_unitaire: detail.description_unitaire || (isCombined ? `Combination action results` : ''),
+                                    rho_before: detail.rho_before,
+                                    rho_after: detail.rho_after,
+                                    max_rho: detail.max_rho,
+                                    max_rho_line: detail.max_rho_line,
+                                    is_rho_reduction: detail.is_rho_reduction,
+                                    is_manual: true,
+                                    is_estimated: false,
+                                    is_islanded: detail.is_islanded,
+                                    n_components: detail.n_components,
+                                    disconnected_mw: detail.disconnected_mw,
+                                    non_convergence: detail.non_convergence,
+                                    is_precomputed: isCombined ? true : (base.actions?.[actionId]?.is_precomputed || false)
+                                }
+                            }
+                        };
+                    });
+                    setSearchOpen(false);
+                    setSearchQuery('');
+
+                    // Fetch the action diagram AFTER simulation completes (ensures post-action state is ready)
+                    try {
+                        const diagRes = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: actionId });
+                        const { svg, viewBox } = processSvg(diagRes.data.svg, voltageLevels.length);
+                        const prefetched = { ...diagRes.data, svg, originalViewBox: viewBox };
+
+                        actionSyncSourceRef.current =
+                            (activeTabRef.current === 'action' ? actionPZ.viewBox : null)
+                            || n1PZ.viewBox || nPZ.viewBox;
+                        setSelectedActionId(actionId);
+                        setActiveTab('action');
+                        setActionDiagram(prefetched);
+                    } catch (diagErr) {
+                        console.error('Failed to fetch action variant diagram:', diagErr);
+                        handleActionSelect(actionId); // Fallback to normal selection logic
+                    }
+                } catch (err) {
+                    console.error('Simulation failed:', err);
+                    setSearchError(err?.response?.data?.detail || 'Simulation failed');
+                } finally {
+                    setSimulatingActionId(null);
+                }
+            };
+
+            const handleOpenCombineModal = () => {
+                setSelectedCombineActionIds([]);
+                setSuperpositionResult(null);
+                setCombinedSimulationFeedback(null);
+                setCombineModalTab('computed');
+                setIsCombineModalOpen(true);
+            };
+
+            const toggleActionSelection = (actionId) => {
+                setSuperpositionResult(null);
+                setCombinedSimulationFeedback(null);
+                setSelectedCombineActionIds(prev => {
+                    if (prev.includes(actionId)) {
+                        return prev.filter(id => id !== actionId);
+                    }
+                    if (prev.length >= 2) return prev;
+                    return [...prev, actionId];
+                });
+            };
+
+            // Removed auto-compute. User will click explicit Estimate button.
+
+            const handleComputeSuperposition = async () => {
+                if (selectedCombineActionIds.length !== 2) return;
+                setIsComputingSuperposition(true);
+                setCombinedSimulationFeedback(null);
+                try {
+                    const res = await axios.post(API_BASE + '/api/compute-superposition', {
+                        action1_id: selectedCombineActionIds[0],
+                        action2_id: selectedCombineActionIds[1],
+                        disconnected_element: selectedBranch
+                    });
+                    const combinedId = canonicalizeId(selectedCombineActionIds.join('+'));
+                    setSuperpositionResult(res.data);
+
+                    // Feed the first tab with estimated result
+                    setResult(prev => {
+                        if (!prev) return prev;
+                        const combinedId = canonicalizeId(selectedCombineActionIds.join('+'));
+                        const existing = prev.actions?.[combinedId] || {};
+                        return {
+                            ...prev,
+                            actions: {
+                                ...prev.actions,
+                                [combinedId]: {
+                                    ...res.data,
+                                    is_manual: true,
+                                    is_estimated: true,
+                                    is_islanded: existing.is_islanded ?? res.data.is_islanded,
+                                    // Store as explicit estimation fields, preserving if they somehow exist
+                                    estimated_max_rho: existing.estimated_max_rho ?? res.data.max_rho,
+                                    estimated_max_rho_line: existing.estimated_max_rho_line ?? res.data.max_rho_line,
+                                    description_unitaire: `[ESTIMATED] Combination of ${selectedCombineActionIds.join(' and ')}`
+                                }
+                            }
+                        };
+                    });
+                } catch (err) {
+                    const errMsg = err.response?.data?.detail || err.message || JSON.stringify(err);
+                    setError('Failed to compute superposition: ' + errMsg);
+                } finally {
+                    setIsComputingSuperposition(false);
+                }
+            };
+
+            const handleSimulateUnitaryFromModal = async (actionId) => {
+                setSimulatingActionId(actionId);
+                try {
+                    const res = await axios.post(API_BASE + '/api/simulate-manual-action', {
+                        action_id: actionId,
+                        disconnected_element: selectedBranch
+                    });
+                    const detail = res.data;
+                    setManualActionIds(prev => new Set([...prev, actionId]));
+                    setManuallyAddedIds(prev => new Set([...prev, actionId]));
+                    setResult(prev => {
+                        const base = prev || { actions: {}, lines_overloaded: [] };
+                        return {
+                            ...base,
                             actions: {
                                 ...(base.actions || {}),
                                 [actionId]: {
@@ -2161,25 +2646,74 @@
                             }
                         };
                     });
-                    setSearchOpen(false);
-                    setSearchQuery('');
-
-                    // Use pre-fetched diagram if available (already processed in parallel)
-                    const prefetched = await diagramPromise;
-                    if (prefetched) {
-                        actionSyncSourceRef.current =
-                            (activeTabRef.current === 'action' ? actionPZ.viewBox : null)
-                            || n1PZ.viewBox || nPZ.viewBox;
-                        setSelectedActionId(actionId);
-                        setActiveTab('action');
-                        setActionDiagram(prefetched);
-                    } else {
-                        handleActionSelect(actionId);
-                    }
+                    // DO NOT close modal as per requirement
+                    setInfoMessage(`Unitary action ${actionId} simulated successfully.`);
+                    setTimeout(() => setInfoMessage(null), 3000);
                 } catch (err) {
-                    setSearchError(err?.response?.data?.detail || 'Simulation failed');
+                    setError('Failed to simulate unitary action: ' + (err.response?.data?.detail || err.message));
                 } finally {
                     setSimulatingActionId(null);
+                }
+            };
+
+            const handleSimulateCombined = async (rawActionIds = selectedCombineActionIds) => {
+                if (rawActionIds.length !== 2) return;
+                const combinedId = canonicalizeId(rawActionIds.join('+'));
+                if (simulatingActionId) return; // Prevent concurrent simulations
+                setSimulatingActionId(combinedId);
+                setIsSimulatingCombined(true);
+                setCombinedSimulationFeedback(null);
+                try {
+                    setManualActionIds(prev => new Set([...prev, combinedId]));
+                    setManuallyAddedIds(prev => new Set([...prev, combinedId]));
+
+                    const res = await axios.post(API_BASE + '/api/simulate-manual-action', {
+                        action_id: combinedId,
+                        disconnected_element: selectedBranch
+                    });
+                    const detail = res.data;
+
+                    // Store simulation feedback for display in the modal
+                    setCombinedSimulationFeedback({
+                        max_rho: detail.max_rho,
+                        max_rho_line: detail.max_rho_line,
+                        is_rho_reduction: detail.is_rho_reduction,
+                        is_islanded: detail.is_islanded,
+                        disconnected_mw: detail.disconnected_mw,
+                        non_convergence: detail.non_convergence,
+                    });
+
+                    // Also update result.actions with the full simulation data
+                    setResult(prev => {
+                        const base = prev || { actions: {}, lines_overloaded: [] };
+                        return {
+                            ...base,
+                            lines_overloaded: (base.lines_overloaded && base.lines_overloaded.length > 0) ? base.lines_overloaded : (detail.lines_overloaded || []),
+                            actions: {
+                                ...(base.actions || {}),
+                                [combinedId]: {
+                                    ...(base.actions?.[combinedId] || {}),
+                                    description_unitaire: detail.description_unitaire,
+                                    rho_before: detail.rho_before,
+                                    rho_after: detail.rho_after,
+                                    max_rho: detail.max_rho,
+                                    max_rho_line: detail.max_rho_line,
+                                    is_rho_reduction: detail.is_rho_reduction,
+                                    is_manual: true,
+                                    is_estimated: false,
+                                    is_islanded: detail.is_islanded,
+                                    n_components: detail.n_components,
+                                    disconnected_mw: detail.disconnected_mw,
+                                    non_convergence: detail.non_convergence,
+                                }
+                            }
+                        };
+                    });
+                } catch (err) {
+                    setError('Failed to simulate combined action: ' + (err.response?.data?.detail || err.message));
+                } finally {
+                    setSimulatingActionId(null);
+                    setIsSimulatingCombined(false);
                 }
             };
 
@@ -2235,7 +2769,7 @@
                         const actionDesc = (actionDetail?.description_unitaire || '').toLowerCase();
                         const aid = actionId.toLowerCase();
                         const t = type.toLowerCase();
-                        
+
                         const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
                         const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
                         const isOpenCoupling = t.includes('open_coupling');
@@ -2251,8 +2785,11 @@
                         else shouldShow = typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
 
                         if (!shouldShow) continue;
-                        
-                        list.push({ type, actionId, score: Number(score) });
+
+                        // Filter out combined actions that are only estimations
+                        if (actionId.includes('+') && (actionDetail?.is_estimated || !actionDetail?.rho_after || actionDetail?.rho_after.length === 0)) continue;
+
+                        list.push({ actionId, score, type });
                     }
                 }
                 return list.sort((a, b) => {
@@ -2264,6 +2801,17 @@
                     return b.score - a.score;
                 });
             }, [result?.action_scores, result?.actions, typeFilters]);
+
+            const actionScoreMap = useMemo(() => {
+                const map = {};
+                if (!result?.action_scores) return map;
+                for (const [type, data] of Object.entries(result.action_scores)) {
+                    for (const [actionId, score] of Object.entries(data?.scores || {})) {
+                        map[actionId] = Number(score);
+                    }
+                }
+                return map;
+            }, [result?.action_scores]);
 
 
 
@@ -2759,8 +3307,19 @@
                                         <iframe src={API_BASE + result.pdf_url} key={result.pdf_url} style={{ width: '100%', height: '100%', border: 'none' }} />
                                         : <iframe srcDoc={result.plot_html} style={{ width: '100%', height: '100%', border: 'none' }} />
                                 ) : (
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
-                                        {analysisLoading ? 'Processing Analysis...' : 'Run analysis to see overflow graph'}
+                                    <div style={{
+                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%',
+                                        color: analysisLoading ? '#856404' : '#999',
+                                        background: analysisLoading ? '#fff3cd' : 'white',
+                                        fontWeight: analysisLoading ? 600 : 'normal',
+                                        gap: '10px'
+                                    }}>
+                                        {analysisLoading ? (
+                                            <>
+                                                <span style={{ fontSize: '24px' }}>⚙️</span>
+                                                <span>Processing Analysis...</span>
+                                            </>
+                                        ) : 'Run analysis to see overflow graph'}
                                     </div>
                                 )}
                             </div>
@@ -2988,13 +3547,28 @@
             };
 
             const sortedActionEntries = React.useMemo(() => {
-                return Object.entries(result?.actions || {}).sort(([, a], [, b]) => {
-                    // Non-convergent actions go to the bottom
-                    if (a.non_convergence && !b.non_convergence) return 1;
-                    if (!a.non_convergence && b.non_convergence) return -1;
-                    // Otherwise sort by max_rho
-                    return (a.max_rho ?? 999) - (b.max_rho ?? 999);
-                });
+                return Object.entries(result?.actions || {})
+                    .filter(([id, details]) => {
+                        const isCombined = id.includes('+');
+                        // Always show manually added IDs
+                        if (manualActionIds.has(id)) return true;
+
+                        if (!isCombined) return true;
+
+                        // For combined actions:
+                        // Only show if fully simulated (not estimated)
+                        if (details.is_estimated) return false;
+
+                        // Ensure we have some data or it's been manually triggered
+                        return (details.rho_after && details.rho_after.length > 0) || details.is_manual;
+                    })
+                    .sort(([, a], [, b]) => {
+                        if (a.is_islanded && !b.is_islanded) return 1;
+                        if (!a.is_islanded && b.is_islanded) return -1;
+                        if (a.non_convergence && !b.non_convergence) return 1;
+                        if (!a.non_convergence && b.non_convergence) return -1;
+                        return (a.max_rho ?? 999) - (b.max_rho ?? 999);
+                    });
             }, [result?.actions]);
 
             const analysisActionIds = React.useMemo(() => {
@@ -3023,153 +3597,184 @@
             }, [sortedActionEntries, rejectedActionIds]);
 
             const renderActionList = (entries) => {
-                return entries.map(([id, details], index) => {
-                    const maxRhoPct = details.max_rho != null ? (details.max_rho * 100).toFixed(1) : null;
-                    const overloadedLines = result.lines_overloaded || [];
-                    // Tri-color severity: red (>100%), orange (>90%), green (<=90%)
-                    const severity = details.max_rho != null
-                        ? (details.max_rho > monitoringFactor ? 'red' : details.max_rho > (monitoringFactor - 0.05) ? 'orange' : 'green')
-                        : (details.is_rho_reduction ? 'green' : 'red');
-                    const severityColors = {
-                        green: { border: '#28a745', badgeBg: '#d4edda', badgeText: '#155724', label: 'Solves overload' },
-                        orange: { border: '#f0ad4e', badgeBg: '#fff3cd', badgeText: '#856404', label: 'Solved — low margin' },
-                        red: { border: '#dc3545', badgeBg: '#f8d7da', badgeText: '#721c24', label: details.is_rho_reduction ? 'Still overloaded' : 'No reduction' }
-                    };
-                    const sc = details.non_convergence 
-                        ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'divergent' }
-                        : severityColors[severity];
-                    const clickableLinkStyle = { background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted' };
-                    const renderRho = (arr, tab) => {
-                        if (!arr || arr.length === 0) return '—';
-                        return arr.map((v, i) => {
-                            const lineName = overloadedLines[i] || `line ${i}`;
-                            return (
-                                <React.Fragment key={i}>
-                                    {i > 0 && ', '}
-                                    <button style={clickableLinkStyle} title={`Zoom to ${lineName}`}
-                                        onClick={(e) => { e.stopPropagation(); handleAssetClick(id, lineName, tab); }}
-                                    >{lineName}</button>
-                                    {`: ${(v * 100).toFixed(1)}%`}
-                                </React.Fragment>
-                            );
-                        });
-                    };
-                    const isSelected = selectedActionId === id;
-                    return (
-                        <div key={id} className="card" onClick={() => handleActionSelect(id)} style={{
-                            borderLeftColor: isSelected ? '#007bff' : sc.border,
-                            cursor: 'pointer',
-                            background: isSelected ? '#e7f1ff' : (details.non_convergence ? '#fff5f5' : 'white'),
-                            borderRight: details.non_convergence ? '1px solid #f8d7da' : 'none',
-                            borderTop: details.non_convergence ? '1px solid #f8d7da' : 'none',
-                            borderBottom: details.non_convergence ? '1px solid #f8d7da' : 'none',
-                            boxShadow: isSelected ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
-                            transition: 'all 0.15s ease'
-                        }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <h4 style={{ margin: 0, color: isSelected ? '#0056b3' : undefined }}>#{index + 1} — {id}</h4>
-                                <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                                    {isSelected && (
-                                        <span style={{ fontSize: '10px', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', background: '#007bff', color: 'white' }}>
-                                            VIEWING
+                try {
+                    return entries.map(([id, details], index) => {
+                        if (!details) return null;
+                        const maxRhoPct = details.max_rho != null ? (details.max_rho * 100).toFixed(1) : null;
+                        const overloadedLines = result.lines_overloaded || [];
+                        // Tri-color severity: red (>100%), orange (>90%), green (<=90%)
+                        const severity = details.max_rho != null
+                            ? (details.max_rho > monitoringFactor ? 'red' : details.max_rho > (monitoringFactor - 0.05) ? 'orange' : 'green')
+                            : (details.is_rho_reduction ? 'green' : 'red');
+                        const severityColors = {
+                            green: { border: '#28a745', badgeBg: '#d4edda', badgeText: '#155724', label: 'Solves overload' },
+                            orange: { border: '#f0ad4e', badgeBg: '#fff3cd', badgeText: '#856404', label: 'Solved — low margin' },
+                            red: { border: '#dc3545', badgeBg: '#f8d7da', badgeText: '#721c24', label: details.is_rho_reduction ? 'Still overloaded' : 'No reduction' }
+                        };
+                        const sc = details.non_convergence
+                            ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'divergent' }
+                            : details.is_islanded
+                                ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'islanded' }
+                                : severityColors[severity];
+                        const clickableLinkStyle = { background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted' };
+                        const renderRho = (arr, tab) => {
+                            if (!arr || arr.length === 0) return '—';
+                            return arr.map((v, i) => {
+                                const lineName = overloadedLines[i] || `line ${i}`;
+                                return (
+                                    <React.Fragment key={i}>
+                                        {i > 0 && ', '}
+                                        <button style={clickableLinkStyle} title={`Zoom to ${lineName}`}
+                                            onClick={(e) => { e.stopPropagation(); handleAssetClick(id, lineName, tab); }}
+                                        >{lineName}</button>
+                                        {`: ${(v * 100).toFixed(1)}%`}
+                                    </React.Fragment>
+                                );
+                            });
+                        };
+                        const isSelected = selectedActionId === id;
+                        return (
+                            <div key={id} className="card" onClick={() => handleActionSelect(id)} style={{
+                                borderLeftColor: isSelected ? '#007bff' : sc.border,
+                                cursor: 'pointer',
+                                background: isSelected ? '#e7f1ff' : ((details.non_convergence || details.is_islanded) ? '#fff5f5' : 'white'),
+                                borderRight: (details.non_convergence || details.is_islanded) ? '1px solid #f8d7da' : 'none',
+                                borderTop: (details.non_convergence || details.is_islanded) ? '1px solid #f8d7da' : 'none',
+                                borderBottom: (details.non_convergence || details.is_islanded) ? '1px solid #f8d7da' : 'none',
+                                boxShadow: isSelected ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
+                                transition: 'all 0.15s ease'
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                                    <h4 style={{
+                                        margin: 0,
+                                        color: isSelected ? '#0056b3' : undefined,
+                                        flex: 1,
+                                        minWidth: 0,
+                                        overflowWrap: 'anywhere'
+                                    }}>#{index + 1} — {id}</h4>
+                                    <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                                        {isSelected && (
+                                            <span style={{ fontSize: '10px', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', background: '#007bff', color: 'white' }}>
+                                                VIEWING
+                                            </span>
+                                        )}
+                                        <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '12px', background: sc.badgeBg, color: sc.badgeText }}>
+                                            {sc.label}
                                         </span>
-                                    )}
-                                    <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '12px', background: sc.badgeBg, color: sc.badgeText }}>
-                                        {sc.label}
-                                    </span>
+                                    </div>
                                 </div>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', margin: '4px 0 5px' }}>
-                                <p style={{ fontSize: '13px', margin: 0, flex: 1 }}>{details.description_unitaire}</p>
-                                {(() => {
-                                    const nodeMeta = nMetaIndex && nMetaIndex.nodesByEquipmentId;
-                                    const edgeMeta = nMetaIndex && nMetaIndex.edgesByEquipmentId;
-                                    const vlName = nodeMeta ? getActionTargetVoltageLevel(details, id, nodeMeta) : null;
-                                    if (vlName) {
-                                        return (
-                                            <button
-                                                style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, backgroundColor: '#d1fae5', color: '#065f46', textDecoration: 'underline dotted', flexShrink: 0 }}
-                                                title={`Click: zoom to ${vlName} | Double-click: open focused diagram`}
-                                                onClick={(e) => { e.stopPropagation(); handleAssetClick(id, vlName, 'action'); }}
-                                                onDoubleClick={(e) => { e.stopPropagation(); handleVlDoubleClick(id, vlName); }}>
-                                                {vlName}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', margin: '4px 0 5px' }}>
+                                    <p style={{ fontSize: '13px', margin: 0, flex: 1 }}>{details.description_unitaire}</p>
+                                    {(() => {
+                                        const nodeMeta = nMetaIndex && nMetaIndex.nodesByEquipmentId;
+                                        const edgeMeta = nMetaIndex && nMetaIndex.edgesByEquipmentId;
+                                        const badges = [];
+                                        const badgeBtn = (name, bg, color, title, onDoubleClick) => (
+                                            <button key={name}
+                                                style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, textDecoration: 'underline dotted', flexShrink: 0, backgroundColor: bg, color }}
+                                                title={title}
+                                                onClick={(e) => { e.stopPropagation(); handleAssetClick(id, name, 'action'); }}
+                                                onDoubleClick={onDoubleClick}>
+                                                {name}
                                             </button>
                                         );
-                                    }
-                                    const badgeBtn = (name, bg, color, title) => (
-                                        <button key={name}
-                                            style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, textDecoration: 'underline dotted', flexShrink: 0, backgroundColor: bg, color }}
-                                            title={title}
-                                            onClick={(e) => { e.stopPropagation(); handleAssetClick(id, name, 'action'); }}>
-                                            {name}
-                                        </button>
-                                    );
-                                    const lineNames = edgeMeta
-                                        ? getActionTargetLines(details, id, edgeMeta)
-                                        : Array.from(new Set([
-                                            ...Object.keys(details.action_topology?.lines_ex_bus || {}),
-                                            ...Object.keys(details.action_topology?.lines_or_bus || {}),
-                                        ]));
-                                    if (lineNames.length > 0) return (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0 }}>
-                                            {lineNames.map(name => badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to line ${name}`))}
-                                        </div>
-                                    );
-                                    // Fallback: gen/load equipment names from topology
-                                    const topo = details.action_topology;
-                                    const equipNames = [
-                                        ...Object.keys(topo?.gens_bus || {}),
-                                        ...Object.keys(topo?.loads_bus || {}),
-                                    ];
-                                    if (equipNames.length > 0) return (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0 }}>
-                                            {equipNames.map(name => badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`))}
-                                        </div>
-                                    );
-                                    return null;
-                                })()}
-                            </div>
-                            {details.non_convergence && (
-                                <div style={{ fontSize: '12px', background: '#fff8f1', color: '#9a3412', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #ffedd5', fontWeight: 500 }}>
-                                    ⚠️ <strong>LoadFlow Failure:</strong> {details.non_convergence}
+
+                                        // 1. Substations (VLs)
+                                        if (nodeMeta) {
+                                            const vlNames = getActionTargetVoltageLevels(details, id, nodeMeta);
+                                            vlNames.forEach(vlName => {
+                                                badges.push(badgeBtn(vlName, '#d1fae5', '#065f46', `Click: zoom to ${vlName} | Double-click: open focused diagram`, (e) => {
+                                                    e.stopPropagation(); handleVlDoubleClick(id, vlName);
+                                                }));
+                                            });
+                                        }
+
+                                        // 2. Lines / Equipments
+                                        const lineNames = edgeMeta
+                                            ? getActionTargetLines(details, id, edgeMeta)
+                                            : Array.from(new Set([
+                                                ...Object.keys(details.action_topology?.lines_ex_bus || {}),
+                                                ...Object.keys(details.action_topology?.lines_or_bus || {}),
+                                            ]));
+
+                                        lineNames.forEach(name => {
+                                            if (badges.some(b => b.key === name)) return;
+                                            badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
+                                        });
+
+                                        // 3. Fallback
+                                        if (badges.length === 0) {
+                                            const topo = details.action_topology;
+                                            const equipNames = Array.from(new Set([
+                                                ...Object.keys(topo?.gens_bus || {}),
+                                                ...Object.keys(topo?.loads_bus || {}),
+                                            ]));
+                                            equipNames.forEach(name => {
+                                                badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
+                                            });
+                                        }
+
+                                        return (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0, maxWidth: '200px', justifyContent: 'flex-end' }}>
+                                                {badges}
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
-                            )}
-                            <div style={{ fontSize: '12px', background: isSelected ? '#dce8f7' : '#f8f9fa', padding: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                                <div>
-                                    <div>Loading before: {renderRho(details.rho_before, 'n-1')}</div>
-                                    <div>Loading after: {renderRho(details.rho_after, 'action')}</div>
-                                    {maxRhoPct != null && (
-                                        <div style={{ marginTop: '3px' }}>
-                                            Max loading: <strong style={{ color: sc.border }}>{maxRhoPct}%</strong>
-                                            {details.max_rho_line && (
-                                                <span style={{ color: '#888' }}> on <button
-                                                    style={clickableLinkStyle} title={`Zoom to ${details.max_rho_line}`}
-                                                    onClick={(e) => { e.stopPropagation(); handleAssetClick(id, details.max_rho_line, 'action'); }}
-                                                >{details.max_rho_line}</button></span>
-                                            )}
+                                {
+                                    details.non_convergence && (
+                                        <div style={{ fontSize: '12px', background: '#fff8f1', color: '#9a3412', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #ffedd5', fontWeight: 500 }}>
+                                            ⚠️ <strong>LoadFlow Failure:</strong> {details.non_convergence}
                                         </div>
-                                    )}
+                                    )
+                                }
+                                {
+                                    details.is_islanded && (
+                                        <div style={{ fontSize: '12px', background: '#fff5f5', color: '#dc3545', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #dc3545', fontWeight: 500 }}>
+                                            🏝️ <strong>Islanding Detected:</strong> {details.disconnected_mw?.toFixed(1)} MW disconnected
+                                        </div>
+                                    )
+                                }
+                                <div style={{ fontSize: '12px', background: isSelected ? '#dce8f7' : '#f8f9fa', padding: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                                    <div>
+                                        <div>Loading before: {renderRho(details.rho_before, 'n-1')}</div>
+                                        <div>Loading after: {renderRho(details.rho_after, 'action')}</div>
+                                        {maxRhoPct != null && (
+                                            <div style={{ marginTop: '3px' }}>
+                                                Max loading: <strong style={{ color: sc.border }}>{maxRhoPct}%</strong>
+                                                {details.max_rho_line && (
+                                                    <span style={{ color: '#888' }}> on <button
+                                                        style={clickableLinkStyle} title={`Zoom to ${details.max_rho_line}`}
+                                                        onClick={(e) => { e.stopPropagation(); handleAssetClick(id, details.max_rho_line, 'action'); }}
+                                                    >{details.max_rho_line}</button></span>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '4px', flexShrink: 0, paddingBottom: '2px' }}>
+                                        {!manualActionIds.has(id) && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleActionFavorite(id); }}
+                                                style={{ background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                title="Select this action"
+                                            ><span style={{ fontSize: '14px' }}>⭐</span></button>
+                                        )}
+                                        {!rejectedActionIds.has(id) && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleActionReject(id); }}
+                                                style={{ background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                title={manualActionIds.has(id) ? "Remove from selected" : "Reject this action"}
+                                            ><span style={{ fontSize: '14px' }}>❌</span></button>
+                                        )}
+                                    </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: '4px', flexShrink: 0, paddingBottom: '2px' }}>
-                                    {!manualActionIds.has(id) && (
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleActionFavorite(id); }}
-                                            style={{ background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                            title="Select this action"
-                                        ><span style={{ fontSize: '14px' }}>⭐</span></button>
-                                    )}
-                                    {!rejectedActionIds.has(id) && (
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleActionReject(id); }}
-                                            style={{ background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                            title={manualActionIds.has(id) ? "Remove from selected" : "Reject this action"}
-                                        ><span style={{ fontSize: '14px' }}>❌</span></button>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    );
-                });
+                            </div >
+                        );
+                    });
+                } catch (err) {
+                    console.error('[renderActionList] crash:', err);
+                    return <div className="error-box">Render Error in list</div>;
+                }
             };
 
             return (
@@ -3179,19 +3784,20 @@
                         <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                             <label>Network Path</label>
                             <div style={{ display: 'flex', gap: '4px' }}>
-                                <input type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
-                                <button onClick={() => pickPath('dir', setNetworkPath)} style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '0.8rem' }}>📂</button>
-                            </div>
-                        </div>
-                        <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            <label>Action File Path</label>
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                                <input type="text" value={actionPath} onChange={e => setActionPath(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
-                                <button onClick={() => pickPath('file', setActionPath)} style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '0.8rem' }}>📄</button>
+                                <input type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} placeholder="load your grid xiidm file path" style={{ flex: 1, minWidth: 0 }} />
+                                <button onClick={() => pickPath('file', setNetworkPath)} style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '0.8rem' }}>📄</button>
                             </div>
                         </div>
                         <button onClick={handleLoadConfig} disabled={configLoading} style={{ padding: '6px 14px', background: configLoading ? '#95a5a6' : '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: configLoading ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
                             {configLoading ? '⏳ Loading...' : '🔄 Load Study'}
+                        </button>
+                        <button
+                            onClick={handleSaveSession}
+                            disabled={!result && !selectedBranch}
+                            style={{ padding: '6px 14px', background: (!result && !selectedBranch) ? '#95a5a6' : '#8e44ad', color: 'white', border: 'none', borderRadius: '4px', cursor: (!result && !selectedBranch) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                            title="Save session results to JSON"
+                        >
+                            💾 Save Results
                         </button>
                         <button onClick={handleOpenSettings} style={{ background: '#7f8c8d', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 8px', fontSize: '1rem', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }} title="Settings">&#9881;</button>
                     </header>
@@ -3211,6 +3817,17 @@
                                     <h3 style={{ margin: 0, borderBottom: '1px solid #eee', paddingBottom: '10px' }}>Recommender Settings</h3>
 
                                     <div style={{ display: 'flex', borderBottom: '1px solid #eee', marginBottom: '15px' }}>
+                                        <button
+                                            onClick={() => setSettingsTab('paths')}
+                                            style={{
+                                                flex: 1, padding: '10px', cursor: 'pointer', background: 'none',
+                                                border: 'none', borderBottom: settingsTab === 'paths' ? '2px solid #3498db' : 'none',
+                                                fontWeight: settingsTab === 'paths' ? 'bold' : 'normal',
+                                                color: settingsTab === 'paths' ? '#3498db' : '#555'
+                                            }}
+                                        >
+                                            Paths
+                                        </button>
                                         <button
                                             onClick={() => setSettingsTab('recommender')}
                                             style={{
@@ -3235,6 +3852,41 @@
                                         </button>
                                     </div>
 
+                                    {settingsTab === 'paths' && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network File Path (.xiidm)</label>
+                                                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Synchronized with the banner field</div>
+                                                <div style={{ display: 'flex', gap: '5px' }}>
+                                                    <input type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} placeholder="load your grid xiidm file path" style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                                                    <button onClick={() => pickPath('file', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📄</button>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Action Dictionary File Path</label>
+                                                <div style={{ display: 'flex', gap: '5px' }}>
+                                                    <input type="text" value={actionPath} onChange={e => setActionPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                                                    <button onClick={() => pickPath('file', setActionPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📄</button>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Layout File Path (.json)</label>
+                                                <div style={{ display: 'flex', gap: '5px' }}>
+                                                    <input type="text" value={layoutPath} onChange={e => setLayoutPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                                                    <button onClick={() => pickPath('file', setLayoutPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📄</button>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Output Folder Path</label>
+                                                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Session folders (JSON + PDF) are saved here. Leave empty to download JSON to browser.</div>
+                                                <div style={{ display: 'flex', gap: '5px' }}>
+                                                    <input type="text" value={outputFolderPath} onChange={e => setOutputFolderPath(e.target.value)} placeholder="e.g. /home/user/sessions" style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                                                    <button onClick={() => pickPath('dir', setOutputFolderPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📂</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {settingsTab === 'recommender' && (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -3254,9 +3906,14 @@
                                                 <input type="number" step="0.1" value={minLineDisconnections} onChange={e => setMinLineDisconnections(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px' }} />
                                             </div>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min PST Actions</label>
+                                                <input type="number" step="0.1" value={minPst} onChange={e => setMinPst(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px' }} />
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                 <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>N Prioritized Actions</label>
                                                 <input type="number" step="1" value={nPrioritizedActions} onChange={e => setNPrioritizedActions(parseInt(e.target.value, 10))} style={{ width: '80px', padding: '5px' }} />
                                             </div>
+
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '5px', padding: '8px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #eee' }}>
                                                 <label htmlFor="ignoreRecStandalone" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Ignore Reconnections</label>
                                                 <input type="checkbox" id="ignoreRecStandalone" checked={ignoreReconnections} onChange={e => setIgnoreReconnections(e.target.checked)} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
@@ -3322,7 +3979,14 @@
                                     <button
                                         onClick={handleRunAnalysis}
                                         disabled={!selectedBranch || analysisLoading}
-                                        style={{ marginTop: '8px', width: '100%', padding: '8px', background: (!selectedBranch || analysisLoading) ? '#95a5a6' : '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                                        style={{
+                                            marginTop: '8px', width: '100%', padding: '8px',
+                                            background: analysisLoading ? '#f1c40f' : (!selectedBranch ? '#95a5a6' : '#27ae60'),
+                                            color: analysisLoading ? '#856404' : 'white',
+                                            border: 'none', borderRadius: '4px',
+                                            cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer',
+                                            fontWeight: 'bold', fontSize: '0.85rem'
+                                        }}
                                     >
                                         {analysisLoading ? '⚙️ Running...' : '🚀 Run Analysis'}
                                     </button>
@@ -3383,18 +4047,18 @@
                                         lineHeight: '1.6'
                                     }}>
                                         <strong style={{ whiteSpace: 'nowrap', marginRight: '4px' }}>N-1 Overloads:</strong>
-                                        <span 
-                                            title="Double-click on an overload name to toggle its inclusion in the analysis. Selected overloads are blue; unselected are light grey." 
-                                            style={{ 
-                                                display: 'inline-flex', 
-                                                alignItems: 'center', 
-                                                justifyContent: 'center', 
-                                                width: '14px', 
-                                                height: '14px', 
-                                                borderRadius: '50%', 
-                                                background: '#6c757d', 
-                                                color: 'white', 
-                                                fontSize: '10px', 
+                                        <span
+                                            title="Double-click on an overload name to toggle its inclusion in the analysis. Selected overloads are blue; unselected are light grey."
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                width: '14px',
+                                                height: '14px',
+                                                borderRadius: '50%',
+                                                background: '#6c757d',
+                                                color: 'white',
+                                                fontSize: '10px',
                                                 cursor: 'help',
                                                 verticalAlign: 'middle',
                                                 marginRight: '4px'
@@ -3435,24 +4099,24 @@
                                                     return (
                                                         <React.Fragment key={lvl}>
                                                             {i > 0 && ', '}
-                                                            <button 
+                                                            <button
                                                                 onClick={(e) => { e.stopPropagation(); handleAssetClick(null, lvl, 'n-1'); }}
-                                                                onDoubleClick={(e) => { 
-                                                                    e.stopPropagation(); 
+                                                                onDoubleClick={(e) => {
+                                                                    e.stopPropagation();
                                                                     const next = new Set(selectedOverloads);
                                                                     if (next.has(lvl)) next.delete(lvl);
                                                                     else next.add(lvl);
                                                                     setSelectedOverloads(next);
                                                                 }}
-                                                                style={{ 
-                                                                    background: 'none', 
-                                                                    border: 'none', 
-                                                                    cursor: 'pointer', 
-                                                                    padding: 0, 
-                                                                    fontSize: 'inherit', 
-                                                                    color: isSelected ? '#1e40af' : '#bdc3c7', 
-                                                                    fontWeight: isSelected ? 600 : 400, 
-                                                                    textDecoration: isSelected ? 'underline dotted' : 'none', 
+                                                                style={{
+                                                                    background: 'none',
+                                                                    border: 'none',
+                                                                    cursor: 'pointer',
+                                                                    padding: 0,
+                                                                    fontSize: 'inherit',
+                                                                    color: isSelected ? '#1e40af' : '#bdc3c7',
+                                                                    fontWeight: isSelected ? 600 : 400,
+                                                                    textDecoration: isSelected ? 'underline dotted' : 'none',
                                                                     display: 'inline'
                                                                 }}
                                                                 title={isSelected ? `Zoom to ${lvl} (Double-click to unselect)` : `Zoom to ${lvl} (Double-click to select)`}
@@ -3483,9 +4147,25 @@
                                         cursor: 'pointer',
                                         fontSize: '13px',
                                         fontWeight: 600,
+                                        marginRight: '6px'
                                     }}
                                 >
                                     + Manual Selection
+                                </button>
+                                <button
+                                    onClick={handleOpenCombineModal}
+                                    style={{
+                                        background: isCombineModalOpen ? '#007bff' : '#e9ecef',
+                                        color: isCombineModalOpen ? 'white' : '#333',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        padding: '4px 10px',
+                                        cursor: 'pointer',
+                                        fontSize: '13px',
+                                        fontWeight: 600,
+                                    }}
+                                >
+                                    ++ Combine
                                 </button>
 
                                 {searchOpen && (
@@ -3685,13 +4365,31 @@
 
                             {/* View mode toggle - only visible when an action is selected */}
 
-                            {/* Processing indicator during analysis */}
-                            {analysisLoading && (
-                                <div style={{ padding: '12px', textAlign: 'center', color: '#856404', background: '#fff3cd', borderRadius: '8px', margin: '8px 0', fontSize: '13px', fontWeight: 600 }}>
-                                    ⚙️ Processing analysis...
+                            {/* Processing indicator during analysis - removed duplicate, keeping one under Suggested Actions */}
+
+
+                            {/* Action Dict Info Warning */}
+                            {showActionDictWarning && !simulatingActionId && !pendingAnalysisResult && Object.keys(result?.actions || {}).length === 0 && actionDictFileName && actionDictStats && (
+                                <div style={{
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                                    gap: '8px', padding: '8px 10px',
+                                    background: '#fff3cd', border: '1px solid #ffeeba',
+                                    borderRadius: '6px', marginBottom: '10px', fontSize: '12px', color: '#856404'
+                                }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>ℹ️ Action dictionary: <code style={{ fontFamily: 'monospace', background: '#fcf3cf', padding: '1px 4px', borderRadius: '3px', border: '1px solid #f9e79f' }}>{actionDictFileName}</code></div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '4px' }}>
+                                            <span>🔄 Reco: <strong>{actionDictStats.reco}</strong></span>
+                                            <span>⛔ Disco: <strong>{actionDictStats.disco}</strong></span>
+                                            <span>📐 PST: <strong>{actionDictStats.pst}</strong></span>
+                                            <span>🔓 Open coupling: <strong>{actionDictStats.open_coupling}</strong></span>
+                                            <span>🔒 Close coupling: <strong>{actionDictStats.close_coupling}</strong></span>
+                                        </div>
+                                        <button onClick={() => { setIsSettingsOpen(true); setSettingsTab('paths'); }} style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '12px' }}>Change in settings</button>
+                                    </div>
+                                    <button onClick={() => setShowActionDictWarning(false)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: '#856404' }} title="Dismiss">✕</button>
                                 </div>
                             )}
-
                             <div style={{ marginBottom: '15px' }}>
                                 <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#333', borderBottom: '1px solid #eee', paddingBottom: '4px', display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '8px' }}>
                                     Selected Actions
@@ -3751,38 +4449,50 @@
                                     >Rejected Actions {rejectedEntries.length > 0 && <span style={{ background: suggestedTab === 'rejected' ? '#fdecea' : '#f8f9fa', color: suggestedTab === 'rejected' ? '#e74c3c' : '#6c757d', fontSize: '11px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>{rejectedEntries.length}</span>}</button>
                                 </div>
 
-                                    {analysisLoading && (
-                                        <div style={{ padding: '20px', textAlign: 'center', background: '#e9ecef', borderRadius: '8px', marginBottom: '10px', color: '#495057', fontWeight: 600, border: '1px solid #dee2e6' }}>
-                                            ⚙️ Processing analysis...
-                                        </div>
-                                    )}
+                                {analysisLoading && (
+                                    <div style={{
+                                        padding: '12px',
+                                        background: '#fff3cd',
+                                        border: '1px solid #ffeeba',
+                                        borderRadius: '8px',
+                                        marginBottom: '15px',
+                                        textAlign: 'center',
+                                        color: '#856404',
+                                        fontWeight: 600,
+                                        fontSize: '14px',
+                                        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                                        animation: 'pulse 2s infinite ease-in-out'
+                                    }}>
+                                        ⚙️ Processing analysis...
+                                    </div>
+                                )}
 
-                                    {/* Display prioritized actions button inside Suggested Actions section */}
-                                    {pendingAnalysisResult && !analysisLoading && (
-                                        <button
-                                            onClick={handleDisplayPrioritizedActions}
-                                            style={{
-                                                width: '100%',
-                                                padding: '10px 16px',
-                                                margin: '0 0 10px 0',
-                                                background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
-                                                color: 'white',
-                                                border: 'none',
-                                                borderRadius: '8px',
-                                                cursor: 'pointer',
-                                                fontSize: '14px',
-                                                fontWeight: 700,
-                                                boxShadow: '0 2px 8px rgba(39,174,96,0.3)',
-                                                transition: 'transform 0.1s',
-                                            }}
-                                            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
-                                            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                                        >
-                                            📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
-                                        </button>
-                                    )}
+                                {/* Display prioritized actions button inside Suggested Actions section */}
+                                {pendingAnalysisResult && !analysisLoading && (
+                                    <button
+                                        onClick={handleDisplayPrioritizedActions}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 16px',
+                                            margin: '0 0 10px 0',
+                                            background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
+                                            fontSize: '14px',
+                                            fontWeight: 700,
+                                            boxShadow: '0 2px 8px rgba(39,174,96,0.3)',
+                                            transition: 'transform 0.1s',
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                                        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                                    >
+                                        📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
+                                    </button>
+                                )}
 
-                                    {suggestedTab === 'prioritized' && (
+                                {suggestedTab === 'prioritized' && (
                                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
                                         !analysisLoading ? (
                                             <div style={{ textAlign: 'center' }}>
@@ -3801,7 +4511,7 @@
                                                         textAlign: 'left',
                                                         position: 'relative'
                                                     }}>
-                                                        <button 
+                                                        <button
                                                             onClick={() => setDismissedRecommenderWarning(true)}
                                                             style={{
                                                                 position: 'absolute',
@@ -3836,7 +4546,7 @@
                                                                 Change in settings
                                                             </button>
                                                         </div>
-                                                        <div>• Minimum actions: {minLineReconnections} reco, {minCloseCoupling} close, {minOpenCoupling} open, {minLineDisconnections} disco</div>
+                                                        <div>• Minimum actions: {minLineReconnections} reco, {minCloseCoupling} close, {minOpenCoupling} open, {minLineDisconnections} disco, {minPst} PST</div>
                                                         <div>• Maximum suggestions: {nPrioritizedActions}</div>
                                                         <div>• Ignore reconnections: {ignoreReconnections ? 'Yes' : 'No'}</div>
                                                     </div>
@@ -3924,6 +4634,53 @@
 
                             </div>
                             <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                                {/* Path Warning Banner */}
+                                {!nDiagram?.svg && !configLoading && showPathWarning && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '10px',
+                                        left: '50%',
+                                        transform: 'translateX(-50%)',
+                                        zIndex: 150,
+                                        backgroundColor: '#fff3cd',
+                                        color: '#856404',
+                                        padding: '12px 20px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #ffeeba',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '8px',
+                                        maxWidth: '80%',
+                                        fontSize: '13px'
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <span>⚠️</span> Configuration Paths
+                                            </div>
+                                            <button
+                                                onClick={() => setShowPathWarning(false)}
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', color: '#856404' }}
+                                            >✕</button>
+                                        </div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            <strong>Layout Path:</strong> {layoutPath || 'Not set'}
+                                        </div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            <strong>Output Folder:</strong> {networkPath ? networkPath.substring(0, networkPath.lastIndexOf('/')) : 'Not set'}
+                                        </div>
+                                        <div style={{ marginTop: '4px' }}>
+                                            <a
+                                                href="#"
+                                                onClick={(e) => { e.preventDefault(); setSettingsTab('paths'); setIsSettingsOpen(true); }}
+                                                style={{ color: '#0056b3', textDecoration: 'underline', fontWeight: 500 }}
+                                            >
+                                                Change in settings
+                                            </a>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* View Mode Overlay */}
                                 {(activeTab !== 'overflow' && activeTab !== 'n' && (
                                     (activeTab === 'n-1' && !!n1Diagram?.svg) ||
@@ -3978,7 +4735,7 @@
                                         display: 'flex',
                                         flexDirection: 'column',
                                         gap: '6px',
-                                        nItems: 'flex-start',
+                                        alignItems: 'flex-start',
                                     }}>
                                         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                                             <button onClick={handleManualZoomIn} style={{
@@ -4043,6 +4800,384 @@
                         </div>
                     </div>
                     {error && <div style={{ position: 'fixed', bottom: 20, right: 20, background: '#e74c3c', color: 'white', padding: '10px 20px', borderRadius: '4px', boxShadow: '0 2px 10px rgba(0,0,0,0.2)' }}>❌ {error}</div>}
+                    {infoMessage && (
+                        <div style={{
+                            position: 'fixed', bottom: 20, left: 20,
+                            background: infoMessage.startsWith('SUCCESS') ? '#27ae60' : '#3498db',
+                            color: 'white',
+                            padding: '12px 24px', borderRadius: '4px',
+                            boxShadow: '0 4px 15px rgba(0,0,0,0.3)', zIndex: 1000,
+                            fontWeight: 'bold',
+                            border: '1px solid rgba(255,255,255,0.2)'
+                        }}>
+                            {infoMessage}
+                        </div>
+                    )}
+                    {isCombineModalOpen && (
+                        <div className="modal-overlay">
+                            <div className="modal-content">
+                                <div className="modal-header">
+                                    <h2 style={{ margin: 0 }}>Combine Actions</h2>
+                                    <button onClick={() => setIsCombineModalOpen(false)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '24px', padding: '0 5px', cursor: 'pointer' }}>&times;</button>
+                                </div>
+
+                                <div className="modal-tabs">
+                                    <div
+                                        className={`modal-tab ${combineModalTab === 'computed' ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setCombineModalTab('computed');
+                                            setSelectedCombineActionIds([]);
+                                            setSuperpositionResult(null);
+                                        }}
+                                    >
+                                        Computed Pairs
+                                    </div>
+                                    <div
+                                        className={`modal-tab ${combineModalTab === 'explore' ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setCombineModalTab('explore');
+                                            setSelectedCombineActionIds([]);
+                                            setSuperpositionResult(null);
+                                        }}
+                                    >
+                                        Explore Pairs
+                                    </div>
+                                </div>
+
+                                {combineModalTab === 'computed' ? (
+                                    <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                                        <table className="action-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Action 1</th>
+                                                    <th>Action 2</th>
+                                                    <th>Betas</th>
+                                                    <th>Max Loading (Est.)</th>
+                                                    <th>Line (Est.)</th>
+                                                    <th>Simulated Max Rho</th>
+                                                    <th>Simulated Line</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {Object.entries(result?.actions || {})
+                                                    .filter(([id, data]) => id.includes('+') || data.is_precomputed)
+                                                    .sort((a, b) => ((a[1].estimated_max_rho ?? a[1].max_rho) ?? 999) - ((b[1].estimated_max_rho ?? b[1].max_rho) ?? 999))
+                                                    .map(([id, data]) => {
+                                                        const parts = id.split('+').map(p => p.trim());
+                                                        const isSimulated = !data.is_estimated && data.rho_after && data.rho_after.length > 0;
+                                                        const estMaxRho = data.estimated_max_rho;
+                                                        const estMaxRhoLine = data.estimated_max_rho_line;
+
+                                                        return (
+                                                            <tr key={id}>
+                                                                <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{parts[0]}</td>
+                                                                <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{parts[1]}</td>
+                                                                <td style={{ fontSize: '11px', fontFamily: 'monospace', color: '#666' }}>
+                                                                    {data.betas ? (Array.isArray(data.betas) ? data.betas : Object.values(data.betas)).map(b => b.toFixed(2)).join(', ') : '-'}
+                                                                </td>
+                                                                <td>
+                                                                    <span className="metric-badge metric-rho" style={{
+                                                                        background: estMaxRho > monitoringFactor ? '#ffebee' : estMaxRho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
+                                                                        color: estMaxRho > monitoringFactor ? '#c62828' : estMaxRho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32',
+                                                                        fontWeight: 'bold',
+                                                                        opacity: 0.9,
+                                                                        border: estMaxRho > monitoringFactor ? '1px solid #c62828' : estMaxRho > (monitoringFactor - 0.05) ? '1px solid #856404' : '1px dashed #2e7d32'
+                                                                    }}>
+                                                                        {estMaxRho != null && !isNaN(estMaxRho) ? `${(estMaxRho * 100).toFixed(1)}%` : '—'}
+                                                                        {data.is_islanded && (
+                                                                            <span style={{ marginLeft: '4px' }} title="Estimation suspect due to islanding or linear superposition breakdown">⚠️</span>
+                                                                        )}
+                                                                    </span>
+                                                                </td>
+                                                                <td style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>{estMaxRhoLine || 'N/A'}</td>
+
+                                                                <td style={{ textAlign: 'center' }}>
+                                                                    {isSimulated ? (
+                                                                        <span className="metric-badge metric-rho" style={{
+                                                                            fontWeight: 'bold',
+                                                                            fontSize: '13px',
+                                                                            background: data.max_rho > monitoringFactor ? '#ffebee' : data.max_rho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
+                                                                            color: data.max_rho > monitoringFactor ? '#c62828' : data.max_rho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32'
+                                                                        }}>
+                                                                            {(data.max_rho * 100).toFixed(1)}%
+                                                                            {data.is_islanded && (
+                                                                                <span style={{ fontSize: '10px', marginLeft: '4px', border: '1px solid #721c24', padding: '1px 3px', borderRadius: '3px', color: '#721c24', background: '#f8d7da' }} title={`Islanding: ${data.disconnected_mw?.toFixed(1)} MW disconnected`}>🏝️</span>
+                                                                            )}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span style={{ color: '#aaa', fontSize: '11px' }}>Not simulated</span>
+                                                                    )}
+                                                                </td>
+                                                                <td style={{ fontSize: '11px', color: '#333', fontWeight: isSimulated ? 'bold' : 'normal' }}>
+                                                                    {isSimulated ? data.max_rho_line : '-'}
+                                                                </td>
+
+                                                                <td>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleAddManualAction(id);
+                                                                        }}
+                                                                        disabled={!!simulatingActionId}
+                                                                        style={{
+                                                                            padding: '6px 14px',
+                                                                            background: isSimulated ? '#007bff' : '#28a745',
+                                                                            color: 'white',
+                                                                            border: 'none',
+                                                                            borderRadius: '4px',
+                                                                            cursor: simulatingActionId ? 'not-allowed' : 'pointer',
+                                                                            fontSize: '11px',
+                                                                            fontWeight: 'bold',
+                                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                                            opacity: simulatingActionId ? 0.6 : 1,
+                                                                            minWidth: '100px'
+                                                                        }}
+                                                                    >
+                                                                        {simulatingActionId === canonicalizeId(id) ? '⌛' : (isSimulated ? 'Re-Simulate' : 'Simulate')}
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })
+                                                }
+                                                {Object.entries(result?.actions || {}).filter(([id, data]) => id.includes('+') || data.is_precomputed).length === 0 && (
+                                                    <tr>
+                                                        <td colSpan="6" style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', padding: '40px 20px' }}>
+                                                            No computed combinations found.<br />Go to <strong>Explore Pairs</strong> to create new ones.
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div style={{ background: '#f8f9fa', padding: '10px', borderRadius: '6px', marginBottom: '15px', border: '1px solid #e9ecef' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                                <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#444' }}>Selected Actions ({selectedCombineActionIds.length}/2)</div>
+                                                <button
+                                                    onClick={() => setSelectedCombineActionIds([])}
+                                                    disabled={selectedCombineActionIds.length === 0}
+                                                    style={{ background: 'none', border: 'none', color: '#007bff', fontSize: '11px', cursor: 'pointer', padding: 0 }}
+                                                >Clear All</button>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '8px', minHeight: '30px' }}>
+                                                {selectedCombineActionIds.length === 0 ? (
+                                                    <div style={{ color: '#999', fontSize: '12px', fontStyle: 'italic', display: 'flex', alignItems: 'center' }}>Click rows in the table below to select...</div>
+                                                ) : (
+                                                    selectedCombineActionIds.map(id => (
+                                                        <div key={id} style={{ background: '#e7f1ff', color: '#007bff', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', border: '1px solid #b3d7ff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                            {id}
+                                                            <span onClick={(e) => { e.stopPropagation(); toggleActionSelection(id); }} style={{ cursor: 'pointer', fontSize: '14px' }}>&times;</span>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div style={{ marginBottom: '12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                            {['all', 'disco', 'reco', 'open', 'close', 'pst'].map(f => (
+                                                <button
+                                                    key={f}
+                                                    onClick={() => setExploreFilter(f)}
+                                                    style={{
+                                                        padding: '4px 10px',
+                                                        borderRadius: '15px',
+                                                        border: '1px solid',
+                                                        borderColor: exploreFilter === f ? '#007bff' : '#ddd',
+                                                        background: exploreFilter === f ? '#007bff' : 'white',
+                                                        color: exploreFilter === f ? 'white' : '#666',
+                                                        fontSize: '11px',
+                                                        cursor: 'pointer',
+                                                        fontWeight: exploreFilter === f ? 'bold' : 'normal',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                >
+                                                    {f.toUpperCase()}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '4px' }}>
+                                            {Array.from(new Set(scoredActionsList.map(item => item.type)))
+                                                .filter(type => exploreFilter === 'all' || type.includes(exploreFilter))
+                                                .map(type => (
+                                                    <div key={type} style={{ marginBottom: '1px' }}>
+                                                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#444', backgroundColor: '#f0f2f5', padding: '4px 8px', borderBottom: '1px solid #e1e4e8', display: 'flex', justifyContent: 'space-between' }}>
+                                                            <span>{type.replace('_', ' ').toUpperCase()}</span>
+                                                            <span>{scoredActionsList.filter(item => item.type === type).length} actions</span>
+                                                        </div>
+                                                        <table className="action-table" style={{ margin: 0, border: 'none' }}>
+                                                            <tbody>
+                                                                {scoredActionsList
+                                                                    .filter(item => item.type === type)
+                                                                    .map(({ actionId, score }) => {
+                                                                        const data = result?.actions?.[actionId];
+                                                                        const isSelected = selectedCombineActionIds.includes(actionId);
+                                                                        return (
+                                                                            <tr
+                                                                                key={actionId}
+                                                                                className={isSelected ? 'selected' : ''}
+                                                                                onClick={() => toggleActionSelection(actionId)}
+                                                                                style={{ cursor: 'pointer', background: isSelected ? '#fff9db' : (data ? '#fdfdfd' : 'white') }}
+                                                                            >
+                                                                                <td style={{ width: '10px', paddingRight: 0 }}>
+                                                                                    <input type="checkbox" checked={isSelected} readOnly style={{ cursor: 'pointer' }} />
+                                                                                </td>
+                                                                                <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{actionId}</td>
+                                                                                <td style={{ width: '60px' }}>
+                                                                                    <span className="metric-badge metric-score" style={{ scale: '0.9' }}>
+                                                                                        {score.toFixed(2)}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td style={{ width: '80px' }}>
+                                                                                    {data ? (
+                                                                                        <span className="metric-badge metric-rho" style={{
+                                                                                            scale: '0.9',
+                                                                                            background: data.max_rho > monitoringFactor ? '#ffebee' : data.max_rho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
+                                                                                            color: data.max_rho > monitoringFactor ? '#c62828' : data.max_rho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32'
+                                                                                        }}>
+                                                                                            {(data.max_rho * 100).toFixed(1)}%
+                                                                                        </span>
+                                                                                    ) : (
+                                                                                        <span style={{ color: '#aaa', fontStyle: 'italic', fontSize: '10px' }}>Untested</span>
+                                                                                    )}
+                                                                                </td>
+                                                                                <td onClick={(e) => e.stopPropagation()} style={{ width: '90px' }}>
+                                                                                    <button
+                                                                                        onClick={() => handleSimulateUnitaryFromModal(actionId)}
+                                                                                        disabled={simulatingActionId === actionId}
+                                                                                        style={{ padding: '3px 8px', background: data ? '#95a5a6' : '#2980b9', color: 'white', border: 'none', borderRadius: '4px', cursor: (simulatingActionId === actionId) ? 'not-allowed' : 'pointer', fontSize: '10px' }}
+                                                                                    >
+                                                                                        {simulatingActionId === actionId ? '...' : (data ? 'Re-run' : 'Simulate')}
+                                                                                    </button>
+                                                                                </td>
+                                                                            </tr>
+                                                                        );
+                                                                    })
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                ))}
+                                            {scoredActionsList.length === 0 && (
+                                                <div style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', padding: '40px 20px' }}>
+                                                    No scored actions available. Run analysis first.
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div style={{ marginTop: '15px' }}>
+                                            {!superpositionResult ? (
+                                                <button
+                                                    onClick={handleComputeSuperposition}
+                                                    disabled={selectedCombineActionIds.length !== 2 || isComputingSuperposition}
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '12px',
+                                                        background: selectedCombineActionIds.length === 2 ? '#3498db' : '#ecf0f1',
+                                                        color: selectedCombineActionIds.length === 2 ? 'white' : '#bdc3c7',
+                                                        border: 'none',
+                                                        borderRadius: '6px',
+                                                        cursor: (selectedCombineActionIds.length !== 2 || isComputingSuperposition) ? 'not-allowed' : 'pointer',
+                                                        fontWeight: 'bold',
+                                                        fontSize: '14px',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                >
+                                                    {isComputingSuperposition ? '⚙️ Estimating Combination...' : (selectedCombineActionIds.length === 2 ? 'Estimate combination effect' : 'Select 2 actions to estimate')}
+                                                </button>
+                                            ) : (
+                                                <div style={{ padding: '15px', background: superpositionResult.error ? '#fff3cd' : '#e1f5fe', borderRadius: '8px', borderLeft: '5px solid ' + (superpositionResult.error ? '#856404' : '#0288d1'), boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                                                        <div style={{ flex: 1 }}>
+                                                            {superpositionResult.betas && (
+                                                                <div style={{ marginBottom: '8px', fontSize: '11px', color: '#666', background: 'rgba(255,255,255,0.6)', padding: '2px 8px', borderRadius: '4px', display: 'inline-block', fontWeight: 600 }}>
+                                                                    Betas: {superpositionResult.betas.map(b => b.toFixed(3)).join(', ')}
+                                                                </div>
+                                                            )}
+                                                            <div style={{ fontWeight: 800, color: superpositionResult.error ? '#856404' : '#01579b', fontSize: '15px' }}>
+                                                                {superpositionResult.error ? '⚠️ Estimation Failed' : 'Explore Pairs Comparison'}
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                                            <button
+                                                                onClick={handleComputeSuperposition}
+                                                                disabled={isComputingSuperposition}
+                                                                style={{ padding: '6px 12px', background: 'white', border: '1px solid #3498db', color: '#3498db', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                                                            >
+                                                                {isComputingSuperposition ? '...' : 'Estimate combination effect'}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleSimulateCombined()}
+                                                                disabled={isSimulatingCombined}
+                                                                style={{ padding: '6px 16px', background: isSimulatingCombined ? '#6c757d' : '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: isSimulatingCombined ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '12px', boxShadow: '0 2px 4px rgba(39,174,96,0.2)', minWidth: '140px' }}
+                                                            >
+                                                                {isSimulatingCombined ? '⌛ Simulating...' : 'Simulate Combined'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {!superpositionResult.error && (
+                                                        <div style={{ display: 'flex', gap: '30px', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '12px' }}>
+                                                            <div style={{ flex: 1, borderRight: '1px solid rgba(0,0,0,0.05)', paddingRight: '15px' }}>
+                                                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Estimated Effect</div>
+                                                                <div style={{ fontSize: '13px', marginBottom: '4px' }}>
+                                                                    Estimated Max Loading: <strong style={{ color: superpositionResult.max_rho <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{(superpositionResult.max_rho * 100).toFixed(1)}%</strong>
+                                                                </div>
+                                                                <div style={{ fontSize: '12px', color: '#666' }}>
+                                                                    Line: {superpositionResult.max_rho_line}
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ flex: 1 }}>
+                                                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Simulation Result</div>
+                                                                {isSimulatingCombined && (
+                                                                    <div style={{ color: '#0056b3', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                        <span>⌛</span> Simulating combined action...
+                                                                    </div>
+                                                                )}
+                                                                {!isSimulatingCombined && combinedSimulationFeedback && (
+                                                                    <>
+                                                                        <div style={{ fontSize: '13px', marginBottom: '4px' }}>
+                                                                            Actual Max Loading: <strong style={{ color: (combinedSimulationFeedback.max_rho ?? 1) <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{combinedSimulationFeedback.max_rho != null ? `${(combinedSimulationFeedback.max_rho * 100).toFixed(1)}%` : 'N/A'}</strong>
+                                                                        </div>
+                                                                        <div style={{ fontSize: '12px', color: '#666' }}>
+                                                                            Line: {combinedSimulationFeedback.max_rho_line}
+                                                                        </div>
+                                                                        {combinedSimulationFeedback.is_islanded && (
+                                                                            <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                                                                                Islanding detected ({combinedSimulationFeedback.disconnected_mw?.toFixed(1)} MW disconnected)
+                                                                            </div>
+                                                                        )}
+                                                                        {combinedSimulationFeedback.non_convergence && (
+                                                                            <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                                                                                Non-convergence: {combinedSimulationFeedback.non_convergence}
+                                                                            </div>
+                                                                        )}
+                                                                    </>
+                                                                )}
+                                                                {!isSimulatingCombined && !combinedSimulationFeedback && (
+                                                                    <div style={{ color: '#aaa', fontSize: '12px', fontStyle: 'italic', marginTop: '5px' }}>Click "Simulate Combined" to run</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {superpositionResult.error && (
+                                                        <div style={{ fontSize: '13px', color: '#856404' }}>{superpositionResult.error}</div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+
+                                <div className="modal-footer">
+                                    <button onClick={() => setIsCombineModalOpen(false)} style={{ background: '#95a5a6', color: 'white', padding: '8px 20px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Close</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div >
             );
         }

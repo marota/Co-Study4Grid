@@ -107,6 +107,27 @@ def mock_network_service(mock_network):
     return service
 
 
+@pytest.fixture(autouse=True)
+def reset_config():
+    """Snapshot and restore the expert_op4grid_recommender.config state after each test."""
+    from expert_op4grid_recommender import config
+    
+    # Snapshot all attributes that don't start with __
+    snapshot = {k: v for k, v in vars(config).items() if not k.startswith("__")}
+    
+    yield
+    
+    # Restore from snapshot
+    for k, v in snapshot.items():
+        setattr(config, k, v)
+    
+    # Remove any attributes that were added during the test
+    current_keys = [k for k in vars(config).keys() if not k.startswith("__")]
+    for k in current_keys:
+        if k not in snapshot:
+            delattr(config, k)
+
+
 @pytest.fixture
 def recommender_service_instance():
     """Create a fresh RecommenderService instance."""

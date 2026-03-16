@@ -166,6 +166,9 @@ export const getActionTargetLines = (
     actionId: string | null,
     edgesByEquipmentId: Map<string, EdgeMeta>,
 ): string[] => {
+    const targets = new Set<string>();
+
+    // 1. From topology
     const topo = actionDetail?.action_topology;
     if (topo) {
         const lineKeys = new Set([
@@ -176,71 +179,101 @@ export const getActionTargetLines = (
         const loadKeys = Object.keys(topo.loads_bus || {});
 
         if (lineKeys.size > 0 && genKeys.length === 0 && loadKeys.length === 0) {
-            return [...lineKeys];
-        }
-
-        const allValues = [
-            ...Object.values(topo.lines_ex_bus || {}),
-            ...Object.values(topo.lines_or_bus || {}),
-            ...Object.values(topo.gens_bus || {}),
-            ...Object.values(topo.loads_bus || {}),
-        ];
-        if (allValues.length > 0 && allValues.every(v => v === -1)) {
-            return [...lineKeys];
+            lineKeys.forEach(l => targets.add(l));
+        } else {
+            const allValues = [
+                ...Object.values(topo.lines_ex_bus || {}),
+                ...Object.values(topo.lines_or_bus || {}),
+                ...Object.values(topo.gens_bus || {}),
+                ...Object.values(topo.loads_bus || {}),
+            ];
+            if (allValues.length > 0 && allValues.every(v => v === -1)) {
+                lineKeys.forEach(l => targets.add(l));
+            }
         }
     }
 
+    // 2. From action ID (handles combined IDs)
     if (actionId) {
-        const parts = actionId.split('_');
-        const candidate = parts[parts.length - 1];
-        if (edgesByEquipmentId && edgesByEquipmentId.has(candidate)) {
-            return [candidate];
-        }
+        actionId.split('+').forEach(part => {
+            if (edgesByEquipmentId.has(part)) {
+                targets.add(part);
+                return;
+            }
+            const subParts = part.split('_');
+            for (let i = 1; i < subParts.length; i++) {
+                const candidate = subParts.slice(i).join('_');
+                if (edgesByEquipmentId.has(candidate)) {
+                    targets.add(candidate);
+                    return;
+                }
+            }
+            // Fallback: last segment
+            const last = subParts[subParts.length - 1];
+            if (edgesByEquipmentId.has(last)) {
+                targets.add(last);
+            }
+        });
     }
 
-    return [];
+    return [...targets];
 };
 
 /**
  * Extract the voltage level name for nodal actions.
  */
-export const getActionTargetVoltageLevel = (
+export const getActionTargetVoltageLevels = (
     actionDetail: ActionDetail | null,
     actionId: string | null,
     nodesByEquipmentId: Map<string, NodeMeta>,
-): string | null => {
+): string[] => {
+    const targets = new Set<string>();
     const desc = actionDetail?.description_unitaire;
     if (desc && desc !== 'No description available') {
-        // Try all quoted strings (last-first) — any might be the VL name
+        // Try all quoted strings — any might be the VL name
         const quotedMatches = desc.match(/'([^']+)'/g);
         if (quotedMatches) {
-            for (let i = quotedMatches.length - 1; i >= 0; i--) {
-                const vl = quotedMatches[i].replace(/'/g, '');
-                if (nodesByEquipmentId.has(vl)) return vl;
-            }
+            quotedMatches.forEach(match => {
+                const vl = match.replace(/'/g, '');
+                if (nodesByEquipmentId.has(vl)) targets.add(vl);
+            });
         }
         // Match "dans le poste", "du poste", "au poste", etc.
-        const posteMatch = desc.match(/(?:dans le |du |au )?poste\s+'?(\S+?)'?(?:\s|$|,)/i);
-        if (posteMatch) {
-            const vl = posteMatch[1].replace(/['"]/g, '');
-            if (nodesByEquipmentId.has(vl)) return vl;
+        const posteMatches = desc.matchAll(/(?:dans le |du |au )?poste\s+'?(\S+?)'?(?:\s|$|,)/gi);
+        for (const match of posteMatches) {
+            const vl = match[1].replace(/['"]/g, '');
+            if (nodesByEquipmentId.has(vl)) targets.add(vl);
         }
     }
 
     // Fallback: action ID suffix — skip for pure line reconnection actions
-    // (where lines are reconnected to real buses ≥ 0 with no gen/load changes),
-    // because the suffix can coincidentally match a VL name.
     const topo = actionDetail?.action_topology;
     const isLineReconnection = topo
         && (Object.keys(topo.gens_bus || {}).length === 0 && Object.keys(topo.loads_bus || {}).length === 0)
         && [...Object.values(topo.lines_ex_bus || {}), ...Object.values(topo.lines_or_bus || {})].some(v => v >= 0);
 
     if (actionId && !isLineReconnection) {
-        const parts = actionId.split('_');
-        const candidate = parts[parts.length - 1];
-        if (nodesByEquipmentId.has(candidate)) return candidate;
+        actionId.split('+').forEach(part => {
+            if (nodesByEquipmentId.has(part)) {
+                targets.add(part);
+                return;
+            }
+            const subParts = part.split('_');
+            for (let i = 1; i < subParts.length; i++) {
+                const candidate = subParts.slice(i).join('_');
+                if (nodesByEquipmentId.has(candidate)) {
+                    targets.add(candidate);
+                    return;
+                }
+            }
+            // Fallback: last segment
+            const last = subParts[subParts.length - 1];
+            if (nodesByEquipmentId.has(last)) {
+                targets.add(last);
+            }
+        });
     }
-    return null;
+    return [...targets];
 };
 
 /**
@@ -305,20 +338,17 @@ export const applyActionTargetHighlights = (
 
     const idMap = getIdMap(container);
 
-    // 1. Try VL detection first (handles nodal AND coupler actions)
-    const vlName = getActionTargetVoltageLevel(actionDetail, actionId, nodesByEquipmentId);
-    if (vlName) {
+    // 1. Identify all VL targets
+    const vlNames = getActionTargetVoltageLevels(actionDetail, actionId, nodesByEquipmentId);
+    vlNames.forEach(vlName => {
         const node = nodesByEquipmentId.get(vlName);
         if (node && node.svgId) {
             const el = idMap.get(node.svgId);
-            if (el) {
-                applyHighlight(el);
-                return;
-            }
+            if (el) applyHighlight(el);
         }
-    }
+    });
 
-    // 2. Fall back to line action: highlight edges from topology or action ID
+    // 2. Identify all line/equipment targets
     const targetLines = getActionTargetLines(actionDetail, actionId, edgesByEquipmentId);
     targetLines.forEach(lineName => {
         const edge = edgesByEquipmentId.get(lineName);

@@ -12,15 +12,15 @@ import {
 } from './utils/svgUtils';
 import { processSvgAsync } from './utils/svgWorkerClient';
 import type { ActionDetail, AnalysisResult, DiagramData, ViewBox, MetadataIndex, TabId, SettingsBackup, VlOverlay, SldTab, FlowDelta, AssetDelta } from './types';
+import { buildSessionResult } from './utils/sessionUtils';
 
 function App() {
   // ===== Configuration State =====
-  const [networkPath, setNetworkPath] = useState(
-    localStorage.getItem('networkPath') || '/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z_dijon_only'
-  );
-  const [actionPath, setActionPath] = useState(
-    localStorage.getItem('actionPath') || '/home/marotant/dev/Expert_op4grid_recommender/data/action_space/reduced_model_actions_20240828T0100Z_new_dijon.json'
-  );
+  const [networkPath, setNetworkPath] = useState('');
+  const [actionPath, setActionPath] = useState('');
+  const [layoutPath, setLayoutPath] = useState('');
+  const [outputFolderPath, setOutputFolderPath] = useState('');
+
   const [branches, setBranches] = useState<string[]>([]);
   const [voltageLevels, setVoltageLevels] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState('');
@@ -41,107 +41,16 @@ function App() {
   const [preExistingOverloadThreshold, setPreExistingOverloadThreshold] = useState<number>(0.02);
   const [ignoreReconnections, setIgnoreReconnections] = useState<boolean>(false);
   const [pypowsyblFastMode, setPypowsyblFastMode] = useState<boolean>(true);
+  const [minPst, setMinPst] = useState<number>(1.0);
+  const [actionDictFileName, setActionDictFileName] = useState<string | null>(null);
+  const [actionDictStats, setActionDictStats] = useState<{ reco: number; disco: number; pst: number; open_coupling: number; close_coupling: number; total: number } | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'recommender' | 'configurations'>('recommender');
+  const [settingsTab, setSettingsTab] = useState<'recommender' | 'configurations' | 'paths'>('paths');
   const [settingsBackup, setSettingsBackup] = useState<SettingsBackup | null>(null);
 
   // Confirmation dialog state for contingency change / load study
   const [confirmDialog, setConfirmDialog] = useState<{ type: 'contingency' | 'loadStudy'; pendingBranch?: string } | null>(null);
 
-  const handleOpenSettings = useCallback(() => {
-    setSettingsBackup({
-      minLineReconnections,
-      minCloseCoupling,
-      minOpenCoupling,
-      minLineDisconnections,
-      nPrioritizedActions,
-      linesMonitoringPath,
-      monitoringFactor,
-      preExistingOverloadThreshold,
-      ignoreReconnections,
-      pypowsyblFastMode
-    });
-    setIsSettingsOpen(true);
-  }, [minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
-
-  const handleCloseSettings = useCallback(() => {
-    if (settingsBackup) {
-      setMinLineReconnections(settingsBackup.minLineReconnections);
-      setMinCloseCoupling(settingsBackup.minCloseCoupling);
-      setMinOpenCoupling(settingsBackup.minOpenCoupling);
-      setMinLineDisconnections(settingsBackup.minLineDisconnections);
-      setNPrioritizedActions(settingsBackup.nPrioritizedActions);
-      setLinesMonitoringPath(settingsBackup.linesMonitoringPath);
-      setMonitoringFactor(settingsBackup.monitoringFactor);
-      setPreExistingOverloadThreshold(settingsBackup.preExistingOverloadThreshold);
-      setIgnoreReconnections(settingsBackup.ignoreReconnections ?? false);
-      setPypowsyblFastMode(settingsBackup.pypowsyblFastMode ?? true);
-    }
-    setIsSettingsOpen(false);
-  }, [settingsBackup]);
-
-  const handleApplySettings = useCallback(async () => {
-    try {
-      // Clear previous results to ensure consistency with new settings BEFORE fetching
-      setResult(null);
-      setPendingAnalysisResult(null);
-      setNDiagram(null);
-      setN1Diagram(null);
-      setActionDiagram(null);
-      setSelectedActionId(null);
-      setActiveTab('n');
-      setVlOverlay(null);
-      setSelectedBranch('');
-      committedBranchRef.current = '';
-      setSelectedActionIds(new Set());
-      setManuallyAddedIds(new Set());
-      setRejectedActionIds(new Set());
-      setError('');
-      setInfoMessage('');
-      setInspectQuery('');
-      setShowMonitoringWarning(false); // Clear warning on new settings application
-
-      const configRes = await api.updateConfig({
-        network_path: networkPath,
-        action_file_path: actionPath,
-        min_line_reconnections: minLineReconnections,
-        min_close_coupling: minCloseCoupling,
-        min_open_coupling: minOpenCoupling,
-        min_line_disconnections: minLineDisconnections,
-        n_prioritized_actions: nPrioritizedActions,
-        lines_monitoring_path: linesMonitoringPath,
-        monitoring_factor: monitoringFactor,
-        pre_existing_overload_threshold: preExistingOverloadThreshold,
-        ignore_reconnections: ignoreReconnections,
-        pypowsybl_fast_mode: pypowsyblFastMode,
-      });
-
-      if (configRes && configRes.total_lines_count !== undefined) {
-        setMonitoredLinesCount(configRes.monitored_lines_count);
-        setTotalLinesCount(configRes.total_lines_count);
-        if (configRes.monitored_lines_count < configRes.total_lines_count) {
-          setShowMonitoringWarning(true);
-        }
-      }
-
-      setSettingsBackup({
-        minLineReconnections,
-        minCloseCoupling,
-        minOpenCoupling,
-        minLineDisconnections,
-        nPrioritizedActions,
-        linesMonitoringPath,
-        monitoringFactor,
-        preExistingOverloadThreshold,
-        ignoreReconnections,
-        pypowsyblFastMode
-      });
-      setIsSettingsOpen(false);
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string } }; message?: string };
-      setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
-    }
-  }, [networkPath, actionPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
 
   const pickSettingsPath = async (type: 'file' | 'dir', setter: (path: string) => void) => {
     try {
@@ -159,13 +68,28 @@ function App() {
 
   // ===== Analysis State =====
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const prevResultRef = useRef<AnalysisResult | null>(result);
+  useEffect(() => { prevResultRef.current = result; }, [result]);
   const [pendingAnalysisResult, setPendingAnalysisResult] = useState<AnalysisResult | null>(null);
   const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
   const [manuallyAddedIds, setManuallyAddedIds] = useState<Set<string>>(new Set());
   const [rejectedActionIds, setRejectedActionIds] = useState<Set<string>>(new Set());
+  // Tracks every action ID ever returned by the recommender for the current contingency.
+  // Kept separate from manuallyAddedIds so an action can be both is_suggested AND
+  // is_manually_simulated when the user simulated it before the recommender returned it.
+  const [suggestedByRecommenderIds, setSuggestedByRecommenderIds] = useState<Set<string>>(new Set());
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [infoMessage, setInfoMessage] = useState('');
-  
+
+  useEffect(() => {
+    if (infoMessage) {
+      const timer = setTimeout(() => {
+        setInfoMessage('');
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [infoMessage]);
+
   // ===== Analysis Flow State =====
   const [selectedOverloads, setSelectedOverloads] = useState<Set<string>>(new Set());
   const [monitorDeselected, setMonitorDeselected] = useState(false);
@@ -206,9 +130,200 @@ function App() {
   // Captured viewBox to re-apply after the action diagram loads
   const actionSyncSourceRef = useRef<ViewBox | null>(null);
 
+  const fetchBaseDiagram = useCallback(async (vlCount: number) => {
+    try {
+      const res = await api.getNetworkDiagram();
+      const { svg, viewBox } = await processSvgAsync(res.svg, vlCount || 0);
+      if (viewBox) setOriginalViewBox(viewBox);
+      setNDiagram({ ...res, svg, originalViewBox: viewBox });
+    } catch (err) {
+      console.error('Failed to fetch diagram:', err);
+    }
+  }, []);
+
+  const handleOpenSettings = useCallback((tab: 'recommender' | 'configurations' | 'paths' = 'paths') => {
+    setSettingsBackup({
+      networkPath,
+      actionPath,
+      layoutPath,
+      outputFolderPath,
+      minLineReconnections,
+      minCloseCoupling,
+      minOpenCoupling,
+      minLineDisconnections,
+      nPrioritizedActions,
+      linesMonitoringPath,
+      monitoringFactor,
+      preExistingOverloadThreshold,
+      ignoreReconnections,
+      pypowsyblFastMode
+    });
+    setSettingsTab(tab);
+    setIsSettingsOpen(true);
+  }, [networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
+
+  const handleCloseSettings = useCallback(() => {
+    if (settingsBackup) {
+      if (settingsBackup.networkPath !== undefined) setNetworkPath(settingsBackup.networkPath);
+      if (settingsBackup.actionPath !== undefined) setActionPath(settingsBackup.actionPath);
+      if (settingsBackup.layoutPath !== undefined) setLayoutPath(settingsBackup.layoutPath);
+      if (settingsBackup.outputFolderPath !== undefined) setOutputFolderPath(settingsBackup.outputFolderPath);
+      setMinLineReconnections(settingsBackup.minLineReconnections);
+      setMinCloseCoupling(settingsBackup.minCloseCoupling);
+      setMinOpenCoupling(settingsBackup.minOpenCoupling);
+      setMinLineDisconnections(settingsBackup.minLineDisconnections);
+      setNPrioritizedActions(settingsBackup.nPrioritizedActions);
+      setLinesMonitoringPath(settingsBackup.linesMonitoringPath);
+      setMonitoringFactor(settingsBackup.monitoringFactor);
+      setPreExistingOverloadThreshold(settingsBackup.preExistingOverloadThreshold);
+      setIgnoreReconnections(settingsBackup.ignoreReconnections ?? false);
+      setPypowsyblFastMode(settingsBackup.pypowsyblFastMode ?? true);
+    }
+    setIsSettingsOpen(false);
+  }, [settingsBackup]);
+
+  const handleApplySettings = useCallback(async () => {
+    try {
+      // ── Clear ALL state for a full reset (same as handleLoadConfig) ──
+      setError('');
+      setInfoMessage('');
+      setNDiagram(null);
+      setN1Diagram(null);
+      setActionDiagram(null);
+      setOriginalViewBox(null);
+      setResult(null);
+      setPendingAnalysisResult(null);
+      setSelectedActionId(null);
+      setSelectedActionIds(new Set());
+      setManuallyAddedIds(new Set());
+      setRejectedActionIds(new Set());
+      setSuggestedByRecommenderIds(new Set());
+      setAnalysisLoading(false);
+      setSelectedOverloads(new Set());
+      setMonitorDeselected(false);
+      setActiveTab('n');
+      setActionViewMode('network');
+      setVlOverlay(null);
+      setN1Loading(false);
+      setActionDiagramLoading(false);
+      setSelectedBranch('');
+      committedBranchRef.current = '';
+      setInspectQuery('');
+      lastZoomState.current = { query: '', branch: '' };
+      actionSyncSourceRef.current = null;
+      setShowMonitoringWarning(false);
+
+      if (!networkPath || !actionPath) {
+        setSettingsBackup({
+          networkPath,
+          actionPath,
+          layoutPath,
+          outputFolderPath,
+          minLineReconnections,
+          minCloseCoupling,
+          minOpenCoupling,
+          minLineDisconnections,
+          nPrioritizedActions,
+          linesMonitoringPath,
+          monitoringFactor,
+          preExistingOverloadThreshold,
+          ignoreReconnections,
+          pypowsyblFastMode,
+        });
+        setIsSettingsOpen(false);
+        return;
+      }
+
+      const configRes = await api.updateConfig({
+        network_path: networkPath,
+        action_file_path: actionPath,
+        layout_path: layoutPath,
+        min_line_reconnections: minLineReconnections,
+        min_close_coupling: minCloseCoupling,
+        min_open_coupling: minOpenCoupling,
+        min_line_disconnections: minLineDisconnections,
+        min_pst: minPst,
+        n_prioritized_actions: nPrioritizedActions,
+        lines_monitoring_path: linesMonitoringPath,
+        monitoring_factor: monitoringFactor,
+        pre_existing_overload_threshold: preExistingOverloadThreshold,
+        ignore_reconnections: ignoreReconnections,
+        pypowsybl_fast_mode: pypowsyblFastMode,
+      });
+
+      if (configRes && configRes.total_lines_count !== undefined) {
+        setMonitoredLinesCount(configRes.monitored_lines_count);
+        setTotalLinesCount(configRes.total_lines_count);
+        if (configRes.monitored_lines_count < configRes.total_lines_count) {
+          setShowMonitoringWarning(true);
+        }
+      }
+      if (configRes?.action_dict_file_name) setActionDictFileName(configRes.action_dict_file_name);
+      if (configRes?.action_dict_stats) setActionDictStats(configRes.action_dict_stats);
+
+
+      // Fetch study-related data (branches, nominal voltages etc.)
+      const [branchesList, vlRes, nomVRes] = await Promise.all([
+        api.getBranches(),
+        api.getVoltageLevels(),
+        api.getNominalVoltages(),
+      ]);
+
+      setBranches(branchesList);
+      setVoltageLevels(vlRes);
+      setSelectedBranch('');
+
+      setNominalVoltageMap(nomVRes.mapping);
+      setUniqueVoltages(nomVRes.unique_kv);
+      if (nomVRes.unique_kv.length > 0) {
+        setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
+      }
+
+      fetchBaseDiagram(vlRes.length);
+
+      setSettingsBackup({
+        networkPath,
+        actionPath,
+        layoutPath,
+        outputFolderPath,
+        minLineReconnections,
+        minCloseCoupling,
+        minOpenCoupling,
+        minLineDisconnections,
+        nPrioritizedActions,
+        linesMonitoringPath,
+        monitoringFactor,
+        preExistingOverloadThreshold,
+        ignoreReconnections,
+        pypowsyblFastMode
+      });
+      setIsSettingsOpen(false);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } }; message?: string };
+      setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
+    }
+  }, [networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, minPst, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode, fetchBaseDiagram]);
+
+  // Load paths from localStorage on initial mount
+  useEffect(() => {
+    const savedNetwork = localStorage.getItem('networkPath');
+    const savedAction = localStorage.getItem('actionPath');
+    const savedLayout = localStorage.getItem('layoutPath');
+    const savedOutput = localStorage.getItem('outputFolderPath');
+
+    setNetworkPath(savedNetwork || '/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z_dijon_only');
+    setActionPath(savedAction || '/home/marotant/dev/Expert_op4grid_recommender/data/action_space/reduced_model_actions_20240828T0100Z_new_dijon.json');
+    setLayoutPath(savedLayout || '');
+    setOutputFolderPath(savedOutput || '');
+  }, []);
+
   // Persist paths to localStorage
-  useEffect(() => { localStorage.setItem('networkPath', networkPath); }, [networkPath]);
-  useEffect(() => { localStorage.setItem('actionPath', actionPath); }, [actionPath]);
+  useEffect(() => {
+    localStorage.setItem('networkPath', networkPath);
+    localStorage.setItem('actionPath', actionPath);
+    localStorage.setItem('layoutPath', layoutPath);
+    localStorage.setItem('outputFolderPath', outputFolderPath);
+  }, [networkPath, actionPath, layoutPath, outputFolderPath]);
 
   // ===== Contingency Change Confirmation Helpers =====
   // Check if there is any analysis state that would be lost on contingency change
@@ -224,6 +339,7 @@ function App() {
     setSelectedActionIds(new Set());
     setManuallyAddedIds(new Set());
     setRejectedActionIds(new Set());
+    setSuggestedByRecommenderIds(new Set());
     setActionDiagram(null);
     setN1Diagram(null);
     setActiveTab('n');
@@ -240,24 +356,42 @@ function App() {
   // ===== Config Loading =====
   const handleLoadConfig = useCallback(async () => {
     setConfigLoading(true);
+    // ── Clear ALL state for a full reset ──
+    // Errors & messages
     setError('');
     setInfoMessage('');
+    // Diagrams
     setNDiagram(null);
     setN1Diagram(null);
+    setActionDiagram(null);
+    setOriginalViewBox(null);
+    // Analysis
     setResult(null);
     setPendingAnalysisResult(null);
     setSelectedActionId(null);
     setSelectedActionIds(new Set());
     setManuallyAddedIds(new Set());
     setRejectedActionIds(new Set());
-    setActionDiagram(null);
+    setSuggestedByRecommenderIds(new Set());
+    setAnalysisLoading(false);
+    // Analysis flow
+    setSelectedOverloads(new Set());
+    setMonitorDeselected(false);
+    // Visualization
     setActiveTab('n');
+    setActionViewMode('network');
     setVlOverlay(null);
+    setN1Loading(false);
+    setActionDiagramLoading(false);
+    // Branch / contingency
     setSelectedBranch('');
     committedBranchRef.current = '';
     setInspectQuery('');
+    // Refs
     lastZoomState.current = { query: '', branch: '' };
-    setShowMonitoringWarning(false); // Clear warning on new config load
+    actionSyncSourceRef.current = null;
+    // Warnings
+    setShowMonitoringWarning(false);
 
     try {
       const configRes = await api.updateConfig({
@@ -267,6 +401,7 @@ function App() {
         min_close_coupling: minCloseCoupling,
         min_open_coupling: minOpenCoupling,
         min_line_disconnections: minLineDisconnections,
+        min_pst: minPst,
         n_prioritized_actions: nPrioritizedActions,
         lines_monitoring_path: linesMonitoringPath,
         monitoring_factor: monitoringFactor,
@@ -282,6 +417,9 @@ function App() {
           setShowMonitoringWarning(true);
         }
       }
+      if (configRes?.action_dict_file_name) setActionDictFileName(configRes.action_dict_file_name);
+      if (configRes?.action_dict_stats) setActionDictStats(configRes.action_dict_stats);
+
 
       const [branchesList, vlRes, nomVRes] = await Promise.all([
         api.getBranches(),
@@ -308,7 +446,7 @@ function App() {
     } finally {
       setConfigLoading(false);
     }
-  }, [networkPath, actionPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, monitoringFactor, linesMonitoringPath, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
+  }, [networkPath, actionPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, minPst, monitoringFactor, linesMonitoringPath, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode, fetchBaseDiagram]);
 
   // Handle Load Study with confirmation when analysis state exists
   const handleLoadStudyClick = useCallback(() => {
@@ -332,16 +470,6 @@ function App() {
     setConfirmDialog(null);
   }, [confirmDialog, clearContingencyState, handleLoadConfig]);
 
-  const fetchBaseDiagram = async (vlCount: number) => {
-    try {
-      const res = await api.getNetworkDiagram();
-      const { svg, viewBox } = await processSvgAsync(res.svg, vlCount || 0);
-      if (viewBox) setOriginalViewBox(viewBox);
-      setNDiagram({ ...res, svg, originalViewBox: viewBox });
-    } catch (err) {
-      console.error('Failed to fetch diagram:', err);
-    }
-  };
 
   // ===== N-1 Diagram Fetching =====
   // Uses committedBranchRef to detect actual branch changes vs. re-selections.
@@ -386,8 +514,7 @@ function App() {
       }
     };
     fetchN1();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBranch, branches, voltageLevels.length]);
+  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState]);
 
   // ===== Analysis =====
   // Sync available overloads from N-1 diagram for pre-selection
@@ -429,7 +556,7 @@ function App() {
       }
 
       const detected = res1.lines_overloaded || [];
-      
+
       // Resolve: selected overloads focus the analysis. If monitorDeselected, also pass unselected ones.
       let primaryOverloads: string[] = [];
       if (selectedOverloads.size > 0) {
@@ -459,14 +586,14 @@ function App() {
       const response2 = await fetch('http://localhost:8000/api/run-analysis-step2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            selected_overloads: toResolve,
-            all_overloads: detected,
-            monitor_deselected: monitorDeselected,
-          }),
+        body: JSON.stringify({
+          selected_overloads: toResolve,
+          all_overloads: detected,
+          monitor_deselected: monitorDeselected,
+        }),
       });
       if (!response2.ok) throw new Error('Analysis Resolution failed');
-      
+
       const reader = response2.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -481,14 +608,28 @@ function App() {
           try {
             const event = JSON.parse(line);
             if (event.type === 'pdf') {
-              setResult((p: AnalysisResult | null) => ({ ...(p || {}), pdf_url: event.pdf_url } as AnalysisResult));
+              setResult((p: AnalysisResult | null) => ({
+                ...(p || {}),
+                pdf_url: event.pdf_url,
+                pdf_path: event.pdf_path
+              } as AnalysisResult));
               setActiveTab('overflow');
             } else if (event.type === 'result') {
               // Mark all recommended actions as NOT manual
               const actionsWithFlags = { ...event.actions };
               for (const id in actionsWithFlags) {
-                actionsWithFlags[id].is_manual = false;
+                const existing = (prevResultRef.current?.actions?.[id] || {}) as Partial<ActionDetail>;
+                actionsWithFlags[id] = {
+                  ...actionsWithFlags[id],
+                  is_manual: false,
+                  is_islanded: existing.is_islanded ?? actionsWithFlags[id].is_islanded,
+                  estimated_max_rho: existing.estimated_max_rho ?? actionsWithFlags[id].max_rho,
+                  estimated_max_rho_line: existing.estimated_max_rho_line ?? actionsWithFlags[id].max_rho_line,
+                };
               }
+              // Record all IDs returned by the recommender — accumulate across re-runs
+              // so that re-analysis for the same contingency still marks prior suggestions.
+              setSuggestedByRecommenderIds(prev => new Set([...prev, ...Object.keys(actionsWithFlags)]));
               setPendingAnalysisResult({ ...event, actions: actionsWithFlags });
               if (event.message) setInfoMessage(event.message);
             } else if (event.type === 'error') {
@@ -519,10 +660,23 @@ function App() {
           }
         }
       }
+
+      // Merge new actions with existing ones to preserve estimation data if it was already updated
+      const mergedActions = { ...pendingAnalysisResult.actions };
+      for (const [id, data] of Object.entries(mergedActions)) {
+        const existing = (prev?.actions?.[id] || {}) as Partial<ActionDetail>;
+        mergedActions[id] = {
+          ...data,
+          is_islanded: existing.is_islanded ?? data.is_islanded,
+          estimated_max_rho: existing.estimated_max_rho ?? data.estimated_max_rho,
+          estimated_max_rho_line: existing.estimated_max_rho_line ?? data.estimated_max_rho_line,
+        };
+      }
+
       return {
         ...prev,                   // keep existing fields (pdf_url, etc.)
         ...pendingAnalysisResult,  // overlay with analysis result
-        actions: { ...pendingAnalysisResult.actions, ...manualActionsData },
+        actions: { ...mergedActions, ...manualActionsData },
       };
     });
     setPendingAnalysisResult(null);
@@ -641,6 +795,60 @@ function App() {
   const handleViewModeChange = useCallback((mode: 'network' | 'delta') => {
     setActionViewMode(mode);
   }, []);
+
+  // ===== Save Results =====
+  const handleSaveResults = useCallback(async () => {
+    const session = buildSessionResult({
+      networkPath,
+      actionPath,
+      layoutPath,
+      minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
+      nPrioritizedActions, linesMonitoringPath, monitoringFactor,
+      preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
+      selectedBranch, selectedOverloads, monitorDeselected,
+      nOverloads: nDiagram?.lines_overloaded ?? [],
+      n1Overloads: n1Diagram?.lines_overloaded ?? [],
+      result,
+      selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds,
+    });
+
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const contingencyLabel = selectedBranch ? `_${selectedBranch.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
+    const sessionName = `expertassist_session${contingencyLabel}_${ts}`;
+
+    if (outputFolderPath) {
+      // Save session folder (JSON + PDF copy) via backend
+      try {
+        const res = await api.saveSession({
+          session_name: sessionName,
+          json_content: JSON.stringify(session, null, 2),
+          pdf_path: result?.pdf_path ?? null,
+          output_folder_path: outputFolderPath,
+        });
+        const pdfMsg = res.pdf_copied ? " (including PDF)" : " (PDF not found)";
+        setInfoMessage(`SUCCESS: Session saved to: ${res.session_folder}${pdfMsg}`);
+      } catch (err: unknown) {
+        const e = err as { response?: { data?: { detail?: string } }; message?: string };
+        setError('Failed to save session: ' + (e.response?.data?.detail || e.message));
+      }
+    } else {
+      // Fallback: browser download of JSON (no output folder configured)
+      const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${sessionName}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  }, [
+    result, selectedActionIds, manuallyAddedIds, rejectedActionIds, suggestedByRecommenderIds,
+    networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling,
+    minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor,
+    preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
+    selectedBranch, selectedOverloads, monitorDeselected,
+    nDiagram, n1Diagram,
+  ]);
 
   // ===== SLD Overlay =====
   const [vlOverlay, setVlOverlay] = useState<VlOverlay | null>(null);
@@ -1138,26 +1346,11 @@ function App() {
           <div style={{ display: 'flex', gap: '4px' }}>
             <input
               type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)}
+              placeholder="load your grid xiidm file path"
               style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '0.8rem' }}
             />
             <button
-              onClick={() => pickSettingsPath('dir', setNetworkPath)}
-              style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '0.8rem' }}
-            >
-              📂
-            </button>
-          </div>
-        </div>
-
-        <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <label style={{ fontSize: '0.7rem', opacity: 0.8, whiteSpace: 'nowrap' }}>Action File Path</label>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <input
-              type="text" value={actionPath} onChange={e => setActionPath(e.target.value)}
-              style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '0.8rem' }}
-            />
-            <button
-              onClick={() => pickSettingsPath('file', setActionPath)}
+              onClick={() => pickSettingsPath('file', setNetworkPath)}
               style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '0.8rem' }}
             >
               📄
@@ -1173,7 +1366,22 @@ function App() {
         </button>
 
         <button
-          onClick={handleOpenSettings}
+          onClick={handleSaveResults}
+          disabled={!result && !selectedBranch}
+          style={{
+            padding: '6px 14px',
+            background: (!result && !selectedBranch) ? '#95a5a6' : '#8e44ad',
+            color: 'white', border: 'none', borderRadius: '4px',
+            cursor: (!result && !selectedBranch) ? 'not-allowed' : 'pointer',
+            fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap'
+          }}
+          title="Save session results to JSON"
+        >
+          💾 Save Results
+        </button>
+
+        <button
+          onClick={() => handleOpenSettings('paths')}
           style={{ background: '#7f8c8d', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 8px', fontSize: '1rem', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
           title="Settings"
         >
@@ -1188,12 +1396,26 @@ function App() {
           backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000,
           display: 'flex', justifyContent: 'center', alignItems: 'center'
         }}>
-          <div style={{
-            background: 'white', padding: '25px', borderRadius: '8px',
-            width: '450px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
-            display: 'flex', flexDirection: 'column', gap: '15px', color: 'black'
-          }}>
+          <div
+            role="dialog"
+            style={{
+              background: 'white', padding: '25px', borderRadius: '8px',
+              width: '450px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+              display: 'flex', flexDirection: 'column', gap: '15px', color: 'black'
+            }}
+          >
             <div style={{ display: 'flex', borderBottom: '1px solid #eee', marginBottom: '15px' }}>
+              <button
+                onClick={() => setSettingsTab('paths')}
+                style={{
+                  flex: 1, padding: '10px', cursor: 'pointer', background: 'none',
+                  border: 'none', borderBottom: settingsTab === 'paths' ? '2px solid #3498db' : 'none',
+                  fontWeight: settingsTab === 'paths' ? 'bold' : 'normal',
+                  color: settingsTab === 'paths' ? '#3498db' : '#555'
+                }}
+              >
+                Paths
+              </button>
               <button
                 onClick={() => setSettingsTab('recommender')}
                 style={{
@@ -1218,6 +1440,41 @@ function App() {
               </button>
             </div>
 
+            {settingsTab === 'paths' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label htmlFor="networkPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network File Path (.xiidm)</label>
+                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Synchronized with the banner field</div>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    <input id="networkPathInput" type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} placeholder="load your grid xiidm file path" style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                    <button onClick={() => pickSettingsPath('file', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📄</button>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label htmlFor="actionPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Action Dictionary File Path</label>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    <input id="actionPathInput" type="text" value={actionPath} onChange={e => setActionPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                    <button onClick={() => pickSettingsPath('file', setActionPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📄</button>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label htmlFor="layoutPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Layout File Path (.json)</label>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    <input id="layoutPathInput" type="text" value={layoutPath} onChange={e => setLayoutPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                    <button onClick={() => pickSettingsPath('file', setLayoutPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📄</button>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Output Folder Path</label>
+                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Session folders (JSON + PDF) are saved here. Leave empty to download JSON to browser.</div>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    <input type="text" value={outputFolderPath} onChange={e => setOutputFolderPath(e.target.value)} placeholder="e.g. /home/user/sessions" style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                    <button onClick={() => pickSettingsPath('dir', setOutputFolderPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📂</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {settingsTab === 'recommender' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1235,6 +1492,10 @@ function App() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Line Disconnections</label>
                   <input type="number" step="0.1" value={minLineDisconnections} onChange={e => setMinLineDisconnections(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min PST Actions</label>
+                  <input type="number" step="0.1" value={minPst} onChange={e => setMinPst(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>N Prioritized Actions</label>
@@ -1317,24 +1578,24 @@ function App() {
               <datalist id="contingencies">
                 {branches.map(b => <option key={b} value={b} />)}
               </datalist>
-                <button
-                  onClick={handleRunAnalysis}
-                  disabled={!selectedBranch || analysisLoading}
-                  style={{
-                    marginTop: '8px',
-                    width: '100%',
-                    padding: '8px',
-                    background: (!selectedBranch || analysisLoading) ? '#95a5a6' : '#27ae60',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer',
-                    fontWeight: 'bold',
-                    fontSize: '0.85rem'
-                  }}
-                >
-                  {analysisLoading ? '⚙️ Running...' : '🚀 Run Analysis'}
-                </button>
+              <button
+                onClick={handleRunAnalysis}
+                disabled={!selectedBranch || analysisLoading}
+                style={{
+                  marginTop: '8px',
+                  width: '100%',
+                  padding: '8px',
+                  background: analysisLoading ? '#f1c40f' : (!selectedBranch ? '#95a5a6' : '#27ae60'),
+                  color: analysisLoading ? '#856404' : 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem'
+                }}
+              >
+                {analysisLoading ? '⚙️ Running...' : '🚀 Run Analysis'}
+              </button>
             </div>
           )}
 
@@ -1382,8 +1643,12 @@ function App() {
               minCloseCoupling={minCloseCoupling}
               minOpenCoupling={minOpenCoupling}
               minLineDisconnections={minLineDisconnections}
+              minPst={minPst}
               nPrioritizedActions={nPrioritizedActions}
               ignoreReconnections={ignoreReconnections}
+              actionDictFileName={actionDictFileName}
+              actionDictStats={actionDictStats}
+              onOpenSettings={handleOpenSettings}
             />
           </div>
         </div>
@@ -1421,6 +1686,9 @@ function App() {
             onOverlaySldTabChange={handleOverlaySldTabChange}
             voltageLevels={voltageLevels}
             onVlOpen={(vlName) => handleVlDoubleClick(activeTab === 'action' ? selectedActionId || '' : '', vlName)}
+            networkPath={networkPath}
+            layoutPath={layoutPath}
+            onOpenSettings={handleOpenSettings}
           />
         </div>
       </div>
@@ -1484,9 +1752,12 @@ function App() {
       {infoMessage && (
         <div style={{
           position: 'fixed', bottom: 20, left: 20,
-          background: '#3498db', color: 'white',
-          padding: '10px 20px', borderRadius: '4px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.2)', zIndex: 1000,
+          background: infoMessage.startsWith('SUCCESS') ? '#27ae60' : '#3498db',
+          color: 'white',
+          padding: '12px 24px', borderRadius: '4px',
+          boxShadow: '0 4px 15px rgba(0,0,0,0.3)', zIndex: 1000,
+          fontWeight: 'bold',
+          border: '1px solid rgba(255,255,255,0.2)'
         }}>
           {infoMessage}
         </div>

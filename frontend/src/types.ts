@@ -5,12 +5,14 @@ export interface ConfigRequest {
     min_close_coupling: number;
     min_open_coupling: number;
     min_line_disconnections: number;
+    min_pst?: number;
     n_prioritized_actions: number;
     lines_monitoring_path?: string;
     monitoring_factor: number;
     pre_existing_overload_threshold?: number;
     ignore_reconnections?: boolean;
     pypowsybl_fast_mode?: boolean;
+    layout_path?: string;
 }
 
 export interface AnalysisRequest {
@@ -31,9 +33,33 @@ export interface ActionDetail {
     max_rho: number | null;
     max_rho_line: string;
     is_rho_reduction: boolean;
+    estimated_max_rho?: number | null;
+    estimated_max_rho_line?: string;
     is_manual?: boolean;
+    is_estimated?: boolean;
+    is_islanded?: boolean;
+    n_components?: number;
+    disconnected_mw?: number;
     non_convergence?: string | null;
     action_topology?: ActionTopology;
+}
+
+export interface CombinedAction {
+    action1_id: string;
+    action2_id: string;
+    betas: number[];
+    p_or_combined: number[];
+    max_rho: number;
+    max_rho_line: string;
+    is_rho_reduction: boolean;
+    description: string;
+    rho_after: number[];
+    rho_before: number[];
+    is_islanded?: boolean;
+    disconnected_mw?: number;
+    estimated_max_rho?: number | null;
+    estimated_max_rho_line?: string;
+    error?: string;
 }
 
 export interface AnalysisResult {
@@ -42,6 +68,7 @@ export interface AnalysisResult {
     actions: Record<string, ActionDetail>;
     action_scores?: Record<string, Record<string, unknown>>;
     lines_overloaded: string[];
+    combined_actions?: Record<string, CombinedAction>;
     message: string;
     dc_fallback: boolean;
 }
@@ -122,16 +149,23 @@ export interface MetadataIndex {
 export type TabId = 'n' | 'n-1' | 'action' | 'overflow';
 
 export interface SettingsBackup {
+    // Paths tab (new)
+    networkPath?: string;
+    actionPath?: string;
+    outputFolderPath?: string;
+    // Recommender tab
     minLineReconnections: number;
     minCloseCoupling: number;
     minOpenCoupling: number;
     minLineDisconnections: number;
     nPrioritizedActions: number;
+    // Configurations tab
     linesMonitoringPath: string;
     monitoringFactor: number;
     preExistingOverloadThreshold: number;
     ignoreReconnections?: boolean;
     pypowsyblFastMode?: boolean;
+    layoutPath?: string;
 }
 
 export interface AvailableAction {
@@ -162,4 +196,69 @@ export interface VlOverlay {
     flow_deltas?: Record<string, FlowDelta>;
     reactive_flow_deltas?: Record<string, FlowDelta>;
     asset_deltas?: Record<string, AssetDelta>;
+}
+
+// ===== Session Save =====
+
+export interface SavedActionStatus {
+    is_selected: boolean;       // user starred/favorited
+    is_suggested: boolean;      // recommended by expert_op4grid (not manually added)
+    is_rejected: boolean;       // user explicitly rejected
+    is_manually_simulated: boolean; // user manually triggered simulation
+}
+
+export interface SavedActionEntry {
+    description_unitaire: string;
+    rho_before: number[] | null;
+    rho_after: number[] | null;
+    max_rho: number | null;
+    max_rho_line: string;
+    is_rho_reduction: boolean;
+    estimated_max_rho?: number | null;
+    estimated_max_rho_line?: string;
+    is_islanded?: boolean;
+    n_components?: number;
+    disconnected_mw?: number;
+    non_convergence?: string | null;
+    action_topology?: ActionTopology;
+    status: SavedActionStatus;
+}
+
+export interface SessionResult {
+    saved_at: string;           // ISO 8601 timestamp
+    configuration: {
+        network_path: string;
+        action_file_path: string;
+        min_line_reconnections: number;
+        min_close_coupling: number;
+        min_open_coupling: number;
+        min_line_disconnections: number;
+        n_prioritized_actions: number;
+        lines_monitoring_path: string;
+        monitoring_factor: number;
+        pre_existing_overload_threshold: number;
+        ignore_reconnections: boolean;
+        pypowsybl_fast_mode: boolean;
+        layout_path: string;
+    };
+    contingency: {
+        disconnected_element: string;
+        selected_overloads: string[];
+        monitor_deselected: boolean;
+    };
+    overloads: {
+        n_overloads: string[];
+        n1_overloads: string[];
+        resolved_overloads: string[];   // overloads that were resolved (selected for step2)
+    };
+    overflow_graph: {
+        pdf_url: string | null;
+        pdf_path: string | null;
+    } | null;
+    analysis: {
+        message: string;
+        dc_fallback: boolean;
+        action_scores: Record<string, Record<string, unknown>> | undefined;
+        actions: Record<string, SavedActionEntry>;
+    } | null;
 }

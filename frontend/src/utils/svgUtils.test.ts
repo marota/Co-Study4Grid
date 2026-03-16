@@ -4,7 +4,7 @@ import {
     boostSvgForLargeGrid,
     buildMetadataIndex,
     getActionTargetLines,
-    getActionTargetVoltageLevel,
+    getActionTargetVoltageLevels,
     getIdMap,
     invalidateIdMapCache,
     applyOverloadedHighlights,
@@ -242,9 +242,24 @@ describe('getActionTargetLines', () => {
         const result = getActionTargetLines(detail, null, makeEdgeMap('LINE_A'));
         expect(result).toEqual([]);
     });
+
+    it('handles combined action IDs with + separator', () => {
+        const detail: ActionDetail = {
+            description_unitaire: 'Multiple lines',
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+        };
+        const result = getActionTargetLines(detail, 'disco_LINE_A+disco_LINE_B', makeEdgeMap('LINE_A', 'LINE_B'));
+        expect(result).toContain('LINE_A');
+        expect(result).toContain('LINE_B');
+        expect(result).toHaveLength(2);
+    });
 });
 
-describe('getActionTargetVoltageLevel', () => {
+describe('getActionTargetVoltageLevels', () => {
     const makeNodeMap = (...ids: string[]) => {
         const map = new Map<string, NodeMeta>();
         ids.forEach(id => map.set(id, { equipmentId: id, svgId: `svg-${id}`, x: 0, y: 0 }));
@@ -261,8 +276,8 @@ describe('getActionTargetVoltageLevel', () => {
             is_rho_reduction: false,
         };
 
-        const result = getActionTargetVoltageLevel(detail, null, makeNodeMap('SUBSTATION_A'));
-        expect(result).toBe('SUBSTATION_A');
+        const result = getActionTargetVoltageLevels(detail, null, makeNodeMap('SUBSTATION_A'));
+        expect(result).toEqual(['SUBSTATION_A']);
     });
 
     it('tries last quoted string first', () => {
@@ -275,8 +290,8 @@ describe('getActionTargetVoltageLevel', () => {
             is_rho_reduction: false,
         };
 
-        const result = getActionTargetVoltageLevel(detail, null, makeNodeMap('VL_TARGET'));
-        expect(result).toBe('VL_TARGET');
+        const result = getActionTargetVoltageLevels(detail, null, makeNodeMap('VL_TARGET'));
+        expect(result).toEqual(['VL_TARGET']);
     });
 
     it('falls back to action ID suffix', () => {
@@ -289,11 +304,11 @@ describe('getActionTargetVoltageLevel', () => {
             is_rho_reduction: false,
         };
 
-        const result = getActionTargetVoltageLevel(detail, 'open_coupling_VL1', makeNodeMap('VL1'));
-        expect(result).toBe('VL1');
+        const result = getActionTargetVoltageLevels(detail, 'open_coupling_VL1', makeNodeMap('VL1'));
+        expect(result).toEqual(['VL1']);
     });
 
-    it('returns null when no match found', () => {
+    it('returns empty array when no match found', () => {
         const detail: ActionDetail = {
             description_unitaire: 'Some generic action',
             rho_before: null,
@@ -303,13 +318,46 @@ describe('getActionTargetVoltageLevel', () => {
             is_rho_reduction: false,
         };
 
-        const result = getActionTargetVoltageLevel(detail, 'action_UNKNOWN', makeNodeMap('VL1'));
-        expect(result).toBeNull();
+        const result = getActionTargetVoltageLevels(detail, 'action_UNKNOWN', makeNodeMap('VL1'));
+        expect(result).toEqual([]);
     });
 
-    it('returns null for null detail', () => {
-        const result = getActionTargetVoltageLevel(null, null, makeNodeMap('VL1'));
-        expect(result).toBeNull();
+    it('returns empty array for null detail', () => {
+        const result = getActionTargetVoltageLevels(null, null, makeNodeMap('VL1'));
+        expect(result).toEqual([]);
+    });
+
+    it('extracts multiple VLs from combined ID', () => {
+        const detail: ActionDetail = {
+            description_unitaire: 'No description available',
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+        };
+
+        const result = getActionTargetVoltageLevels(detail, 'open_coupling_VL1+open_coupling_VL2', makeNodeMap('VL1', 'VL2'));
+        expect(result).toContain('VL1');
+        expect(result).toContain('VL2');
+        expect(result).toHaveLength(2);
+    });
+
+    it('extracts multiple VLs from description using quoted strings and "poste" keyword', () => {
+        const detail: ActionDetail = {
+            description_unitaire: "Action entre le poste 'VL1' and 'VL2', plus a manual action au poste VL3",
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+        };
+
+        const result = getActionTargetVoltageLevels(detail, null, makeNodeMap('VL1', 'VL2', 'VL3'));
+        expect(result).toContain('VL1');
+        expect(result).toContain('VL2');
+        expect(result).toContain('VL3');
+        expect(result).toHaveLength(3);
     });
 
     it('skips action ID fallback for line reconnection actions', () => {
@@ -328,10 +376,10 @@ describe('getActionTargetVoltageLevel', () => {
             },
         };
 
-        // Even though action ID suffix matches a VL, should return null
+        // Even though action ID suffix matches a VL, should return empty array
         // because it's a line reconnection (lines with bus >= 0, no gen/load)
-        const result = getActionTargetVoltageLevel(detail, 'reco_VL1', makeNodeMap('VL1'));
-        expect(result).toBeNull();
+        const result = getActionTargetVoltageLevels(detail, 'reco_VL1', makeNodeMap('VL1'));
+        expect(result).toEqual([]);
     });
 });
 

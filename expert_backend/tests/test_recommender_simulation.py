@@ -146,7 +146,14 @@ class TestRecommenderSimulationRealData:
              patch.object(self.service, "_compute_deltas", return_value={}):
 
             mock_obs = MagicMock()
-            mock_obs.simulate.return_value = (MagicMock(), None, None, {"exception": None})
+            mock_obs.n_components = 1
+            mock_obs.main_component_load_mw = 1000.0
+            
+            mock_simulated = MagicMock()
+            mock_simulated.n_components = 1
+            mock_simulated.main_component_load_mw = 1000.0
+            
+            mock_obs.simulate.return_value = (mock_simulated, None, None, {"exception": None})
             mock_obs.name_line = ["LINE_1"]
             mock_obs.rho = [0.1]
 
