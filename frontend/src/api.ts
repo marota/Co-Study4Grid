@@ -85,7 +85,7 @@ export const api = {
         );
         return response.data.actions;
     },
-    simulateManualAction: async (actionId: string, disconnectedElement: string): Promise<{
+    simulateManualAction: async (actionId: string, disconnectedElement: string, actionContent?: Record<string, unknown> | null): Promise<{
         action_id: string;
         description_unitaire: string;
         rho_before: number[] | null;
@@ -101,7 +101,7 @@ export const api = {
     }> => {
         const response = await axios.post(
             `${API_BASE_URL}/api/simulate-manual-action`,
-            { action_id: actionId, disconnected_element: disconnectedElement }
+            { action_id: actionId, disconnected_element: disconnectedElement, action_content: actionContent ?? null }
         );
         return response.data;
     },

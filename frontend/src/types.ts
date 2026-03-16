@@ -24,6 +24,9 @@ export interface ActionTopology {
     lines_or_bus: Record<string, number>;
     gens_bus: Record<string, number>;
     loads_bus: Record<string, number>;
+    pst_tap?: Record<string, unknown>;
+    substations?: Record<string, unknown>;
+    switches?: Record<string, unknown>;
 }
 
 export interface ActionDetail {

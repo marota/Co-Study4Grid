@@ -142,7 +142,7 @@ describe('api client', () => {
             const result = await api.simulateManualAction('act_1', 'LINE_B');
             expect(mockedAxios.post).toHaveBeenCalledWith(
                 'http://localhost:8000/api/simulate-manual-action',
-                { action_id: 'act_1', disconnected_element: 'LINE_B' },
+                { action_id: 'act_1', disconnected_element: 'LINE_B', action_content: null },
             );
             expect(result).toEqual(responseData);
         });

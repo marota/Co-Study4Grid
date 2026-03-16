@@ -1432,19 +1432,49 @@ class RecommenderService:
             return action_id
         return "+".join(sorted([p.strip() for p in action_id.split("+")]))
 
-    def simulate_manual_action(self, raw_action_id: str, disconnected_element: str):
+    def simulate_manual_action(self, raw_action_id: str, disconnected_element: str, action_content=None):
         """Simulate a single or combined action and return its impact.
 
         raw_action_id can be a single ID or multiple IDs combined with '+' (e.g. 'act1+act2').
+        action_content: optional dict with topology fields (switches, lines_ex_bus, etc.)
+                        for actions not in the dictionary (e.g. restored from a saved session).
         """
         if not self._dict_action:
             raise ValueError("No action dictionary loaded. Load a config first.")
 
         action_id = self._canonicalize_id(raw_action_id)
-        
+
         action_ids = action_id.split("+")
         recent_actions = self._last_result.get("prioritized_actions", {}) if self._last_result else {}
-        
+
+        # If action_content (topology) is provided, inject unknown actions into the dict
+        if action_content:
+            for aid in action_ids:
+                if aid not in self._dict_action and aid not in recent_actions:
+                    entry = {
+                        "description_unitaire": f"Restored action: {aid}",
+                    }
+                    # If switches are provided, use them (LazyActionDict computes content)
+                    if action_content.get("switches"):
+                        entry["switches"] = action_content["switches"]
+                    # Build action content from topology fields (bus assignments)
+                    # These map element_name -> bus_number and can reconstruct the action
+                    set_bus = {}
+                    topo_to_content = {
+                        "lines_ex_bus": "lines_ex_id",
+                        "lines_or_bus": "lines_or_id",
+                        "gens_bus": "generators_id",
+                        "loads_bus": "loads_id",
+                    }
+                    for topo_field, content_field in topo_to_content.items():
+                        vals = action_content.get(topo_field) or {}
+                        if vals:
+                            set_bus[content_field] = [(name, int(bus)) for name, bus in vals.items()]
+                    if set_bus:
+                        entry["content"] = {"set_bus": set_bus}
+                    self._dict_action[aid] = entry
+                    print(f"[simulate_manual_action] Injected restored action '{aid}' into dict")
+
         for aid in action_ids:
             if aid not in self._dict_action and aid not in recent_actions:
                 raise ValueError(f"Action '{aid}' not found in the loaded action dictionary or recent analysis.")

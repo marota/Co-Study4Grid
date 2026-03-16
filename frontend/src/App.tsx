@@ -724,7 +724,11 @@ function App() {
       // Diagram not in backend memory (e.g. after session restore) — simulate first
       if (selectedBranch) {
         try {
-          const simRes = await api.simulateManualAction(actionId, selectedBranch);
+          // Pass action_topology so the backend can reconstruct actions
+          // not in the dictionary (e.g. node_merging actions from analysis)
+          const actionDetail = result?.actions?.[actionId];
+          const actionContent = actionDetail?.action_topology ?? null;
+          const simRes = await api.simulateManualAction(actionId, selectedBranch, actionContent);
           // Update the action detail with fresh simulation data
           setResult(prev => {
             if (!prev) return prev;
