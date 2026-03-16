@@ -1417,6 +1417,7 @@
             const lastViewStateN1 = useRef(null); // { zoom, pan: {x, y} }
             const lastZoomState = useRef({ query: '', branch: '' }); // Tracks last auto-zoom triggers
             const committedBranchRef = useRef(''); // Last confirmed contingency branch
+            const restoringSessionRef = useRef(false); // Set during session restore to skip contingency-change dialog
             // Captured viewBox to re-apply after the action diagram loads
             // (the tab-switch sync fires before the SVG exists, then
             // usePanZoom resets to the diagram's native viewBox).
@@ -1647,7 +1648,8 @@
                 }
 
                 // Valid branch selected — check if we need confirmation before switching
-                if (selectedBranch !== committedBranchRef.current && hasAnalysisState()) {
+                // Skip dialog during session restore (restoringSessionRef is cleared after the branch effect runs)
+                if (selectedBranch !== committedBranchRef.current && hasAnalysisState() && !restoringSessionRef.current) {
                     if (!window.confirm("Changing contingency will clear all previous analysis results, manual simulations, and action selections. The network state will be preserved.\n\nDo you want to continue?")) {
                         // User cancelled — revert input to the committed branch
                         setSelectedBranch(committedBranchRef.current);
@@ -1656,6 +1658,9 @@
                     // User confirmed — clear analysis state
                     clearContingencyState();
                 }
+
+                // Clear the restoring flag after the first branch effect pass
+                restoringSessionRef.current = false;
 
                 // Commit this branch and fetch the N-1 diagram
                 committedBranchRef.current = selectedBranch;
@@ -1861,8 +1866,8 @@
                     setIgnoreReconnections(cfg.ignore_reconnections ?? false);
                     setPypowsyblFastMode(cfg.pypowsybl_fast_mode ?? true);
 
-                    // Load network on backend
-                    await axios.post(API_BASE + '/api/config', {
+                    // Load network and action dictionary on backend
+                    const configRes = await axios.post(API_BASE + '/api/config', {
                         network_path: cfg.network_path,
                         action_file_path: cfg.action_file_path,
                         layout_path: cfg.layout_path,
@@ -1879,9 +1884,34 @@
                         pypowsybl_fast_mode: cfg.pypowsybl_fast_mode,
                     });
 
-                    // Fetch branches
-                    const branchRes = await axios.get(API_BASE + '/api/branches');
+                    // Process config response (action dictionary, monitoring info)
+                    if (configRes.data && configRes.data.total_lines_count !== undefined) {
+                        setMonitoredLinesCount(configRes.data.monitored_lines_count);
+                        setTotalLinesCount(configRes.data.total_lines_count);
+                    }
+                    if (configRes.data?.action_dict_file_name) { setActionDictFileName(configRes.data.action_dict_file_name); }
+                    if (configRes.data?.action_dict_stats) setActionDictStats(configRes.data.action_dict_stats);
+
+                    // Fetch branches, voltage levels, and nominal voltages in parallel
+                    const [branchRes, vlRes, nomVRes] = await Promise.all([
+                        axios.get(API_BASE + '/api/branches'),
+                        axios.get(API_BASE + '/api/voltage-levels'),
+                        axios.get(API_BASE + '/api/nominal-voltages'),
+                    ]);
                     setBranches(branchRes.data.branches);
+                    setVoltageLevels(vlRes.data.voltage_levels);
+
+                    // Set up nominal voltage filter
+                    const nvMap = nomVRes.data.mapping;
+                    const uniqueKv = nomVRes.data.unique_kv;
+                    setNominalVoltageMap(nvMap);
+                    setUniqueVoltages(uniqueKv);
+                    if (uniqueKv.length > 0) {
+                        setVoltageRange([uniqueKv[0], uniqueKv[uniqueKv.length - 1]]);
+                    }
+
+                    // Fetch the base network diagram
+                    fetchBaseDiagram(vlRes.data.voltage_levels.length);
 
                     // Restore contingency
                     setMonitorDeselected(session.contingency.monitor_deselected);
@@ -1962,7 +1992,9 @@
                         setResult(null);
                     }
 
-                    // Set branch last (triggers N-1 fetch)
+                    // Set the restoring flag so the N-1 useEffect skips the contingency-change dialog
+                    restoringSessionRef.current = true;
+                    committedBranchRef.current = session.contingency.disconnected_element;
                     setSelectedBranch(session.contingency.disconnected_element);
                     setShowReloadModal(false);
                     setInfoMessage(`SUCCESS: Session "${sessionName}" restored`);
