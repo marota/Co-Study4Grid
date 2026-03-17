@@ -458,3 +458,219 @@ class TestPydanticModels:
 
         req = ActionVariantRequest(action_id="act_1")
         assert req.mode == "network"
+
+
+class TestRestoreAnalysisContext:
+    """Tests for POST /api/restore-analysis-context endpoint."""
+
+    def test_restore_with_all_fields(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.restore_analysis_context.return_value = None
+
+        response = client.post(
+            "/api/restore-analysis-context",
+            json={
+                "lines_we_care_about": ["LINE_A", "LINE_B", "LINE_C"],
+                "disconnected_element": "LINE_X",
+                "lines_overloaded": ["LINE_A"],
+                "computed_pairs": {"LINE_A+LINE_B": {"max_rho": 0.5}},
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["lines_we_care_about_count"] == 3
+        assert data["computed_pairs_count"] == 1
+
+        mock_rs.restore_analysis_context.assert_called_once_with(
+            lines_we_care_about=["LINE_A", "LINE_B", "LINE_C"],
+            disconnected_element="LINE_X",
+            lines_overloaded=["LINE_A"],
+            computed_pairs={"LINE_A+LINE_B": {"max_rho": 0.5}},
+        )
+
+    def test_restore_with_minimal_fields(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.restore_analysis_context.return_value = None
+
+        response = client.post(
+            "/api/restore-analysis-context",
+            json={
+                "lines_we_care_about": ["LINE_A"],
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["lines_we_care_about_count"] == 1
+        assert data["computed_pairs_count"] == 0
+
+    def test_restore_with_null_lines(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.restore_analysis_context.return_value = None
+
+        response = client.post(
+            "/api/restore-analysis-context",
+            json={
+                "lines_we_care_about": None,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["lines_we_care_about_count"] == 0
+
+    def test_restore_error_returns_400(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.restore_analysis_context.side_effect = Exception("Restore failed")
+
+        response = client.post(
+            "/api/restore-analysis-context",
+            json={
+                "lines_we_care_about": ["LINE_A"],
+            },
+        )
+        assert response.status_code == 400
+        assert "Restore failed" in response.json()["detail"]
+
+
+class TestRestoreAnalysisContextModel:
+    """Tests for the RestoreAnalysisContextRequest Pydantic model."""
+
+    def test_defaults(self):
+        from expert_backend.main import RestoreAnalysisContextRequest
+
+        req = RestoreAnalysisContextRequest()
+        assert req.lines_we_care_about is None
+        assert req.disconnected_element is None
+        assert req.lines_overloaded is None
+        assert req.computed_pairs is None
+
+    def test_full_model(self):
+        from expert_backend.main import RestoreAnalysisContextRequest
+
+        req = RestoreAnalysisContextRequest(
+            lines_we_care_about=["L1", "L2"],
+            disconnected_element="LINE_X",
+            lines_overloaded=["L1"],
+            computed_pairs={"pair1": {"betas": [0.1, 0.2]}},
+        )
+        assert req.lines_we_care_about == ["L1", "L2"]
+        assert req.disconnected_element == "LINE_X"
+        assert req.lines_overloaded == ["L1"]
+        assert req.computed_pairs == {"pair1": {"betas": [0.1, 0.2]}}
+
+
+class TestRunAnalysisLinesWeCareAbout:
+    """Tests that analysis result events include lines_we_care_about."""
+
+    def test_run_analysis_includes_lines_we_care_about(self, client, mock_services):
+        _, mock_rs = mock_services
+
+        def fake_analysis(element):
+            yield {"type": "pdf", "pdf_path": "/tmp/graph.pdf"}
+            yield {
+                "type": "result",
+                "actions": {},
+                "action_scores": {},
+                "lines_overloaded": ["LINE_A"],
+                "lines_we_care_about": ["LINE_A", "LINE_B", "LINE_C"],
+                "message": "Analysis completed",
+                "dc_fallback": False,
+            }
+
+        mock_rs.run_analysis.return_value = fake_analysis("LINE_X")
+
+        response = client.post(
+            "/api/run-analysis",
+            json={"disconnected_element": "LINE_X"},
+        )
+        assert response.status_code == 200
+
+        lines = [line for line in response.text.strip().split("\n") if line.strip()]
+        result_event = json.loads(lines[1])
+        assert result_event["type"] == "result"
+        assert result_event["lines_we_care_about"] == ["LINE_A", "LINE_B", "LINE_C"]
+
+    def test_run_analysis_null_lines_we_care_about(self, client, mock_services):
+        _, mock_rs = mock_services
+
+        def fake_analysis(element):
+            yield {
+                "type": "result",
+                "actions": {},
+                "action_scores": {},
+                "lines_overloaded": [],
+                "lines_we_care_about": None,
+                "message": "Done",
+                "dc_fallback": False,
+            }
+
+        mock_rs.run_analysis.return_value = fake_analysis("LINE_X")
+
+        response = client.post(
+            "/api/run-analysis",
+            json={"disconnected_element": "LINE_X"},
+        )
+        lines = [line for line in response.text.strip().split("\n") if line.strip()]
+        result_event = json.loads(lines[0])
+        assert result_event["lines_we_care_about"] is None
+
+    def test_step2_includes_lines_we_care_about(self, client, mock_services):
+        _, mock_rs = mock_services
+
+        def fake_step2(selected_overloads, all_overloads=None, monitor_deselected=False):
+            yield {
+                "type": "result",
+                "actions": {},
+                "action_scores": {},
+                "lines_overloaded": ["LINE_1"],
+                "lines_we_care_about": ["LINE_1", "LINE_2"],
+                "combined_actions": {},
+                "pre_existing_overloads": [],
+                "message": "Done",
+                "dc_fallback": False,
+            }
+
+        mock_rs.run_analysis_step2.side_effect = fake_step2
+
+        response = client.post(
+            "/api/run-analysis-step2",
+            json={
+                "selected_overloads": ["LINE_1"],
+                "all_overloads": ["LINE_1", "LINE_2"],
+            },
+        )
+        lines = [line for line in response.text.strip().split("\n") if line.strip()]
+        result_event = json.loads(lines[0])
+        assert result_event["lines_we_care_about"] == ["LINE_1", "LINE_2"]
+
+
+class TestSimulateManualActionWithContext:
+    """Tests that simulate_manual_action passes lines_overloaded to the service."""
+
+    def test_passes_lines_overloaded(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.simulate_manual_action.return_value = {
+            "action_id": "action_1",
+            "description_unitaire": "Open line X",
+            "rho_before": [0.95],
+            "rho_after": [0.70],
+            "max_rho": 0.70,
+            "max_rho_line": "LINE_A",
+            "is_rho_reduction": True,
+            "lines_overloaded": ["LINE_A"],
+        }
+
+        response = client.post(
+            "/api/simulate-manual-action",
+            json={
+                "action_id": "action_1",
+                "disconnected_element": "LINE_B",
+                "lines_overloaded": ["LINE_A", "LINE_C"],
+            },
+        )
+        assert response.status_code == 200
+        # Verify lines_overloaded was passed through to the service
+        call_kwargs = mock_rs.simulate_manual_action.call_args
+        assert call_kwargs[1].get("lines_overloaded") == ["LINE_A", "LINE_C"] or \
+               (len(call_kwargs[0]) >= 4 and call_kwargs[0][3] == ["LINE_A", "LINE_C"])
