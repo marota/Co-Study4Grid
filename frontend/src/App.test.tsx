@@ -36,7 +36,7 @@ vi.mock('./components/VisualizationPanel', () => {
   return { default: MockVisualizationPanel };
 });
 vi.mock('./components/ActionFeed', () => ({
-  default: (props: any) => (
+  default: (props: { linesOverloaded: string[]; pendingAnalysisResult: object | null; analysisLoading: boolean; onDisplayPrioritizedActions: () => void }) => (
     <div
       data-testid="action-feed"
       data-ol-count={props.linesOverloaded?.length || 0}
@@ -50,7 +50,7 @@ vi.mock('./components/ActionFeed', () => ({
   ),
 }));
 vi.mock('./components/OverloadPanel', () => ({
-  default: (props: any) => (
+  default: (props: { n1Overloads: string[]; selectedOverloads: Set<string> }) => (
     <div
       data-testid="overload-panel"
       data-n1-ol-count={props.n1Overloads?.length || 0}
@@ -152,15 +152,9 @@ async function runAnalysis() {
     if (running) throw new Error('Still running...');
   }, { timeout: 5000 });
 
-  const feed = screen.getByTestId('action-feed');
-
   // Click Display Actions if present
-  try {
-    const displayBtn = await screen.findByText(/Display.*prioritized actions/, {}, { timeout: 3000 });
-    await userEvent.click(displayBtn);
-  } catch (e) {
-    throw e;
-  }
+  const displayBtn = await screen.findByText(/Display.*prioritized actions/, {}, { timeout: 3000 });
+  await userEvent.click(displayBtn);
 }
 
 describe('Contingency Change Confirmation', () => {
@@ -1061,8 +1055,8 @@ describe('Overload Clearing Logic', () => {
     }, { timeout: 3000 });
 
     // Start new analysis. Slow it down to catch the 0 state.
-    let resolveStep1: (val: any) => void;
-    const slowStep1 = new Promise(resolve => { resolveStep1 = resolve; });
+    let resolveStep1: (val: { can_proceed: boolean; lines_overloaded: string[] }) => void;
+    const slowStep1 = new Promise<{ can_proceed: boolean; lines_overloaded: string[] }>(resolve => { resolveStep1 = resolve; });
     mockApi.runAnalysisStep1.mockReturnValue(slowStep1);
 
     await userEvent.click(screen.getByText('🚀 Run Analysis'));

@@ -518,17 +518,17 @@ function App() {
       }
     };
     fetchN1();
-  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState]);
+  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState, analysisLoading, n1Diagram, n1Loading]);
 
   // ===== Analysis =====
   // Sync available overloads from N-1 diagram for pre-selection
   useEffect(() => {
-    if (n1Diagram && n1Diagram.lines_overloaded) {
+    if (n1Diagram?.lines_overloaded) {
       setSelectedOverloads(new Set(n1Diagram.lines_overloaded));
     } else {
       setSelectedOverloads(new Set());
     }
-  }, [n1Diagram]);
+  }, [n1Diagram, analysisLoading, n1Loading]);
 
   const handleRunAnalysis = useCallback(async () => {
     if (!selectedBranch) return;
@@ -551,17 +551,19 @@ function App() {
 
       // Resolve: selected overloads focus the analysis. If monitorDeselected, also pass unselected ones.
       let primaryOverloads: string[] = [];
-      if (selectedOverloads.size > 0) {
-        const stillRelevant = detected.filter(name => selectedOverloads.has(name));
-        if (stillRelevant.length > 0) {
-          primaryOverloads = stillRelevant;
+      if (detected.length > 0) {
+        if (selectedOverloads.size > 0) {
+          const stillRelevant = detected.filter(name => selectedOverloads.has(name));
+          if (stillRelevant.length > 0) {
+            primaryOverloads = stillRelevant;
+          } else {
+            setSelectedOverloads(new Set(detected));
+            primaryOverloads = detected;
+          }
         } else {
           setSelectedOverloads(new Set(detected));
           primaryOverloads = detected;
         }
-      } else {
-        setSelectedOverloads(new Set(detected));
-        primaryOverloads = detected;
       }
 
       // The backend knows which ones to monitor via the monitor_deselected flag.
@@ -627,17 +629,18 @@ function App() {
             } else if (event.type === 'error') {
               setError('Analysis failed: ' + event.message);
             }
-          } catch (e) {
+          } catch {
             // Silent catch for incomplete rows
           }
         }
       }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred during analysis.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An error occurred during analysis.';
+      setError(message);
     } finally {
       setAnalysisLoading(false);
     }
-  }, [selectedBranch, selectedOverloads, monitorDeselected]);
+  }, [selectedBranch, selectedOverloads, monitorDeselected, clearContingencyState]);
 
   const handleDisplayPrioritizedActions = useCallback(() => {
     if (!pendingAnalysisResult) return;
