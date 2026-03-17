@@ -2774,9 +2774,27 @@
                 setSearchError('');
 
                 try {
+                    // Build action_content from saved topologies so the backend can
+                    // reconstruct actions not in the dictionary (e.g. node_merging,
+                    // coupling actions generated during analysis).
+                    let actionContent = null;
+                    if (actionId.includes('+')) {
+                        const parts = actionId.split('+');
+                        const perAction = {};
+                        for (const part of parts) {
+                            const partDetail = result?.actions?.[part];
+                            if (partDetail?.action_topology) perAction[part] = partDetail.action_topology;
+                        }
+                        if (Object.keys(perAction).length > 0) actionContent = perAction;
+                    } else {
+                        const actionDetail = result?.actions?.[actionId];
+                        actionContent = actionDetail?.action_topology || null;
+                    }
+
                     const res = await axios.post(API_BASE + '/api/simulate-manual-action', {
                         action_id: actionId,
-                        disconnected_element: selectedBranch
+                        disconnected_element: selectedBranch,
+                        action_content: actionContent,
                     });
                     console.log('[handleAddManualAction] Simulation result received:', res.data);
                     const detail = res.data;

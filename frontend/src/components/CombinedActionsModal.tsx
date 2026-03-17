@@ -174,14 +174,29 @@ const CombinedActionsModal: React.FC<Props> = ({
         const idToSimulate = actionId ? (actionId.includes('+') ? actionId.split('+').sort().join('+') : actionId) : Array.from(selectedIds).sort().join('+');
         if (!idToSimulate.includes('+') || !disconnectedElement) return;
 
-        // Try to find estimation data to preserve it
-        const estimationData = actionId ? analysisResult?.combined_actions?.[idToSimulate] : preview;
+        // Try to find estimation data to preserve it (check both original and canonical key)
+        const estimationData = actionId
+            ? (analysisResult?.combined_actions?.[idToSimulate] || analysisResult?.combined_actions?.[actionId])
+            : preview;
+
+        // Build action_content from saved topologies so the backend can
+        // reconstruct actions not in the dictionary (e.g. node_merging,
+        // coupling actions generated during analysis).
+        let actionContent: Record<string, unknown> | null = null;
+        const parts = idToSimulate.split('+');
+        const allActions = { ...simulatedActions, ...analysisResult?.actions };
+        const perAction: Record<string, unknown> = {};
+        for (const part of parts) {
+            const partDetail = allActions[part];
+            if (partDetail?.action_topology) perAction[part] = partDetail.action_topology;
+        }
+        if (Object.keys(perAction).length > 0) actionContent = perAction;
 
         setSimulating(true);
         setSimulationFeedback(null);
         setError(null);
         try {
-            const result = await api.simulateManualAction(idToSimulate, disconnectedElement);
+            const result = await api.simulateManualAction(idToSimulate, disconnectedElement, actionContent);
             const feedback: SimulationFeedback = {
                 max_rho: result.max_rho,
                 max_rho_line: result.max_rho_line,

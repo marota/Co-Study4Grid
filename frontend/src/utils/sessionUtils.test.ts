@@ -401,6 +401,74 @@ describe('buildSessionResult — combined_actions', () => {
         expect(saved.simulated_max_rho_line).toBe('LINE_D');
     });
 
+    it('detects simulated pair via canonical key when combined_actions key is non-canonical', () => {
+        // Library returns combined_actions with key 'reco_X+node_merging_Y' (non-canonical)
+        // Simulation stores result under canonical key 'node_merging_Y+reco_X' in result.actions
+        const result = makeResult({
+            actions: {
+                reco_X: makeAction('A'),
+                node_merging_Y: makeAction('B'),
+                // Simulation result stored under canonical (sorted) key
+                'node_merging_Y+reco_X': makeAction('Combined sim', {
+                    is_estimated: false, rho_after: [0.75], max_rho: 0.75, max_rho_line: 'LINE_SIM',
+                }),
+            },
+            combined_actions: {
+                // Library key is non-canonical (r > n alphabetically)
+                'reco_X+node_merging_Y': makeCombinedAction({
+                    action1_id: 'reco_X', action2_id: 'node_merging_Y',
+                    betas: [0.70, 0.81],
+                }),
+            },
+        });
+        const out = buildSessionResult({ ...baseInput, result });
+        const saved = out.analysis!.combined_actions['reco_X+node_merging_Y'];
+        expect(saved.is_simulated).toBe(true);
+        expect(saved.simulated_max_rho).toBe(0.75);
+        expect(saved.simulated_max_rho_line).toBe('LINE_SIM');
+        // Betas should always be preserved from the estimation
+        expect(saved.betas).toEqual([0.70, 0.81]);
+    });
+
+    it('preserves betas even when simulation data comes from canonical key lookup', () => {
+        const result = makeResult({
+            actions: {
+                act_B: makeAction('B'),
+                act_A: makeAction('A'),
+                'act_A+act_B': makeAction('Combined', {
+                    is_estimated: false, rho_after: [0.80], max_rho: 0.80, max_rho_line: 'LINE_D',
+                }),
+            },
+            combined_actions: {
+                'act_B+act_A': makeCombinedAction({
+                    action1_id: 'act_B', action2_id: 'act_A',
+                    betas: [0.88, 0.91],
+                }),
+            },
+        });
+        const out = buildSessionResult({ ...baseInput, result });
+        const saved = out.analysis!.combined_actions['act_B+act_A'];
+        expect(saved.betas).toEqual([0.88, 0.91]);
+        expect(saved.is_simulated).toBe(true);
+    });
+
+    it('does not mark as simulated when canonical key has estimation-only data', () => {
+        const result = makeResult({
+            actions: {
+                act_A: makeAction('A'),
+                act_B: makeAction('B'),
+                'act_A+act_B': makeAction('Est only', { is_estimated: true, rho_after: null }),
+            },
+            combined_actions: {
+                'act_B+act_A': makeCombinedAction({ action1_id: 'act_B', action2_id: 'act_A' }),
+            },
+        });
+        const out = buildSessionResult({ ...baseInput, result });
+        const saved = out.analysis!.combined_actions['act_B+act_A'];
+        expect(saved.is_simulated).toBe(false);
+        expect(saved.simulated_max_rho).toBeNull();
+    });
+
     it('combined_actions is empty object when result has no combined_actions', () => {
         const result = makeResult({ actions: { act1: makeAction('A') } });
         const out = buildSessionResult({ ...baseInput, result });
