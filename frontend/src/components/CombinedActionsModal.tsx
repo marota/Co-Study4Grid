@@ -21,6 +21,12 @@ interface Props {
     monitoringFactor?: number;
 }
 
+/** Canonicalize a combined action ID by sorting the parts alphabetically. */
+function canonicalizeId(id: string): string {
+    if (!id || !id.includes('+')) return id;
+    return id.split('+').map(p => p.trim()).sort().join('+');
+}
+
 const CombinedActionsModal: React.FC<Props> = ({
     isOpen,
     onClose,
@@ -58,11 +64,13 @@ const CombinedActionsModal: React.FC<Props> = ({
         if (!analysisResult?.combined_actions) return [];
         return Object.entries(analysisResult.combined_actions).map(([id, data]) => {
             const parts = id.split('+');
+            const cId = canonicalizeId(id);
             // Check for simulation data: prefer session-local results, then parent-provided
             // simulatedActions (from result.actions), then analysisResult.actions
-            const sessionResult = sessionSimResults[id];
-            const parentSimData = simulatedActions[id];
-            const analysisSimData = analysisResult.actions[id];
+            // Look up by both original key and canonical key to handle key ordering mismatches
+            const sessionResult = sessionSimResults[id] || sessionSimResults[cId];
+            const parentSimData = simulatedActions[id] || simulatedActions[cId];
+            const analysisSimData = analysisResult.actions[id] || analysisResult.actions[cId];
             const simData = parentSimData || analysisSimData;
             const isSimulated = !!sessionResult || (simData && !simData.is_estimated && simData.rho_after && simData.rho_after.length > 0);
 

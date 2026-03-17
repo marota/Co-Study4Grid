@@ -68,7 +68,9 @@ export function buildSessionResult(input: SessionInput): SessionResult {
     if (result?.combined_actions) {
         for (const [id, ca] of Object.entries(result.combined_actions)) {
             // Check if there's a simulated version in result.actions
-            const simData = result.actions[id];
+            // Look up by both original key and canonical (sorted) key to handle ordering mismatches
+            const canonicalId = id.includes('+') ? id.split('+').map(p => p.trim()).sort().join('+') : id;
+            const simData = result.actions[id] || result.actions[canonicalId];
             const isSimulated = !!simData && !simData.is_estimated && simData.rho_after != null && simData.rho_after.length > 0;
 
             savedCombinedActions[id] = {

@@ -1767,7 +1767,8 @@
                                 const saved = {};
                                 if (result.combined_actions) {
                                     for (const [id, ca] of Object.entries(result.combined_actions)) {
-                                        const simData = result.actions?.[id];
+                                        // Look up simulation data by both original key and canonical key
+                                        const simData = result.actions?.[id] || result.actions?.[canonicalizeId(id)];
                                         const isSimulated = !!simData && !simData.is_estimated && simData.rho_after?.length > 0;
                                         saved[id] = {
                                             action1_id: ca.action1_id,
@@ -5215,12 +5216,17 @@
                                                     // Primary source: combined_actions (includes estimated-only pairs)
                                                     // Merge with result.actions for simulation data
                                                     const combinedEntries = Object.entries(result?.combined_actions || {});
+                                                    // Build a set of canonical keys present in combined_actions
+                                                    const combinedCanonicalKeys = new Set(combinedEntries.map(([id]) => canonicalizeId(id)));
                                                     // Also include any simulated pairs in result.actions not in combined_actions
+                                                    // (check both original key AND canonical key to avoid duplicates)
                                                     const simulatedOnly = Object.entries(result?.actions || {})
-                                                        .filter(([id, data]) => id.includes('+') && !(result?.combined_actions || {})[id]);
+                                                        .filter(([id, data]) => id.includes('+') && !(result?.combined_actions || {})[id] && !combinedCanonicalKeys.has(canonicalizeId(id)));
                                                     const allPairs = [
                                                         ...combinedEntries.map(([id, ca]) => {
-                                                            const simData = result?.actions?.[id];
+                                                            // Look up simulation data by both original key and canonical key
+                                                            const cId = canonicalizeId(id);
+                                                            const simData = result?.actions?.[id] || result?.actions?.[cId];
                                                             const isSimulated = simData && !simData.is_estimated && simData.rho_after && simData.rho_after.length > 0;
                                                             return [id, { ...ca, ...(isSimulated ? { _simData: simData } : {}) }];
                                                         }),
@@ -5230,7 +5236,7 @@
                                                     .sort((a, b) => ((a[1].estimated_max_rho ?? a[1].max_rho) ?? 999) - ((b[1].estimated_max_rho ?? b[1].max_rho) ?? 999))
                                                     .map(([id, data]) => {
                                                         const parts = id.split('+').map(p => p.trim());
-                                                        const simData = data._simData || (result?.actions?.[id]);
+                                                        const simData = data._simData || result?.actions?.[id] || result?.actions?.[canonicalizeId(id)];
                                                         const isSimulated = simData && !simData.is_estimated && simData.rho_after && simData.rho_after.length > 0;
                                                         const estMaxRho = data.estimated_max_rho ?? data.max_rho;
                                                         const estMaxRhoLine = data.estimated_max_rho_line ?? data.max_rho_line;
