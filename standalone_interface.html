@@ -606,6 +606,26 @@
         const { useState, useEffect, useLayoutEffect, useMemo, Fragment, useRef, useCallback } = React;
         const API_BASE = 'http://localhost:8000';
 
+        // ===== Interaction Logger (replay-ready event log) =====
+        class InteractionLogger {
+            constructor() { this.log = []; this.seq = 0; }
+            record(type, details = {}, correlationId) {
+                const id = correlationId || crypto.randomUUID();
+                this.log.push({ seq: this.seq++, timestamp: new Date().toISOString(), type, details, correlation_id: id });
+                return id;
+            }
+            recordCompletion(type, correlationId, details, startTimestamp) {
+                this.log.push({
+                    seq: this.seq++, timestamp: new Date().toISOString(), type, details,
+                    correlation_id: correlationId,
+                    duration_ms: Date.now() - new Date(startTimestamp).getTime(),
+                });
+            }
+            getLog() { return [...this.log]; }
+            clear() { this.log = []; this.seq = 0; }
+        }
+        const interactionLogger = new InteractionLogger();
+
         // Custom Hook for SVG Pan/Zoom logic
         // Performance: viewBox updates go directly to the DOM via refs,
         // bypassing React's render cycle during active interaction.
@@ -1263,6 +1283,7 @@
             const [isSimulatingCombined, setIsSimulatingCombined] = useState(false);
 
             const handleOpenSettings = (tab = 'paths') => {
+                interactionLogger.record('settings_opened', { tab });
                 setSettingsBackup({
                     networkPath,
                     actionPath,
@@ -1284,6 +1305,7 @@
             };
 
             const handleCloseSettings = () => {
+                interactionLogger.record('settings_cancelled');
                 if (settingsBackup) {
                     if (settingsBackup.networkPath !== undefined) setNetworkPath(settingsBackup.networkPath);
                     if (settingsBackup.actionPath !== undefined) setActionPath(settingsBackup.actionPath);
@@ -1304,6 +1326,16 @@
             };
 
             const handleApplySettings = async () => {
+                interactionLogger.record('settings_applied', {
+                    network_path: networkPath, action_file_path: actionPath, layout_path: layoutPath,
+                    output_folder_path: outputFolderPath,
+                    min_line_reconnections: minLineReconnections, min_close_coupling: minCloseCoupling,
+                    min_open_coupling: minOpenCoupling, min_line_disconnections: minLineDisconnections,
+                    min_pst: minPst, n_prioritized_actions: nPrioritizedActions,
+                    lines_monitoring_path: linesMonitoringPath, monitoring_factor: monitoringFactor,
+                    pre_existing_overload_threshold: preExistingOverloadThreshold,
+                    ignore_reconnections: ignoreReconnections, pypowsybl_fast_mode: pypowsyblFastMode,
+                });
                 if (result || n1Diagram || actionDiagram) {
                     if (!window.confirm("Applying new settings will clear current analysis results. Do you want to continue?")) {
                         return;
@@ -1622,6 +1654,16 @@
                         return;
                     }
                 }
+                interactionLogger.clear();
+                interactionLogger.record('config_loaded', {
+                    network_path: networkPath, action_file_path: actionPath, layout_path: layoutPath,
+                    min_line_reconnections: minLineReconnections, min_close_coupling: minCloseCoupling,
+                    min_open_coupling: minOpenCoupling, min_line_disconnections: minLineDisconnections,
+                    min_pst: minPst, n_prioritized_actions: nPrioritizedActions,
+                    lines_monitoring_path: linesMonitoringPath, monitoring_factor: monitoringFactor,
+                    pre_existing_overload_threshold: preExistingOverloadThreshold,
+                    ignore_reconnections: ignoreReconnections, pypowsybl_fast_mode: pypowsyblFastMode,
+                });
                 // ── Clear ALL state for a full reset ──
                 setConfigLoading(true);
                 setError(''); setInfoMessage('');
@@ -1727,6 +1769,7 @@
                 }
             };
             const handleManualZoomIn = () => {
+                interactionLogger.record('zoom_in');
                 const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
                 const vb = currentPZ?.viewBox;
                 if (currentPZ && vb) {
@@ -1741,6 +1784,7 @@
             };
 
             const handleManualZoomOut = () => {
+                interactionLogger.record('zoom_out');
                 const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
                 const vb = currentPZ?.viewBox;
                 if (currentPZ && vb) {
@@ -1755,6 +1799,7 @@
             };
 
             const handleManualReset = () => {
+                interactionLogger.record('zoom_reset');
                 setInspectQuery('');
 
                 const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
@@ -1977,15 +2022,21 @@
                             })(),
                         }
                         : null,
+                    interaction_log: interactionLogger.getLog(),
                 };
 
                 if (outputFolderPath) {
                     try {
+                        interactionLogger.record('session_saved', {
+                            session_name: sessionName,
+                            output_folder: outputFolderPath,
+                        });
                         const res = await axios.post(API_BASE + '/api/save-session', {
                             session_name: sessionName,
                             json_content: JSON.stringify(session, null, 2),
                             pdf_path: result?.pdf_path ?? null,
                             output_folder_path: outputFolderPath,
+                            interaction_log: JSON.stringify(interactionLogger.getLog(), null, 2),
                         });
                         const pdfMsg = res.data.pdf_copied ? " (including PDF)" : " (PDF not found)";
                         setInfoMessage(`SUCCESS: Session saved to: ${res.data.session_folder}${pdfMsg}`);
@@ -2020,6 +2071,10 @@
                 try {
                     const res = await axios.get(API_BASE + '/api/list-sessions', { params: { folder_path: outputFolderPath } });
                     setSessionList(res.data.sessions);
+                    interactionLogger.record('session_reload_modal_opened', {
+                        output_folder: outputFolderPath,
+                        available_sessions: res.data.sessions,
+                    });
                 } catch (err) {
                     setError('Failed to list sessions: ' + (err.response?.data?.detail || err.message));
                     setShowReloadModal(false);
@@ -2030,6 +2085,7 @@
 
             const handleRestoreSession = async (sessionName) => {
                 if (!outputFolderPath) return;
+                interactionLogger.record('session_reloaded', { session_name: sessionName });
                 setSessionRestoring(true);
                 try {
                     const res = await axios.post(API_BASE + '/api/load-session', { folder_path: outputFolderPath, session_name: sessionName });
@@ -2238,12 +2294,23 @@
                     return { ...prev, actions: manuals, lines_overloaded: [] };
                 });
 
+                const step1CorrId = interactionLogger.record('analysis_step1_started', { element: selectedBranch });
+                const step1StartTs = new Date().toISOString();
+
                 try {
                     // Step 1: Detection
                     const response1 = await axios.post(API_BASE + '/api/run-analysis-step1', {
                         disconnected_element: selectedBranch
                     });
                     const res1 = response1.data;
+
+                    interactionLogger.recordCompletion('analysis_step1_completed', step1CorrId, {
+                        element: selectedBranch,
+                        overloads_found: res1.lines_overloaded || [],
+                        can_proceed: res1.can_proceed,
+                        dc_fallback: false,
+                        message: res1.message || '',
+                    }, step1StartTs);
 
                     if (!res1.can_proceed) {
                         setError(res1.message || 'Analysis cannot proceed.');
@@ -2280,6 +2347,13 @@
                     }
 
                     // Step 2: Resolution
+                    const step2CorrId = interactionLogger.record('analysis_step2_started', {
+                        element: selectedBranch,
+                        selected_overloads: toResolve,
+                        all_overloads: detected,
+                        monitor_deselected: monitorDeselected,
+                    });
+                    const step2StartTs = new Date().toISOString();
                     const response2 = await fetch(API_BASE + '/api/run-analysis-step2', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -2335,6 +2409,9 @@
                             }
                         }
                     }
+                    interactionLogger.recordCompletion('analysis_step2_completed', step2CorrId, {
+                        element: selectedBranch,
+                    }, step2StartTs);
                     setAnalysisRan(true);
                 } catch (err) {
                     setError('Analysis failed: ' + (err.response?.data?.detail || err.message));
@@ -2346,6 +2423,9 @@
             // Merge pending analysis result with existing manual actions
             const handleDisplayPrioritizedActions = () => {
                 if (!pendingAnalysisResult) return;
+                interactionLogger.record('prioritized_actions_displayed', {
+                    n_actions: Object.keys(pendingAnalysisResult.actions || {}).length,
+                });
                 setResult(prev => {
                     // Preserve manually added actions via is_manual flag
                     const manualActionsData = {};
@@ -2401,10 +2481,14 @@
 
                 if (actionId === selectedActionId) {
                     // Deselect — return to previous diagram tab
+                    interactionLogger.record('action_deselected', { previous_action_id: selectedActionId || '' });
                     setSelectedActionId(null);
                     setActionDiagram(null);
                     setActiveTab('n-1');
                     return;
+                }
+                if (actionId !== null) {
+                    interactionLogger.record('action_selected', { action_id: actionId });
                 }
 
                 // Capture current viewBox so we can re-apply it after the
@@ -2495,6 +2579,7 @@
             };
 
             const handleActionFavorite = (actionId) => {
+                interactionLogger.record('action_favorited', { action_id: actionId });
                 setManualActionIds(prev => {
                     const next = new Set(prev);
                     next.add(actionId);
@@ -2518,6 +2603,7 @@
             };
 
             const handleActionReject = (actionId) => {
+                interactionLogger.record('action_rejected', { action_id: actionId });
                 setRejectedActionIds(prev => {
                     const next = new Set(prev);
                     next.add(actionId);
@@ -2537,6 +2623,7 @@
 
             // ===== Asset Click (from action card badges / rho line names) =====
             const handleAssetClick = (actionId, assetName, tab = 'action') => {
+                interactionLogger.record('asset_clicked', { asset_name: assetName, action_id: actionId, target_tab: tab });
                 setInspectQuery(assetName);
                 if (tab === 'n') {
                     setActiveTab('n');
@@ -2566,6 +2653,9 @@
                     // Flows mode (action or overflow fallback): show action state
                     initialTab = 'action';
                 }
+                interactionLogger.record('sld_overlay_opened', {
+                    vl_name: vlName, action_id: actionId || null, initial_tab: initialTab,
+                });
                 setVlOverlay({ vlName, actionId, svg: null, sldMetadata: null, loading: true, error: null, tab: initialTab });
                 fetchSldVariant(vlName, actionId, initialTab);
             };
@@ -3194,6 +3284,7 @@
                 const actionId = canonicalizeId(rawActionId);
                 if (!selectedBranch) { setSearchError('Run an analysis first'); return; }
                 if (simulatingActionId) return; // Prevent concurrent simulations
+                interactionLogger.record('manual_action_simulated', { action_id: actionId, description: '' });
                 console.log('[handleAddManualAction] Starting simulation for:', actionId);
                 setSimulatingActionId(actionId);
                 setSearchError('');
@@ -3287,6 +3378,7 @@
             };
 
             const handleOpenCombineModal = () => {
+                interactionLogger.record('combine_modal_opened');
                 setSelectedCombineActionIds([]);
                 setSuperpositionResult(null);
                 setCombinedSimulationFeedback(null);
@@ -3299,9 +3391,11 @@
                 setCombinedSimulationFeedback(null);
                 setSelectedCombineActionIds(prev => {
                     if (prev.includes(actionId)) {
+                        interactionLogger.record('combine_pair_toggled', { action_id: actionId, selected: false });
                         return prev.filter(id => id !== actionId);
                     }
                     if (prev.length >= 2) return prev;
+                    interactionLogger.record('combine_pair_toggled', { action_id: actionId, selected: true });
                     return [...prev, actionId];
                 });
             };
@@ -3319,6 +3413,12 @@
                         disconnected_element: selectedBranch
                     });
                     const combinedId = canonicalizeId(selectedCombineActionIds.join('+'));
+                    interactionLogger.record('combine_pair_estimated', {
+                        action1_id: selectedCombineActionIds[0],
+                        action2_id: selectedCombineActionIds[1],
+                        estimated_max_rho: res.data.estimated_max_rho ?? res.data.max_rho,
+                        estimated_max_rho_line: res.data.estimated_max_rho_line ?? res.data.max_rho_line,
+                    });
                     setSuperpositionResult(res.data);
 
                     // Feed the first tab with estimated result
@@ -3408,6 +3508,13 @@
                     const detail = res.data;
 
                     // Store simulation feedback for display in the modal
+                    const parts = combinedId.split('+');
+                    interactionLogger.record('combine_pair_simulated', {
+                        combined_id: combinedId,
+                        action1_id: parts[0],
+                        action2_id: parts[1],
+                        simulated_max_rho: detail.max_rho,
+                    });
                     setCombinedSimulationFeedback({
                         max_rho: detail.max_rho,
                         max_rho_line: detail.max_rho_line,
@@ -4171,7 +4278,10 @@
                                                 const logV = parseFloat(e.target.value);
                                                 const kv = Math.exp(logV);
                                                 const snapped = uniqueVoltages.reduce((best, uv) => Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best);
-                                                if (snapped <= voltageRange[1]) setVoltageRange([snapped, voltageRange[1]]);
+                                                if (snapped <= voltageRange[1]) {
+                                                    interactionLogger.record('voltage_range_changed', { min_kv: snapped, max_kv: voltageRange[1] });
+                                                    setVoltageRange([snapped, voltageRange[1]]);
+                                                }
                                             }}
                                             style={{ zIndex: 3, height: '100%' }}
                                         />
@@ -4181,7 +4291,10 @@
                                             onChange={e => {
                                                 const logV = parseFloat(e.target.value);
                                                 const snapped = uniqueVoltages.reduce((best, uv) => Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best);
-                                                if (snapped >= voltageRange[0]) setVoltageRange([voltageRange[0], snapped]);
+                                                if (snapped >= voltageRange[0]) {
+                                                    interactionLogger.record('voltage_range_changed', { min_kv: voltageRange[0], max_kv: snapped });
+                                                    setVoltageRange([voltageRange[0], snapped]);
+                                                }
                                             }}
                                             style={{ zIndex: 4, height: '100%' }}
                                         />
@@ -4244,6 +4357,7 @@
                                                     onMouseDown={e => e.stopPropagation()} // Prevent dragging when clicking tabs
                                                     onClick={(e) => {
                                                         e.stopPropagation();
+                                                        interactionLogger.record('sld_overlay_tab_changed', { from_tab: vlOverlay.tab, to_tab: tabMode });
                                                         fetchSldVariant(vlOverlay.vlName, vlOverlay.actionId, tabMode);
                                                     }}
                                                     style={{
@@ -4263,7 +4377,7 @@
                                     </div>
                                     <button
                                         onMouseDown={e => e.stopPropagation()}
-                                        onClick={(e) => { e.stopPropagation(); setVlOverlay(null); }}
+                                        onClick={(e) => { e.stopPropagation(); interactionLogger.record('sld_overlay_closed'); setVlOverlay(null); }}
                                         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#666', lineHeight: 1, padding: '0 2px' }}
                                         title="Close">✕</button>
                                 </div>
@@ -4848,7 +4962,7 @@
                             {branches.length > 0 && (
                                 <div style={{ marginBottom: '10px', padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
                                     <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
-                                    <input list="contingencies" value={selectedBranch} onChange={e => setSelectedBranch(e.target.value)} placeholder="Search line/bus..." style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }} />
+                                    <input list="contingencies" value={selectedBranch} onChange={e => { const val = e.target.value; if (branches.includes(val)) interactionLogger.record('contingency_selected', { element: val }); setSelectedBranch(val); }} placeholder="Search line/bus..." style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }} />
                                     <datalist id="contingencies">{branches.map(b => <option key={b} value={b} />)}</datalist>
                                     <button
                                         onClick={handleRunAnalysis}
@@ -4978,8 +5092,10 @@
                                                                 onDoubleClick={(e) => {
                                                                     e.stopPropagation();
                                                                     const next = new Set(selectedOverloads);
+                                                                    const willSelect = !next.has(lvl);
                                                                     if (next.has(lvl)) next.delete(lvl);
                                                                     else next.add(lvl);
+                                                                    interactionLogger.record('overload_toggled', { overload: lvl, selected: willSelect });
                                                                     setSelectedOverloads(next);
                                                                 }}
                                                                 style={{
@@ -5498,14 +5614,14 @@
                         <div className="visualization" style={{ display: 'flex', flexDirection: 'column' }}>
                             <div style={{ display: 'flex', borderBottom: '1px solid #ccc' }}>
                                 <button
-                                    onClick={() => setActiveTab('n')}
+                                    onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: 'n' }); setActiveTab('n'); }}
                                     style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'n' ? 'white' : '#ecf0f1', color: activeTab === 'n' ? '#2c3e50' : '#7f8c8d', borderBottom: activeTab === 'n' ? '3px solid #3498db' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'n' ? 'bold' : 400 }}
                                 >
                                     Network (N)
                                 </button>
                                 {selectedBranch && (
                                     <button
-                                        onClick={() => setActiveTab('n-1')}
+                                        onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: 'n-1' }); setActiveTab('n-1'); }}
                                         style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'n-1' ? 'white' : '#ecf0f1', color: activeTab === 'n-1' ? '#2c3e50' : '#7f8c8d', borderBottom: activeTab === 'n-1' ? '3px solid #e74c3c' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'n-1' ? 'bold' : 400 }}
                                     >
                                         Contingency (N-1)
@@ -5513,7 +5629,7 @@
                                 )}
                                 {selectedActionId && (
                                     <button
-                                        onClick={() => setActiveTab('action')}
+                                        onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: 'action' }); setActiveTab('action'); }}
                                         style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'action' ? 'white' : '#ecf0f1', color: activeTab === 'action' ? '#0056b3' : '#7f8c8d', borderBottom: activeTab === 'action' ? '3px solid #007bff' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'action' ? 'bold' : 400 }}
                                     >
                                         Action: {selectedActionId}
@@ -5521,7 +5637,7 @@
                                 )}
                                 {result?.pdf_url && (
                                     <button
-                                        onClick={() => setActiveTab('overflow')}
+                                        onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: 'overflow' }); setActiveTab('overflow'); }}
                                         style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'overflow' ? 'white' : '#ecf0f1', color: activeTab === 'overflow' ? '#2c3e50' : '#7f8c8d', borderBottom: activeTab === 'overflow' ? '3px solid #27ae60' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'overflow' ? 'bold' : 400 }}
                                     >
                                         Overflow Analysis
@@ -5597,7 +5713,7 @@
                                             backgroundColor: '#fff',
                                         }}>
                                             <button
-                                                onClick={() => setActionViewMode('network')}
+                                                onClick={() => { interactionLogger.record('view_mode_changed', { mode: 'network' }); setActionViewMode('network'); }}
                                                 style={{
                                                     padding: '4px 12px', border: 'none', cursor: 'pointer',
                                                     backgroundColor: actionViewMode === 'network' ? '#007bff' : '#fff',
@@ -5608,7 +5724,7 @@
                                                 Flows
                                             </button>
                                             <button
-                                                onClick={() => setActionViewMode('delta')}
+                                                onClick={() => { interactionLogger.record('view_mode_changed', { mode: 'delta' }); setActionViewMode('delta'); }}
                                                 style={{
                                                     padding: '4px 12px', border: 'none', borderLeft: '1px solid #ccc', cursor: 'pointer',
                                                     backgroundColor: actionViewMode === 'delta' ? '#007bff' : '#fff',
@@ -5714,7 +5830,7 @@
                             <div className="modal-content">
                                 <div className="modal-header">
                                     <h2 style={{ margin: 0 }}>Combine Actions</h2>
-                                    <button onClick={() => setIsCombineModalOpen(false)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '24px', padding: '0 5px', cursor: 'pointer' }}>&times;</button>
+                                    <button onClick={() => { interactionLogger.record('combine_modal_closed'); setIsCombineModalOpen(false); }} style={{ background: 'none', border: 'none', color: '#666', fontSize: '24px', padding: '0 5px', cursor: 'pointer' }}>&times;</button>
                                 </div>
 
                                 <div className="modal-tabs">
@@ -6104,7 +6220,7 @@
                                 )}
 
                                 <div className="modal-footer">
-                                    <button onClick={() => setIsCombineModalOpen(false)} style={{ background: '#95a5a6', color: 'white', padding: '8px 20px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Close</button>
+                                    <button onClick={() => { interactionLogger.record('combine_modal_closed'); setIsCombineModalOpen(false); }} style={{ background: '#95a5a6', color: 'white', padding: '8px 20px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Close</button>
                                 </div>
                             </div>
                         </div>
