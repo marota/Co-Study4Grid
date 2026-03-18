@@ -296,4 +296,66 @@ export interface SessionResult {
         actions: Record<string, SavedActionEntry>;
         combined_actions: Record<string, SavedCombinedAction>;
     } | null;
+    interaction_log?: InteractionLogEntry[];
+}
+
+// ===== Interaction Logging =====
+
+export type InteractionType =
+    // Configuration & Study Loading
+    | 'config_loaded'
+    | 'settings_opened'
+    | 'settings_tab_changed'
+    | 'settings_applied'
+    | 'settings_cancelled'
+    | 'path_picked'
+    // Contingency Selection
+    | 'contingency_selected'
+    | 'contingency_confirmed'
+    // Two-Step Analysis
+    | 'analysis_step1_started'
+    | 'analysis_step1_completed'
+    | 'overload_toggled'
+    | 'analysis_step2_started'
+    | 'analysis_step2_completed'
+    | 'prioritized_actions_displayed'
+    // Action Interactions
+    | 'action_selected'
+    | 'action_deselected'
+    | 'action_favorited'
+    | 'action_unfavorited'
+    | 'action_rejected'
+    | 'action_unrejected'
+    | 'manual_action_simulated'
+    // Combined Actions
+    | 'combine_modal_opened'
+    | 'combine_modal_closed'
+    | 'combine_pair_toggled'
+    | 'combine_pair_estimated'
+    | 'combine_pair_simulated'
+    // Visualization
+    | 'diagram_tab_changed'
+    | 'view_mode_changed'
+    | 'voltage_range_changed'
+    | 'asset_clicked'
+    | 'zoom_in'
+    | 'zoom_out'
+    | 'zoom_reset'
+    | 'inspect_query_changed'
+    // SLD Overlay
+    | 'sld_overlay_opened'
+    | 'sld_overlay_tab_changed'
+    | 'sld_overlay_closed'
+    // Session Management
+    | 'session_saved'
+    | 'session_reload_modal_opened'
+    | 'session_reloaded';
+
+export interface InteractionLogEntry {
+    seq: number;
+    timestamp: string;
+    type: InteractionType;
+    details: Record<string, unknown>;
+    correlation_id?: string;
+    duration_ms?: number;
 }

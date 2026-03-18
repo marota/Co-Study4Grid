@@ -1,4 +1,4 @@
-import type { AnalysisResult, SessionResult, SavedActionEntry, SavedCombinedAction } from '../types';
+import type { AnalysisResult, SessionResult, SavedActionEntry, SavedCombinedAction, InteractionLogEntry } from '../types';
 
 /**
  * All pieces of App state required to build a SavedSessionResult JSON snapshot.
@@ -40,6 +40,9 @@ export interface SessionInput {
     rejectedActionIds: Set<string>;          // actions user explicitly rejected
     manuallyAddedIds: Set<string>;           // actions user simulated manually
     suggestedByRecommenderIds: Set<string>;  // actions ever returned by the recommender
+
+    // Interaction log
+    interactionLog: InteractionLogEntry[];
 }
 
 /**
@@ -62,6 +65,7 @@ export function buildSessionResult(input: SessionInput): SessionResult {
         nOverloads, n1Overloads,
         result,
         selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds,
+        interactionLog,
     } = input;
 
     // Build combined_actions from the analysis result
@@ -165,5 +169,6 @@ export function buildSessionResult(input: SessionInput): SessionResult {
             ? { pdf_url: result.pdf_url, pdf_path: result.pdf_path ?? null }
             : null,
         analysis,
+        interaction_log: interactionLog,
     };
 }

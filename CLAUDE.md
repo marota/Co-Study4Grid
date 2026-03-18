@@ -37,7 +37,9 @@ ExpertAssist/
 │       ├── types.ts          # TypeScript interfaces
 │       ├── utils/
 │       │   ├── sessionUtils.ts       # Session snapshot building (buildSessionResult)
-│       │   └── sessionUtils.test.ts  # Unit tests for session serialization
+│       │   ├── sessionUtils.test.ts  # Unit tests for session serialization
+│       │   ├── interactionLogger.ts  # Singleton interaction event logger (replay-ready)
+│       │   └── interactionLogger.test.ts # Unit tests for interaction logger
 │       └── components/
 │           ├── ConfigurationPanel.tsx  # Settings modal (paths, recommender, config tabs)
 │           ├── ActionFeed.tsx          # Prioritized action results display with search/filter
@@ -189,7 +191,8 @@ npm run test         # Run Vitest test suite
 - **Save**: `buildSessionResult()` in `sessionUtils.ts` serializes all state (config, contingency, actions with status tags, combined pairs) -> `POST /api/save-session` writes to disk
 - **Load**: `POST /api/load-session` reads `session.json` -> frontend restores all state without re-simulating actions
 - **Output folder**: `<output_folder>/expertassist_session_<contingency>_<timestamp>/` contains `session.json` + overflow PDF
-- See `docs/save-results.md` for full documentation
+- **Interaction logging**: Every user interaction is logged as a timestamped, replay-ready event via `interactionLogger`. Saved as `interaction_log.json` alongside `session.json`.
+- See `docs/save-results.md` for session save/load and `docs/interaction-logging.md` for the replay contract
 
 ### SVG Visualization (standalone_interface.html)
 The standalone interface includes advanced SVG rendering for pypowsybl network-area diagrams:

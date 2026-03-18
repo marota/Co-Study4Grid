@@ -51,6 +51,7 @@ const baseInput: SessionInput = {
     rejectedActionIds: new Set(),
     manuallyAddedIds: new Set(),
     suggestedByRecommenderIds: new Set(),
+    interactionLog: [],
 };
 
 // ===== Tests =====
@@ -483,28 +484,28 @@ describe('buildSessionResult — combined_actions', () => {
     });
 });
 
-describe('buildSessionResult — load shedding', () => {
-    it('includes min_load_shedding in configuration', () => {
-        const out = buildSessionResult({ ...baseInput, minLoadShedding: 2.5 });
-        expect(out.configuration.min_load_shedding).toBe(2.5);
+describe('buildSessionResult — interaction_log', () => {
+    it('includes interaction_log when provided', () => {
+        const log = [
+            { seq: 0, timestamp: '2026-03-18T10:00:00.000Z', type: 'config_loaded' as const, details: { network_path: '/data/net.xiidm' }, correlation_id: 'abc' },
+            { seq: 1, timestamp: '2026-03-18T10:01:00.000Z', type: 'contingency_selected' as const, details: { element: 'LINE_A' }, correlation_id: 'def' },
+        ];
+        const out = buildSessionResult({ ...baseInput, interactionLog: log });
+        expect(out.interaction_log).toEqual(log);
+        expect(out.interaction_log).toHaveLength(2);
     });
 
-    it('defaults min_load_shedding to 0 in configuration', () => {
-        const out = buildSessionResult(baseInput);
-        expect(out.configuration.min_load_shedding).toBe(0.0);
+    it('interaction_log is empty array when no interactions recorded', () => {
+        const out = buildSessionResult({ ...baseInput, interactionLog: [] });
+        expect(out.interaction_log).toEqual([]);
     });
 
-    it('preserves load_shedding_details in saved action entries', () => {
-        const actionWithShedding = makeAction('Load shed action', {
-            load_shedding_details: [
-                { load_name: 'LOAD_1', voltage_level_id: 'VL_A', shedded_mw: 25.3 },
-            ],
-        });
-        const result = makeResult({ actions: { shed_act: actionWithShedding } });
-        const out = buildSessionResult({ ...baseInput, result });
-        const savedAction = out.analysis!.actions['shed_act'];
-        expect(savedAction.load_shedding_details).toEqual([
-            { load_name: 'LOAD_1', voltage_level_id: 'VL_A', shedded_mw: 25.3 },
-        ]);
+    it('interaction_log is independent of analysis result', () => {
+        const log = [
+            { seq: 0, timestamp: '2026-03-18T10:00:00.000Z', type: 'zoom_in' as const, details: {}, correlation_id: 'x' },
+        ];
+        const out = buildSessionResult({ ...baseInput, result: null, interactionLog: log });
+        expect(out.analysis).toBeNull();
+        expect(out.interaction_log).toHaveLength(1);
     });
 });

@@ -179,6 +179,7 @@ class SaveSessionRequest(BaseModel):
     json_content: str
     pdf_path: str | None = None
     output_folder_path: str
+    interaction_log: str | None = None
 
 last_network_path = None
 
@@ -341,6 +342,12 @@ def save_session(request: SaveSessionRequest):
                 print(f"Warning: Failed to copy PDF from {request.pdf_path} to {pdf_dest}: {e}")
         else:
             print(f"Warning: PDF path provided but file not found: {request.pdf_path}")
+
+    # Write interaction log if provided
+    if request.interaction_log:
+        log_file = os.path.join(session_dir, "interaction_log.json")
+        with open(log_file, "w", encoding="utf-8") as f:
+            f.write(request.interaction_log)
 
     return {
         "session_folder": session_dir,

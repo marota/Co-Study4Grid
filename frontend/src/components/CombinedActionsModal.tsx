@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../api';
 import type { AnalysisResult, CombinedAction, ActionDetail } from '../types';
+import { interactionLogger } from '../utils/interactionLogger';
 
 interface SimulationFeedback {
     max_rho: number | null;
@@ -128,11 +129,12 @@ const CombinedActionsModal: React.FC<Props> = ({
             });
     }, [analysisResult, simulatedActions, sessionSimResults]);
 
-    const hasLS = Array.from(selectedIds).some(id => id.startsWith('load_shedding_') || id.includes('load_shedding'));
-
-    // Cleanup when modal closes
+    // Log modal open/close and cleanup when modal closes
     useEffect(() => {
-        if (!isOpen) {
+        if (isOpen) {
+            interactionLogger.record('combine_modal_opened');
+        } else {
+            interactionLogger.record('combine_modal_closed');
             setSelectedIds(new Set());
             setPreview(null);
             setError(null);
@@ -155,11 +157,44 @@ const CombinedActionsModal: React.FC<Props> = ({
             const pairKey = [id1, id2].sort().join('+');
             const preComputed = analysisResult?.combined_actions?.[pairKey];
 
-            if (preComputed) {
-                setPreview(preComputed);
+                // Check if already in analysisResult.combined_actions
+                const pairKey = [id1, id2].sort().join('+');
+                const preComputed = analysisResult?.combined_actions?.[pairKey];
+
+                if (preComputed) {
+                    interactionLogger.record('combine_pair_estimated', {
+                        action1_id: id1, action2_id: id2,
+                        estimated_max_rho: preComputed.estimated_max_rho ?? preComputed.max_rho,
+                        estimated_max_rho_line: preComputed.estimated_max_rho_line ?? preComputed.max_rho_line,
+                    });
+                    setPreview(preComputed);
+                    setError(null);
+                    return;
+                }
+
+                setLoading(true);
                 setError(null);
-            } else if (selectionChanged) {
-                // If not pre-computed, ONLY clear if selection actually changed
+                try {
+                    const result = await api.computeSuperposition(id1, id2, disconnectedElement);
+                    if (result.error) {
+                        setError(result.error);
+                        setPreview(null);
+                    } else {
+                        interactionLogger.record('combine_pair_estimated', {
+                            action1_id: id1, action2_id: id2,
+                            estimated_max_rho: result.estimated_max_rho ?? result.max_rho,
+                            estimated_max_rho_line: result.estimated_max_rho_line ?? result.max_rho_line,
+                        });
+                        setPreview(result);
+                    }
+                } catch (e: unknown) {
+                    const err = e as { response?: { data?: { detail?: string } }, message?: string };
+                    setError(err?.response?.data?.detail || err.message || 'Failed to compute superposition');
+                    setPreview(null);
+                } finally {
+                    setLoading(false);
+                }
+            } else {
                 setPreview(null);
                 setSimulationFeedback(null);
             }
@@ -202,9 +237,11 @@ const CombinedActionsModal: React.FC<Props> = ({
         const newSet = new Set(selectedIds);
         if (newSet.has(id)) {
             newSet.delete(id);
+            interactionLogger.record('combine_pair_toggled', { action_id: id, selected: false });
         } else {
             if (newSet.size >= 2) return; // Only allow 2
             newSet.add(id);
+            interactionLogger.record('combine_pair_toggled', { action_id: id, selected: true });
         }
         setSelectedIds(newSet);
     };
@@ -245,7 +282,16 @@ const CombinedActionsModal: React.FC<Props> = ({
                 disconnected_mw: result.disconnected_mw,
                 non_convergence: result.non_convergence,
             };
-            
+            const simParts = idToSimulate.split('+');
+            interactionLogger.record('combine_pair_simulated', {
+                combined_id: idToSimulate,
+                action1_id: simParts[0],
+                action2_id: simParts[1],
+                simulated_max_rho: result.max_rho,
+            });
+            setSimulationFeedback(feedback);
+            // Store per-pair result in session map so the computed pairs table
+            // correctly reflects each pair's own simulation result
             setSessionSimResults(prev => ({ ...prev, [idToSimulate]: feedback }));
             if (!actionId || actionId.includes('+')) {
                 setSimulationFeedback(feedback);

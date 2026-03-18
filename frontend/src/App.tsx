@@ -4,13 +4,16 @@ import VisualizationPanel from './components/VisualizationPanel';
 import ActionFeed from './components/ActionFeed';
 import OverloadPanel from './components/OverloadPanel';
 import { api } from './api';
-import { applyOverloadedHighlights, applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight, processSvg } from './utils/svgUtils';
-import type { ActionDetail, TabId } from './types';
-import { useSettings } from './hooks/useSettings';
-import { useActions } from './hooks/useActions';
-import { useAnalysis } from './hooks/useAnalysis';
-import { useDiagrams } from './hooks/useDiagrams';
-import { useSession } from './hooks/useSession';
+import { usePanZoom } from './hooks/usePanZoom';
+import {
+  buildMetadataIndex, applyOverloadedHighlights,
+  applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight,
+  getIdMap, invalidateIdMapCache,
+} from './utils/svgUtils';
+import { processSvgAsync } from './utils/svgWorkerClient';
+import type { ActionDetail, AnalysisResult, DiagramData, ViewBox, MetadataIndex, TabId, SettingsBackup, VlOverlay, SldTab, FlowDelta, AssetDelta, SessionResult, CombinedAction } from './types';
+import { buildSessionResult } from './utils/sessionUtils';
+import { interactionLogger } from './utils/interactionLogger';
 
 function App() {
   // ===== Settings Hook =====
@@ -130,8 +133,87 @@ function App() {
 
   const wrappedOpenReloadModal = () => session.handleOpenReloadModal(outputFolderPath, setError);
 
-  const wrappedRestoreSession = (sessionName: string) => {
-    session.handleRestoreSession(sessionName, {
+  // ===== Analysis State =====
+  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const prevResultRef = useRef<AnalysisResult | null>(result);
+  useEffect(() => { prevResultRef.current = result; }, [result]);
+  const [pendingAnalysisResult, setPendingAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
+  const [manuallyAddedIds, setManuallyAddedIds] = useState<Set<string>>(new Set());
+  const [rejectedActionIds, setRejectedActionIds] = useState<Set<string>>(new Set());
+  // Tracks every action ID ever returned by the recommender for the current contingency.
+  // Kept separate from manuallyAddedIds so an action can be both is_suggested AND
+  // is_manually_simulated when the user simulated it before the recommender returned it.
+  const [suggestedByRecommenderIds, setSuggestedByRecommenderIds] = useState<Set<string>>(new Set());
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [infoMessage, setInfoMessage] = useState('');
+
+  useEffect(() => {
+    if (infoMessage) {
+      const timer = setTimeout(() => {
+        setInfoMessage('');
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [infoMessage]);
+
+  // ===== Analysis Flow State =====
+  const [selectedOverloads, setSelectedOverloads] = useState<Set<string>>(new Set());
+  const [monitorDeselected, setMonitorDeselected] = useState(false);
+
+  // ===== Visualization State =====
+  const [activeTab, setActiveTab] = useState<TabId>('n');
+  const activeTabRef = useRef<TabId>(activeTab);
+  useLayoutEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+  const prevTabRef = useRef<TabId>(activeTab);
+
+  const [nDiagram, setNDiagram] = useState<DiagramData | null>(null);
+  const [n1Diagram, setN1Diagram] = useState<DiagramData | null>(null);
+  const [n1Loading, setN1Loading] = useState(false);
+
+  // Action variant diagram state
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
+  const [actionDiagram, setActionDiagram] = useState<DiagramData | null>(null);
+  const [actionDiagramLoading, setActionDiagramLoading] = useState(false);
+
+  // Delta visualization mode
+  const [actionViewMode, setActionViewMode] = useState<'network' | 'delta'>('network');
+
+  const [originalViewBox, setOriginalViewBox] = useState<ViewBox | null>(null);
+  const [inspectQuery, setInspectQuery] = useState('');
+
+  // Independent Refs for N, N-1, and Action Variant
+  const nSvgContainerRef = useRef<HTMLDivElement>(null);
+  const n1SvgContainerRef = useRef<HTMLDivElement>(null);
+  const actionSvgContainerRef = useRef<HTMLDivElement>(null);
+
+  // Native Pan/Zoom Instances
+  const nPZ = usePanZoom(nSvgContainerRef, nDiagram?.originalViewBox, activeTab === 'n');
+  const n1PZ = usePanZoom(n1SvgContainerRef, n1Diagram?.originalViewBox, activeTab === 'n-1');
+  const actionPZ = usePanZoom(actionSvgContainerRef, actionDiagram?.originalViewBox, activeTab === 'action');
+
+  // Zoom state tracking
+  const lastZoomState = useRef({ query: '', branch: '' });
+  // Captured viewBox to re-apply after the action diagram loads
+  const actionSyncSourceRef = useRef<ViewBox | null>(null);
+
+  const fetchBaseDiagram = useCallback(async (vlCount: number) => {
+    try {
+      const res = await api.getNetworkDiagram();
+      const { svg, viewBox } = await processSvgAsync(res.svg, vlCount || 0);
+      if (viewBox) setOriginalViewBox(viewBox);
+      setNDiagram({ ...res, svg, originalViewBox: viewBox });
+    } catch (err) {
+      console.error('Failed to fetch diagram:', err);
+    }
+  }, []);
+
+  const handleOpenSettings = useCallback((tab: 'recommender' | 'configurations' | 'paths' = 'paths') => {
+    interactionLogger.record('settings_opened', { tab });
+    setSettingsBackup({
+      networkPath,
+      actionPath,
+      layoutPath,
       outputFolderPath,
       setNetworkPath, setActionPath, setLayoutPath,
       setMinLineReconnections, setMinCloseCoupling, setMinOpenCoupling, setMinLineDisconnections, setMinPst, setMinLoadShedding,
@@ -154,11 +236,261 @@ function App() {
     });
   };
 
+  const handleCloseSettings = useCallback(() => {
+    interactionLogger.record('settings_cancelled');
+    if (settingsBackup) {
+      if (settingsBackup.networkPath !== undefined) setNetworkPath(settingsBackup.networkPath);
+      if (settingsBackup.actionPath !== undefined) setActionPath(settingsBackup.actionPath);
+      if (settingsBackup.layoutPath !== undefined) setLayoutPath(settingsBackup.layoutPath);
+      if (settingsBackup.outputFolderPath !== undefined) setOutputFolderPath(settingsBackup.outputFolderPath);
+      setMinLineReconnections(settingsBackup.minLineReconnections);
+      setMinCloseCoupling(settingsBackup.minCloseCoupling);
+      setMinOpenCoupling(settingsBackup.minOpenCoupling);
+      setMinLineDisconnections(settingsBackup.minLineDisconnections);
+      setNPrioritizedActions(settingsBackup.nPrioritizedActions);
+      setLinesMonitoringPath(settingsBackup.linesMonitoringPath);
+      setMonitoringFactor(settingsBackup.monitoringFactor);
+      setPreExistingOverloadThreshold(settingsBackup.preExistingOverloadThreshold);
+      setIgnoreReconnections(settingsBackup.ignoreReconnections ?? false);
+      setPypowsyblFastMode(settingsBackup.pypowsyblFastMode ?? true);
+    }
+    setIsSettingsOpen(false);
+  }, [settingsBackup]);
+
+  const handleApplySettings = useCallback(async () => {
+    interactionLogger.record('settings_applied', {
+      network_path: networkPath, action_file_path: actionPath, layout_path: layoutPath,
+      output_folder_path: outputFolderPath,
+      min_line_reconnections: minLineReconnections, min_close_coupling: minCloseCoupling,
+      min_open_coupling: minOpenCoupling, min_line_disconnections: minLineDisconnections,
+      min_pst: minPst, n_prioritized_actions: nPrioritizedActions,
+      lines_monitoring_path: linesMonitoringPath, monitoring_factor: monitoringFactor,
+      pre_existing_overload_threshold: preExistingOverloadThreshold,
+      ignore_reconnections: ignoreReconnections, pypowsybl_fast_mode: pypowsyblFastMode,
+    });
+    try {
+      // ── Clear ALL state for a full reset (same as handleLoadConfig) ──
+      setError('');
+      setInfoMessage('');
+      setNDiagram(null);
+      setN1Diagram(null);
+      setActionDiagram(null);
+      setOriginalViewBox(null);
+      setResult(null);
+      setPendingAnalysisResult(null);
+      setSelectedActionId(null);
+      setSelectedActionIds(new Set());
+      setManuallyAddedIds(new Set());
+      setRejectedActionIds(new Set());
+      setSuggestedByRecommenderIds(new Set());
+      setAnalysisLoading(false);
+      setSelectedOverloads(new Set());
+      setMonitorDeselected(false);
+      setActiveTab('n');
+      setActionViewMode('network');
+      setVlOverlay(null);
+      setN1Loading(false);
+      setActionDiagramLoading(false);
+      setSelectedBranch('');
+      committedBranchRef.current = '';
+      setInspectQuery('');
+      lastZoomState.current = { query: '', branch: '' };
+      actionSyncSourceRef.current = null;
+      setShowMonitoringWarning(false);
+
+      if (!networkPath || !actionPath) {
+        setSettingsBackup({
+          networkPath,
+          actionPath,
+          layoutPath,
+          outputFolderPath,
+          minLineReconnections,
+          minCloseCoupling,
+          minOpenCoupling,
+          minLineDisconnections,
+          nPrioritizedActions,
+          linesMonitoringPath,
+          monitoringFactor,
+          preExistingOverloadThreshold,
+          ignoreReconnections,
+          pypowsyblFastMode,
+        });
+        setIsSettingsOpen(false);
+        return;
+      }
+
+      const configRes = await api.updateConfig({
+        network_path: networkPath,
+        action_file_path: actionPath,
+        layout_path: layoutPath,
+        min_line_reconnections: minLineReconnections,
+        min_close_coupling: minCloseCoupling,
+        min_open_coupling: minOpenCoupling,
+        min_line_disconnections: minLineDisconnections,
+        min_pst: minPst,
+        n_prioritized_actions: nPrioritizedActions,
+        lines_monitoring_path: linesMonitoringPath,
+        monitoring_factor: monitoringFactor,
+        pre_existing_overload_threshold: preExistingOverloadThreshold,
+        ignore_reconnections: ignoreReconnections,
+        pypowsybl_fast_mode: pypowsyblFastMode,
+      });
+
+      if (configRes && configRes.total_lines_count !== undefined) {
+        setMonitoredLinesCount(configRes.monitored_lines_count);
+        setTotalLinesCount(configRes.total_lines_count);
+        if (configRes.monitored_lines_count < configRes.total_lines_count) {
+          setShowMonitoringWarning(true);
+        }
+      }
+      if (configRes?.action_dict_file_name) setActionDictFileName(configRes.action_dict_file_name);
+      if (configRes?.action_dict_stats) setActionDictStats(configRes.action_dict_stats);
+
+
+      // Fetch study-related data (branches, nominal voltages etc.)
+      const [branchesList, vlRes, nomVRes] = await Promise.all([
+        api.getBranches(),
+        api.getVoltageLevels(),
+        api.getNominalVoltages(),
+      ]);
+
+      setBranches(branchesList);
+      setVoltageLevels(vlRes);
+      setSelectedBranch('');
+
+      setNominalVoltageMap(nomVRes.mapping);
+      setUniqueVoltages(nomVRes.unique_kv);
+      if (nomVRes.unique_kv.length > 0) {
+        setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
+      }
+
+      fetchBaseDiagram(vlRes.length);
+
+      setSettingsBackup({
+        networkPath,
+        actionPath,
+        layoutPath,
+        outputFolderPath,
+        minLineReconnections,
+        minCloseCoupling,
+        minOpenCoupling,
+        minLineDisconnections,
+        nPrioritizedActions,
+        linesMonitoringPath,
+        monitoringFactor,
+        preExistingOverloadThreshold,
+        ignoreReconnections,
+        pypowsyblFastMode
+      });
+      setIsSettingsOpen(false);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } }; message?: string };
+      setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
+    }
+  }, [networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, minPst, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode, fetchBaseDiagram]);
+
+  // Load paths from localStorage on initial mount
+  useEffect(() => {
+    const savedNetwork = localStorage.getItem('networkPath');
+    const savedAction = localStorage.getItem('actionPath');
+    const savedLayout = localStorage.getItem('layoutPath');
+    const savedOutput = localStorage.getItem('outputFolderPath');
+
+    setNetworkPath(savedNetwork || '/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z_dijon_only');
+    setActionPath(savedAction || '/home/marotant/dev/Expert_op4grid_recommender/data/action_space/reduced_model_actions_20240828T0100Z_new_dijon.json');
+    setLayoutPath(savedLayout || '');
+    setOutputFolderPath(savedOutput || '');
+  }, []);
+
+  // Persist paths to localStorage
+  useEffect(() => {
+    localStorage.setItem('networkPath', networkPath);
+    localStorage.setItem('actionPath', actionPath);
+    localStorage.setItem('layoutPath', layoutPath);
+    localStorage.setItem('outputFolderPath', outputFolderPath);
+  }, [networkPath, actionPath, layoutPath, outputFolderPath]);
+
+  // ===== Contingency Change Confirmation Helpers =====
   // Check if there is any analysis state that would be lost on contingency change
   const hasAnalysisState = useCallback(() => {
     return !!(result || pendingAnalysisResult || selectedActionId || actionDiagram || manuallyAddedIds.size > 0 || selectedActionIds.size > 0 || rejectedActionIds.size > 0);
   }, [result, pendingAnalysisResult, selectedActionId, actionDiagram, manuallyAddedIds, selectedActionIds, rejectedActionIds]);
 
+  // Clear all contingency-related analysis state (preserves network/config)
+  const clearContingencyState = useCallback(() => {
+    setResult(null);
+    setPendingAnalysisResult(null);
+    setSelectedOverloads(new Set());
+    setMonitorDeselected(false);
+    setSelectedActionId(null);
+    setSelectedActionIds(new Set());
+    setManuallyAddedIds(new Set());
+    setRejectedActionIds(new Set());
+    setSuggestedByRecommenderIds(new Set());
+    setActionDiagram(null);
+    setN1Diagram(null);
+    setActiveTab('n');
+    setVlOverlay(null);
+    setError('');
+    setInfoMessage('');
+    setInspectQuery('');
+    lastZoomState.current = { query: '', branch: '' };
+  }, []);
+
+  // Ref to track the branch for which N-1 was last fetched (the "committed" branch)
+  const committedBranchRef = useRef('');
+  // Set to true during session restore to prevent the contingency-change confirmation dialog
+  const restoringSessionRef = useRef(false);
+
+  // ===== Config Loading =====
+  const handleLoadConfig = useCallback(async () => {
+    interactionLogger.clear();
+    interactionLogger.record('config_loaded', {
+      network_path: networkPath, action_file_path: actionPath, layout_path: layoutPath,
+      min_line_reconnections: minLineReconnections, min_close_coupling: minCloseCoupling,
+      min_open_coupling: minOpenCoupling, min_line_disconnections: minLineDisconnections,
+      min_pst: minPst, n_prioritized_actions: nPrioritizedActions,
+      lines_monitoring_path: linesMonitoringPath, monitoring_factor: monitoringFactor,
+      pre_existing_overload_threshold: preExistingOverloadThreshold,
+      ignore_reconnections: ignoreReconnections, pypowsybl_fast_mode: pypowsyblFastMode,
+    });
+    setConfigLoading(true);
+    // ── Clear ALL state for a full reset ──
+    // Errors & messages
+    setError('');
+    setInfoMessage('');
+    // Diagrams
+    setNDiagram(null);
+    setN1Diagram(null);
+    setActionDiagram(null);
+    setOriginalViewBox(null);
+    // Analysis
+    setResult(null);
+    setPendingAnalysisResult(null);
+    setSelectedActionId(null);
+    setSelectedActionIds(new Set());
+    setManuallyAddedIds(new Set());
+    setRejectedActionIds(new Set());
+    setSuggestedByRecommenderIds(new Set());
+    setAnalysisLoading(false);
+    // Analysis flow
+    setSelectedOverloads(new Set());
+    setMonitorDeselected(false);
+    // Visualization
+    setActiveTab('n');
+    setActionViewMode('network');
+    setVlOverlay(null);
+    setN1Loading(false);
+    setActionDiagramLoading(false);
+    // Branch / contingency
+    setSelectedBranch('');
+    committedBranchRef.current = '';
+    setInspectQuery('');
+    // Refs
+    lastZoomState.current = { query: '', branch: '' };
+    actionSyncSourceRef.current = null;
+    // Warnings
+    setShowMonitoringWarning(false);
 
   const handleApplySettings = useCallback(async () => {
     try {
@@ -294,6 +626,10 @@ function App() {
 
   const handleConfirmDialog = useCallback(() => {
     if (!confirmDialog) return;
+    interactionLogger.record('contingency_confirmed', {
+      element: confirmDialog.pendingBranch ?? '',
+      dialog_type: confirmDialog.type,
+    });
     if (confirmDialog.type === 'contingency') {
       clearContingencyState();
       setSelectedBranch(confirmDialog.pendingBranch || '');
@@ -359,17 +695,775 @@ function App() {
   }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState, analysisLoading, n1Diagram, n1Loading, setError, diagrams]);
 
   useEffect(() => {
-    const nextSet = n1Diagram?.lines_overloaded ? new Set(n1Diagram.lines_overloaded) : new Set<string>();
-    const currentSet = analysis.selectedOverloads;
-    if (nextSet.size === currentSet.size && [...nextSet].every(x => currentSet.has(x))) {
+    if (n1Diagram?.lines_overloaded) {
+      setSelectedOverloads(new Set(n1Diagram.lines_overloaded));
+    } else {
+      setSelectedOverloads(new Set());
+    }
+  }, [n1Diagram, analysisLoading, n1Loading]);
+
+  const handleRunAnalysis = useCallback(async () => {
+    if (!selectedBranch) return;
+    clearContingencyState();
+    setAnalysisLoading(true);
+    setError('');
+    setInfoMessage('');
+
+    const step1CorrId = interactionLogger.record('analysis_step1_started', { element: selectedBranch });
+    const step1StartTs = new Date().toISOString();
+
+    try {
+      // Step 1: Detection
+      const res1 = await api.runAnalysisStep1(selectedBranch);
+      interactionLogger.recordCompletion('analysis_step1_completed', step1CorrId, {
+        element: selectedBranch,
+        overloads_found: res1.lines_overloaded || [],
+        can_proceed: res1.can_proceed,
+        dc_fallback: false,
+        message: res1.message || '',
+      }, step1StartTs);
+
+      if (!res1.can_proceed) {
+        setError(res1.message || 'Analysis cannot proceed.');
+        if (res1.message) setInfoMessage(res1.message);
+        setAnalysisLoading(false);
+        return;
+      }
+
+      const detected = res1.lines_overloaded || [];
+
+      // Resolve: selected overloads focus the analysis. If monitorDeselected, also pass unselected ones.
+      let primaryOverloads: string[] = [];
+      if (detected.length > 0) {
+        if (selectedOverloads.size > 0) {
+          const stillRelevant = detected.filter(name => selectedOverloads.has(name));
+          if (stillRelevant.length > 0) {
+            primaryOverloads = stillRelevant;
+          } else {
+            setSelectedOverloads(new Set(detected));
+            primaryOverloads = detected;
+          }
+        } else {
+          setSelectedOverloads(new Set(detected));
+          primaryOverloads = detected;
+        }
+      }
+
+      // The backend knows which ones to monitor via the monitor_deselected flag.
+      // selected_overloads MUST only contain the ones we actually want to resolve.
+      const toResolve = primaryOverloads;
+
+      if (detected.length === 0) {
+        setInfoMessage(res1.message || "No overloads detected.");
+        setAnalysisLoading(false);
+        return;
+      }
+
+      // Step 2: Resolution
+      const step2CorrId = interactionLogger.record('analysis_step2_started', {
+        element: selectedBranch,
+        selected_overloads: toResolve,
+        all_overloads: detected,
+        monitor_deselected: monitorDeselected,
+      });
+      const step2StartTs = new Date().toISOString();
+      const response2 = await fetch('http://localhost:8000/api/run-analysis-step2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selected_overloads: toResolve,
+          all_overloads: detected,
+          monitor_deselected: monitorDeselected,
+        }),
+      });
+      if (!response2.ok) throw new Error('Analysis Resolution failed');
+
+      const reader = response2.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop()!;
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            if (event.type === 'pdf') {
+              setResult((p: AnalysisResult | null) => ({
+                ...(p || {}),
+                pdf_url: event.pdf_url,
+                pdf_path: event.pdf_path
+              } as AnalysisResult));
+              setActiveTab('overflow');
+            } else if (event.type === 'result') {
+              // Mark all recommended actions as NOT manual
+              const actionsWithFlags = { ...event.actions };
+              for (const id in actionsWithFlags) {
+                const existing = (prevResultRef.current?.actions?.[id] || {}) as Partial<ActionDetail>;
+                actionsWithFlags[id] = {
+                  ...actionsWithFlags[id],
+                  is_manual: false,
+                  is_islanded: existing.is_islanded ?? actionsWithFlags[id].is_islanded,
+                  estimated_max_rho: existing.estimated_max_rho ?? actionsWithFlags[id].max_rho,
+                  estimated_max_rho_line: existing.estimated_max_rho_line ?? actionsWithFlags[id].max_rho_line,
+                };
+              }
+              // Record all IDs returned by the recommender — accumulate across re-runs
+              // so that re-analysis for the same contingency still marks prior suggestions.
+              setSuggestedByRecommenderIds(prev => new Set([...prev, ...Object.keys(actionsWithFlags)]));
+              setPendingAnalysisResult({ ...event, actions: actionsWithFlags });
+              if (event.message) setInfoMessage(event.message);
+            } else if (event.type === 'error') {
+              setError('Analysis failed: ' + event.message);
+            }
+          } catch {
+            // Silent catch for incomplete rows
+          }
+        }
+      }
+      interactionLogger.recordCompletion('analysis_step2_completed', step2CorrId, {
+        element: selectedBranch,
+      }, step2StartTs);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An error occurred during analysis.';
+      setError(message);
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }, [selectedBranch, selectedOverloads, monitorDeselected, clearContingencyState]);
+
+  const handleDisplayPrioritizedActions = useCallback(() => {
+    if (!pendingAnalysisResult) return;
+    interactionLogger.record('prioritized_actions_displayed', {
+      n_actions: Object.keys(pendingAnalysisResult.actions).length,
+    });
+    setResult(prev => {
+      // Preserve manually added / selected actions
+      const manualActionsData: Record<string, ActionDetail> = {};
+      if (prev?.actions) {
+        for (const [id, data] of Object.entries(prev.actions)) {
+          if (selectedActionIds.has(id)) {
+            manualActionsData[id] = data;
+          }
+        }
+      }
+
+      // Merge new actions with existing ones to preserve estimation data if it was already updated
+      const mergedActions = { ...pendingAnalysisResult.actions };
+      for (const [id, data] of Object.entries(mergedActions)) {
+        const existing = (prev?.actions?.[id] || {}) as Partial<ActionDetail>;
+        mergedActions[id] = {
+          ...data,
+          is_islanded: existing.is_islanded ?? data.is_islanded,
+          estimated_max_rho: existing.estimated_max_rho ?? data.estimated_max_rho,
+          estimated_max_rho_line: existing.estimated_max_rho_line ?? data.estimated_max_rho_line,
+        };
+      }
+
+      return {
+        ...prev,                   // keep existing fields (pdf_url, etc.)
+        ...pendingAnalysisResult,  // overlay with analysis result
+        actions: { ...mergedActions, ...manualActionsData },
+      };
+    });
+    setPendingAnalysisResult(null);
+  }, [pendingAnalysisResult, selectedActionIds]);
+
+  const handleToggleOverload = useCallback((overload: string) => {
+    setSelectedOverloads((prev: Set<string>) => {
+      const willBeSelected = !prev.has(overload);
+      interactionLogger.record('overload_toggled', { overload, selected: willBeSelected });
+      const next = new Set(prev);
+      if (next.has(overload)) next.delete(overload);
+      else next.add(overload);
+      return next;
+    });
+  }, []);
+
+  // ===== Action Selection =====
+  const handleActionSelect = useCallback(async (actionId: string | null) => {
+    if (actionId === selectedActionId) {
+      // Deselect — return to N-1 tab
+      interactionLogger.record('action_deselected', { previous_action_id: selectedActionId ?? '' });
+      setSelectedActionId(null);
+      setActionDiagram(null);
+      setActiveTab('n-1');
       return;
     }
-    analysis.setSelectedOverloads(nextSet);
-  }, [n1Diagram, analysisLoading, n1Loading, analysis]);
+    if (actionId !== null) {
+      interactionLogger.record('action_selected', { action_id: actionId });
+    }
 
 
 
 
+  const handleActionFavorite = useCallback((actionId: string) => {
+    interactionLogger.record('action_favorited', { action_id: actionId });
+    setSelectedActionIds(prev => {
+      const next = new Set(prev);
+      next.add(actionId);
+      return next;
+    });
+    setResult(prev => {
+      if (!prev || !prev.actions[actionId]) return prev;
+      return {
+        ...prev,
+        actions: {
+          ...prev.actions,
+          [actionId]: { ...prev.actions[actionId], is_manual: true }
+        }
+      };
+    });
+    setRejectedActionIds(prev => {
+      const next = new Set(prev);
+      next.delete(actionId);
+      return next;
+    });
+  }, []);
+
+  const handleActionReject = useCallback((actionId: string) => {
+    interactionLogger.record('action_rejected', { action_id: actionId });
+    setRejectedActionIds(prev => {
+      const next = new Set(prev);
+      next.add(actionId);
+      return next;
+    });
+    setSelectedActionIds(prev => {
+      const next = new Set(prev);
+      next.delete(actionId);
+      return next;
+    });
+    setManuallyAddedIds(prev => {
+      const next = new Set(prev);
+      next.delete(actionId);
+      return next;
+    });
+  }, []);
+
+  const handleManualActionAdded = useCallback((actionId: string, detail: ActionDetail, linesOverloaded: string[]) => {
+    interactionLogger.record('manual_action_simulated', {
+      action_id: actionId,
+      description: detail.description_unitaire,
+    });
+    setResult(prev => {
+      const base = prev || {
+        pdf_path: null,
+        pdf_url: null,
+        actions: {},
+        lines_overloaded: [],
+        message: '',
+        dc_fallback: false,
+      };
+      return {
+        ...base,
+        // Use the simulation's overloaded lines if no prior analysis provided them
+        lines_overloaded: base.lines_overloaded.length > 0 ? base.lines_overloaded : linesOverloaded,
+        actions: {
+          ...base.actions,
+          [actionId]: { ...detail, is_manual: true },
+        },
+      };
+    });
+
+    setSelectedActionIds(prev => new Set(prev).add(actionId));
+    setManuallyAddedIds(prev => new Set(prev).add(actionId));
+    // Auto-select the newly added action (and fetch its diagram)
+    handleActionSelect(actionId);
+  }, [handleActionSelect]);
+
+  const handleViewModeChange = useCallback((mode: 'network' | 'delta') => {
+    interactionLogger.record('view_mode_changed', { mode });
+    setActionViewMode(mode);
+  }, []);
+
+  // ===== Save Results =====
+  const handleSaveResults = useCallback(async () => {
+    const session = buildSessionResult({
+      networkPath,
+      actionPath,
+      layoutPath,
+      minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst,
+      nPrioritizedActions, linesMonitoringPath, monitoringFactor,
+      preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
+      selectedBranch, selectedOverloads, monitorDeselected,
+      nOverloads: nDiagram?.lines_overloaded ?? [],
+      n1Overloads: n1Diagram?.lines_overloaded ?? [],
+      result,
+      selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds,
+      interactionLog: interactionLogger.getLog(),
+    });
+
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const contingencyLabel = selectedBranch ? `_${selectedBranch.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
+    const sessionName = `expertassist_session${contingencyLabel}_${ts}`;
+
+    if (outputFolderPath) {
+      // Save session folder (JSON + PDF copy) via backend
+      try {
+        interactionLogger.record('session_saved', {
+          session_name: sessionName,
+          output_folder: outputFolderPath,
+        });
+        const res = await api.saveSession({
+          session_name: sessionName,
+          json_content: JSON.stringify(session, null, 2),
+          pdf_path: result?.pdf_path ?? null,
+          output_folder_path: outputFolderPath,
+          interaction_log: JSON.stringify(interactionLogger.getLog(), null, 2),
+        });
+        const pdfMsg = res.pdf_copied ? " (including PDF)" : " (PDF not found)";
+        setInfoMessage(`SUCCESS: Session saved to: ${res.session_folder}${pdfMsg}`);
+      } catch (err: unknown) {
+        const e = err as { response?: { data?: { detail?: string } }; message?: string };
+        setError('Failed to save session: ' + (e.response?.data?.detail || e.message));
+      }
+    } else {
+      // Fallback: browser download of JSON (no output folder configured)
+      const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${sessionName}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  }, [
+    result, selectedActionIds, manuallyAddedIds, rejectedActionIds, suggestedByRecommenderIds,
+    networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling,
+    minLineDisconnections, minPst, nPrioritizedActions, linesMonitoringPath, monitoringFactor,
+    preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
+    selectedBranch, selectedOverloads, monitorDeselected,
+    nDiagram, n1Diagram,
+  ]);
+
+  // ===== Reload Session =====
+  const [showReloadModal, setShowReloadModal] = useState(false);
+  const [sessionList, setSessionList] = useState<string[]>([]);
+  const [sessionListLoading, setSessionListLoading] = useState(false);
+  const [sessionRestoring, setSessionRestoring] = useState(false);
+
+  const handleOpenReloadModal = useCallback(async () => {
+    if (!outputFolderPath) {
+      setError('Configure an Output Folder Path in Settings before reloading a session.');
+      return;
+    }
+    setShowReloadModal(true);
+    setSessionListLoading(true);
+    try {
+      const res = await api.listSessions(outputFolderPath);
+      setSessionList(res.sessions);
+      interactionLogger.record('session_reload_modal_opened', {
+        output_folder: outputFolderPath,
+        available_sessions: res.sessions,
+      });
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } }; message?: string };
+      setError('Failed to list sessions: ' + (e.response?.data?.detail || e.message));
+      setShowReloadModal(false);
+    } finally {
+      setSessionListLoading(false);
+    }
+  }, [outputFolderPath]);
+
+  const handleRestoreSession = useCallback(async (sessionName: string) => {
+    if (!outputFolderPath) return;
+    interactionLogger.record('session_reloaded', { session_name: sessionName });
+    setSessionRestoring(true);
+    try {
+      const session: SessionResult = await api.loadSession(outputFolderPath, sessionName);
+
+      // 1. Restore configuration paths
+      const cfg = session.configuration;
+      setNetworkPath(cfg.network_path);
+      setActionPath(cfg.action_file_path);
+      setLayoutPath(cfg.layout_path || '');
+      setMinLineReconnections(cfg.min_line_reconnections);
+      setMinCloseCoupling(cfg.min_close_coupling);
+      setMinOpenCoupling(cfg.min_open_coupling);
+      setMinLineDisconnections(cfg.min_line_disconnections);
+      setMinPst(cfg.min_pst ?? 1.0);
+      setNPrioritizedActions(cfg.n_prioritized_actions);
+      setLinesMonitoringPath(cfg.lines_monitoring_path || '');
+      setMonitoringFactor(cfg.monitoring_factor);
+      setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
+      setIgnoreReconnections(cfg.ignore_reconnections ?? false);
+      setPypowsyblFastMode(cfg.pypowsybl_fast_mode ?? true);
+
+      // 2. Send config to backend and load network
+      const configRes = await api.updateConfig({
+        network_path: cfg.network_path,
+        action_file_path: cfg.action_file_path,
+        layout_path: cfg.layout_path,
+        min_line_reconnections: cfg.min_line_reconnections,
+        min_close_coupling: cfg.min_close_coupling,
+        min_open_coupling: cfg.min_open_coupling,
+        min_line_disconnections: cfg.min_line_disconnections,
+        min_pst: cfg.min_pst ?? 1.0,
+        n_prioritized_actions: cfg.n_prioritized_actions,
+        lines_monitoring_path: cfg.lines_monitoring_path,
+        monitoring_factor: cfg.monitoring_factor,
+        pre_existing_overload_threshold: cfg.pre_existing_overload_threshold,
+        ignore_reconnections: cfg.ignore_reconnections,
+        pypowsybl_fast_mode: cfg.pypowsybl_fast_mode,
+      });
+
+      if (configRes?.total_lines_count !== undefined) {
+        setMonitoredLinesCount(configRes.monitored_lines_count);
+        setTotalLinesCount(configRes.total_lines_count);
+        if (configRes.monitored_lines_count < configRes.total_lines_count) {
+          setShowMonitoringWarning(true);
+        }
+      }
+      if (configRes?.action_dict_file_name) setActionDictFileName(configRes.action_dict_file_name);
+      if (configRes?.action_dict_stats) setActionDictStats(configRes.action_dict_stats);
+
+      // 3. Fetch study data
+      const [branchesList, vlRes, nomVRes] = await Promise.all([
+        api.getBranches(),
+        api.getVoltageLevels(),
+        api.getNominalVoltages(),
+      ]);
+      setBranches(branchesList);
+      setVoltageLevels(vlRes);
+      setNominalVoltageMap(nomVRes.mapping);
+      setUniqueVoltages(nomVRes.unique_kv);
+      if (nomVRes.unique_kv.length > 0) {
+        setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
+      }
+
+      // 4. Fetch base diagram
+      fetchBaseDiagram(vlRes.length);
+
+      // 5. Restore contingency
+      const contingency = session.contingency;
+      setMonitorDeselected(contingency.monitor_deselected);
+      setSelectedOverloads(new Set(contingency.selected_overloads));
+
+      // 6. Restore analysis result (actions without rho_after are "unloaded" — will resim on click)
+      if (session.analysis) {
+        const a = session.analysis;
+        const restoredActions: Record<string, ActionDetail> = {};
+        const restoredSelected = new Set<string>();
+        const restoredRejected = new Set<string>();
+        const restoredManual = new Set<string>();
+        const restoredSuggested = new Set<string>();
+
+        for (const [id, entry] of Object.entries(a.actions)) {
+          // Skip estimation-only combined-pair entries — they live in combined_actions,
+          // not in the action feed, and should not appear as action cards.
+          if (id.includes('+') && entry.is_estimated && !entry.status.is_manually_simulated) continue;
+
+          restoredActions[id] = {
+            description_unitaire: entry.description_unitaire,
+            rho_before: entry.rho_before,
+            rho_after: entry.rho_after,
+            max_rho: entry.max_rho,
+            max_rho_line: entry.max_rho_line,
+            is_rho_reduction: entry.is_rho_reduction,
+            is_estimated: entry.is_estimated,
+            non_convergence: entry.non_convergence,
+            action_topology: entry.action_topology,
+            estimated_max_rho: entry.estimated_max_rho,
+            estimated_max_rho_line: entry.estimated_max_rho_line,
+            is_islanded: entry.is_islanded,
+            n_components: entry.n_components,
+            disconnected_mw: entry.disconnected_mw,
+            is_manual: entry.status.is_manually_simulated,
+          };
+
+          if (entry.status.is_selected) restoredSelected.add(id);
+          if (entry.status.is_rejected) restoredRejected.add(id);
+          if (entry.status.is_manually_simulated) restoredManual.add(id);
+          if (entry.status.is_suggested) restoredSuggested.add(id);
+        }
+
+        // Restore combined_actions
+        const restoredCombinedActions: Record<string, CombinedAction> = {};
+        if (a.combined_actions) {
+          for (const [id, ca] of Object.entries(a.combined_actions)) {
+            restoredCombinedActions[id] = {
+              action1_id: ca.action1_id,
+              action2_id: ca.action2_id,
+              betas: ca.betas,
+              p_or_combined: [],
+              max_rho: ca.max_rho,
+              max_rho_line: ca.max_rho_line,
+              is_rho_reduction: ca.is_rho_reduction,
+              description: ca.description,
+              rho_after: [],
+              rho_before: [],
+              estimated_max_rho: ca.estimated_max_rho,
+              estimated_max_rho_line: ca.estimated_max_rho_line,
+              is_islanded: ca.is_islanded,
+              disconnected_mw: ca.disconnected_mw,
+            };
+          }
+        }
+
+        const restoredResult: AnalysisResult = {
+          pdf_path: session.overflow_graph?.pdf_path ?? null,
+          pdf_url: session.overflow_graph?.pdf_url ?? null,
+          actions: restoredActions,
+          action_scores: a.action_scores,
+          lines_overloaded: session.overloads.resolved_overloads,
+          combined_actions: restoredCombinedActions,
+          message: a.message,
+          dc_fallback: a.dc_fallback,
+        };
+
+        setResult(restoredResult);
+        setSelectedActionIds(restoredSelected);
+        setRejectedActionIds(restoredRejected);
+        setManuallyAddedIds(restoredManual);
+        setSuggestedByRecommenderIds(restoredSuggested);
+      } else {
+        setResult(null);
+        setSelectedActionIds(new Set());
+        setRejectedActionIds(new Set());
+        setManuallyAddedIds(new Set());
+        setSuggestedByRecommenderIds(new Set());
+      }
+
+      // 7. Set the selected branch last (triggers N-1 diagram fetch via useEffect)
+      // Set the restoring flag so the N-1 useEffect skips the contingency-change dialog
+      restoringSessionRef.current = true;
+      committedBranchRef.current = contingency.disconnected_element;
+      setSelectedBranch(contingency.disconnected_element);
+
+      setShowReloadModal(false);
+      setInfoMessage(`SUCCESS: Session "${sessionName}" restored`);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } }; message?: string };
+      setError('Failed to restore session: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setSessionRestoring(false);
+    }
+  }, [outputFolderPath, fetchBaseDiagram]);
+
+  // ===== SLD Overlay =====
+  const [vlOverlay, setVlOverlay] = useState<VlOverlay | null>(null);
+
+  const fetchSldVariant = useCallback(async (vlName: string, actionId: string | null, sldTab: SldTab) => {
+    setVlOverlay(prev => prev ? { ...prev, loading: true, error: null, tab: sldTab } : null);
+    try {
+      let svgData: string;
+      let metaData: string | null = null;
+      let flowDeltas: Record<string, FlowDelta> | undefined;
+      let reactiveFlowDeltas: Record<string, FlowDelta> | undefined;
+      let assetDeltas: Record<string, AssetDelta> | undefined;
+
+      if (sldTab === 'n') {
+        const res = await api.getNSld(vlName);
+        svgData = res.svg;
+        metaData = res.sld_metadata ?? null;
+      } else if (sldTab === 'n-1') {
+        const res = await api.getN1Sld(selectedBranch, vlName);
+        svgData = res.svg;
+        metaData = res.sld_metadata ?? null;
+        flowDeltas = res.flow_deltas;
+        reactiveFlowDeltas = res.reactive_flow_deltas;
+        assetDeltas = res.asset_deltas;
+      } else {
+        const res = await api.getActionVariantSld(actionId!, vlName);
+        svgData = res.svg;
+        metaData = res.sld_metadata ?? null;
+        flowDeltas = res.flow_deltas;
+        reactiveFlowDeltas = res.reactive_flow_deltas;
+        assetDeltas = res.asset_deltas;
+      }
+      setVlOverlay(prev =>
+        prev && prev.vlName === vlName && prev.tab === sldTab
+          ? {
+            ...prev, svg: svgData, sldMetadata: metaData, loading: false,
+            flow_deltas: flowDeltas, reactive_flow_deltas: reactiveFlowDeltas, asset_deltas: assetDeltas
+          }
+          : prev
+      );
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } }; message?: string };
+      setVlOverlay(prev => prev && prev.tab === sldTab
+        ? { ...prev, loading: false, error: e.response?.data?.detail || 'Failed to load SLD' }
+        : prev
+      );
+    }
+  }, [selectedBranch]);
+
+  const handleVlDoubleClick = useCallback((actionId: string, vlName: string) => {
+    // Determine initial SLD tab based on current active main tab and Flow/Impact mode
+    let initialTab: SldTab;
+    // (initialTab computed below, logged after)
+    if (activeTab === 'n') {
+      initialTab = 'n';
+    } else if (activeTab === 'n-1') {
+      initialTab = 'n-1';
+    } else if (activeTab === 'action' && actionViewMode === 'delta') {
+      // Impacts mode: show Action state (the variant being compared)
+      initialTab = 'action';
+    } else {
+      // Flows mode (action or overflow fallback): show action state
+      initialTab = 'action';
+    }
+    interactionLogger.record('sld_overlay_opened', {
+      vl_name: vlName,
+      action_id: actionId || null,
+      initial_tab: initialTab,
+    });
+    setVlOverlay({ vlName, actionId, svg: null, sldMetadata: null, loading: true, error: null, tab: initialTab });
+    fetchSldVariant(vlName, actionId, initialTab);
+  }, [activeTab, actionViewMode, fetchSldVariant]);
+
+  const handleOverlaySldTabChange = useCallback((sldTab: SldTab) => {
+    if (!vlOverlay) return;
+    interactionLogger.record('sld_overlay_tab_changed', {
+      from_tab: vlOverlay.tab,
+      to_tab: sldTab,
+    });
+    fetchSldVariant(vlOverlay.vlName, vlOverlay.actionId, sldTab);
+  }, [vlOverlay, fetchSldVariant]);
+
+  const handleOverlayClose = useCallback(() => {
+    interactionLogger.record('sld_overlay_closed');
+    setVlOverlay(null);
+  }, []);
+
+  // ===== Asset Click (from action card badges / rho line names) =====
+  const handleAssetClick = useCallback((actionId: string, assetName: string, tab: 'action' | 'n' | 'n-1' = 'action') => {
+    interactionLogger.record('asset_clicked', { asset_name: assetName, action_id: actionId, target_tab: tab });
+    setInspectQuery(assetName);
+    if (tab === 'n') {
+      // Pre-existing overloads live in the N (pre-contingency) view
+      setActiveTab('n');
+    } else if (tab === 'n-1') {
+      // Rho-before lines live in the N-1 (post-contingency) view
+      setActiveTab('n-1');
+    } else if (actionId !== selectedActionId) {
+      // Select the action; zoom fires once its diagram loads
+      handleActionSelect(actionId);
+    } else {
+      setActiveTab('action');
+    }
+  }, [selectedActionId, handleActionSelect]);
+
+  // ===== Zoom Controls =====
+  const handleManualZoomIn = useCallback(() => {
+    interactionLogger.record('zoom_in');
+    const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
+    const vb = currentPZ?.viewBox;
+    if (currentPZ && vb) {
+      const scale = 0.8;
+      currentPZ.setViewBox({
+        x: vb.x + vb.w * (1 - scale) / 2,
+        y: vb.y + vb.h * (1 - scale) / 2,
+        w: vb.w * scale,
+        h: vb.h * scale,
+      });
+    }
+  }, [activeTab, actionPZ, nPZ, n1PZ]);
+
+  const handleManualZoomOut = useCallback(() => {
+    interactionLogger.record('zoom_out');
+    const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
+    const vb = currentPZ?.viewBox;
+    if (currentPZ && vb) {
+      const scale = 1.25;
+      currentPZ.setViewBox({
+        x: vb.x + vb.w * (1 - scale) / 2,
+        y: vb.y + vb.h * (1 - scale) / 2,
+        w: vb.w * scale,
+        h: vb.h * scale,
+      });
+    }
+  }, [activeTab, actionPZ, nPZ, n1PZ]);
+
+  // ===== Reset View =====
+  const handleManualReset = useCallback(() => {
+    interactionLogger.record('zoom_reset');
+    setInspectQuery('');
+
+    const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
+    const currentDiagram = activeTab === 'action' ? actionDiagram : activeTab === 'n' ? nDiagram : n1Diagram;
+    const viewBox = currentDiagram?.originalViewBox || originalViewBox;
+
+    if (currentPZ && viewBox) {
+      currentPZ.setViewBox(viewBox);
+      lastZoomState.current = { query: '', branch: '' };
+    }
+
+    // Clear highlights
+    const container = activeTab === 'action' ? actionSvgContainerRef.current
+      : activeTab === 'n' ? nSvgContainerRef.current : n1SvgContainerRef.current;
+    if (container) {
+      container.querySelectorAll('.nad-highlight').forEach(el => el.classList.remove('nad-highlight'));
+    }
+  }, [activeTab, actionPZ, nPZ, n1PZ, actionDiagram, nDiagram, n1Diagram, originalViewBox]);
+
+  // Logged wrapper for tab changes from user interaction
+  const handleTabChange = useCallback((tab: TabId) => {
+    interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: tab });
+    setActiveTab(tab);
+  }, [activeTab]);
+
+  // Logged wrapper for voltage range changes from user interaction
+  const handleVoltageRangeChange = useCallback((range: [number, number]) => {
+    interactionLogger.record('voltage_range_changed', { min_kv: range[0], max_kv: range[1] });
+    setVoltageRange(range);
+  }, []);
+
+  // Logged wrapper for inspect query changes from user interaction
+  const handleInspectQueryChange = useCallback((query: string) => {
+    interactionLogger.record('inspect_query_changed', { query });
+    setInspectQuery(query);
+  }, []);
+
+  // ===== Tab Synchronization =====
+  // useLayoutEffect so the target tab's viewBox is correct BEFORE the browser paints.
+  useLayoutEffect(() => {
+    const prevTab = prevTabRef.current;
+    prevTabRef.current = activeTab;
+
+    // Don't sync when coming from / going to overflow
+    if (prevTab === 'overflow' || activeTab === 'overflow') return;
+
+    const sourceVB = prevTab === 'n' ? nPZ.viewBox
+      : prevTab === 'n-1' ? n1PZ.viewBox
+        : prevTab === 'action' ? actionPZ.viewBox
+          : null;
+    if (!sourceVB) return;
+
+    if (activeTab === 'n') nPZ.setViewBox(sourceVB);
+    else if (activeTab === 'n-1') n1PZ.setViewBox(sourceVB);
+    else if (activeTab === 'action') actionPZ.setViewBox(sourceVB);
+  }, [activeTab, nPZ, n1PZ, actionPZ]);
+
+  // Re-sync after action diagram loads
+  useEffect(() => {
+    if (actionDiagram && activeTab === 'action' && actionSyncSourceRef.current) {
+      actionPZ.setViewBox(actionSyncSourceRef.current);
+      actionSyncSourceRef.current = null;
+    }
+  }, [actionDiagram, activeTab, actionPZ]);
+
+  // ===== Invalidate DOM id-map cache when SVG content changes =====
+  useEffect(() => {
+    if (nSvgContainerRef.current) invalidateIdMapCache(nSvgContainerRef.current);
+  }, [nDiagram]);
+  useEffect(() => {
+    if (n1SvgContainerRef.current) invalidateIdMapCache(n1SvgContainerRef.current);
+  }, [n1Diagram]);
+  useEffect(() => {
+    if (actionSvgContainerRef.current) invalidateIdMapCache(actionSvgContainerRef.current);
+  }, [actionDiagram]);
+
+  // ===== Metadata Indices =====
+  const nMetaIndex = useMemo(() => buildMetadataIndex(nDiagram?.metadata), [nDiagram?.metadata]);
+  const n1MetaIndex = useMemo(() => buildMetadataIndex(n1Diagram?.metadata), [n1Diagram?.metadata]);
+  const actionMetaIndex = useMemo(() => buildMetadataIndex(actionDiagram?.metadata), [actionDiagram?.metadata]);
+
+  // ===== Highlights =====
+  // Track which tabs need highlight re-application
   const staleHighlights = useRef<Set<TabId>>(new Set());
   const prevHighlightTabRef = useRef<TabId>(activeTab);
 
@@ -789,7 +1883,13 @@ function App() {
               <input
                 list="contingencies"
                 value={selectedBranch}
-                onChange={e => setSelectedBranch(e.target.value)}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (branches.includes(val)) {
+                    interactionLogger.record('contingency_selected', { element: val });
+                  }
+                  setSelectedBranch(val);
+                }}
                 placeholder="Search line/bus..."
                 style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }}
               />
@@ -876,7 +1976,7 @@ function App() {
           <VisualizationPanel
             activeTab={activeTab}
             configLoading={configLoading}
-            onTabChange={setActiveTab}
+            onTabChange={handleTabChange}
             nDiagram={nDiagram}
             n1Diagram={n1Diagram}
             n1Loading={n1Loading}
@@ -890,11 +1990,11 @@ function App() {
             actionSvgContainerRef={actionSvgContainerRef}
             uniqueVoltages={uniqueVoltages}
             voltageRange={voltageRange}
-            onVoltageRangeChange={setVoltageRange}
+            onVoltageRangeChange={handleVoltageRangeChange}
             actionViewMode={actionViewMode}
             onViewModeChange={handleViewModeChange}
             inspectQuery={inspectQuery}
-            onInspectQueryChange={setInspectQuery}
+            onInspectQueryChange={handleInspectQueryChange}
             inspectableItems={inspectableItems}
             onResetView={handleManualReset}
             onZoomIn={handleManualZoomIn}
