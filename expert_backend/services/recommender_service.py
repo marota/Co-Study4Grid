@@ -1506,6 +1506,11 @@ class RecommenderService:
         if switches:
             content["switches"] = switches
 
+        # Include PST tap changes if present
+        pst_tap = topo.get("pst_tap") or {}
+        if pst_tap:
+            content["pst_tap"] = pst_tap
+
         entry["content"] = content if content else {}
         return entry
 
@@ -1783,9 +1788,24 @@ class RecommenderService:
 
         env = self._get_simulation_env()
         classifier = ActionClassifier()
-        
+
+        # Detect PST actions early to relax element identification checks if needed
+        action_desc1 = self._dict_action.get(action1_id, {})
+        action_desc2 = self._dict_action.get(action2_id, {})
+        action_type1 = classifier.identify_action_type(action_desc1, by_description=True)
+        action_type2 = classifier.identify_action_type(action_desc2, by_description=True)
+        act1_is_pst = (
+            action_type1 == "pst_tap"
+            or "pst_tap" in action1_id
+            or action1_id.startswith("pst_")
+        )
+        act2_is_pst = (
+            action_type2 == "pst_tap"
+            or "pst_tap" in action2_id
+            or action2_id.startswith("pst_")
+        )
+
         # Identify elements for both actions
-        # First check if they have action topology enriched
         act1_obj = all_actions[action1_id]["action"]
         act2_obj = all_actions[action2_id]["action"]
 
@@ -1796,14 +1816,11 @@ class RecommenderService:
             act2_obj, action2_id, self._dict_action, classifier, env
         )
 
-        if not line_idxs1 and not sub_idxs1 and not line_idxs2 and not sub_idxs2:
-             # Fallback: if they are in _dict_action, maybe identify_action_elements needs it
-             # but they were already identified above?
-             pass
-
-        if (not line_idxs1 and not sub_idxs1) or (not line_idxs2 and not sub_idxs2):
+        # Mandatory check: both actions must have at least one recognized element (line or sub)
+        # Exception for PST actions where identification might be looser
+        if (not line_idxs1 and not sub_idxs1 and not act1_is_pst) or \
+           (not line_idxs2 and not sub_idxs2 and not act2_is_pst):
              return {"error": f"Cannot identify elements for one or both actions (Act1: {len(line_idxs1)} lines, {len(sub_idxs1)} subs; Act2: {len(line_idxs2)} lines, {len(sub_idxs2)} subs)"}
-
 
         # Get obs_start (N-1 state)
         n = env.network_manager.network
@@ -1811,20 +1828,20 @@ class RecommenderService:
         n1_variant_id = self._get_n1_variant(disconnected_element)
         n.set_working_variant(n1_variant_id)
         obs_start = env.get_obs()
-        
+
         # Get pre-existing rho for reduction calculation
         n_variant_id = self._get_n_variant()
         n.set_working_variant(n_variant_id)
         obs_n = env.get_obs()
         pre_existing_rho = {i: obs_n.rho[i] for i in range(len(obs_n.rho))}
-        
+
         # Filter lines we care about
         lines_overloaded_ids = []
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
         for i in range(len(obs_start.rho)):
             if obs_start.rho[i] >= monitoring_factor:
                  lines_overloaded_ids.append(i)
-                 
+
         lines_we_care_about, branches_with_limits = self._get_monitoring_parameters(obs_start)
 
         result = compute_combined_pair_superposition(
@@ -1835,6 +1852,8 @@ class RecommenderService:
             act1_sub_idxs=sub_idxs1,
             act2_line_idxs=line_idxs2,
             act2_sub_idxs=sub_idxs2,
+            act1_is_pst=act1_is_pst,
+            act2_is_pst=act2_is_pst,
             obs_combined=all_actions.get(f"{action1_id}+{action2_id}", {}).get("observation")
         )
         

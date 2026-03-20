@@ -57,7 +57,9 @@ const CombinedActionsModal: React.FC<Props> = ({
             .map(([id, detail]) => ({
                 id,
                 description: detail.description_unitaire,
-                max_rho: detail.max_rho
+                max_rho: detail.max_rho,
+                is_pst: id.toLowerCase().includes('pst_') ||
+                    Object.keys(detail.action_topology?.pst_tap ?? {}).length > 0
             })).sort((a, b) => (a.max_rho ?? 999) - (b.max_rho ?? 999));
     }, [analysisResult]);
 
@@ -409,7 +411,12 @@ const CombinedActionsModal: React.FC<Props> = ({
                                                             onClick={(e) => e.stopPropagation()}
                                                         />
                                                     </td>
-                                                    <td style={{ padding: '8px', fontWeight: 600 }}>{a.id}</td>
+                                                    <td style={{ padding: '8px', fontWeight: 600 }}>
+                                                        {a.id}
+                                                        {a.is_pst && (
+                                                            <span title="Phase Shifting Transformer action" style={{ marginLeft: '6px', fontSize: '10px', background: '#e3f2fd', color: '#1565c0', padding: '1px 5px', borderRadius: '4px', fontWeight: 700, letterSpacing: '0.5px', verticalAlign: 'middle' }}>PST</span>
+                                                        )}
+                                                    </td>
                                                     <td style={{ padding: '8px', color: '#555' }}>{a.description}</td>
                                                     <td style={{ padding: '8px', textAlign: 'right' }}>{a.max_rho ? `${(a.max_rho * 100).toFixed(1)}%` : '-'}</td>
                                                 </tr>

@@ -1261,6 +1261,7 @@
                         min_close_coupling: minCloseCoupling,
                         min_open_coupling: minOpenCoupling,
                         min_line_disconnections: minLineDisconnections,
+                        min_pst: minPst,
                         n_prioritized_actions: nPrioritizedActions,
                         lines_monitoring_path: linesMonitoringPath,
                         monitoring_factor: monitoringFactor,
@@ -3081,7 +3082,11 @@
                         const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
                         const isOpenCoupling = t.includes('open_coupling');
                         const isCloseCoupling = t.includes('close_coupling');
-                        const isPstAction = (actionId.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
+                        const isPstAction = (actionId.includes('pst') ||
+                            actionDesc.includes('pst') ||
+                            t.includes('pst') ||
+                            Object.keys(a.action_topology?.pst_tap ?? {}).length > 0) &&
+                            !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
 
                         if (isDisco) return typeFilters.disco;
                         if (isReco) return typeFilters.reco;
@@ -3111,7 +3116,11 @@
                         const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
                         const isOpenCoupling = t.includes('open_coupling');
                         const isCloseCoupling = t.includes('close_coupling');
-                        const isPstAction = (aid.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
+                        const isPstAction = (aid.includes('pst') ||
+                            actionDesc.includes('pst') ||
+                            t.includes('pst') ||
+                            Object.keys(actionDetail?.action_topology?.pst_tap ?? {}).length > 0) &&
+                            !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
 
                         let shouldShow = false;
                         if (isDisco) shouldShow = typeFilters.disco;
@@ -3126,7 +3135,12 @@
                         // Filter out combined actions that are only estimations
                         if (actionId.includes('+') && (actionDetail?.is_estimated || !actionDetail?.rho_after || actionDetail?.rho_after.length === 0)) continue;
 
-                        list.push({ actionId, score, type });
+                        list.push({
+                            actionId,
+                            score,
+                            type,
+                            isPst: isPstAction
+                        });
                     }
                 }
                 return list.sort((a, b) => {
@@ -4683,6 +4697,9 @@
                                                                                             }}>
                                                                                             <td style={{ padding: '4px 6px', fontWeight: 600, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
                                                                                                 {item.actionId}
+                                                                                                {item.isPst && (
+                                                                                                    <span title="Phase Shifting Transformer action" style={{ background: '#e3f2fd', color: '#1565c0', padding: '1px 4px', borderRadius: '3px', fontSize: '9px', fontWeight: 700 }}>PST</span>
+                                                                                                )}
                                                                                                 {isComputed && (
                                                                                                     result?.actions?.[item.actionId]?.non_convergence ? (
                                                                                                         <span style={{ background: '#dc3545', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }} title={result.actions[item.actionId].non_convergence}>divergent</span>
@@ -4746,8 +4763,11 @@
                                                             onMouseEnter={(e) => { if (!simulatingActionId) e.currentTarget.style.backgroundColor = '#f0f0f0'; }}
                                                             onMouseLeave={(e) => { if (simulatingActionId !== a.id) e.currentTarget.style.backgroundColor = 'transparent'; }}
                                                         >
-                                                            <div style={{ fontWeight: 600, fontSize: '12px', color: '#333' }}>
+                                                            <div style={{ fontWeight: 600, fontSize: '12px', color: '#333', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                                 {simulatingActionId === a.id ? '⏳ Simulating...' : a.id}
+                                                                {(a.id.toLowerCase().includes('pst') || (a.description || '').toLowerCase().includes('pst') || (a.type || '').toLowerCase().includes('pst') || Object.keys(a.action_topology?.pst_tap ?? {}).length > 0) && (
+                                                                    <span title="Phase Shifting Transformer action" style={{ fontSize: '9px', background: '#e3f2fd', color: '#1565c0', padding: '1px 4px', borderRadius: '3px', fontWeight: 700 }}>PST</span>
+                                                                )}
                                                             </div>
                                                             {a.description && (
                                                                 <div style={{ fontSize: '11px', color: '#777', marginTop: '2px' }}>
@@ -5282,94 +5302,105 @@
                                                         ...simulatedOnly.map(([id, data]) => [id, data]),
                                                     ];
                                                     return allPairs
-                                                    .sort((a, b) => ((a[1].estimated_max_rho ?? a[1].max_rho) ?? 999) - ((b[1].estimated_max_rho ?? b[1].max_rho) ?? 999))
-                                                    .map(([id, data]) => {
-                                                        const parts = id.split('+').map(p => p.trim());
-                                                        const simData = data._simData || result?.actions?.[id] || result?.actions?.[canonicalizeId(id)];
-                                                        const isSimulated = simData && !simData.is_estimated && simData.rho_after && simData.rho_after.length > 0;
-                                                        const estMaxRho = data.estimated_max_rho ?? data.max_rho;
-                                                        const estMaxRhoLine = data.estimated_max_rho_line ?? data.max_rho_line;
+                                                        .sort((a, b) => ((a[1].estimated_max_rho ?? a[1].max_rho) ?? 999) - ((b[1].estimated_max_rho ?? b[1].max_rho) ?? 999))
+                                                        .map(([id, data]) => {
+                                                            const parts = id.split('+').map(p => p.trim());
+                                                            const simData = data._simData || result?.actions?.[id] || result?.actions?.[canonicalizeId(id)];
+                                                            const isSimulated = simData && !simData.is_estimated && simData.rho_after && simData.rho_after.length > 0;
+                                                            const estMaxRho = data.estimated_max_rho ?? data.max_rho;
+                                                            const estMaxRhoLine = data.estimated_max_rho_line ?? data.max_rho_line;
 
-                                                        return (
-                                                            <tr key={id}>
-                                                                <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{parts[0]}</td>
-                                                                <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{parts[1]}</td>
-                                                                <td style={{ fontSize: '11px', fontFamily: 'monospace', color: '#666' }}>
-                                                                    {data.betas ? (Array.isArray(data.betas) ? data.betas : Object.values(data.betas)).map(b => b.toFixed(2)).join(', ') : '-'}
-                                                                </td>
-                                                                <td>
-                                                                    <span className="metric-badge metric-rho" style={{
-                                                                        background: estMaxRho > monitoringFactor ? '#ffebee' : estMaxRho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
-                                                                        color: estMaxRho > monitoringFactor ? '#c62828' : estMaxRho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32',
-                                                                        fontWeight: 'bold',
-                                                                        opacity: 0.9,
-                                                                        border: estMaxRho > monitoringFactor ? '1px solid #c62828' : estMaxRho > (monitoringFactor - 0.05) ? '1px solid #856404' : '1px dashed #2e7d32'
-                                                                    }}>
-                                                                        {estMaxRho != null && !isNaN(estMaxRho) ? `${(estMaxRho * 100).toFixed(1)}%` : '—'}
-                                                                        {data.is_islanded && (
-                                                                            <span style={{ marginLeft: '4px' }} title="Estimation suspect due to islanding or linear superposition breakdown">⚠️</span>
+                                                            return (
+                                                                <tr key={id}>
+                                                                    <td style={{ fontWeight: 'bold', fontSize: '12px' }}>
+                                                                        {parts[0]}
+                                                                        {(parts[0].toLowerCase().includes('pst') || Object.keys(result?.actions?.[parts[0]]?.action_topology?.pst_tap ?? {}).length > 0) && (
+                                                                            <span title="Phase Shifting Transformer action" style={{ marginLeft: '6px', fontSize: '9px', background: '#e3f2fd', color: '#1565c0', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, verticalAlign: 'middle' }}>PST</span>
                                                                         )}
-                                                                    </span>
-                                                                </td>
-                                                                <td style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>{estMaxRhoLine || 'N/A'}</td>
-
-                                                                <td style={{ textAlign: 'center' }}>
-                                                                    {isSimulated ? (
+                                                                    </td>
+                                                                    <td style={{ fontWeight: 'bold', fontSize: '12px' }}>
+                                                                        {parts[1]}
+                                                                        {(parts[1].toLowerCase().includes('pst') || Object.keys(result?.actions?.[parts[1]]?.action_topology?.pst_tap ?? {}).length > 0) && (
+                                                                            <span title="Phase Shifting Transformer action" style={{ marginLeft: '6px', fontSize: '9px', background: '#e3f2fd', color: '#1565c0', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, verticalAlign: 'middle' }}>PST</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td style={{ fontSize: '11px', fontFamily: 'monospace', color: '#666' }}>
+                                                                        {data.betas ? (Array.isArray(data.betas) ? data.betas : Object.values(data.betas)).map(b => b.toFixed(2)).join(', ') : '-'}
+                                                                    </td>
+                                                                    <td>
                                                                         <span className="metric-badge metric-rho" style={{
+                                                                            background: estMaxRho > monitoringFactor ? '#ffebee' : estMaxRho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
+                                                                            color: estMaxRho > monitoringFactor ? '#c62828' : estMaxRho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32',
                                                                             fontWeight: 'bold',
-                                                                            fontSize: '13px',
-                                                                            background: simData.max_rho > monitoringFactor ? '#ffebee' : simData.max_rho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
-                                                                            color: simData.max_rho > monitoringFactor ? '#c62828' : simData.max_rho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32'
+                                                                            opacity: 0.9,
+                                                                            border: estMaxRho > monitoringFactor ? '1px solid #c62828' : estMaxRho > (monitoringFactor - 0.05) ? '1px solid #856404' : '1px dashed #2e7d32'
                                                                         }}>
-                                                                            {(simData.max_rho * 100).toFixed(1)}%
-                                                                            {simData.is_islanded && (
-                                                                                <span style={{ fontSize: '10px', marginLeft: '4px', border: '1px solid #721c24', padding: '1px 3px', borderRadius: '3px', color: '#721c24', background: '#f8d7da' }} title={`Islanding: ${simData.disconnected_mw?.toFixed(1)} MW disconnected`}>🏝️</span>
+                                                                            {estMaxRho != null && !isNaN(estMaxRho) ? `${(estMaxRho * 100).toFixed(1)}%` : '—'}
+                                                                            {data.is_islanded && (
+                                                                                <span style={{ marginLeft: '4px' }} title="Estimation suspect due to islanding or linear superposition breakdown">⚠️</span>
                                                                             )}
                                                                         </span>
-                                                                    ) : (
-                                                                        <span style={{ color: '#aaa', fontSize: '11px' }}>Not simulated</span>
-                                                                    )}
-                                                                </td>
-                                                                <td style={{ fontSize: '11px', color: '#333', fontWeight: isSimulated ? 'bold' : 'normal' }}>
-                                                                    {isSimulated ? simData.max_rho_line : '-'}
-                                                                </td>
+                                                                    </td>
+                                                                    <td style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>{estMaxRhoLine || 'N/A'}</td>
 
-                                                                <td>
-                                                                    <button
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            handleAddManualAction(id);
-                                                                        }}
-                                                                        disabled={!!simulatingActionId}
-                                                                        style={{
-                                                                            padding: '6px 14px',
-                                                                            background: isSimulated ? '#007bff' : '#28a745',
-                                                                            color: 'white',
-                                                                            border: 'none',
-                                                                            borderRadius: '4px',
-                                                                            cursor: simulatingActionId ? 'not-allowed' : 'pointer',
-                                                                            fontSize: '11px',
-                                                                            fontWeight: 'bold',
-                                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                                            opacity: simulatingActionId ? 0.6 : 1,
-                                                                            minWidth: '100px'
-                                                                        }}
-                                                                    >
-                                                                        {simulatingActionId === canonicalizeId(id) ? '⌛' : (isSimulated ? 'Re-Simulate' : 'Simulate')}
-                                                                    </button>
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    });}
+                                                                    <td style={{ textAlign: 'center' }}>
+                                                                        {isSimulated ? (
+                                                                            <span className="metric-badge metric-rho" style={{
+                                                                                fontWeight: 'bold',
+                                                                                fontSize: '13px',
+                                                                                background: simData.max_rho > monitoringFactor ? '#ffebee' : simData.max_rho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
+                                                                                color: simData.max_rho > monitoringFactor ? '#c62828' : simData.max_rho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32'
+                                                                            }}>
+                                                                                {(simData.max_rho * 100).toFixed(1)}%
+                                                                                {simData.is_islanded && (
+                                                                                    <span style={{ fontSize: '10px', marginLeft: '4px', border: '1px solid #721c24', padding: '1px 3px', borderRadius: '3px', color: '#721c24', background: '#f8d7da' }} title={`Islanding: ${simData.disconnected_mw?.toFixed(1)} MW disconnected`}>🏝️</span>
+                                                                                )}
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span style={{ color: '#aaa', fontSize: '11px' }}>Not simulated</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td style={{ fontSize: '11px', color: '#333', fontWeight: isSimulated ? 'bold' : 'normal' }}>
+                                                                        {isSimulated ? simData.max_rho_line : '-'}
+                                                                    </td>
+
+                                                                    <td>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleAddManualAction(id);
+                                                                            }}
+                                                                            disabled={!!simulatingActionId}
+                                                                            style={{
+                                                                                padding: '6px 14px',
+                                                                                background: isSimulated ? '#007bff' : '#28a745',
+                                                                                color: 'white',
+                                                                                border: 'none',
+                                                                                borderRadius: '4px',
+                                                                                cursor: simulatingActionId ? 'not-allowed' : 'pointer',
+                                                                                fontSize: '11px',
+                                                                                fontWeight: 'bold',
+                                                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                                                opacity: simulatingActionId ? 0.6 : 1,
+                                                                                minWidth: '100px'
+                                                                            }}
+                                                                        >
+                                                                            {simulatingActionId === canonicalizeId(id) ? '⌛' : (isSimulated ? 'Re-Simulate' : 'Simulate')}
+                                                                        </button>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        });
+                                                }
                                                 )()}
                                                 {Object.keys(result?.combined_actions || {}).length === 0 &&
-                                                 Object.entries(result?.actions || {}).filter(([id]) => id.includes('+')).length === 0 && (
-                                                    <tr>
-                                                        <td colSpan="6" style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', padding: '40px 20px' }}>
-                                                            No computed combinations found.<br />Go to <strong>Explore Pairs</strong> to create new ones.
-                                                        </td>
-                                                    </tr>
-                                                )}
+                                                    Object.entries(result?.actions || {}).filter(([id]) => id.includes('+')).length === 0 && (
+                                                        <tr>
+                                                            <td colSpan="6" style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', padding: '40px 20px' }}>
+                                                                No computed combinations found.<br />Go to <strong>Explore Pairs</strong> to create new ones.
+                                                            </td>
+                                                        </tr>
+                                                    )}
                                             </tbody>
                                         </table>
                                     </div>
@@ -5447,7 +5478,15 @@
                                                                                 <td style={{ width: '10px', paddingRight: 0 }}>
                                                                                     <input type="checkbox" checked={isSelected} readOnly style={{ cursor: 'pointer' }} />
                                                                                 </td>
-                                                                                <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{actionId}</td>
+                                                                                <td style={{ fontWeight: 'bold', fontSize: '12px' }}>
+                                                                                    {actionId}
+                                                                                    {isSelected && (
+                                                                                        <span title="Phase Shifting Transformer action" style={{ marginLeft: '6px', fontSize: '9px', background: '#e3f2fd', color: '#1565c0', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, verticalAlign: 'middle' }}>PST</span>
+                                                                                    )}
+                                                                                    {scoredActionsList.find(item => item.actionId === actionId)?.isPst && (
+                                                                                        <span title="Phase Shifting Transformer action" style={{ marginLeft: '6px', fontSize: '9px', background: '#e3f2fd', color: '#1565c0', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, verticalAlign: 'middle' }}>PST</span>
+                                                                                    )}
+                                                                                </td>
                                                                                 <td style={{ width: '60px' }}>
                                                                                     <span className="metric-badge metric-score" style={{ scale: '0.9' }}>
                                                                                         {score.toFixed(2)}
