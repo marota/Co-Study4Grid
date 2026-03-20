@@ -316,6 +316,32 @@ describe('getActionTargetLines', () => {
         expect(result).toContain('LINE_B');
         expect(result).toHaveLength(2);
     });
+
+    it('suppresses topology lines for coupling actions but keeps pst_tap', () => {
+        const detail: ActionDetail = {
+            description_unitaire: 'Coupling with side effects',
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+            action_topology: {
+                lines_ex_bus: { LINE_SIDE_EFFECT: -1 },
+                pst_tap: { PST_LINE: 5 },
+                lines_or_bus: {},
+                gens_bus: {},
+                loads_bus: {},
+            },
+        };
+
+        const result = getActionTargetLines(detail, 'MQIS P7_coupling', makeEdgeMap('LINE_SIDE_EFFECT', 'PST_LINE'));
+
+        // Should NOT contain LINE_SIDE_EFFECT (it's a side effect of coupling)
+        expect(result).not.toContain('LINE_SIDE_EFFECT');
+        // Should STILL contain PST_LINE
+        expect(result).toContain('PST_LINE');
+        expect(result).toHaveLength(1);
+    });
 });
 
 describe('getActionTargetVoltageLevels', () => {

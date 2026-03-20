@@ -171,26 +171,31 @@ export const getActionTargetLines = (
     // 1. From topology
     const topo = actionDetail?.action_topology;
     if (topo) {
-        const lineKeys = new Set([
-            ...Object.keys(topo.lines_ex_bus || {}),
-            ...Object.keys(topo.lines_or_bus || {}),
-            ...Object.keys(topo.pst_tap || {}),
-        ]);
-        const genKeys = Object.keys(topo.gens_bus || {});
-        const loadKeys = Object.keys(topo.loads_bus || {});
+        const isCoupling = actionId?.toLowerCase().includes('coupling') || actionId?.toLowerCase().includes('busbar');
 
-        if (lineKeys.size > 0 && genKeys.length === 0 && loadKeys.length === 0) {
-            lineKeys.forEach(l => targets.add(l));
-        } else {
-            const allValues = [
-                ...Object.values(topo.lines_ex_bus || {}),
-                ...Object.values(topo.lines_or_bus || {}),
-                ...Object.values(topo.pst_tap || {}),
-                ...Object.values(topo.gens_bus || {}),
-                ...Object.values(topo.loads_bus || {}),
-            ];
-            if (allValues.length > 0 && allValues.every(v => v === -1)) {
+        // Pst taps are always included
+        Object.keys(topo.pst_tap || {}).forEach(l => targets.add(l));
+
+        if (!isCoupling) {
+            const lineKeys = new Set([
+                ...Object.keys(topo.lines_ex_bus || {}),
+                ...Object.keys(topo.lines_or_bus || {}),
+            ]);
+            const genKeys = Object.keys(topo.gens_bus || {});
+            const loadKeys = Object.keys(topo.loads_bus || {});
+
+            if (lineKeys.size > 0 && genKeys.length === 0 && loadKeys.length === 0) {
                 lineKeys.forEach(l => targets.add(l));
+            } else {
+                const allValues = [
+                    ...Object.values(topo.lines_ex_bus || {}),
+                    ...Object.values(topo.lines_or_bus || {}),
+                    ...Object.values(topo.gens_bus || {}),
+                    ...Object.values(topo.loads_bus || {}),
+                ];
+                if (allValues.length > 0 && allValues.every(v => v === -1)) {
+                    lineKeys.forEach(l => targets.add(l));
+                }
             }
         }
     }

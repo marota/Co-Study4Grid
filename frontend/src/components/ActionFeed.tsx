@@ -417,11 +417,12 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                             }
 
                             // 2. Lines / Equipments
+                            const isCoupling = id.toLowerCase().includes('coupling') || id.toLowerCase().includes('busbar');
                             const lineNames = edgesByEquipmentId
                                 ? getActionTargetLines(details, id, edgesByEquipmentId)
                                 : Array.from(new Set([
-                                    ...Object.keys(details.action_topology?.lines_ex_bus || {}),
-                                    ...Object.keys(details.action_topology?.lines_or_bus || {}),
+                                    ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_ex_bus || {})),
+                                    ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_or_bus || {})),
                                     ...Object.keys(details.action_topology?.pst_tap || {}),
                                 ]));
 
