@@ -425,7 +425,7 @@ export const applyContingencyHighlight = (
     } catch (e) {
         console.warn('Failed to get CTM for contingency highlight:', e);
     }
-    backgroundLayer.appendChild(clone);
+    backgroundLayer.prepend(clone);
 };
 
 

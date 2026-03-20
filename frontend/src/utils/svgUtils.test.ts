@@ -9,6 +9,8 @@ import {
     invalidateIdMapCache,
     applyOverloadedHighlights,
     applyDeltaVisuals,
+    applyActionTargetHighlights,
+    applyContingencyHighlight,
 } from './svgUtils';
 import type { ActionDetail, NodeMeta, EdgeMeta, MetadataIndex } from '../types';
 
@@ -619,5 +621,40 @@ describe('applyDeltaVisuals', () => {
 
         expect(container.querySelector('#svg-line-a')?.classList.contains('nad-delta-negative')).toBe(true);
         expect(container.querySelector('#info1-a text')?.textContent).toBe('\u0394 -3.7');
+    });
+});
+
+describe('Highlight Layering', () => {
+    it('prepends the contingency clone to the background layer (z-order fix)', () => {
+        const container = document.createElement('div');
+        container.innerHTML = '<svg><g id="svg-line-a"></g><g id="svg-line-b"></g></svg>';
+        const metaIndex = {
+            edgesByEquipmentId: new Map([
+                ['LINE_A', { equipmentId: 'LINE_A', svgId: 'svg-line-a' } as EdgeMeta],
+                ['LINE_B', { equipmentId: 'LINE_B', svgId: 'svg-line-b' } as EdgeMeta],
+            ]),
+            nodesByEquipmentId: new Map(),
+            nodesBySvgId: new Map(),
+            edgesByNode: new Map(),
+        } as any;
+
+        // 1. Apply action highlight first (appends to layer)
+        const detail: ActionDetail = {
+            action_topology: { lines_ex_bus: { LINE_A: -1 }, lines_or_bus: {}, gens_bus: {}, loads_bus: {}, pst_tap: {} }
+        } as any;
+        applyActionTargetHighlights(container, metaIndex, detail, 'disco_LINE_A');
+
+        // 2. Apply contingency highlight (should prepend to layer)
+        applyContingencyHighlight(container, metaIndex, 'LINE_B');
+
+        const bgLayer = container.querySelector('#nad-background-layer');
+        expect(bgLayer).not.toBeNull();
+        const children = bgLayer!.children;
+        expect(children.length).toBe(2);
+
+        // LINE_B (contingency) should be FIRST in DOM (at the bottom visually)
+        expect(children[0].classList.contains('nad-contingency-highlight')).toBe(true);
+        // LINE_A (action) should be SECOND in DOM (on top visually)
+        expect(children[1].classList.contains('nad-action-target')).toBe(true);
     });
 });
