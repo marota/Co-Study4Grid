@@ -732,7 +732,7 @@ function App() {
             if (Object.keys(perAction).length > 0) actionContent = perAction;
           } else {
             const detail = result?.actions?.[actionId];
-            actionContent = (detail?.action_topology as Record<string, unknown>) ?? null;
+            actionContent = (detail?.action_topology as unknown as Record<string, unknown>) ?? null;
           }
           const linesOvl = result?.lines_overloaded?.length ? result.lines_overloaded : null;
           const simRes = await api.simulateManualAction(actionId, selectedBranch, actionContent, linesOvl);
@@ -777,7 +777,7 @@ function App() {
     } finally {
       setActionDiagramLoading(false);
     }
-  }, [selectedActionId, selectedBranch, actionPZ.viewBox, n1PZ.viewBox, nPZ.viewBox, voltageLevels.length]);
+  }, [selectedActionId, selectedBranch, actionPZ.viewBox, n1PZ.viewBox, nPZ.viewBox, voltageLevels.length, result?.actions, result?.lines_overloaded]);
 
   const handleActionFavorite = useCallback((actionId: string) => {
     setSelectedActionIds(prev => {

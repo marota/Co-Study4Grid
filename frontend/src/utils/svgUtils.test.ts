@@ -662,12 +662,12 @@ describe('Highlight Layering', () => {
             nodesByEquipmentId: new Map(),
             nodesBySvgId: new Map(),
             edgesByNode: new Map(),
-        } as any;
+        } as unknown as MetadataIndex;
 
         // 1. Apply action highlight first (appends to layer)
         const detail: ActionDetail = {
             action_topology: { lines_ex_bus: { LINE_A: -1 }, lines_or_bus: {}, gens_bus: {}, loads_bus: {}, pst_tap: {} }
-        } as any;
+        } as unknown as ActionDetail;
         applyActionTargetHighlights(container, metaIndex, detail, 'disco_LINE_A');
 
         // 2. Apply contingency highlight (should prepend to layer)
