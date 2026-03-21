@@ -1,18 +1,12 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import VisualizationPanel from './components/VisualizationPanel';
 import ActionFeed from './components/ActionFeed';
 import OverloadPanel from './components/OverloadPanel';
 import { api } from './api';
-import { usePanZoom } from './hooks/usePanZoom';
-import {
-  buildMetadataIndex, applyOverloadedHighlights,
-  applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight,
-  getIdMap, invalidateIdMapCache,
-} from './utils/svgUtils';
+import { applyOverloadedHighlights, applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight } from './utils/svgUtils';
 import { processSvgAsync } from './utils/svgWorkerClient';
-import type { ActionDetail, AnalysisResult, DiagramData, ViewBox, MetadataIndex, TabId, SettingsBackup, VlOverlay, SldTab, FlowDelta, AssetDelta, SessionResult, CombinedAction } from './types';
-import { buildSessionResult } from './utils/sessionUtils';
+import type { ActionDetail, TabId } from './types';
 import { useSettings } from './hooks/useSettings';
 import { useActions } from './hooks/useActions';
 import { useAnalysis } from './hooks/useAnalysis';
@@ -33,8 +27,7 @@ function App() {
     minPst, setMinPst,
     ignoreReconnections, setIgnoreReconnections,
     linesMonitoringPath, setLinesMonitoringPath,
-    monitoredLinesCount, setMonitoredLinesCount: _setMonitoredLinesCount,
-    totalLinesCount, setTotalLinesCount: _setTotalLinesCount,
+    monitoredLinesCount, totalLinesCount,
     showMonitoringWarning, setShowMonitoringWarning,
     monitoringFactor, setMonitoringFactor,
     preExistingOverloadThreshold, setPreExistingOverloadThreshold,
@@ -42,10 +35,9 @@ function App() {
     actionDictFileName, actionDictStats,
     isSettingsOpen, setIsSettingsOpen,
     settingsTab, setSettingsTab,
-    settingsBackup, setSettingsBackup,
     pickSettingsPath,
     handleOpenSettings, handleCloseSettings,
-    buildConfigRequest, applyConfigResponse, createCurrentBackup,
+    buildConfigRequest, applyConfigResponse, createCurrentBackup, setSettingsBackup
   } = settings;
 
   const [branches, setBranches] = useState<string[]>([]);
@@ -57,117 +49,141 @@ function App() {
   // Confirmation dialog state for contingency change / load study
   const [confirmDialog, setConfirmDialog] = useState<{ type: 'contingency' | 'loadStudy'; pendingBranch?: string } | null>(null);
 
-  // Nominal voltage filter state
-  const [nominalVoltageMap, setNominalVoltageMap] = useState<Record<string, number>>({});
-  const [uniqueVoltages, setUniqueVoltages] = useState<number[]>([]);
-  const [voltageRange, setVoltageRange] = useState<[number, number]>([0, 400]);
+  // ===== Hook integrations =====
+  const actionsHook = useActions();
+  const {
+    selectedActionIds, manuallyAddedIds, rejectedActionIds, suggestedByRecommenderIds
+  } = actionsHook;
 
-  // ===== Analysis State =====
-  const [result, setResult] = useState<AnalysisResult | null>(null);
-  const prevResultRef = useRef<AnalysisResult | null>(result);
-  useEffect(() => { prevResultRef.current = result; }, [result]);
-  const [pendingAnalysisResult, setPendingAnalysisResult] = useState<AnalysisResult | null>(null);
-  const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
-  const [manuallyAddedIds, setManuallyAddedIds] = useState<Set<string>>(new Set());
-  const [rejectedActionIds, setRejectedActionIds] = useState<Set<string>>(new Set());
-  // Tracks every action ID ever returned by the recommender for the current contingency.
-  // Kept separate from manuallyAddedIds so an action can be both is_suggested AND
-  // is_manually_simulated when the user simulated it before the recommender returned it.
-  const [suggestedByRecommenderIds, setSuggestedByRecommenderIds] = useState<Set<string>>(new Set());
-  const [analysisLoading, setAnalysisLoading] = useState(false);
-  const [infoMessage, setInfoMessage] = useState('');
+  const analysis = useAnalysis();
+  const {
+    result, setResult, pendingAnalysisResult, analysisLoading, 
+    infoMessage, selectedOverloads, monitorDeselected
+  } = analysis;
 
-  useEffect(() => {
-    if (infoMessage) {
-      const timer = setTimeout(() => {
-        setInfoMessage('');
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [infoMessage]);
+  const diagrams = useDiagrams(branches, voltageLevels);
+  const {
+    activeTab, setActiveTab, nDiagram, n1Diagram, n1Loading,
+    selectedActionId, actionDiagram, actionDiagramLoading, actionViewMode,
+    inspectQuery, setInspectQuery, uniqueVoltages, voltageRange, setVoltageRange,
+    vlOverlay, handleViewModeChange, handleManualZoomIn, handleManualZoomOut,
+    handleManualReset, handleVlDoubleClick, handleOverlaySldTabChange, handleOverlayClose,
+    zoomToElement, inspectableItems,
+    nSvgContainerRef, n1SvgContainerRef, actionSvgContainerRef
+  } = diagrams;
 
-  // ===== Analysis Flow State =====
-  const [selectedOverloads, setSelectedOverloads] = useState<Set<string>>(new Set());
-  const [monitorDeselected, setMonitorDeselected] = useState(false);
+  const session = useSession();
+  const {
+    showReloadModal, setShowReloadModal, sessionList, sessionListLoading, sessionRestoring
+  } = session;
 
-  // ===== Visualization State =====
-  const [activeTab, setActiveTab] = useState<TabId>('n');
-  const activeTabRef = useRef<TabId>(activeTab);
-  useLayoutEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
-  const prevTabRef = useRef<TabId>(activeTab);
+  // ===== Cross-Hook Wiring wrappers =====
+  const wrappedActionSelect = (actionId: string | null) =>
+    diagrams.handleActionSelect(actionId, result, selectedBranch, voltageLevels.length, setResult, setError);
 
-  const [nDiagram, setNDiagram] = useState<DiagramData | null>(null);
-  const [n1Diagram, setN1Diagram] = useState<DiagramData | null>(null);
-  const [n1Loading, setN1Loading] = useState(false);
+  const wrappedActionFavorite = (actionId: string) =>
+    actionsHook.handleActionFavorite(actionId, setResult);
 
-  // Action variant diagram state
-  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
-  const [actionDiagram, setActionDiagram] = useState<DiagramData | null>(null);
-  const [actionDiagramLoading, setActionDiagramLoading] = useState(false);
+  const wrappedManualActionAdded = (actionId: string, detail: ActionDetail, linesOverloaded: string[]) =>
+    actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedActionSelect);
 
-  // Delta visualization mode
-  const [actionViewMode, setActionViewMode] = useState<'network' | 'delta'>('network');
+  // Clear all contingency-related analysis state (preserves network/config)
+  const clearContingencyState = useCallback(() => {
+    analysis.setResult(null);
+    analysis.setPendingAnalysisResult(null);
+    analysis.setSelectedOverloads(new Set());
+    analysis.setMonitorDeselected(false);
+    actionsHook.clearActionState();
+    diagrams.setSelectedActionId(null);
+    diagrams.setActionDiagram(null);
+    diagrams.setN1Diagram(null);
+    diagrams.setActiveTab('n');
+    diagrams.setVlOverlay(null);
+    setError('');
+    analysis.setInfoMessage('');
+    diagrams.setInspectQuery('');
+    diagrams.lastZoomState.current = { query: '', branch: '' };
+  }, [analysis, actionsHook, diagrams, setError]);
 
-  const [originalViewBox, setOriginalViewBox] = useState<ViewBox | null>(null);
-  const [inspectQuery, setInspectQuery] = useState('');
+  const wrappedRunAnalysis = () =>
+    analysis.handleRunAnalysis(selectedBranch, clearContingencyState, actionsHook.setSuggestedByRecommenderIds);
 
-  // Independent Refs for N, N-1, and Action Variant
-  const nSvgContainerRef = useRef<HTMLDivElement>(null);
-  const n1SvgContainerRef = useRef<HTMLDivElement>(null);
-  const actionSvgContainerRef = useRef<HTMLDivElement>(null);
+  const wrappedDisplayPrioritized = () =>
+    analysis.handleDisplayPrioritizedActions(selectedActionIds);
 
-  // Native Pan/Zoom Instances
-  const nPZ = usePanZoom(nSvgContainerRef, nDiagram?.originalViewBox, activeTab === 'n');
-  const n1PZ = usePanZoom(n1SvgContainerRef, n1Diagram?.originalViewBox, activeTab === 'n-1');
-  const actionPZ = usePanZoom(actionSvgContainerRef, actionDiagram?.originalViewBox, activeTab === 'action');
+  const wrappedAssetClick = (actionId: string, assetName: string, tab: 'action' | 'n' | 'n-1' = 'action') =>
+    diagrams.handleAssetClick(actionId, assetName, tab, diagrams.selectedActionId, wrappedActionSelect);
 
-  // Zoom state tracking
-  const lastZoomState = useRef({ query: '', branch: '' });
-  // Captured viewBox to re-apply after the action diagram loads
-  const actionSyncSourceRef = useRef<ViewBox | null>(null);
+  const wrappedSaveResults = () => {
+    session.handleSaveResults({
+      networkPath, actionPath, layoutPath, outputFolderPath,
+      minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst,
+      nPrioritizedActions, linesMonitoringPath, monitoringFactor,
+      preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
+      selectedBranch, selectedOverloads, monitorDeselected,
+      nOverloads: nDiagram?.lines_overloaded ?? [],
+      n1Overloads: n1Diagram?.lines_overloaded ?? [],
+      result, selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds,
+      setError, setInfoMessage: analysis.setInfoMessage
+    });
+  };
 
-  const fetchBaseDiagram = useCallback(async (vlCount: number) => {
-    try {
-      const res = await api.getNetworkDiagram();
-      const { svg, viewBox } = await processSvgAsync(res.svg, vlCount || 0);
-      if (viewBox) setOriginalViewBox(viewBox);
-      setNDiagram({ ...res, svg, originalViewBox: viewBox });
-    } catch (err) {
-      console.error('Failed to fetch diagram:', err);
-    }
-  }, []);
+  const wrappedOpenReloadModal = () => session.handleOpenReloadModal(outputFolderPath, setError);
 
-  // handleOpenSettings and handleCloseSettings come from useSettings hook
+  const wrappedRestoreSession = (sessionName: string) => {
+    session.handleRestoreSession(sessionName, {
+       outputFolderPath,
+       setNetworkPath, setActionPath, setLayoutPath,
+       setMinLineReconnections, setMinCloseCoupling, setMinOpenCoupling, setMinLineDisconnections, setMinPst,
+       setNPrioritizedActions, setLinesMonitoringPath, setMonitoringFactor, setPreExistingOverloadThreshold,
+       setIgnoreReconnections, setPypowsyblFastMode,
+       setMonitorDeselected: analysis.setMonitorDeselected,
+       setSelectedOverloads: analysis.setSelectedOverloads,
+       setResult,
+       setSelectedActionIds: actionsHook.setSelectedActionIds,
+       setRejectedActionIds: actionsHook.setRejectedActionIds,
+       setManuallyAddedIds: actionsHook.setManuallyAddedIds,
+       setSuggestedByRecommenderIds: actionsHook.setSuggestedByRecommenderIds,
+       setSelectedBranch,
+       restoringSessionRef: diagrams.restoringSessionRef,
+       committedBranchRef: diagrams.committedBranchRef,
+       setError, setInfoMessage: analysis.setInfoMessage,
+       applyConfigResponse, setBranches, setVoltageLevels, setNominalVoltageMap: diagrams.setNominalVoltageMap,
+       setUniqueVoltages: diagrams.setUniqueVoltages, fetchBaseDiagram: diagrams.fetchBaseDiagram,
+       setVoltageRange: diagrams.setVoltageRange
+    });
+  };
+
+  // Check if there is any analysis state that would be lost on contingency change
+  const hasAnalysisState = useCallback(() => {
+    return !!(result || pendingAnalysisResult || selectedActionId || actionDiagram || manuallyAddedIds.size > 0 || selectedActionIds.size > 0 || rejectedActionIds.size > 0);
+  }, [result, pendingAnalysisResult, selectedActionId, actionDiagram, manuallyAddedIds, selectedActionIds, rejectedActionIds]);
+
 
   const handleApplySettings = useCallback(async () => {
     try {
-      // ── Clear ALL state for a full reset (same as handleLoadConfig) ──
       setError('');
-      setInfoMessage('');
-      setNDiagram(null);
-      setN1Diagram(null);
-      setActionDiagram(null);
-      setOriginalViewBox(null);
+      analysis.setInfoMessage('');
+      diagrams.setNDiagram(null);
+      diagrams.setN1Diagram(null);
+      diagrams.setActionDiagram(null);
+      diagrams.setOriginalViewBox(null);
       setResult(null);
-      setPendingAnalysisResult(null);
-      setSelectedActionId(null);
-      setSelectedActionIds(new Set());
-      setManuallyAddedIds(new Set());
-      setRejectedActionIds(new Set());
-      setSuggestedByRecommenderIds(new Set());
-      setAnalysisLoading(false);
-      setSelectedOverloads(new Set());
-      setMonitorDeselected(false);
-      setActiveTab('n');
-      setActionViewMode('network');
-      setVlOverlay(null);
-      setN1Loading(false);
-      setActionDiagramLoading(false);
+      analysis.setPendingAnalysisResult(null);
+      diagrams.setSelectedActionId(null);
+      actionsHook.clearActionState();
+      analysis.setSelectedOverloads(new Set());
+      analysis.setMonitorDeselected(false);
+      diagrams.setActiveTab('n');
+      diagrams.setActionViewMode('network');
+      diagrams.setVlOverlay(null);
+      diagrams.setN1Loading(false);
+      diagrams.setActionDiagramLoading(false);
       setSelectedBranch('');
-      committedBranchRef.current = '';
-      setInspectQuery('');
-      lastZoomState.current = { query: '', branch: '' };
-      actionSyncSourceRef.current = null;
+      diagrams.committedBranchRef.current = '';
+      diagrams.setInspectQuery('');
+      diagrams.lastZoomState.current = { query: '', branch: '' };
+      diagrams.actionSyncSourceRef.current = null;
       setShowMonitoringWarning(false);
 
       if (!networkPath || !actionPath) {
@@ -179,7 +195,6 @@ function App() {
       const configRes = await api.updateConfig(buildConfigRequest());
       applyConfigResponse(configRes as Record<string, unknown>);
 
-      // Fetch study-related data (branches, nominal voltages etc.)
       const [branchesList, vlRes, nomVRes] = await Promise.all([
         api.getBranches(),
         api.getVoltageLevels(),
@@ -190,13 +205,13 @@ function App() {
       setVoltageLevels(vlRes);
       setSelectedBranch('');
 
-      setNominalVoltageMap(nomVRes.mapping);
-      setUniqueVoltages(nomVRes.unique_kv);
+      diagrams.setNominalVoltageMap(nomVRes.mapping);
+      diagrams.setUniqueVoltages(nomVRes.unique_kv);
       if (nomVRes.unique_kv.length > 0) {
-        setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
+        diagrams.setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
       }
 
-      fetchBaseDiagram(vlRes.length);
+      diagrams.fetchBaseDiagram(vlRes.length);
 
       setSettingsBackup(createCurrentBackup());
       setIsSettingsOpen(false);
@@ -204,80 +219,33 @@ function App() {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
       setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
     }
-  }, [networkPath, actionPath, buildConfigRequest, applyConfigResponse, createCurrentBackup, fetchBaseDiagram]);
+  }, [networkPath, actionPath, buildConfigRequest, applyConfigResponse, createCurrentBackup, diagrams, setResult, analysis, actionsHook, setError, setShowMonitoringWarning, setSettingsBackup, setIsSettingsOpen]);
 
-  // localStorage load/persist is handled by useSettings hook
 
-  // ===== Contingency Change Confirmation Helpers =====
-  // Check if there is any analysis state that would be lost on contingency change
-  const hasAnalysisState = useCallback(() => {
-    return !!(result || pendingAnalysisResult || selectedActionId || actionDiagram || manuallyAddedIds.size > 0 || selectedActionIds.size > 0 || rejectedActionIds.size > 0);
-  }, [result, pendingAnalysisResult, selectedActionId, actionDiagram, manuallyAddedIds, selectedActionIds, rejectedActionIds]);
-
-  // Clear all contingency-related analysis state (preserves network/config)
-  const clearContingencyState = useCallback(() => {
-    setResult(null);
-    setPendingAnalysisResult(null);
-    setSelectedOverloads(new Set());
-    setMonitorDeselected(false);
-    setSelectedActionId(null);
-    setSelectedActionIds(new Set());
-    setManuallyAddedIds(new Set());
-    setRejectedActionIds(new Set());
-    setSuggestedByRecommenderIds(new Set());
-    setActionDiagram(null);
-    setN1Diagram(null);
-    setActiveTab('n');
-    setVlOverlay(null);
-    setError('');
-    setInfoMessage('');
-    setInspectQuery('');
-    lastZoomState.current = { query: '', branch: '' };
-  }, []);
-
-  // Ref to track the branch for which N-1 was last fetched (the "committed" branch)
-  const committedBranchRef = useRef('');
-  // Set to true during session restore to prevent the contingency-change confirmation dialog
-  const restoringSessionRef = useRef(false);
-
-  // ===== Config Loading =====
   const handleLoadConfig = useCallback(async () => {
     setConfigLoading(true);
-    // ── Clear ALL state for a full reset ──
-    // Errors & messages
     setError('');
-    setInfoMessage('');
-    // Diagrams
-    setNDiagram(null);
-    setN1Diagram(null);
-    setActionDiagram(null);
-    setOriginalViewBox(null);
-    // Analysis
+    analysis.setInfoMessage('');
+    diagrams.setNDiagram(null);
+    diagrams.setN1Diagram(null);
+    diagrams.setActionDiagram(null);
+    diagrams.setOriginalViewBox(null);
     setResult(null);
-    setPendingAnalysisResult(null);
-    setSelectedActionId(null);
-    setSelectedActionIds(new Set());
-    setManuallyAddedIds(new Set());
-    setRejectedActionIds(new Set());
-    setSuggestedByRecommenderIds(new Set());
-    setAnalysisLoading(false);
-    // Analysis flow
-    setSelectedOverloads(new Set());
-    setMonitorDeselected(false);
-    // Visualization
-    setActiveTab('n');
-    setActionViewMode('network');
-    setVlOverlay(null);
-    setN1Loading(false);
-    setActionDiagramLoading(false);
-    // Branch / contingency
+    analysis.setPendingAnalysisResult(null);
+    diagrams.setSelectedActionId(null);
+    actionsHook.clearActionState();
+    analysis.setSelectedOverloads(new Set());
+    analysis.setMonitorDeselected(false);
+    diagrams.setActiveTab('n');
+    diagrams.setActionViewMode('network');
+    diagrams.setVlOverlay(null);
+    diagrams.setN1Loading(false);
+    diagrams.setActionDiagramLoading(false);
     setSelectedBranch('');
-    committedBranchRef.current = '';
-    setInspectQuery('');
-    // Refs
-    lastZoomState.current = { query: '', branch: '' };
-    actionSyncSourceRef.current = null;
-    // Warnings
+    diagrams.committedBranchRef.current = '';
+    diagrams.setInspectQuery('');
+    diagrams.lastZoomState.current = { query: '', branch: '' };
+    diagrams.actionSyncSourceRef.current = null;
     setShowMonitoringWarning(false);
 
     try {
@@ -294,24 +262,21 @@ function App() {
       setVoltageLevels(vlRes);
       setSelectedBranch('');
 
-      // Set up nominal voltage filter
-      setNominalVoltageMap(nomVRes.mapping);
-      setUniqueVoltages(nomVRes.unique_kv);
+      diagrams.setNominalVoltageMap(nomVRes.mapping);
+      diagrams.setUniqueVoltages(nomVRes.unique_kv);
       if (nomVRes.unique_kv.length > 0) {
-        setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
+        diagrams.setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
       }
 
-      // Fetch base diagram
-      fetchBaseDiagram(vlRes.length);
+      diagrams.fetchBaseDiagram(vlRes.length);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
       setError('Failed to load config: ' + (e.response?.data?.detail || e.message));
     } finally {
       setConfigLoading(false);
     }
-  }, [buildConfigRequest, applyConfigResponse, fetchBaseDiagram]);
+  }, [buildConfigRequest, applyConfigResponse, diagrams, setResult, analysis, actionsHook, setError, setShowMonitoringWarning]);
 
-  // Handle Load Study with confirmation when analysis state exists
   const handleLoadStudyClick = useCallback(() => {
     if (hasAnalysisState()) {
       setConfirmDialog({ type: 'loadStudy' });
@@ -320,7 +285,6 @@ function App() {
     }
   }, [hasAnalysisState, handleLoadConfig]);
 
-  // Confirm the pending action from the dialog
   const handleConfirmDialog = useCallback(() => {
     if (!confirmDialog) return;
     if (confirmDialog.type === 'contingency') {
@@ -333,842 +297,114 @@ function App() {
   }, [confirmDialog, clearContingencyState, handleLoadConfig]);
 
 
-  // ===== N-1 Diagram Fetching =====
-  // Uses committedBranchRef to detect actual branch changes vs. re-selections.
-  // When the user picks a new valid branch while analysis state exists, show a
-  // confirmation dialog instead of fetching immediately.
+  // ===== App-Level Effects =====
+
+  useEffect(() => {
+    diagrams.selectedBranchForSld.current = selectedBranch;
+  }, [selectedBranch, diagrams.selectedBranchForSld]);
+
+  useEffect(() => {
+    if (result?.pdf_url && analysisLoading) {
+      diagrams.setActiveTab('overflow');
+    }
+  }, [result?.pdf_url, analysisLoading, diagrams]);
+
+
   useEffect(() => {
     if (!selectedBranch) {
-      setN1Diagram(null);
+      diagrams.setN1Diagram(null);
       if (!hasAnalysisState()) {
-        committedBranchRef.current = '';
+        diagrams.committedBranchRef.current = '';
       }
       return;
     }
 
-    if (branches.length > 0 && !branches.includes(selectedBranch)) {
-      return;
-    }
+    if (branches.length > 0 && !branches.includes(selectedBranch)) return;
 
-    // If this is already the branch we have committed, do nothing
-    if (selectedBranch === committedBranchRef.current && (n1Diagram || hasAnalysisState() || n1Loading || analysisLoading)) return;
+    if (selectedBranch === diagrams.committedBranchRef.current && (n1Diagram || hasAnalysisState() || n1Loading || analysisLoading)) return;
 
-    // Valid branch selected — check if we need confirmation before switching
-    // Skip dialog during session restore (restoringSessionRef is cleared after the branch effect runs)
-    if (selectedBranch !== committedBranchRef.current && hasAnalysisState() && !restoringSessionRef.current) {
-      // Show confirmation dialog and revert the input to the committed branch
+    if (selectedBranch !== diagrams.committedBranchRef.current && hasAnalysisState() && !diagrams.restoringSessionRef.current) {
       setConfirmDialog({ type: 'contingency', pendingBranch: selectedBranch });
-      setSelectedBranch(committedBranchRef.current);
+      setSelectedBranch(diagrams.committedBranchRef.current);
       return;
     }
-    restoringSessionRef.current = false;
+    diagrams.restoringSessionRef.current = false;
 
-    committedBranchRef.current = selectedBranch;
+    diagrams.committedBranchRef.current = selectedBranch;
     clearContingencyState();
 
     const fetchN1 = async () => {
-      setN1Loading(true);
-      setActiveTab('n-1');
+      diagrams.setN1Loading(true);
+      diagrams.setActiveTab('n-1');
       try {
         const res = await api.getN1Diagram(selectedBranch);
         const { svg, viewBox } = await processSvgAsync(res.svg, voltageLevels.length);
-        setN1Diagram({ ...res, svg, originalViewBox: viewBox });
+        diagrams.setN1Diagram({ ...res, svg, originalViewBox: viewBox });
       } catch (err) {
         console.error('Failed to fetch N-1 diagram', err);
         setError(`Failed to fetch N-1 diagram for ${selectedBranch}`);
       } finally {
-        setN1Loading(false);
+        diagrams.setN1Loading(false);
       }
     };
     fetchN1();
-  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState, analysisLoading, n1Diagram, n1Loading]);
+  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState, analysisLoading, n1Diagram, n1Loading, diagrams, setError]);
 
-  // ===== Analysis =====
-  // Sync available overloads from N-1 diagram for pre-selection
   useEffect(() => {
     if (n1Diagram?.lines_overloaded) {
-      setSelectedOverloads(new Set(n1Diagram.lines_overloaded));
+      analysis.setSelectedOverloads(new Set(n1Diagram.lines_overloaded));
     } else {
-      setSelectedOverloads(new Set());
+      analysis.setSelectedOverloads(new Set());
     }
-  }, [n1Diagram, analysisLoading, n1Loading]);
+  }, [n1Diagram, analysisLoading, n1Loading, analysis]);
 
-  const handleRunAnalysis = useCallback(async () => {
-    if (!selectedBranch) return;
-    clearContingencyState();
-    setAnalysisLoading(true);
-    setError('');
-    setInfoMessage('');
 
-    try {
-      // Step 1: Detection
-      const res1 = await api.runAnalysisStep1(selectedBranch);
-      if (!res1.can_proceed) {
-        setError(res1.message || 'Analysis cannot proceed.');
-        if (res1.message) setInfoMessage(res1.message);
-        setAnalysisLoading(false);
-        return;
-      }
+  useEffect(() => {
+    if (activeTab === 'overflow') return;
 
-      const detected = res1.lines_overloaded || [];
+    const queryChanged = inspectQuery !== diagrams.lastZoomState.current.query;
+    const branchChanged = !inspectQuery && selectedBranch !== diagrams.lastZoomState.current.branch;
 
-      // Resolve: selected overloads focus the analysis. If monitorDeselected, also pass unselected ones.
-      let primaryOverloads: string[] = [];
-      if (detected.length > 0) {
-        if (selectedOverloads.size > 0) {
-          const stillRelevant = detected.filter(name => selectedOverloads.has(name));
-          if (stillRelevant.length > 0) {
-            primaryOverloads = stillRelevant;
-          } else {
-            setSelectedOverloads(new Set(detected));
-            primaryOverloads = detected;
-          }
-        } else {
-          setSelectedOverloads(new Set(detected));
-          primaryOverloads = detected;
-        }
-      }
+    if (!queryChanged && !branchChanged) return;
 
-      // The backend knows which ones to monitor via the monitor_deselected flag.
-      // selected_overloads MUST only contain the ones we actually want to resolve.
-      const toResolve = primaryOverloads;
+    const targetId = inspectQuery || selectedBranch;
 
-      if (detected.length === 0) {
-        setInfoMessage(res1.message || "No overloads detected.");
-        setAnalysisLoading(false);
-        return;
-      }
-
-      // Step 2: Resolution
-      const response2 = await fetch('http://localhost:8000/api/run-analysis-step2', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          selected_overloads: toResolve,
-          all_overloads: detected,
-          monitor_deselected: monitorDeselected,
-        }),
-      });
-      if (!response2.ok) throw new Error('Analysis Resolution failed');
-
-      const reader = response2.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop()!;
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const event = JSON.parse(line);
-            if (event.type === 'pdf') {
-              setResult((p: AnalysisResult | null) => ({
-                ...(p || {}),
-                pdf_url: event.pdf_url,
-                pdf_path: event.pdf_path
-              } as AnalysisResult));
-              setActiveTab('overflow');
-            } else if (event.type === 'result') {
-              // Mark all recommended actions as NOT manual
-              const actionsWithFlags = { ...event.actions };
-              for (const id in actionsWithFlags) {
-                const existing = (prevResultRef.current?.actions?.[id] || {}) as Partial<ActionDetail>;
-                actionsWithFlags[id] = {
-                  ...actionsWithFlags[id],
-                  is_manual: false,
-                  is_islanded: existing.is_islanded ?? actionsWithFlags[id].is_islanded,
-                  estimated_max_rho: existing.estimated_max_rho ?? actionsWithFlags[id].max_rho,
-                  estimated_max_rho_line: existing.estimated_max_rho_line ?? actionsWithFlags[id].max_rho_line,
-                };
-              }
-              // Record all IDs returned by the recommender — accumulate across re-runs
-              // so that re-analysis for the same contingency still marks prior suggestions.
-              setSuggestedByRecommenderIds(prev => new Set([...prev, ...Object.keys(actionsWithFlags)]));
-              setPendingAnalysisResult({ ...event, actions: actionsWithFlags });
-              if (event.message) setInfoMessage(event.message);
-            } else if (event.type === 'error') {
-              setError('Analysis failed: ' + event.message);
-            }
-          } catch {
-            // Silent catch for incomplete rows
-          }
-        }
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'An error occurred during analysis.';
-      setError(message);
-    } finally {
-      setAnalysisLoading(false);
-    }
-  }, [selectedBranch, selectedOverloads, monitorDeselected, clearContingencyState]);
-
-  const handleDisplayPrioritizedActions = useCallback(() => {
-    if (!pendingAnalysisResult) return;
-    setResult(prev => {
-      // Preserve manually added / selected actions
-      const manualActionsData: Record<string, ActionDetail> = {};
-      if (prev?.actions) {
-        for (const [id, data] of Object.entries(prev.actions)) {
-          if (selectedActionIds.has(id)) {
-            manualActionsData[id] = data;
-          }
-        }
-      }
-
-      // Merge new actions with existing ones to preserve estimation data if it was already updated
-      const mergedActions = { ...pendingAnalysisResult.actions };
-      for (const [id, data] of Object.entries(mergedActions)) {
-        const existing = (prev?.actions?.[id] || {}) as Partial<ActionDetail>;
-        mergedActions[id] = {
-          ...data,
-          is_islanded: existing.is_islanded ?? data.is_islanded,
-          estimated_max_rho: existing.estimated_max_rho ?? data.estimated_max_rho,
-          estimated_max_rho_line: existing.estimated_max_rho_line ?? data.estimated_max_rho_line,
-        };
-      }
-
-      return {
-        ...prev,                   // keep existing fields (pdf_url, etc.)
-        ...pendingAnalysisResult,  // overlay with analysis result
-        actions: { ...mergedActions, ...manualActionsData },
-      };
-    });
-    setPendingAnalysisResult(null);
-  }, [pendingAnalysisResult, selectedActionIds]);
-
-  const handleToggleOverload = useCallback((overload: string) => {
-    setSelectedOverloads((prev: Set<string>) => {
-      const next = new Set(prev);
-      if (next.has(overload)) next.delete(overload);
-      else next.add(overload);
-      return next;
-    });
-  }, []);
-
-  // ===== Action Selection =====
-  const handleActionSelect = useCallback(async (actionId: string | null) => {
-    if (actionId === selectedActionId) {
-      // Deselect — return to N-1 tab
-      setSelectedActionId(null);
-      setActionDiagram(null);
-      setActiveTab('n-1');
+    if (!targetId && queryChanged) {
+      diagrams.lastZoomState.current = { query: inspectQuery, branch: selectedBranch };
+      handleManualReset();
       return;
     }
 
-    // Capture current viewBox for sync after diagram loads
-    actionSyncSourceRef.current =
-      (activeTabRef.current === 'action' ? actionPZ.viewBox : null)
-      || n1PZ.viewBox || nPZ.viewBox;
+    if (!targetId) return;
 
-    setSelectedActionId(actionId);
-    setActionDiagram(null);
-    if (actionId === null) return;
+    if (branchChanged && activeTab === 'n') return;
 
-    setActionDiagramLoading(true);
-    setActiveTab('action');
-    try {
-      const res = await api.getActionVariantDiagram(actionId);
-      const { svg, viewBox } = await processSvgAsync(res.svg, voltageLevels.length);
-      setActionDiagram({ ...res, svg, originalViewBox: viewBox });
-    } catch {
-      // Diagram not in backend memory (e.g. after session restore) — simulate first
-      if (selectedBranch) {
-        try {
-          // Pass action_topology so the backend can reconstruct actions
-          // not in the dictionary (e.g. node_merging actions from analysis)
-          // For combined actions (a+b), pass per-component topologies
-          let actionContent: Record<string, unknown> | null = null;
-          if (actionId.includes('+')) {
-            const parts = actionId.split('+');
-            const perAction: Record<string, unknown> = {};
-            for (const part of parts) {
-              const partDetail = result?.actions?.[part];
-              if (partDetail?.action_topology) perAction[part] = partDetail.action_topology;
-            }
-            if (Object.keys(perAction).length > 0) actionContent = perAction;
-          } else {
-            const detail = result?.actions?.[actionId];
-            actionContent = (detail?.action_topology as unknown as Record<string, unknown>) ?? null;
-          }
-          const linesOvl = result?.lines_overloaded?.length ? result.lines_overloaded : null;
-          const simRes = await api.simulateManualAction(actionId, selectedBranch, actionContent, linesOvl);
-          // Update the action detail with fresh simulation data,
-          // but preserve existing rho values from the original analysis
-          // (the simulation may use different monitored line indices)
-          setResult(prev => {
-            if (!prev) return prev;
-            const existing = prev.actions[actionId] || {} as Partial<ActionDetail>;
-            const hasRho = (existing.rho_before?.length ?? 0) > 0;
-            return {
-              ...prev,
-              actions: {
-                ...prev.actions,
-                [actionId]: {
-                  ...existing,
-                  description_unitaire: existing.description_unitaire || simRes.description_unitaire,
-                  rho_before: hasRho ? existing.rho_before : simRes.rho_before,
-                  rho_after: hasRho ? existing.rho_after : simRes.rho_after,
-                  max_rho: hasRho ? existing.max_rho : simRes.max_rho,
-                  max_rho_line: hasRho ? existing.max_rho_line : simRes.max_rho_line,
-                  is_rho_reduction: hasRho ? existing.is_rho_reduction : simRes.is_rho_reduction,
-                  non_convergence: simRes.non_convergence,
-                  is_islanded: simRes.is_islanded,
-                  n_components: simRes.n_components,
-                  disconnected_mw: simRes.disconnected_mw,
-                } as ActionDetail,
-              },
-            };
-          });
-          // Now try fetching the diagram again
-          const res = await api.getActionVariantDiagram(actionId);
-          const { svg, viewBox } = await processSvgAsync(res.svg, voltageLevels.length);
-          setActionDiagram({ ...res, svg, originalViewBox: viewBox });
-        } catch (simErr) {
-          console.error('Failed to simulate and fetch diagram for', actionId, simErr);
-          setError('Failed to load action diagram for ' + actionId);
-        }
-      } else {
-        setError('Failed to fetch action variant diagram for ' + actionId);
-      }
-    } finally {
-      setActionDiagramLoading(false);
-    }
-  }, [selectedActionId, selectedBranch, actionPZ.viewBox, n1PZ.viewBox, nPZ.viewBox, voltageLevels.length, result?.actions, result?.lines_overloaded]);
+    const container = activeTab === 'action' ? diagrams.actionSvgContainerRef.current
+      : activeTab === 'n' ? diagrams.nSvgContainerRef.current : diagrams.n1SvgContainerRef.current;
+    if (!container || !container.querySelector('svg')) return;
 
-  const handleActionFavorite = useCallback((actionId: string) => {
-    setSelectedActionIds(prev => {
-      const next = new Set(prev);
-      next.add(actionId);
-      return next;
-    });
-    setResult(prev => {
-      if (!prev || !prev.actions[actionId]) return prev;
-      return {
-        ...prev,
-        actions: {
-          ...prev.actions,
-          [actionId]: { ...prev.actions[actionId], is_manual: true }
-        }
-      };
-    });
-    setRejectedActionIds(prev => {
-      const next = new Set(prev);
-      next.delete(actionId);
-      return next;
-    });
-  }, []);
+    diagrams.lastZoomState.current = { query: inspectQuery, branch: selectedBranch };
+    zoomToElement(targetId);
+  }, [activeTab, nDiagram, n1Diagram, actionDiagram, inspectQuery, selectedBranch, zoomToElement, handleManualReset, diagrams]);
 
-  const handleActionReject = useCallback((actionId: string) => {
-    setRejectedActionIds(prev => {
-      const next = new Set(prev);
-      next.add(actionId);
-      return next;
-    });
-    setSelectedActionIds(prev => {
-      const next = new Set(prev);
-      next.delete(actionId);
-      return next;
-    });
-    setManuallyAddedIds(prev => {
-      const next = new Set(prev);
-      next.delete(actionId);
-      return next;
-    });
-  }, []);
 
-  const handleManualActionAdded = useCallback((actionId: string, detail: ActionDetail, linesOverloaded: string[]) => {
-    setResult(prev => {
-      const base = prev || {
-        pdf_path: null,
-        pdf_url: null,
-        actions: {},
-        lines_overloaded: [],
-        message: '',
-        dc_fallback: false,
-      };
-      return {
-        ...base,
-        // Use the simulation's overloaded lines if no prior analysis provided them
-        lines_overloaded: base.lines_overloaded.length > 0 ? base.lines_overloaded : linesOverloaded,
-        actions: {
-          ...base.actions,
-          [actionId]: { ...detail, is_manual: true },
-        },
-      };
-    });
-
-    setSelectedActionIds(prev => new Set(prev).add(actionId));
-    setManuallyAddedIds(prev => new Set(prev).add(actionId));
-    // Auto-select the newly added action (and fetch its diagram)
-    handleActionSelect(actionId);
-  }, [handleActionSelect]);
-
-  const handleViewModeChange = useCallback((mode: 'network' | 'delta') => {
-    setActionViewMode(mode);
-  }, []);
-
-  // ===== Save Results =====
-  const handleSaveResults = useCallback(async () => {
-    const session = buildSessionResult({
-      networkPath,
-      actionPath,
-      layoutPath,
-      minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst,
-      nPrioritizedActions, linesMonitoringPath, monitoringFactor,
-      preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
-      selectedBranch, selectedOverloads, monitorDeselected,
-      nOverloads: nDiagram?.lines_overloaded ?? [],
-      n1Overloads: n1Diagram?.lines_overloaded ?? [],
-      result,
-      selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds,
-    });
-
-    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const contingencyLabel = selectedBranch ? `_${selectedBranch.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
-    const sessionName = `expertassist_session${contingencyLabel}_${ts}`;
-
-    if (outputFolderPath) {
-      // Save session folder (JSON + PDF copy) via backend
-      try {
-        const res = await api.saveSession({
-          session_name: sessionName,
-          json_content: JSON.stringify(session, null, 2),
-          pdf_path: result?.pdf_path ?? null,
-          output_folder_path: outputFolderPath,
-        });
-        const pdfMsg = res.pdf_copied ? " (including PDF)" : " (PDF not found)";
-        setInfoMessage(`SUCCESS: Session saved to: ${res.session_folder}${pdfMsg}`);
-      } catch (err: unknown) {
-        const e = err as { response?: { data?: { detail?: string } }; message?: string };
-        setError('Failed to save session: ' + (e.response?.data?.detail || e.message));
-      }
-    } else {
-      // Fallback: browser download of JSON (no output folder configured)
-      const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${sessionName}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-  }, [
-    result, selectedActionIds, manuallyAddedIds, rejectedActionIds, suggestedByRecommenderIds,
-    networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling,
-    minLineDisconnections, minPst, nPrioritizedActions, linesMonitoringPath, monitoringFactor,
-    preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
-    selectedBranch, selectedOverloads, monitorDeselected,
-    nDiagram, n1Diagram,
-  ]);
-
-  // ===== Reload Session =====
-  const [showReloadModal, setShowReloadModal] = useState(false);
-  const [sessionList, setSessionList] = useState<string[]>([]);
-  const [sessionListLoading, setSessionListLoading] = useState(false);
-  const [sessionRestoring, setSessionRestoring] = useState(false);
-
-  const handleOpenReloadModal = useCallback(async () => {
-    if (!outputFolderPath) {
-      setError('Configure an Output Folder Path in Settings before reloading a session.');
-      return;
-    }
-    setShowReloadModal(true);
-    setSessionListLoading(true);
-    try {
-      const res = await api.listSessions(outputFolderPath);
-      setSessionList(res.sessions);
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string } }; message?: string };
-      setError('Failed to list sessions: ' + (e.response?.data?.detail || e.message));
-      setShowReloadModal(false);
-    } finally {
-      setSessionListLoading(false);
-    }
-  }, [outputFolderPath]);
-
-  const handleRestoreSession = useCallback(async (sessionName: string) => {
-    if (!outputFolderPath) return;
-    setSessionRestoring(true);
-    try {
-      const session: SessionResult = await api.loadSession(outputFolderPath, sessionName);
-
-      // 1. Restore configuration paths
-      const cfg = session.configuration;
-      setNetworkPath(cfg.network_path);
-      setActionPath(cfg.action_file_path);
-      setLayoutPath(cfg.layout_path || '');
-      setMinLineReconnections(cfg.min_line_reconnections);
-      setMinCloseCoupling(cfg.min_close_coupling);
-      setMinOpenCoupling(cfg.min_open_coupling);
-      setMinLineDisconnections(cfg.min_line_disconnections);
-      setMinPst(cfg.min_pst ?? 1.0);
-      setNPrioritizedActions(cfg.n_prioritized_actions);
-      setLinesMonitoringPath(cfg.lines_monitoring_path || '');
-      setMonitoringFactor(cfg.monitoring_factor);
-      setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
-      setIgnoreReconnections(cfg.ignore_reconnections ?? false);
-      setPypowsyblFastMode(cfg.pypowsybl_fast_mode ?? true);
-
-      // 2. Send config to backend and load network
-      const configRes = await api.updateConfig({
-        network_path: cfg.network_path,
-        action_file_path: cfg.action_file_path,
-        layout_path: cfg.layout_path,
-        min_line_reconnections: cfg.min_line_reconnections,
-        min_close_coupling: cfg.min_close_coupling,
-        min_open_coupling: cfg.min_open_coupling,
-        min_line_disconnections: cfg.min_line_disconnections,
-        min_pst: cfg.min_pst ?? 1.0,
-        n_prioritized_actions: cfg.n_prioritized_actions,
-        lines_monitoring_path: cfg.lines_monitoring_path,
-        monitoring_factor: cfg.monitoring_factor,
-        pre_existing_overload_threshold: cfg.pre_existing_overload_threshold,
-        ignore_reconnections: cfg.ignore_reconnections,
-        pypowsybl_fast_mode: cfg.pypowsybl_fast_mode,
-      });
-
-      if (configRes?.total_lines_count !== undefined) {
-        setMonitoredLinesCount(configRes.monitored_lines_count);
-        setTotalLinesCount(configRes.total_lines_count);
-        if (configRes.monitored_lines_count < configRes.total_lines_count) {
-          setShowMonitoringWarning(true);
-        }
-      }
-      if (configRes?.action_dict_file_name) setActionDictFileName(configRes.action_dict_file_name);
-      if (configRes?.action_dict_stats) setActionDictStats(configRes.action_dict_stats);
-
-      // 3. Fetch study data
-      const [branchesList, vlRes, nomVRes] = await Promise.all([
-        api.getBranches(),
-        api.getVoltageLevels(),
-        api.getNominalVoltages(),
-      ]);
-      setBranches(branchesList);
-      setVoltageLevels(vlRes);
-      setNominalVoltageMap(nomVRes.mapping);
-      setUniqueVoltages(nomVRes.unique_kv);
-      if (nomVRes.unique_kv.length > 0) {
-        setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
-      }
-
-      // 4. Fetch base diagram
-      fetchBaseDiagram(vlRes.length);
-
-      // 5. Restore contingency
-      const contingency = session.contingency;
-      setMonitorDeselected(contingency.monitor_deselected);
-      setSelectedOverloads(new Set(contingency.selected_overloads));
-
-      // 6. Restore analysis result (actions without rho_after are "unloaded" — will resim on click)
-      if (session.analysis) {
-        const a = session.analysis;
-        const restoredActions: Record<string, ActionDetail> = {};
-        const restoredSelected = new Set<string>();
-        const restoredRejected = new Set<string>();
-        const restoredManual = new Set<string>();
-        const restoredSuggested = new Set<string>();
-
-        for (const [id, entry] of Object.entries(a.actions)) {
-          // Skip estimation-only combined-pair entries — they live in combined_actions,
-          // not in the action feed, and should not appear as action cards.
-          if (id.includes('+') && entry.is_estimated && !entry.status.is_manually_simulated) continue;
-
-          restoredActions[id] = {
-            description_unitaire: entry.description_unitaire,
-            rho_before: entry.rho_before,
-            rho_after: entry.rho_after,
-            max_rho: entry.max_rho,
-            max_rho_line: entry.max_rho_line,
-            is_rho_reduction: entry.is_rho_reduction,
-            is_estimated: entry.is_estimated,
-            non_convergence: entry.non_convergence,
-            action_topology: entry.action_topology,
-            estimated_max_rho: entry.estimated_max_rho,
-            estimated_max_rho_line: entry.estimated_max_rho_line,
-            is_islanded: entry.is_islanded,
-            n_components: entry.n_components,
-            disconnected_mw: entry.disconnected_mw,
-            is_manual: entry.status.is_manually_simulated,
-          };
-
-          if (entry.status.is_selected) restoredSelected.add(id);
-          if (entry.status.is_rejected) restoredRejected.add(id);
-          if (entry.status.is_manually_simulated) restoredManual.add(id);
-          if (entry.status.is_suggested) restoredSuggested.add(id);
-        }
-
-        // Restore combined_actions
-        const restoredCombinedActions: Record<string, CombinedAction> = {};
-        if (a.combined_actions) {
-          for (const [id, ca] of Object.entries(a.combined_actions)) {
-            restoredCombinedActions[id] = {
-              action1_id: ca.action1_id,
-              action2_id: ca.action2_id,
-              betas: ca.betas,
-              p_or_combined: [],
-              max_rho: ca.max_rho,
-              max_rho_line: ca.max_rho_line,
-              is_rho_reduction: ca.is_rho_reduction,
-              description: ca.description,
-              rho_after: [],
-              rho_before: [],
-              estimated_max_rho: ca.estimated_max_rho,
-              estimated_max_rho_line: ca.estimated_max_rho_line,
-              is_islanded: ca.is_islanded,
-              disconnected_mw: ca.disconnected_mw,
-            };
-          }
-        }
-
-        const restoredResult: AnalysisResult = {
-          pdf_path: session.overflow_graph?.pdf_path ?? null,
-          pdf_url: session.overflow_graph?.pdf_url ?? null,
-          actions: restoredActions,
-          action_scores: a.action_scores,
-          lines_overloaded: session.overloads.resolved_overloads,
-          combined_actions: restoredCombinedActions,
-          message: a.message,
-          dc_fallback: a.dc_fallback,
-        };
-
-        setResult(restoredResult);
-        setSelectedActionIds(restoredSelected);
-        setRejectedActionIds(restoredRejected);
-        setManuallyAddedIds(restoredManual);
-        setSuggestedByRecommenderIds(restoredSuggested);
-      } else {
-        setResult(null);
-        setSelectedActionIds(new Set());
-        setRejectedActionIds(new Set());
-        setManuallyAddedIds(new Set());
-        setSuggestedByRecommenderIds(new Set());
-      }
-
-      // 7. Set the selected branch last (triggers N-1 diagram fetch via useEffect)
-      // Set the restoring flag so the N-1 useEffect skips the contingency-change dialog
-      restoringSessionRef.current = true;
-      committedBranchRef.current = contingency.disconnected_element;
-      setSelectedBranch(contingency.disconnected_element);
-
-      setShowReloadModal(false);
-      setInfoMessage(`SUCCESS: Session "${sessionName}" restored`);
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string } }; message?: string };
-      setError('Failed to restore session: ' + (e.response?.data?.detail || e.message));
-    } finally {
-      setSessionRestoring(false);
-    }
-  }, [outputFolderPath, fetchBaseDiagram]);
-
-  // ===== SLD Overlay =====
-  const [vlOverlay, setVlOverlay] = useState<VlOverlay | null>(null);
-
-  const fetchSldVariant = useCallback(async (vlName: string, actionId: string | null, sldTab: SldTab) => {
-    setVlOverlay(prev => prev ? { ...prev, loading: true, error: null, tab: sldTab } : null);
-    try {
-      let svgData: string;
-      let metaData: string | null = null;
-      let flowDeltas: Record<string, FlowDelta> | undefined;
-      let reactiveFlowDeltas: Record<string, FlowDelta> | undefined;
-      let assetDeltas: Record<string, AssetDelta> | undefined;
-
-      if (sldTab === 'n') {
-        const res = await api.getNSld(vlName);
-        svgData = res.svg;
-        metaData = res.sld_metadata ?? null;
-      } else if (sldTab === 'n-1') {
-        const res = await api.getN1Sld(selectedBranch, vlName);
-        svgData = res.svg;
-        metaData = res.sld_metadata ?? null;
-        flowDeltas = res.flow_deltas;
-        reactiveFlowDeltas = res.reactive_flow_deltas;
-        assetDeltas = res.asset_deltas;
-      } else {
-        const res = await api.getActionVariantSld(actionId!, vlName);
-        svgData = res.svg;
-        metaData = res.sld_metadata ?? null;
-        flowDeltas = res.flow_deltas;
-        reactiveFlowDeltas = res.reactive_flow_deltas;
-        assetDeltas = res.asset_deltas;
-      }
-      setVlOverlay(prev =>
-        prev && prev.vlName === vlName && prev.tab === sldTab
-          ? {
-            ...prev, svg: svgData, sldMetadata: metaData, loading: false,
-            flow_deltas: flowDeltas, reactive_flow_deltas: reactiveFlowDeltas, asset_deltas: assetDeltas
-          }
-          : prev
-      );
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string } }; message?: string };
-      setVlOverlay(prev => prev && prev.tab === sldTab
-        ? { ...prev, loading: false, error: e.response?.data?.detail || 'Failed to load SLD' }
-        : prev
-      );
-    }
-  }, [selectedBranch]);
-
-  const handleVlDoubleClick = useCallback((actionId: string, vlName: string) => {
-    // Determine initial SLD tab based on current active main tab and Flow/Impact mode
-    let initialTab: SldTab;
-    if (activeTab === 'n') {
-      initialTab = 'n';
-    } else if (activeTab === 'n-1') {
-      initialTab = 'n-1';
-    } else if (activeTab === 'action' && actionViewMode === 'delta') {
-      // Impacts mode: show Action state (the variant being compared)
-      initialTab = 'action';
-    } else {
-      // Flows mode (action or overflow fallback): show action state
-      initialTab = 'action';
-    }
-    setVlOverlay({ vlName, actionId, svg: null, sldMetadata: null, loading: true, error: null, tab: initialTab });
-    fetchSldVariant(vlName, actionId, initialTab);
-  }, [activeTab, actionViewMode, fetchSldVariant]);
-
-  const handleOverlaySldTabChange = useCallback((sldTab: SldTab) => {
-    if (!vlOverlay) return;
-    fetchSldVariant(vlOverlay.vlName, vlOverlay.actionId, sldTab);
-  }, [vlOverlay, fetchSldVariant]);
-
-  const handleOverlayClose = useCallback(() => {
-    setVlOverlay(null);
-  }, []);
-
-  // ===== Asset Click (from action card badges / rho line names) =====
-  const handleAssetClick = useCallback((actionId: string, assetName: string, tab: 'action' | 'n' | 'n-1' = 'action') => {
-    setInspectQuery(assetName);
-    if (tab === 'n') {
-      // Pre-existing overloads live in the N (pre-contingency) view
-      setActiveTab('n');
-    } else if (tab === 'n-1') {
-      // Rho-before lines live in the N-1 (post-contingency) view
-      setActiveTab('n-1');
-    } else if (actionId !== selectedActionId) {
-      // Select the action; zoom fires once its diagram loads
-      handleActionSelect(actionId);
-    } else {
-      setActiveTab('action');
-    }
-  }, [selectedActionId, handleActionSelect]);
-
-  // ===== Zoom Controls =====
-  const handleManualZoomIn = useCallback(() => {
-    const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
-    const vb = currentPZ?.viewBox;
-    if (currentPZ && vb) {
-      const scale = 0.8;
-      currentPZ.setViewBox({
-        x: vb.x + vb.w * (1 - scale) / 2,
-        y: vb.y + vb.h * (1 - scale) / 2,
-        w: vb.w * scale,
-        h: vb.h * scale,
-      });
-    }
-  }, [activeTab, actionPZ, nPZ, n1PZ]);
-
-  const handleManualZoomOut = useCallback(() => {
-    const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
-    const vb = currentPZ?.viewBox;
-    if (currentPZ && vb) {
-      const scale = 1.25;
-      currentPZ.setViewBox({
-        x: vb.x + vb.w * (1 - scale) / 2,
-        y: vb.y + vb.h * (1 - scale) / 2,
-        w: vb.w * scale,
-        h: vb.h * scale,
-      });
-    }
-  }, [activeTab, actionPZ, nPZ, n1PZ]);
-
-  // ===== Reset View =====
-  const handleManualReset = useCallback(() => {
-    setInspectQuery('');
-
-    const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
-    const currentDiagram = activeTab === 'action' ? actionDiagram : activeTab === 'n' ? nDiagram : n1Diagram;
-    const viewBox = currentDiagram?.originalViewBox || originalViewBox;
-
-    if (currentPZ && viewBox) {
-      currentPZ.setViewBox(viewBox);
-      lastZoomState.current = { query: '', branch: '' };
-    }
-
-    // Clear highlights
-    const container = activeTab === 'action' ? actionSvgContainerRef.current
-      : activeTab === 'n' ? nSvgContainerRef.current : n1SvgContainerRef.current;
-    if (container) {
-      container.querySelectorAll('.nad-highlight').forEach(el => el.classList.remove('nad-highlight'));
-    }
-  }, [activeTab, actionPZ, nPZ, n1PZ, actionDiagram, nDiagram, n1Diagram, originalViewBox]);
-
-  // ===== Tab Synchronization =====
-  // useLayoutEffect so the target tab's viewBox is correct BEFORE the browser paints.
-  useLayoutEffect(() => {
-    const prevTab = prevTabRef.current;
-    prevTabRef.current = activeTab;
-
-    // Don't sync when coming from / going to overflow
-    if (prevTab === 'overflow' || activeTab === 'overflow') return;
-
-    const sourceVB = prevTab === 'n' ? nPZ.viewBox
-      : prevTab === 'n-1' ? n1PZ.viewBox
-        : prevTab === 'action' ? actionPZ.viewBox
-          : null;
-    if (!sourceVB) return;
-
-    if (activeTab === 'n') nPZ.setViewBox(sourceVB);
-    else if (activeTab === 'n-1') n1PZ.setViewBox(sourceVB);
-    else if (activeTab === 'action') actionPZ.setViewBox(sourceVB);
-  }, [activeTab, nPZ, n1PZ, actionPZ]);
-
-  // Re-sync after action diagram loads
-  useEffect(() => {
-    if (actionDiagram && activeTab === 'action' && actionSyncSourceRef.current) {
-      actionPZ.setViewBox(actionSyncSourceRef.current);
-      actionSyncSourceRef.current = null;
-    }
-  }, [actionDiagram, activeTab, actionPZ]);
-
-  // ===== Invalidate DOM id-map cache when SVG content changes =====
-  useEffect(() => {
-    if (nSvgContainerRef.current) invalidateIdMapCache(nSvgContainerRef.current);
-  }, [nDiagram]);
-  useEffect(() => {
-    if (n1SvgContainerRef.current) invalidateIdMapCache(n1SvgContainerRef.current);
-  }, [n1Diagram]);
-  useEffect(() => {
-    if (actionSvgContainerRef.current) invalidateIdMapCache(actionSvgContainerRef.current);
-  }, [actionDiagram]);
-
-  // ===== Metadata Indices =====
-  const nMetaIndex = useMemo(() => buildMetadataIndex(nDiagram?.metadata), [nDiagram?.metadata]);
-  const n1MetaIndex = useMemo(() => buildMetadataIndex(n1Diagram?.metadata), [n1Diagram?.metadata]);
-  const actionMetaIndex = useMemo(() => buildMetadataIndex(actionDiagram?.metadata), [actionDiagram?.metadata]);
-
-  // ===== Highlights =====
-  // Track which tabs need highlight re-application
   const staleHighlights = useRef<Set<TabId>>(new Set());
-  // Track the last activeTab to detect actual tab switches vs data changes
   const prevHighlightTabRef = useRef<TabId>(activeTab);
 
   const applyHighlightsForTab = useCallback((tab: TabId) => {
     const overloadedLines = result?.lines_overloaded || [];
 
     if (tab === 'n-1') {
-      if (n1SvgContainerRef.current) {
-        if (actionViewMode !== 'delta' && n1MetaIndex && overloadedLines.length > 0) {
-          applyOverloadedHighlights(n1SvgContainerRef.current, n1MetaIndex, overloadedLines);
+      if (diagrams.n1SvgContainerRef.current) {
+        if (actionViewMode !== 'delta' && diagrams.n1MetaIndex && overloadedLines.length > 0) {
+          applyOverloadedHighlights(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, overloadedLines);
         }
-        applyDeltaVisuals(n1SvgContainerRef.current, n1Diagram, n1MetaIndex, actionViewMode === 'delta');
-        applyContingencyHighlight(n1SvgContainerRef.current, n1MetaIndex, selectedBranch);
+        applyDeltaVisuals(diagrams.n1SvgContainerRef.current, n1Diagram, diagrams.n1MetaIndex, actionViewMode === 'delta');
+        applyContingencyHighlight(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, selectedBranch);
       }
     }
     if (tab === 'action') {
-      applyDeltaVisuals(actionSvgContainerRef.current, actionDiagram, actionMetaIndex, actionViewMode === 'delta');
+      applyDeltaVisuals(diagrams.actionSvgContainerRef.current, actionDiagram, diagrams.actionMetaIndex, actionViewMode === 'delta');
 
       const actionDetail = result?.actions?.[selectedActionId || ''];
 
@@ -1187,28 +423,24 @@ function App() {
               stillOverloaded.push(actionDetail.max_rho_line);
             }
           }
-          if (actionSvgContainerRef.current && actionMetaIndex) {
-            applyOverloadedHighlights(actionSvgContainerRef.current, actionMetaIndex, stillOverloaded);
+          if (diagrams.actionSvgContainerRef.current && diagrams.actionMetaIndex) {
+            applyOverloadedHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, stillOverloaded);
           }
         }
 
-        if (actionSvgContainerRef.current) {
-          applyActionTargetHighlights(actionSvgContainerRef.current, actionMetaIndex, actionDetail, selectedActionId);
-          // Also highlight the contingency in the action view
-          applyContingencyHighlight(actionSvgContainerRef.current, actionMetaIndex, selectedBranch);
+        if (diagrams.actionSvgContainerRef.current) {
+          applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, actionDetail, selectedActionId);
+          applyContingencyHighlight(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, selectedBranch);
         }
       } else {
-        if (actionSvgContainerRef.current) {
-          applyActionTargetHighlights(actionSvgContainerRef.current, null, null, null);
-          // Clear contingency highlight if no action selected
-          actionSvgContainerRef.current.querySelectorAll('.nad-highlight-clone.nad-contingency-highlight').forEach(el => el.remove());
+        if (diagrams.actionSvgContainerRef.current) {
+          applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, null, null, null);
+          diagrams.actionSvgContainerRef.current.querySelectorAll('.nad-highlight-clone.nad-contingency-highlight').forEach((el: Element) => el.remove());
         }
       }
     }
-  }, [n1Diagram, actionDiagram, n1MetaIndex, actionMetaIndex, result, selectedActionId, actionViewMode, selectedBranch]);
+  }, [n1Diagram, actionDiagram, diagrams, result, selectedActionId, actionViewMode, selectedBranch]);
 
-  // Apply highlights only for the active tab; mark others as stale.
-  // On tab switch, defer to next animation frame so the browser paints the tab first.
   useEffect(() => {
     const isTabSwitch = prevHighlightTabRef.current !== activeTab;
     prevHighlightTabRef.current = activeTab;
@@ -1225,229 +457,7 @@ function App() {
       applyHighlightsForTab(activeTab);
       staleHighlights.current.delete(activeTab);
     }
-  }, [nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, result, selectedActionId, actionViewMode, activeTab, selectedBranch, applyHighlightsForTab]);
-
-  // ===== Voltage Range Filter =====
-  // Track which tabs have stale voltage filters so we can apply on tab switch
-  const staleVoltageFilter = useRef<Set<TabId>>(new Set());
-
-  const applyVoltageFilter = useCallback((container: HTMLElement | null, metaIndex: MetadataIndex | null) => {
-    if (!container || !metaIndex) return;
-    if (uniqueVoltages.length === 0 || Object.keys(nominalVoltageMap).length === 0) return;
-
-    const [minKv, maxKv] = voltageRange;
-    // Skip if range covers all voltages — all elements already visible
-    if (minKv <= uniqueVoltages[0] && maxKv >= uniqueVoltages[uniqueVoltages.length - 1]) return;
-
-    const isInRange = (vlId: string) => {
-      const kv = nominalVoltageMap[vlId];
-      return kv != null && kv >= minKv && kv <= maxKv;
-    };
-
-    const { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId } = metaIndex;
-    const idMap = getIdMap(container);
-
-    for (const [vlId, node] of nodesByEquipmentId) {
-      const visible = isInRange(vlId);
-      const show = visible ? '' : 'none';
-      const el = idMap.get(node.svgId) as HTMLElement | undefined;
-      if (el) el.style.display = show;
-      if (node.legendSvgId) {
-        const leg = idMap.get(node.legendSvgId as string) as HTMLElement | undefined;
-        if (leg) leg.style.display = show;
-      }
-      if (node.legendEdgeSvgId) {
-        const legE = idMap.get(node.legendEdgeSvgId as string) as HTMLElement | undefined;
-        if (legE) legE.style.display = show;
-      }
-    }
-
-    for (const [, edge] of edgesByEquipmentId) {
-      const node1 = nodesBySvgId.get(edge.node1);
-      const node2 = nodesBySvgId.get(edge.node2);
-      const vl1InRange = node1 ? isInRange(node1.equipmentId) : true;
-      const vl2InRange = node2 ? isInRange(node2.equipmentId) : true;
-      const edgeVisible = vl1InRange || vl2InRange;
-      const show = edgeVisible ? '' : 'none';
-
-      const el = idMap.get(edge.svgId) as HTMLElement | undefined;
-      if (el) el.style.display = show;
-      if (edge.edgeInfo1?.svgId) {
-        const ei = idMap.get(edge.edgeInfo1.svgId) as HTMLElement | undefined;
-        if (ei) ei.style.display = show;
-      }
-      if (edge.edgeInfo2?.svgId) {
-        const ei = idMap.get(edge.edgeInfo2.svgId) as HTMLElement | undefined;
-        if (ei) ei.style.display = show;
-      }
-    }
-  }, [voltageRange, nominalVoltageMap, uniqueVoltages]);
-
-  // Track previous tab for voltage filter deferral
-  const prevVFTabRef = useRef<TabId>(activeTab);
-
-  // Apply voltage filter only to the active tab; mark others as stale.
-  // On tab switch, defer to next frame so the browser paints first.
-  useEffect(() => {
-    if (uniqueVoltages.length === 0 || Object.keys(nominalVoltageMap).length === 0) return;
-
-    const isTabSwitch = prevVFTabRef.current !== activeTab;
-    prevVFTabRef.current = activeTab;
-
-    const runFilter = () => {
-      if (activeTab === 'n' || activeTab === 'overflow') {
-        applyVoltageFilter(nSvgContainerRef.current, nMetaIndex);
-        staleVoltageFilter.current.delete('n');
-        staleVoltageFilter.current.add('n-1');
-        staleVoltageFilter.current.add('action');
-      } else if (activeTab === 'n-1') {
-        applyVoltageFilter(n1SvgContainerRef.current, n1MetaIndex);
-        staleVoltageFilter.current.delete('n-1');
-        staleVoltageFilter.current.add('n');
-        staleVoltageFilter.current.add('action');
-      } else if (activeTab === 'action') {
-        applyVoltageFilter(actionSvgContainerRef.current, actionMetaIndex);
-        staleVoltageFilter.current.delete('action');
-        staleVoltageFilter.current.add('n');
-        staleVoltageFilter.current.add('n-1');
-      }
-    };
-
-    if (isTabSwitch) {
-      const id = requestAnimationFrame(runFilter);
-      return () => cancelAnimationFrame(id);
-    } else {
-      runFilter();
-    }
-  }, [voltageRange, nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, nominalVoltageMap, uniqueVoltages, activeTab, applyVoltageFilter]);
-
-  // ===== Zoom to Element =====
-  const zoomToElement = useCallback((targetId: string) => {
-    const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
-    const container = activeTab === 'action' ? actionSvgContainerRef.current
-      : activeTab === 'n' ? nSvgContainerRef.current : n1SvgContainerRef.current;
-    const index = activeTab === 'action' ? actionMetaIndex : activeTab === 'n' ? nMetaIndex : n1MetaIndex;
-    if (!currentPZ || !container || !index) return;
-
-    try {
-      const { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId, edgesByNode } = index;
-      const points: { x: number; y: number }[] = [];
-
-      const addNodePointsBySvgId = (svgId: string) => {
-        const n = nodesBySvgId.get(svgId);
-        if (n) points.push({ x: n.x, y: n.y });
-        return n;
-      };
-
-      let targetNode = nodesByEquipmentId.get(targetId);
-      let targetEdge = edgesByEquipmentId.get(targetId);
-      let targetSvgId: string | undefined;
-
-      // Fallback: strip prefix before "." (e.g. GEN.PY762 → PY762) and try as VL node
-      if (!targetNode && !targetEdge) {
-        const dotIdx = targetId.indexOf('.');
-        if (dotIdx >= 0) {
-          const suffix = targetId.substring(dotIdx + 1);
-          targetNode = nodesByEquipmentId.get(suffix) ?? undefined;
-          if (!targetNode) targetEdge = edgesByEquipmentId.get(suffix) ?? undefined;
-        }
-      }
-
-      if (targetNode) {
-        targetSvgId = targetNode.svgId;
-        points.push({ x: targetNode.x, y: targetNode.y });
-        (edgesByNode.get(targetNode.svgId) || []).forEach(e => {
-          addNodePointsBySvgId(e.node1);
-          addNodePointsBySvgId(e.node2);
-        });
-      } else if (targetEdge) {
-        targetSvgId = targetEdge.svgId;
-        const n1 = addNodePointsBySvgId(targetEdge.node1);
-        const n2 = addNodePointsBySvgId(targetEdge.node2);
-        if (n1) (edgesByNode.get(n1.svgId) || []).forEach(e => { addNodePointsBySvgId(e.node1); addNodePointsBySvgId(e.node2); });
-        if (n2) (edgesByNode.get(n2.svgId) || []).forEach(e => { addNodePointsBySvgId(e.node1); addNodePointsBySvgId(e.node2); });
-      }
-
-      if (points.length > 0) {
-        const minX = Math.min(...points.map(p => p.x));
-        const maxX = Math.max(...points.map(p => p.x));
-        const minY = Math.min(...points.map(p => p.y));
-        const maxY = Math.max(...points.map(p => p.y));
-
-        const centerX = (minX + maxX) / 2;
-        const centerY = (minY + maxY) / 2;
-        const boxW = Math.max(maxX - minX, 50);
-        const boxH = Math.max(maxY - minY, 50);
-
-        const padding = 1.8;
-        const screenW = container.getBoundingClientRect().width;
-        const screenH = container.getBoundingClientRect().height;
-        const screenAR = screenW / screenH;
-
-        let targetW = boxW * padding;
-        let targetH = boxH * padding;
-
-        if (targetW / targetH > screenAR) {
-          targetH = targetW / screenAR;
-        } else {
-          targetW = targetH * screenAR;
-        }
-
-        const targetX = centerX - targetW / 2;
-        const targetY = centerY - targetH / 2;
-
-        currentPZ.setViewBox({ x: targetX, y: targetY, w: targetW, h: targetH });
-
-        // Highlight the target element
-        container.querySelectorAll('.nad-highlight').forEach(el => el.classList.remove('nad-highlight'));
-        if (targetSvgId) {
-          const el = container.querySelector(`[id="${targetSvgId}"]`);
-          if (el) el.classList.add('nad-highlight');
-        }
-      }
-    } catch (e) {
-      console.error('Zoom failed:', e);
-    }
-  }, [activeTab, actionPZ, nPZ, n1PZ, actionMetaIndex, nMetaIndex, n1MetaIndex]);
-
-  // Auto-zoom to selected element
-  useEffect(() => {
-    if (activeTab === 'overflow') return;
-
-    const queryChanged = inspectQuery !== lastZoomState.current.query;
-    const branchChanged = !inspectQuery && selectedBranch !== lastZoomState.current.branch;
-
-    if (!queryChanged && !branchChanged) return;
-
-    const targetId = inspectQuery || selectedBranch;
-
-    // Cleared inspect -> reset view
-    if (!targetId && queryChanged) {
-      lastZoomState.current = { query: inspectQuery, branch: selectedBranch };
-      handleManualReset();
-      return;
-    }
-
-    if (!targetId) return;
-
-    // Branch changes should zoom on the N-1 tab, not N
-    if (branchChanged && activeTab === 'n') return;
-
-    // Only consume the zoom intent when the container has SVG content
-    const container = activeTab === 'action' ? actionSvgContainerRef.current
-      : activeTab === 'n' ? nSvgContainerRef.current : n1SvgContainerRef.current;
-    if (!container || !container.querySelector('svg')) return;
-
-    lastZoomState.current = { query: inspectQuery, branch: selectedBranch };
-    zoomToElement(targetId);
-  }, [activeTab, nDiagram, n1Diagram, actionDiagram, inspectQuery, selectedBranch, zoomToElement, handleManualReset]);
-
-  // Inspectable items list
-  const inspectableItems = useMemo(() =>
-    [...branches, ...voltageLevels].sort(),
-    [branches, voltageLevels]
-  );
-
+  }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, activeTab, selectedBranch, applyHighlightsForTab]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -1483,7 +493,7 @@ function App() {
         </button>
 
         <button
-          onClick={handleSaveResults}
+          onClick={wrappedSaveResults}
           disabled={!result && !selectedBranch}
           style={{
             padding: '6px 14px',
@@ -1498,7 +508,7 @@ function App() {
         </button>
 
         <button
-          onClick={handleOpenReloadModal}
+          onClick={wrappedOpenReloadModal}
           disabled={sessionRestoring}
           style={{
             padding: '6px 14px',
@@ -1723,7 +733,7 @@ function App() {
                 sessionList.map(name => (
                   <div
                     key={name}
-                    onClick={() => !sessionRestoring && handleRestoreSession(name)}
+                    onClick={() => !sessionRestoring && wrappedRestoreSession(name)}
                     style={{
                       padding: '10px 12px', margin: '4px 0',
                       border: '1px solid #eee', borderRadius: '6px',
@@ -1769,7 +779,7 @@ function App() {
                 {branches.map(b => <option key={b} value={b} />)}
               </datalist>
               <button
-                onClick={handleRunAnalysis}
+                onClick={wrappedRunAnalysis}
                 disabled={!selectedBranch || analysisLoading}
                 style={{
                   marginTop: '8px',
@@ -1793,7 +803,7 @@ function App() {
             <OverloadPanel
               nOverloads={nDiagram?.lines_overloaded || []}
               n1Overloads={n1Diagram?.lines_overloaded || []}
-              onAssetClick={handleAssetClick as (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void}
+              onAssetClick={wrappedAssetClick as (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void}
               showMonitoringWarning={showMonitoringWarning}
               monitoredLinesCount={monitoredLinesCount}
               totalLinesCount={totalLinesCount}
@@ -1802,9 +812,9 @@ function App() {
               onDismissWarning={() => setShowMonitoringWarning(false)}
               onOpenSettings={() => { setIsSettingsOpen(true); setSettingsTab('configurations'); }}
               selectedOverloads={selectedOverloads}
-              onToggleOverload={handleToggleOverload}
+              onToggleOverload={analysis.handleToggleOverload}
               monitorDeselected={monitorDeselected}
-              onToggleMonitorDeselected={() => setMonitorDeselected(prev => !prev)}
+              onToggleMonitorDeselected={() => analysis.setMonitorDeselected(!analysis.monitorDeselected)}
             />
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -1817,15 +827,15 @@ function App() {
               rejectedActionIds={rejectedActionIds}
               manuallyAddedIds={manuallyAddedIds}
               pendingAnalysisResult={pendingAnalysisResult}
-              onDisplayPrioritizedActions={handleDisplayPrioritizedActions}
-              onActionSelect={handleActionSelect}
-              onActionFavorite={handleActionFavorite}
-              onActionReject={handleActionReject}
-              onAssetClick={handleAssetClick}
-              nodesByEquipmentId={nMetaIndex?.nodesByEquipmentId ?? null}
-              edgesByEquipmentId={nMetaIndex?.edgesByEquipmentId ?? null}
+              onDisplayPrioritizedActions={wrappedDisplayPrioritized}
+              onActionSelect={wrappedActionSelect}
+              onActionFavorite={wrappedActionFavorite}
+              onActionReject={actionsHook.handleActionReject}
+              onAssetClick={wrappedAssetClick}
+              nodesByEquipmentId={diagrams.nMetaIndex?.nodesByEquipmentId ?? null}
+              edgesByEquipmentId={diagrams.nMetaIndex?.edgesByEquipmentId ?? null}
               disconnectedElement={selectedBranch || null}
-              onManualActionAdded={handleManualActionAdded}
+              onManualActionAdded={wrappedManualActionAdded}
               analysisLoading={analysisLoading}
               monitoringFactor={monitoringFactor}
               onVlDoubleClick={handleVlDoubleClick}

@@ -124,10 +124,12 @@ export function useSettings(): SettingsState {
     const savedLayout = localStorage.getItem('layoutPath');
     const savedOutput = localStorage.getItem('outputFolderPath');
 
+    /* eslint-disable react-hooks/set-state-in-effect */
     setNetworkPath(savedNetwork || '/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z_dijon_only');
     setActionPath(savedAction || '/home/marotant/dev/Expert_op4grid_recommender/data/action_space/reduced_model_actions_20240828T0100Z_new_dijon.json');
     setLayoutPath(savedLayout || '');
     setOutputFolderPath(savedOutput || '');
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   // Persist paths to localStorage

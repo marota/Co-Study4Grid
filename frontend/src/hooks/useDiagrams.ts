@@ -2,8 +2,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, typ
 import { api } from '../api';
 import { usePanZoom } from './usePanZoom';
 import {
-  buildMetadataIndex, applyOverloadedHighlights,
-  applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight,
+  buildMetadataIndex,
   getIdMap, invalidateIdMapCache,
 } from '../utils/svgUtils';
 import { processSvgAsync } from '../utils/svgWorkerClient';
