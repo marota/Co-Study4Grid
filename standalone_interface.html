@@ -236,15 +236,6 @@
             display: none !important;
         }
 
-        /* Hide text on large grids at full zoom — revealed by removing this class.
-           display:none removes elements from layout entirely, so the browser
-           skips layout/paint for thousands of text nodes at initial load. */
-        .svg-container.text-hidden foreignObject,
-        .svg-container.text-hidden .nad-edge-infos,
-        .svg-container.text-hidden .nad-text-edges {
-            display: none !important;
-        }
-
         /* ===== Delta flow visualization ===== */
 
         /* Positive delta: flow increased after action (orange) */
@@ -581,20 +572,12 @@
             const svgElRef = useRef(null);
             const activeRef = useRef(active);
             activeRef.current = active;
-            // Original viewBox max dimension — used for relative text visibility threshold
-            const initialMaxDimRef = useRef(null);
-
             // Cached getScreenCTM() — invalidated after each viewBox change
             const ctmCacheRef = useRef(null);
             // Wheel zoom rAF batching: accumulate scale factor + last cursor position
             const wheelRafId = useRef(null);
             const pendingWheelScale = useRef(1);
             const pendingWheelCursor = useRef({ x: 0, y: 0 });
-            // Track text-hidden state for hysteresis (prevents flicker near boundary)
-            const textHiddenRef = useRef(true);
-            // Text visibility thresholds: hide when zoomed out past 55%, show when zoomed in past 45%
-            const TEXT_HIDE_RATIO = 0.55;
-            const TEXT_SHOW_RATIO = 0.45;
 
             // Toggle svg-interacting class to disable pointer-events + filter during interaction
             const setInteracting = (interacting) => {
@@ -610,29 +593,6 @@
                 }
                 // Invalidate CTM cache after every viewBox change
                 ctmCacheRef.current = null;
-
-                // Toggle text visibility with hysteresis (large grids only).
-                // Hide threshold: 55% of original viewBox — Show threshold: 45%.
-                // Hysteresis prevents flicker when panning near the boundary.
-                const container = svgRef.current;
-                if (container && vb && svg && svg.hasAttribute('data-large-grid')) {
-                    const origMax = initialMaxDimRef.current;
-                    if (origMax) {
-                        const ratio = Math.max(vb.w, vb.h) / origMax;
-                        if (textHiddenRef.current && ratio < TEXT_SHOW_RATIO) {
-                            textHiddenRef.current = false;
-                            container.classList.remove('text-hidden');
-                        } else if (!textHiddenRef.current && ratio >= TEXT_HIDE_RATIO) {
-                            textHiddenRef.current = true;
-                            container.classList.add('text-hidden');
-                        }
-                    } else {
-                        if (!textHiddenRef.current) {
-                            textHiddenRef.current = true;
-                            container.classList.add('text-hidden');
-                        }
-                    }
-                }
             };
 
             // Flush ref -> React state for downstream consumers
@@ -643,21 +603,9 @@
             };
 
             // Cache SVG element when container content changes.
-            // Also hide text immediately on large grids to prevent a flash
-            // of unreadable text before the first applyViewBox call.
-            // Runs only when a new diagram loads (initialViewBox changes),
-            // NOT on every render — otherwise it blocks paint on tab switch.
             useLayoutEffect(() => {
                 if (svgRef.current) {
                     svgElRef.current = svgRef.current.querySelector('svg');
-                    if (svgElRef.current && svgElRef.current.hasAttribute('data-large-grid')) {
-                        const vb = viewBoxRef.current;
-                        const origMax = initialMaxDimRef.current;
-                        if (!vb || !origMax || Math.max(vb.w, vb.h) / origMax >= TEXT_SHOW_RATIO) {
-                            textHiddenRef.current = true;
-                            svgRef.current.classList.add('text-hidden');
-                        }
-                    }
                 } else {
                     svgElRef.current = null;
                 }
@@ -667,8 +615,6 @@
             useEffect(() => {
                 if (initialViewBox) {
                     viewBoxRef.current = initialViewBox;
-                    initialMaxDimRef.current = Math.max(initialViewBox.w, initialViewBox.h);
-                    textHiddenRef.current = true; // reset to hidden on each new diagram
                     applyViewBox(initialViewBox);
                     setViewBox(initialViewBox);
                     // Diagnostic: log effective scaling
