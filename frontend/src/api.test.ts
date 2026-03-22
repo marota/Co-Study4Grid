@@ -29,7 +29,7 @@ describe('api client', () => {
 
             const result = await api.updateConfig(config);
             expect(mockedAxios.post).toHaveBeenCalledWith(
-                'http://localhost:8000/api/config',
+                'http://127.0.0.1:8000/api/config',
                 config,
             );
             expect(result).toEqual({ status: 'success' });
@@ -44,7 +44,7 @@ describe('api client', () => {
 
             const result = await api.getBranches();
             expect(mockedAxios.get).toHaveBeenCalledWith(
-                'http://localhost:8000/api/branches',
+                'http://127.0.0.1:8000/api/branches',
             );
             expect(result).toEqual(['LINE_A', 'LINE_B']);
         });
@@ -91,7 +91,7 @@ describe('api client', () => {
 
             const result = await api.getN1Diagram('LINE_A');
             expect(mockedAxios.post).toHaveBeenCalledWith(
-                'http://localhost:8000/api/n1-diagram',
+                'http://127.0.0.1:8000/api/n1-diagram',
                 { disconnected_element: 'LINE_A' },
             );
             expect(result).toEqual(diagramData);
@@ -106,7 +106,7 @@ describe('api client', () => {
 
             const result = await api.getActionVariantDiagram('act_1');
             expect(mockedAxios.post).toHaveBeenCalledWith(
-                'http://localhost:8000/api/action-variant-diagram',
+                'http://127.0.0.1:8000/api/action-variant-diagram',
                 { action_id: 'act_1' },
             );
             expect(result.action_id).toBe('act_1');
@@ -141,7 +141,7 @@ describe('api client', () => {
 
             const result = await api.simulateManualAction('act_1', 'LINE_B');
             expect(mockedAxios.post).toHaveBeenCalledWith(
-                'http://localhost:8000/api/simulate-manual-action',
+                'http://127.0.0.1:8000/api/simulate-manual-action',
                 { action_id: 'act_1', disconnected_element: 'LINE_B', action_content: null, lines_overloaded: null },
             );
             expect(result).toEqual(responseData);
@@ -156,7 +156,7 @@ describe('api client', () => {
 
             const result = await api.pickPath('file');
             expect(mockedAxios.get).toHaveBeenCalledWith(
-                'http://localhost:8000/api/pick-path?type=file',
+                'http://127.0.0.1:8000/api/pick-path?type=file',
             );
             expect(result).toBe('/home/user/test.xiidm');
         });
@@ -168,37 +168,47 @@ describe('api client', () => {
 
             const result = await api.pickPath('dir');
             expect(mockedAxios.get).toHaveBeenCalledWith(
-                'http://localhost:8000/api/pick-path?type=dir',
+                'http://127.0.0.1:8000/api/pick-path?type=dir',
             );
             expect(result).toBe('/home/user/networks');
         });
     });
 
-    describe('runAnalysis', () => {
-        it('parses NDJSON streaming response', async () => {
-            // Mock the global fetch for streaming
-            const pdfEvent = JSON.stringify({ type: 'pdf', pdf_url: '/results/pdf/graph.pdf', pdf_path: '/tmp/graph.pdf' });
-            const resultEvent = JSON.stringify({
-                type: 'result',
-                actions: { act_1: { description_unitaire: 'Test', rho_before: null, rho_after: null, max_rho: null, max_rho_line: '', is_rho_reduction: false } },
-                action_scores: {},
-                lines_overloaded: ['LINE_A'],
-                message: 'Analysis completed',
-                dc_fallback: false,
-            });
-            const body = `${pdfEvent}\n${resultEvent}\n`;
+    describe('runAnalysisStep1', () => {
+        it('sends POST with disconnected element and returns detection result', async () => {
+            const responseData = {
+                lines_overloaded: ['LINE_A', 'LINE_B'],
+                message: 'Detected 2 overloads',
+                can_proceed: true,
+            };
+            mockedAxios.post.mockResolvedValue({ data: responseData });
 
-            const encoder = new TextEncoder();
-            const stream = new ReadableStream({
-                start(controller) {
-                    controller.enqueue(encoder.encode(body));
-                    controller.close();
-                },
-            });
+            const result = await api.runAnalysisStep1('LINE_X');
+            expect(mockedAxios.post).toHaveBeenCalledWith(
+                'http://127.0.0.1:8000/api/run-analysis-step1',
+                { disconnected_element: 'LINE_X' },
+            );
+            expect(result).toEqual(responseData);
+        });
 
+        it('returns can_proceed=false when no overloads detected', async () => {
+            const responseData = {
+                lines_overloaded: [],
+                message: 'No overloads detected',
+                can_proceed: false,
+            };
+            mockedAxios.post.mockResolvedValue({ data: responseData });
+
+            const result = await api.runAnalysisStep1('LINE_Y');
+            expect(result.can_proceed).toBe(false);
+            expect(result.lines_overloaded).toEqual([]);
+        });
+    });
+
+    describe('runAnalysisStep2Stream', () => {
+        it('sends POST with selected_overloads, all_overloads, and monitor_deselected', async () => {
             const mockResponse = {
                 ok: true,
-                body: stream,
                 statusText: 'OK',
             } as unknown as Response;
 
@@ -206,11 +216,48 @@ describe('api client', () => {
             globalThis.fetch = vi.fn().mockResolvedValue(mockResponse);
 
             try {
-                const result = await api.runAnalysis('LINE_A');
-                expect(result.pdf_url).toBe('/results/pdf/graph.pdf');
-                expect(result.message).toBe('Analysis completed');
-                expect(result.lines_overloaded).toEqual(['LINE_A']);
-                expect(result.dc_fallback).toBe(false);
+                await api.runAnalysisStep2Stream({
+                    selected_overloads: ['LINE_A'],
+                    all_overloads: ['LINE_A', 'LINE_B'],
+                    monitor_deselected: true,
+                });
+
+                expect(globalThis.fetch).toHaveBeenCalledWith(
+                    'http://127.0.0.1:8000/api/run-analysis-step2',
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            selected_overloads: ['LINE_A'],
+                            all_overloads: ['LINE_A', 'LINE_B'],
+                            monitor_deselected: true,
+                        }),
+                    },
+                );
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
+        });
+
+        it('returns raw Response for streaming consumption', async () => {
+            const mockResponse = {
+                ok: true,
+                statusText: 'OK',
+                body: 'mock-body',
+            } as unknown as Response;
+
+            const originalFetch = globalThis.fetch;
+            globalThis.fetch = vi.fn().mockResolvedValue(mockResponse);
+
+            try {
+                const result = await api.runAnalysisStep2Stream({
+                    selected_overloads: ['LINE_A'],
+                    all_overloads: ['LINE_A'],
+                    monitor_deselected: false,
+                });
+                // Returns the raw Response, not parsed data
+                expect(result).toBe(mockResponse);
+                expect(result.body).toBe('mock-body');
             } finally {
                 globalThis.fetch = originalFetch;
             }
@@ -226,38 +273,45 @@ describe('api client', () => {
             globalThis.fetch = vi.fn().mockResolvedValue(mockResponse);
 
             try {
-                await expect(api.runAnalysis('LINE_A')).rejects.toThrow('Analysis failed');
+                await expect(
+                    api.runAnalysisStep2Stream({
+                        selected_overloads: ['LINE_A'],
+                        all_overloads: ['LINE_A'],
+                        monitor_deselected: false,
+                    }),
+                ).rejects.toThrow('Analysis Resolution failed');
             } finally {
                 globalThis.fetch = originalFetch;
             }
         });
 
-        it('throws on error event in stream', async () => {
-            const errorEvent = JSON.stringify({ type: 'error', message: 'Something went wrong' });
-            const body = `${errorEvent}\n`;
-
-            const encoder = new TextEncoder();
-            const stream = new ReadableStream({
-                start(controller) {
-                    controller.enqueue(encoder.encode(body));
-                    controller.close();
-                },
-            });
-
-            const mockResponse = {
-                ok: true,
-                body: stream,
-                statusText: 'OK',
-            } as unknown as Response;
-
+        it('passes monitor_deselected=false when not monitoring deselected overloads', async () => {
+            const mockResponse = { ok: true, statusText: 'OK' } as unknown as Response;
             const originalFetch = globalThis.fetch;
             globalThis.fetch = vi.fn().mockResolvedValue(mockResponse);
 
             try {
-                await expect(api.runAnalysis('LINE_A')).rejects.toThrow('Something went wrong');
+                await api.runAnalysisStep2Stream({
+                    selected_overloads: ['LINE_A', 'LINE_B'],
+                    all_overloads: ['LINE_A', 'LINE_B', 'LINE_C'],
+                    monitor_deselected: false,
+                });
+
+                const body = JSON.parse(
+                    (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+                );
+                expect(body.monitor_deselected).toBe(false);
+                expect(body.all_overloads).toEqual(['LINE_A', 'LINE_B', 'LINE_C']);
+                expect(body.selected_overloads).toEqual(['LINE_A', 'LINE_B']);
             } finally {
                 globalThis.fetch = originalFetch;
             }
+        });
+    });
+
+    describe('legacy runAnalysis removal', () => {
+        it('api object does not have a runAnalysis method', () => {
+            expect((api as Record<string, unknown>).runAnalysis).toBeUndefined();
         });
     });
 });
