@@ -480,6 +480,35 @@ describe('getActionTargetVoltageLevels', () => {
         const result = getActionTargetVoltageLevels(detail, 'open_coupling_VL1_inc2', makeNodeMap('VL1'));
         expect(result).toEqual(['VL1']);
     });
+
+    it('extracts VL with spaces from description without quotes', () => {
+        const detail: ActionDetail = {
+            description_unitaire: "Ouverture MQIS P7_MQIS 7COUPL DJ_OC dans le poste MQIS P7",
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+        };
+
+        const result = getActionTargetVoltageLevels(detail, null, makeNodeMap('MQIS P7'));
+        expect(result).toEqual(['MQIS P7']);
+    });
+
+    it('extracts VL from mid-ID segment with spaces', () => {
+        const detail: ActionDetail = {
+            description_unitaire: 'No description available',
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+        };
+
+        const actionId = 'de829050-177c-4244-ba94-61b22d2684a4_MQIS P7_coupling';
+        const result = getActionTargetVoltageLevels(detail, actionId, makeNodeMap('MQIS P7'));
+        expect(result).toEqual(['MQIS P7']);
+    });
 });
 
 describe('getIdMap', () => {

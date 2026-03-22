@@ -254,9 +254,9 @@ export const getActionTargetVoltageLevels = (
             });
         }
         // Match "dans le poste", "du poste", "au poste", etc.
-        const posteMatches = desc.matchAll(/(?:dans le |du |au )?poste\s+'?(\S+?)'?(?:\s|$|,)/gi);
+        const posteMatches = desc.matchAll(/(?:dans le |du |au )?poste\s+'?([^',]+?)'?(?=\s*(?:['",]|$))/gi);
         for (const match of posteMatches) {
-            const vl = match[1].replace(/['"]/g, '');
+            const vl = match[1].trim();
             if (nodesByEquipmentId.has(vl)) targets.add(vl);
         }
     }
@@ -281,6 +281,11 @@ export const getActionTargetVoltageLevels = (
             }
 
             const subParts = cleanPart.split('_');
+            // Check each sub-part individually (e.g. for MQIS P7 in UUID_MQIS P7_coupling)
+            subParts.forEach(sp => {
+                if (nodesByEquipmentId.has(sp)) targets.add(sp);
+            });
+
             for (let i = 1; i < subParts.length; i++) {
                 const candidate = subParts.slice(i).join('_');
                 if (nodesByEquipmentId.has(candidate)) {
@@ -290,7 +295,7 @@ export const getActionTargetVoltageLevels = (
             }
             // Fallback: last segment
             const last = subParts[subParts.length - 1];
-            if (nodesByEquipmentId.has(last)) {
+            if (!targets.has(last) && nodesByEquipmentId.has(last)) {
                 targets.add(last);
             }
         });
