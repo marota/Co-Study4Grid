@@ -163,6 +163,44 @@ describe('usePanZoom', () => {
         });
     });
 
+    describe('svg-interacting class toggle', () => {
+        it('does not have svg-interacting class initially', () => {
+            const { container } = createMockSvgContainer('0 0 1000 800');
+            const ref = { current: container };
+
+            renderHook(() => usePanZoom(ref, initialVB, true));
+
+            expect(container.classList.contains('svg-interacting')).toBe(false);
+        });
+    });
+
+    describe('CTM cache invalidation', () => {
+        it('setViewBox applies viewBox to DOM (which invalidates cached CTM)', () => {
+            const { container, svg } = createMockSvgContainer('0 0 1000 800');
+            const ref = { current: container };
+
+            const { result } = renderHook(() => usePanZoom(ref, initialVB, true));
+
+            // Simulate zoom by setting a smaller viewBox
+            const zoomedVB: ViewBox = { x: 200, y: 200, w: 400, h: 300 };
+            act(() => {
+                result.current.setViewBox(zoomedVB);
+            });
+
+            // viewBox should update in DOM
+            expect(svg.getAttribute('viewBox')).toBe('200 200 400 300');
+
+            // Set another viewBox — each call invalidates cached CTM
+            const zoomedVB2: ViewBox = { x: 300, y: 300, w: 200, h: 150 };
+            act(() => {
+                result.current.setViewBox(zoomedVB2);
+            });
+
+            expect(svg.getAttribute('viewBox')).toBe('300 300 200 150');
+            expect(result.current.viewBox).toEqual(zoomedVB2);
+        });
+    });
+
     describe('regression: multiple rapid active/inactive transitions', () => {
         it('does not corrupt viewBox after rapid tab switching', () => {
             const { container, svg } = createMockSvgContainer('0 0 500 500');

@@ -89,6 +89,7 @@ const mockApi = vi.hoisted(() => ({
   getN1Diagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] }),
   pickPath: vi.fn(),
   runAnalysisStep1: vi.fn().mockResolvedValue({ can_proceed: true, lines_overloaded: ['LINE_OL1'] }),
+  runAnalysisStep2Stream: vi.fn(),
   getActionVariantDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
   getNSld: vi.fn(),
   getN1Sld: vi.fn(),
@@ -128,8 +129,8 @@ async function selectBranch(branchName: string) {
 
 // Helper: run analysis to create analysis state
 async function runAnalysis() {
-  // Mock fetch for step2 streaming response
-  const mockResponse = new ReadableStream({
+  // Mock runAnalysisStep2Stream to return a streaming Response
+  const mockStream = new ReadableStream({
     start(controller) {
       controller.enqueue(new TextEncoder().encode(
         JSON.stringify({ type: 'result', actions: { ACT1: { is_manual: false, rho_before: [1.02], rho_after: [0.95] } }, lines_overloaded: ['LINE_OL1'], message: 'done', dc_fallback: false }) + '\n'
@@ -137,10 +138,10 @@ async function runAnalysis() {
       controller.close();
     },
   });
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+  mockApi.runAnalysisStep2Stream.mockResolvedValue({
     ok: true,
-    body: mockResponse,
-  }));
+    body: mockStream,
+  });
 
   const runBtn = screen.getByText('🚀 Run Analysis');
   await act(async () => {
@@ -958,16 +959,16 @@ describe('Settings Modal Enhancements', () => {
       await userEvent.type(branchInput, 'BRANCH_A');
       await waitFor(() => expect(mockApi.getN1Diagram).toHaveBeenCalledWith('BRANCH_A'));
 
-      // Setup streaming mock for step2
-      const mockResponse = new ReadableStream({
+      // Setup streaming mock for step2 (keep stream open to simulate "Running" state)
+      const mockStream = new ReadableStream({
         start() {
           // Keep it open to simulate "Running" state
         },
       });
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      mockApi.runAnalysisStep2Stream.mockResolvedValue({
         ok: true,
-        body: mockResponse,
-      }));
+        body: mockStream,
+      });
 
       const runBtn = screen.getByText('🚀 Run Analysis');
       await userEvent.click(runBtn);

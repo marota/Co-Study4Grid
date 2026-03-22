@@ -101,16 +101,11 @@ export function useAnalysis(): AnalysisState {
       }
 
       // Step 2: Resolution
-      const response2 = await fetch('http://localhost:8000/api/run-analysis-step2', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          selected_overloads: toResolve,
-          all_overloads: detected,
-          monitor_deselected: monitorDeselected,
-        }),
+      const response2 = await api.runAnalysisStep2Stream({
+        selected_overloads: toResolve,
+        all_overloads: detected,
+        monitor_deselected: monitorDeselected,
       });
-      if (!response2.ok) throw new Error('Analysis Resolution failed');
 
       const reader = response2.body!.getReader();
       const decoder = new TextDecoder();

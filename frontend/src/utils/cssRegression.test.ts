@@ -68,6 +68,20 @@ describe('Critical CSS: text-hidden class', () => {
     });
 });
 
+describe('Critical CSS: svg-interacting pointer-events + filter suppression', () => {
+    it('App.css disables pointer-events on SVG children during interaction', () => {
+        expect(APP_CSS).toMatch(
+            /\.svg-container\.svg-interacting\s+svg\s+\*[\s\S]*?pointer-events:\s*none\s*!important/,
+        );
+    });
+
+    it('App.css suppresses drop-shadow filters on highlights during interaction', () => {
+        expect(APP_CSS).toMatch(
+            /\.svg-container\.svg-interacting\s+\.nad-action-target[\s\S]*?filter:\s*none\s*!important/,
+        );
+    });
+});
+
 describe('Critical CSS: highlight styles', () => {
     it('App.css defines .nad-overloaded highlight with orange stroke', () => {
         expect(APP_CSS).toMatch(/\.nad-overloaded[\s\S]*?stroke:\s*#ff8c00/);
