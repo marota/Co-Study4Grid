@@ -5,10 +5,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="16627ea2-d304-4364-be5f-9067f202a906" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/expert_backend/services/recommender_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/expert_backend/services/recommender_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/overrides.txt" beforeDir="false" afterPath="$PROJECT_DIR$/overrides.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/App.test.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/App.test.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/App.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/App.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/test/setup.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/test/setup.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/standalone_interface.html" beforeDir="false" afterPath="$PROJECT_DIR$/standalone_interface.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/verify_n1_simulation.py" beforeDir="false" afterPath="$PROJECT_DIR$/verify_n1_simulation.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -26,19 +27,19 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "Python.repro_stuck.executor": "Debug",
-    "Python.verify_n1.executor": "Debug",
-    "Python.verify_n1_simulation.executor": "Debug",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "claude/highlight-overloaded-lines-GAVr6",
-    "last_opened_file_path": "/home/marotant/dev/AntiGravity/ExpertAssist",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.repro_stuck.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.verify_n1.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.verify_n1_simulation.executor&quot;: &quot;Debug&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;claude/clear-contingency-state-7G5HC&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/marotant/dev/AntiGravity/ExpertAssist&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager" selected="Python.verify_n1">
     <configuration name="repro_stuck" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="ExpertAssist" />
@@ -109,9 +110,9 @@
       <method v="2" />
     </configuration>
     <list>
-      <item itemvalue="Python.verify_n1_simulation" />
-      <item itemvalue="Python.verify_n1" />
       <item itemvalue="Python.repro_stuck" />
+      <item itemvalue="Python.verify_n1" />
+      <item itemvalue="Python.verify_n1_simulation" />
     </list>
     <recent_temporary>
       <list>
@@ -152,7 +153,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/expert_backend/services/recommender_service.py</url>
-          <line>335</line>
+          <line>346</line>
           <option name="timeStamp" value="3" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">

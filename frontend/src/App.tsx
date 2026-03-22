@@ -103,7 +103,7 @@ function App() {
     analysis.setInfoMessage('');
     diagrams.setInspectQuery('');
     diagrams.lastZoomState.current = { query: '', branch: '' };
-  }, [analysis, actionsHook, diagrams, setError]);
+  }, [setError]);
 
   const wrappedRunAnalysis = () =>
     analysis.handleRunAnalysis(selectedBranch, clearContingencyState, actionsHook.setSuggestedByRecommenderIds);
@@ -219,7 +219,7 @@ function App() {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
       setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
     }
-  }, [networkPath, actionPath, buildConfigRequest, applyConfigResponse, createCurrentBackup, diagrams, setResult, analysis, actionsHook, setError, setShowMonitoringWarning, setSettingsBackup, setIsSettingsOpen]);
+  }, [networkPath, actionPath, buildConfigRequest, applyConfigResponse, createCurrentBackup, setResult, setError, setShowMonitoringWarning, setSettingsBackup, setIsSettingsOpen]);
 
 
   const handleLoadConfig = useCallback(async () => {
@@ -275,7 +275,7 @@ function App() {
     } finally {
       setConfigLoading(false);
     }
-  }, [buildConfigRequest, applyConfigResponse, diagrams, setResult, analysis, actionsHook, setError, setShowMonitoringWarning]);
+  }, [buildConfigRequest, applyConfigResponse, setResult, setError, setShowMonitoringWarning]);
 
   const handleLoadStudyClick = useCallback(() => {
     if (hasAnalysisState()) {
@@ -307,7 +307,7 @@ function App() {
     if (result?.pdf_url && analysisLoading) {
       diagrams.setActiveTab('overflow');
     }
-  }, [result?.pdf_url, analysisLoading, diagrams]);
+  }, [result?.pdf_url, analysisLoading]);
 
 
   useEffect(() => {
@@ -348,7 +348,7 @@ function App() {
       }
     };
     fetchN1();
-  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState, analysisLoading, n1Diagram, n1Loading, diagrams, setError]);
+  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState, analysisLoading, n1Diagram, n1Loading, setError]);
 
   useEffect(() => {
     if (n1Diagram?.lines_overloaded) {
@@ -356,7 +356,7 @@ function App() {
     } else {
       analysis.setSelectedOverloads(new Set());
     }
-  }, [n1Diagram, analysisLoading, n1Loading, analysis]);
+  }, [n1Diagram, analysisLoading, n1Loading]);
 
 
   useEffect(() => {
@@ -385,7 +385,7 @@ function App() {
 
     diagrams.lastZoomState.current = { query: inspectQuery, branch: selectedBranch };
     zoomToElement(targetId);
-  }, [activeTab, nDiagram, n1Diagram, actionDiagram, inspectQuery, selectedBranch, zoomToElement, handleManualReset, diagrams]);
+  }, [activeTab, nDiagram, n1Diagram, actionDiagram, inspectQuery, selectedBranch, zoomToElement, handleManualReset]);
 
 
   const staleHighlights = useRef<Set<TabId>>(new Set());
@@ -439,7 +439,7 @@ function App() {
         }
       }
     }
-  }, [n1Diagram, actionDiagram, diagrams, result, selectedActionId, actionViewMode, selectedBranch]);
+  }, [n1Diagram, actionDiagram, result, selectedActionId, actionViewMode, selectedBranch]);
 
   useEffect(() => {
     const isTabSwitch = prevHighlightTabRef.current !== activeTab;
