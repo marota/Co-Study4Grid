@@ -104,8 +104,8 @@ const CombinedActionsModal: React.FC<Props> = ({
             .map(({ id, data, simData }) => {
                 const parts = id.split('+');
                 const isSimulated = !!simData;
-                const simMaxRho = (simData as any)?.max_rho ?? null;
-                const simMaxRhoLine = (simData as any)?.max_rho_line ?? null;
+                const simMaxRho = (simData as ActionDetail | SimulationFeedback)?.max_rho ?? null;
+                const simMaxRhoLine = (simData as ActionDetail | SimulationFeedback)?.max_rho_line ?? null;
                 const estMaxRho = data.estimated_max_rho ?? data.max_rho;
                 const estMaxRhoLine = data.estimated_max_rho_line ?? data.max_rho_line;
 
@@ -352,7 +352,7 @@ const CombinedActionsModal: React.FC<Props> = ({
                                                             color: simMaxRho > monitoringFactor ? '#c62828' : simMaxRho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32'
                                                         }}>
                                                             {(simMaxRho * 100).toFixed(1)}%
-                                                            {(p.simData as any)?.is_islanded && (
+                                                            {(p.simData as ActionDetail | SimulationFeedback)?.is_islanded && (
                                                                 <span style={{ fontSize: '10px', marginLeft: '4px' }} title="Islanding detected">🏝️</span>
                                                             )}
                                                         </span>

@@ -410,7 +410,7 @@ describe('CombinedActionsModal', () => {
     });
 
     it('handles superposition API error gracefully', async () => {
-        vi.mocked(api.computeSuperposition).mockResolvedValueOnce({ error: 'Backend exploded' } as any);
+        vi.mocked(api.computeSuperposition).mockResolvedValueOnce({ error: 'Backend exploded' } as unknown as CombinedAction);
         const emptyResult = { ...mockAnalysisResult, combined_actions: {} };
         
         render(<CombinedActionsModal {...defaultProps} analysisResult={emptyResult as AnalysisResult} />);

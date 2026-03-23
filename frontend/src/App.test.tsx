@@ -8,7 +8,15 @@ import App from './App';
 
 // Mock child components to avoid their complexity
 vi.mock('./components/VisualizationPanel', () => {
-  const MockVisualizationPanel = (props: any) => {
+  interface MockProps {
+    nDiagram: Record<string, unknown> | null;
+    n1Diagram: Record<string, unknown> | null;
+    configLoading: boolean;
+    layoutPath: string;
+    networkPath: string;
+    onOpenSettings: (tab: string) => void;
+  }
+  const MockVisualizationPanel = (props: MockProps) => {
     const { nDiagram, n1Diagram, configLoading, layoutPath, networkPath, onOpenSettings } = props;
     const [warningDismissed, setWarningDismissed] = React.useState(false);
     const hasAnyDiagram = !!nDiagram?.svg || !!n1Diagram?.svg;
