@@ -306,9 +306,8 @@ describe('Overload Clearing Logic', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-n1-ol-count', '2');
+      expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-sel-ol-count', '2');
     }, { timeout: 3000 });
-
-    expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-sel-ol-count', '2');
 
     // Run analysis to create state
     await runAnalysis();
@@ -348,7 +347,7 @@ describe('Overload Clearing Logic', () => {
     // Start new analysis. Slow it down to catch the 0 state.
     let resolveStep1: (val: { can_proceed: boolean; lines_overloaded: string[] }) => void;
     const slowStep1 = new Promise<{ can_proceed: boolean; lines_overloaded: string[] }>(resolve => { resolveStep1 = resolve; });
-    mockApi.runAnalysisStep1.mockReturnValue(slowStep1 as any);
+    mockApi.runAnalysisStep1.mockReturnValue(slowStep1 as Promise<{ can_proceed: boolean; lines_overloaded: string[] }>);
 
     await userEvent.click(screen.getByText('🚀 Run Analysis'));
 

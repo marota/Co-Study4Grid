@@ -68,7 +68,7 @@ function App() {
     inspectQuery, setInspectQuery, uniqueVoltages, voltageRange, setVoltageRange,
     vlOverlay, handleViewModeChange, handleManualZoomIn, handleManualZoomOut,
     handleManualReset, handleVlDoubleClick, handleOverlaySldTabChange, handleOverlayClose,
-    zoomToElement, inspectableItems,
+    inspectableItems,
     nSvgContainerRef, n1SvgContainerRef, actionSvgContainerRef
   } = diagrams;
 

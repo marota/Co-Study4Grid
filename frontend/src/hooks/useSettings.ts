@@ -84,10 +84,10 @@ export interface SettingsState {
 }
 
 export function useSettings(): SettingsState {
-  const [networkPath, setNetworkPath] = useState('');
-  const [actionPath, setActionPath] = useState('');
-  const [layoutPath, setLayoutPath] = useState('');
-  const [outputFolderPath, setOutputFolderPath] = useState('');
+  const [networkPath, setNetworkPath] = useState(() => localStorage.getItem('networkPath') || '/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z_dijon_only');
+  const [actionPath, setActionPath] = useState(() => localStorage.getItem('actionPath') || '/home/marotant/dev/Expert_op4grid_recommender/data/action_space/reduced_model_actions_20240828T0100Z_new_dijon.json');
+  const [layoutPath, setLayoutPath] = useState(() => localStorage.getItem('layoutPath') || '');
+  const [outputFolderPath, setOutputFolderPath] = useState(() => localStorage.getItem('outputFolderPath') || '');
 
   const [minLineReconnections, setMinLineReconnections] = useState(2.0);
   const [minCloseCoupling, setMinCloseCoupling] = useState(3.0);
@@ -112,17 +112,6 @@ export function useSettings(): SettingsState {
   const [settingsTab, setSettingsTab] = useState<'recommender' | 'configurations' | 'paths'>('paths');
   const [settingsBackup, setSettingsBackup] = useState<SettingsBackup | null>(null);
 
-  useEffect(() => {
-    const savedNetwork = localStorage.getItem('networkPath');
-    const savedAction = localStorage.getItem('actionPath');
-    const savedLayout = localStorage.getItem('layoutPath');
-    const savedOutput = localStorage.getItem('outputFolderPath');
-
-    setNetworkPath(savedNetwork || '/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z_dijon_only');
-    setActionPath(savedAction || '/home/marotant/dev/Expert_op4grid_recommender/data/action_space/reduced_model_actions_20240828T0100Z_new_dijon.json');
-    setLayoutPath(savedLayout || '');
-    setOutputFolderPath(savedOutput || '');
-  }, []);
 
   useEffect(() => {
     localStorage.setItem('networkPath', networkPath);

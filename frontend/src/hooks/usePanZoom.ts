@@ -59,7 +59,7 @@ export const usePanZoom = (
     };
 
     // Direct DOM update — no React involved
-    const applyViewBox = (vb: ViewBox | null) => {
+    const applyViewBox = useCallback((vb: ViewBox | null) => {
         const svg = svgElRef.current;
         if (svg && vb) {
             svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
@@ -88,7 +88,7 @@ export const usePanZoom = (
                 }
             }
         }
-    };
+    }, [svgRef]);
 
     // Flush ref -> React state for downstream consumers
     const commitViewBox = () => {
@@ -288,7 +288,7 @@ export const usePanZoom = (
             }
             return vb;
         });
-    }, []);
+    }, [applyViewBox]);
 
     return useMemo(() => ({ viewBox, setViewBox: setViewBoxPublic }), [viewBox, setViewBoxPublic]);
 };
