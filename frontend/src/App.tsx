@@ -40,9 +40,10 @@ function App() {
     buildConfigRequest, applyConfigResponse, createCurrentBackup, setSettingsBackup
   } = settings;
 
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [branches, setBranches] = useState<string[]>([]);
   const [voltageLevels, setVoltageLevels] = useState<string[]>([]);
-  const [selectedBranch, setSelectedBranch] = useState('');
+  const diagrams = useDiagrams(branches, voltageLevels, selectedBranch);
   const [configLoading, setConfigLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -61,7 +62,6 @@ function App() {
     infoMessage, selectedOverloads, monitorDeselected
   } = analysis;
 
-  const diagrams = useDiagrams(branches, voltageLevels);
   const {
     activeTab, setActiveTab, nDiagram, n1Diagram, n1Loading,
     selectedActionId, actionDiagram, actionDiagramLoading, actionViewMode,
@@ -96,7 +96,6 @@ function App() {
     actionsHook.clearActionState();
     diagrams.setSelectedActionId(null);
     diagrams.setActionDiagram(null);
-    diagrams.setN1Diagram(null);
     diagrams.setActiveTab('n');
     diagrams.setVlOverlay(null);
     setError('');
@@ -332,6 +331,7 @@ function App() {
 
     diagrams.committedBranchRef.current = selectedBranch;
     clearContingencyState();
+    diagrams.setN1Diagram(null);
 
     const fetchN1 = async () => {
       diagrams.setN1Loading(true);

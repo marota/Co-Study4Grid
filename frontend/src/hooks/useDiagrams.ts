@@ -108,6 +108,7 @@ export interface DiagramsState {
 export function useDiagrams(
   branches: string[],
   voltageLevels: string[],
+  selectedBranch: string,
 ): DiagramsState {
   // Tab
   const [activeTab, setActiveTab] = useState<TabId>('n');
@@ -186,6 +187,7 @@ export function useDiagrams(
       setNDiagram({ ...res, svg, originalViewBox: viewBox });
     } catch (err) {
       console.error('Failed to fetch diagram:', err);
+      throw err; // Re-throw so App.tsx can handle it
     }
   }, []);
 
@@ -450,18 +452,15 @@ export function useDiagrams(
     if (!currentPZ || !container || !index) return;
 
     try {
-      const { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId, edgesByNode } = index;
+      const { nodesByEquipmentId, edgesByEquipmentId } = index;
       const points: { x: number; y: number }[] = [];
-
-      const addNodePointsBySvgId = (svgId: string) => {
-        const n = nodesBySvgId.get(svgId);
-        if (n) points.push({ x: n.x, y: n.y });
-        return n;
-      };
 
       let targetNode = nodesByEquipmentId.get(targetId);
       let targetEdge = edgesByEquipmentId.get(targetId);
       let targetSvgId: string | undefined;
+
+      let usingFallbackIndex = false;
+      let effectiveIndex = index;
 
       if (!targetNode && !targetEdge) {
         const dotIdx = targetId.indexOf('.');
@@ -472,19 +471,44 @@ export function useDiagrams(
         }
       }
 
+      if (!targetNode && !targetEdge && index !== nMetaIndex && nMetaIndex) {
+        let nNode = nMetaIndex.nodesByEquipmentId.get(targetId);
+        let nEdge = nMetaIndex.edgesByEquipmentId.get(targetId);
+        if (!nNode && !nEdge) {
+          const dotIdx = targetId.indexOf('.');
+          if (dotIdx >= 0) {
+            const suffix = targetId.substring(dotIdx + 1);
+            nNode = nMetaIndex.nodesByEquipmentId.get(suffix) ?? undefined;
+            if (!nNode) nEdge = nMetaIndex.edgesByEquipmentId.get(suffix) ?? undefined;
+          }
+        }
+        if (nNode || nEdge) {
+          targetNode = nNode;
+          targetEdge = nEdge;
+          usingFallbackIndex = true;
+          effectiveIndex = nMetaIndex;
+        }
+      }
+
+      const addNodePointsBySvgId = (svgId: string) => {
+        const n = effectiveIndex.nodesBySvgId.get(svgId);
+        if (n) points.push({ x: n.x, y: n.y });
+        return n;
+      };
+
       if (targetNode) {
-        targetSvgId = targetNode.svgId;
+        if (!usingFallbackIndex) targetSvgId = targetNode.svgId;
         points.push({ x: targetNode.x, y: targetNode.y });
-        (edgesByNode.get(targetNode.svgId) || []).forEach(e => {
+        (effectiveIndex.edgesByNode.get(targetNode.svgId) || []).forEach(e => {
           addNodePointsBySvgId(e.node1);
           addNodePointsBySvgId(e.node2);
         });
       } else if (targetEdge) {
-        targetSvgId = targetEdge.svgId;
+        if (!usingFallbackIndex) targetSvgId = targetEdge.svgId;
         const n1 = addNodePointsBySvgId(targetEdge.node1);
         const n2 = addNodePointsBySvgId(targetEdge.node2);
-        if (n1) (edgesByNode.get(n1.svgId) || []).forEach(e => { addNodePointsBySvgId(e.node1); addNodePointsBySvgId(e.node2); });
-        if (n2) (edgesByNode.get(n2.svgId) || []).forEach(e => { addNodePointsBySvgId(e.node1); addNodePointsBySvgId(e.node2); });
+        if (n1) (effectiveIndex.edgesByNode.get(n1.svgId) || []).forEach(e => { addNodePointsBySvgId(e.node1); addNodePointsBySvgId(e.node2); });
+        if (n2) (effectiveIndex.edgesByNode.get(n2.svgId) || []).forEach(e => { addNodePointsBySvgId(e.node1); addNodePointsBySvgId(e.node2); });
       }
 
       if (points.length > 0) {
@@ -621,6 +645,44 @@ export function useDiagrams(
       runFilter();
     }
   }, [voltageRange, nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, nominalVoltageMap, uniqueVoltages, activeTab, applyVoltageFilter]);
+
+  // Auto-zoom to selected element via viewBox
+  useEffect(() => {
+    if (activeTab === 'overflow') return;
+
+    const queryChanged = inspectQuery !== lastZoomState.current.query;
+    const branchChanged = !inspectQuery && selectedBranch !== lastZoomState.current.branch;
+
+    if (!queryChanged && !branchChanged) return;
+
+    const targetId = inspectQuery || selectedBranch;
+
+    // Cleared inspect → reset view
+    if (!targetId && queryChanged) {
+      lastZoomState.current = { query: inspectQuery, branch: selectedBranch };
+      handleManualReset();
+      return;
+    }
+
+    if (!targetId) return;
+
+    // Branch changes should zoom on the N-1 tab, not N.
+    // In the same render cycle, setActiveTab('n-1') is batched but
+    // not committed — this effect still sees activeTab='n'. Skip here;
+    // the effect re-runs when activeTab changes to 'n-1'.
+    if (branchChanged && activeTab === 'n') return;
+
+    // Only consume the zoom intent when the container has SVG content.
+    // If not ready (e.g. N-1 still loading), skip — the effect re-runs
+    // when n1Diagram changes, and branchChanged will still be true.
+    const container = activeTab === 'action' ? actionSvgContainerRef.current
+      : activeTab === 'n' ? nSvgContainerRef.current : n1SvgContainerRef.current;
+    if (!container || !container.querySelector('svg')) return;
+
+    lastZoomState.current = { query: inspectQuery, branch: selectedBranch };
+    zoomToElement(targetId);
+
+  }, [activeTab, nDiagram, n1Diagram, actionDiagram, inspectQuery, selectedBranch, handleManualReset, zoomToElement]);
 
   return {
     activeTab, setActiveTab,

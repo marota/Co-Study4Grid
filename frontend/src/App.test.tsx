@@ -8,20 +8,18 @@ import App from './App';
 
 // Mock child components to avoid their complexity
 vi.mock('./components/VisualizationPanel', () => {
-  const MockVisualizationPanel = ({ nDiagram, configLoading, networkPath, layoutPath, onOpenSettings }: {
-    nDiagram: { svg: string } | null;
-    configLoading: boolean;
-    networkPath: string;
-    layoutPath: string;
-    onOpenSettings: (tab: string) => void;
-  }) => {
+  const MockVisualizationPanel = (props: any) => {
+    const { nDiagram, n1Diagram, configLoading, layoutPath, networkPath, onOpenSettings } = props;
     const [warningDismissed, setWarningDismissed] = React.useState(false);
-    const hasAnyDiagram = !!nDiagram?.svg;
+    const hasAnyDiagram = !!nDiagram?.svg || !!n1Diagram?.svg;
     const showPathWarning = !warningDismissed && !hasAnyDiagram;
 
     return (
-      <div data-testid="visualization-panel">
-        {!nDiagram?.svg && !configLoading && showPathWarning && (
+      <div
+        data-testid="visualization-panel"
+        data-n1-diagram-present={!!n1Diagram}
+      >
+        {!hasAnyDiagram && !configLoading && showPathWarning && (
           <div>
             <div>Configuration Paths</div>
             <button onClick={() => setWarningDismissed(true)}>✕</button>
@@ -1069,6 +1067,22 @@ describe('Overload Clearing Logic', () => {
 
     // Cleanup
     resolveStep1!({ can_proceed: true, lines_overloaded: [] });
+  });
+
+  it('preserves N-1 diagram in VisualizationPanel when running analysis (regression test)', async () => {
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+
+    // Initially, N-1 diagram should be present
+    await waitFor(() => {
+      expect(screen.getByTestId('visualization-panel')).toHaveAttribute('data-n1-diagram-present', 'true');
+    });
+
+    // Run analysis (which used to trigger clearContingencyState and wipe the diagram)
+    await runAnalysis();
+
+    // VERIFY: N-1 diagram is STILL present in the panel
+    expect(screen.getByTestId('visualization-panel')).toHaveAttribute('data-n1-diagram-present', 'true');
   });
 });
 

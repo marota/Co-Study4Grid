@@ -51,6 +51,24 @@ interface SldOverlayProps {
     actionDiagram: DiagramData | null;
 }
 
+// ===== Memoized SVG Container =====
+// Prevents React from diffing massive SVG strings on every parent render
+interface SvgContainerProps {
+    svg: string;
+    containerRef: RefObject<HTMLDivElement | null>;
+    display: string;
+    tabId: TabId;
+}
+const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId }: SvgContainerProps) => (
+    <div
+        ref={containerRef}
+        className="svg-container"
+        id={`${tabId}-svg-container`}
+        style={{ display, width: '100%', height: '100%', overflow: 'hidden' }}
+        dangerouslySetInnerHTML={{ __html: svg }}
+    />
+));
+
 const SldOverlay: React.FC<SldOverlayProps> = ({
     vlOverlay, actionViewMode,
     onOverlayClose, onOverlaySldTabChange,
@@ -751,7 +769,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             Loading configuration...
                         </div>
                     ) : nDiagram?.svg ? (
-                        <div className="svg-container" ref={nSvgContainerRef} dangerouslySetInnerHTML={{ __html: nDiagram.svg }} />
+                        <MemoizedSvgContainer svg={nDiagram.svg} containerRef={nSvgContainerRef} display="block" tabId="n" />
                     ) : (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
                             Load configuration to see diagram
@@ -783,7 +801,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             Generating N-1 Diagram...
                         </div>
                     ) : n1Diagram?.svg ? (
-                        <div className="svg-container" ref={n1SvgContainerRef} dangerouslySetInnerHTML={{ __html: n1Diagram.svg }} />
+                        <MemoizedSvgContainer svg={n1Diagram.svg} containerRef={n1SvgContainerRef} display="block" tabId="n-1" />
                     ) : (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
                             Select a target contingency to view N-1
@@ -815,7 +833,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             Generating Action Variant Diagram...
                         </div>
                     ) : actionDiagram?.svg ? (
-                        <div className="svg-container" ref={actionSvgContainerRef} dangerouslySetInnerHTML={{ __html: actionDiagram.svg }} />
+                        <MemoizedSvgContainer svg={actionDiagram.svg} containerRef={actionSvgContainerRef} display="block" tabId="action" />
                     ) : selectedActionId ? (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
                             Failed to load diagram for action {selectedActionId}
