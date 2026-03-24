@@ -29,6 +29,16 @@ export const api = {
     saveUserConfig: async (config: UserConfig): Promise<void> => {
         await axios.post(`${API_BASE_URL}/api/user-config`, config);
     },
+    getConfigFilePath: async (): Promise<string> => {
+        const response = await axios.get<{ config_file_path: string }>(`${API_BASE_URL}/api/config-file-path`);
+        return response.data.config_file_path;
+    },
+    setConfigFilePath: async (path: string): Promise<{ config_file_path: string; config: UserConfig }> => {
+        const response = await axios.post<{ status: string; config_file_path: string; config: UserConfig }>(
+            `${API_BASE_URL}/api/config-file-path`, { path }
+        );
+        return response.data;
+    },
     updateConfig: async (config: ConfigRequest) => {
         const response = await axios.post(`${API_BASE_URL}/api/config`, config);
         return response.data;

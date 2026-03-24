@@ -17,6 +17,7 @@ function App() {
   // ===== Settings Hook =====
   const settings = useSettings();
   const {
+    configFilePath, changeConfigFilePath,
     networkPath, setNetworkPath, actionPath, setActionPath,
     layoutPath, setLayoutPath, outputFolderPath, setOutputFolderPath,
     minLineReconnections, setMinLineReconnections,
@@ -586,6 +587,28 @@ function App() {
                   <div style={{ display: 'flex', gap: '5px' }}>
                     <input type="text" value={outputFolderPath} onChange={e => setOutputFolderPath(e.target.value)} placeholder="e.g. /home/user/sessions" style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
                     <button onClick={() => pickSettingsPath('dir', setOutputFolderPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📂</button>
+                  </div>
+                </div>
+                <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '5px 0' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Config File Path</label>
+                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>
+                    Path to the <code>config.json</code> settings file. Change this to use a config stored outside the repository.
+                    The file will be created from defaults if it does not exist.
+                  </div>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    <input
+                      type="text"
+                      value={configFilePath}
+                      onChange={e => changeConfigFilePath(e.target.value).catch(() => {})}
+                      onBlur={e => changeConfigFilePath(e.target.value).catch(() => {})}
+                      placeholder="e.g. /home/user/my_expertassist_config.json"
+                      style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    />
+                    <button
+                      onClick={() => pickSettingsPath('file', (p) => changeConfigFilePath(p).catch(() => {}))}
+                      style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}
+                    >📄</button>
                   </div>
                 </div>
               </div>

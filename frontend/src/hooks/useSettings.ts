@@ -4,6 +4,10 @@ import type { UserConfig } from '../api';
 import type { SettingsBackup } from '../types';
 
 export interface SettingsState {
+  // Config file path
+  configFilePath: string;
+  changeConfigFilePath: (newPath: string) => Promise<void>;
+
   // Paths
   networkPath: string;
   setNetworkPath: (v: string) => void;
@@ -85,6 +89,8 @@ export interface SettingsState {
 }
 
 export function useSettings(): SettingsState {
+  const [configFilePath, setConfigFilePath] = useState('');
+
   const [networkPath, setNetworkPath] = useState('');
   const [actionPath, setActionPath] = useState('');
   const [layoutPath, setLayoutPath] = useState('');
@@ -116,31 +122,49 @@ export function useSettings(): SettingsState {
   // Track whether initial config load from backend is complete
   const configLoadedRef = useRef(false);
 
+  // Helper to apply a loaded UserConfig object to all state fields
+  const applyLoadedConfig = useCallback((cfg: UserConfig) => {
+    if (cfg.network_path !== undefined) setNetworkPath(cfg.network_path);
+    if (cfg.action_file_path !== undefined) setActionPath(cfg.action_file_path);
+    if (cfg.layout_path !== undefined) setLayoutPath(cfg.layout_path);
+    if (cfg.output_folder_path !== undefined) setOutputFolderPath(cfg.output_folder_path);
+    if (cfg.lines_monitoring_path !== undefined) setLinesMonitoringPath(cfg.lines_monitoring_path);
+    if (cfg.min_line_reconnections !== undefined) setMinLineReconnections(cfg.min_line_reconnections);
+    if (cfg.min_close_coupling !== undefined) setMinCloseCoupling(cfg.min_close_coupling);
+    if (cfg.min_open_coupling !== undefined) setMinOpenCoupling(cfg.min_open_coupling);
+    if (cfg.min_line_disconnections !== undefined) setMinLineDisconnections(cfg.min_line_disconnections);
+    if (cfg.min_pst !== undefined) setMinPst(cfg.min_pst);
+    if (cfg.n_prioritized_actions !== undefined) setNPrioritizedActions(cfg.n_prioritized_actions);
+    if (cfg.monitoring_factor !== undefined) setMonitoringFactor(cfg.monitoring_factor);
+    if (cfg.pre_existing_overload_threshold !== undefined) setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
+    if (cfg.ignore_reconnections !== undefined) setIgnoreReconnections(cfg.ignore_reconnections);
+    if (cfg.pypowsybl_fast_mode !== undefined) setPypowsyblFastMode(cfg.pypowsybl_fast_mode);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Load persisted config from backend on mount
   useEffect(() => {
-    api.getUserConfig().then((cfg: UserConfig) => {
-      if (cfg.network_path !== undefined) setNetworkPath(cfg.network_path);
-      if (cfg.action_file_path !== undefined) setActionPath(cfg.action_file_path);
-      if (cfg.layout_path !== undefined) setLayoutPath(cfg.layout_path);
-      if (cfg.output_folder_path !== undefined) setOutputFolderPath(cfg.output_folder_path);
-      if (cfg.lines_monitoring_path !== undefined) setLinesMonitoringPath(cfg.lines_monitoring_path);
-      if (cfg.min_line_reconnections !== undefined) setMinLineReconnections(cfg.min_line_reconnections);
-      if (cfg.min_close_coupling !== undefined) setMinCloseCoupling(cfg.min_close_coupling);
-      if (cfg.min_open_coupling !== undefined) setMinOpenCoupling(cfg.min_open_coupling);
-      if (cfg.min_line_disconnections !== undefined) setMinLineDisconnections(cfg.min_line_disconnections);
-      if (cfg.min_pst !== undefined) setMinPst(cfg.min_pst);
-      if (cfg.n_prioritized_actions !== undefined) setNPrioritizedActions(cfg.n_prioritized_actions);
-      if (cfg.monitoring_factor !== undefined) setMonitoringFactor(cfg.monitoring_factor);
-      if (cfg.pre_existing_overload_threshold !== undefined) setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
-      if (cfg.ignore_reconnections !== undefined) setIgnoreReconnections(cfg.ignore_reconnections);
-      if (cfg.pypowsybl_fast_mode !== undefined) setPypowsyblFastMode(cfg.pypowsybl_fast_mode);
-      // Mark config as loaded so persistence effect can start saving
-      configLoadedRef.current = true;
-    }).catch(() => {
-      console.warn('Failed to load user config from backend, using defaults');
-      configLoadedRef.current = true;
-    });
+    Promise.all([api.getUserConfig(), api.getConfigFilePath()])
+      .then(([cfg, cfgPath]) => {
+        applyLoadedConfig(cfg);
+        setConfigFilePath(cfgPath);
+        configLoadedRef.current = true;
+      })
+      .catch(() => {
+        console.warn('Failed to load user config from backend, using defaults');
+        configLoadedRef.current = true;
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const changeConfigFilePath = useCallback(async (newPath: string) => {
+    const result = await api.setConfigFilePath(newPath);
+    setConfigFilePath(result.config_file_path);
+    // Temporarily block auto-save so applying new config doesn't immediately overwrite
+    configLoadedRef.current = false;
+    applyLoadedConfig(result.config);
+    configLoadedRef.current = true;
+  }, [applyLoadedConfig]);
 
   // Persist settings to backend config file whenever they change
   useEffect(() => {
@@ -252,6 +276,7 @@ export function useSettings(): SettingsState {
   }, []);
 
   return useMemo(() => ({
+    configFilePath, changeConfigFilePath,
     networkPath, setNetworkPath,
     actionPath, setActionPath,
     layoutPath, setLayoutPath,
@@ -288,6 +313,7 @@ export function useSettings(): SettingsState {
     linesMonitoringPath, monitoredLinesCount, totalLinesCount, showMonitoringWarning, monitoringFactor, preExistingOverloadThreshold, pypowsyblFastMode,
     actionDictFileName, actionDictStats,
     isSettingsOpen, settingsTab, settingsBackup,
+    configFilePath, changeConfigFilePath,
     pickSettingsPath, handleOpenSettings, handleCloseSettings, buildConfigRequest, applyConfigResponse, createCurrentBackup
   ]);
 }

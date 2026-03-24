@@ -13,6 +13,7 @@ Overflow_Graph/
 
 # User config (default template is tracked as config.default.json)
 config.json
+config_path.txt
 
 # Virtual environments
 venv/

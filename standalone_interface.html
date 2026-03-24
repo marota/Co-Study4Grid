@@ -1176,6 +1176,7 @@
             const [layoutPath, setLayoutPath] = useState('');
             const [outputFolderPath, setOutputFolderPath] = useState('');
             const [linesMonitoringPath, setLinesMonitoringPath] = useState('');
+            const [configFilePath, setConfigFilePath] = useState('');
             const configLoadedRef = useRef(false);
             const [nominalVoltageMap, setNominalVoltageMap] = useState({});  // {vl_id: kv}
             const [uniqueVoltages, setUniqueVoltages] = useState([]);       // sorted [kv1, kv2, ...]
@@ -1488,31 +1489,51 @@
             const actionSyncSourceRef = useRef(null);
 
 
+            // Helper to apply a loaded config object to all state fields
+            const applyLoadedConfig = (cfg) => {
+                if (cfg.network_path !== undefined) setNetworkPath(cfg.network_path);
+                if (cfg.action_file_path !== undefined) setActionPath(cfg.action_file_path);
+                if (cfg.layout_path !== undefined) setLayoutPath(cfg.layout_path);
+                if (cfg.output_folder_path !== undefined) setOutputFolderPath(cfg.output_folder_path);
+                if (cfg.lines_monitoring_path !== undefined) setLinesMonitoringPath(cfg.lines_monitoring_path);
+                if (cfg.min_line_reconnections !== undefined) setMinLineReconnections(cfg.min_line_reconnections);
+                if (cfg.min_close_coupling !== undefined) setMinCloseCoupling(cfg.min_close_coupling);
+                if (cfg.min_open_coupling !== undefined) setMinOpenCoupling(cfg.min_open_coupling);
+                if (cfg.min_line_disconnections !== undefined) setMinLineDisconnections(cfg.min_line_disconnections);
+                if (cfg.min_pst !== undefined) setMinPst(cfg.min_pst);
+                if (cfg.n_prioritized_actions !== undefined) setNPrioritizedActions(cfg.n_prioritized_actions);
+                if (cfg.monitoring_factor !== undefined) setMonitoringFactor(cfg.monitoring_factor);
+                if (cfg.pre_existing_overload_threshold !== undefined) setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
+                if (cfg.ignore_reconnections !== undefined) setIgnoreReconnections(cfg.ignore_reconnections);
+                if (cfg.pypowsybl_fast_mode !== undefined) setPypowsyblFastMode(cfg.pypowsybl_fast_mode);
+            };
+
             // Load persisted config from backend on mount
             useEffect(() => {
-                axios.get(`${API_BASE}/api/user-config`).then(res => {
-                    const cfg = res.data;
-                    if (cfg.network_path !== undefined) setNetworkPath(cfg.network_path);
-                    if (cfg.action_file_path !== undefined) setActionPath(cfg.action_file_path);
-                    if (cfg.layout_path !== undefined) setLayoutPath(cfg.layout_path);
-                    if (cfg.output_folder_path !== undefined) setOutputFolderPath(cfg.output_folder_path);
-                    if (cfg.lines_monitoring_path !== undefined) setLinesMonitoringPath(cfg.lines_monitoring_path);
-                    if (cfg.min_line_reconnections !== undefined) setMinLineReconnections(cfg.min_line_reconnections);
-                    if (cfg.min_close_coupling !== undefined) setMinCloseCoupling(cfg.min_close_coupling);
-                    if (cfg.min_open_coupling !== undefined) setMinOpenCoupling(cfg.min_open_coupling);
-                    if (cfg.min_line_disconnections !== undefined) setMinLineDisconnections(cfg.min_line_disconnections);
-                    if (cfg.min_pst !== undefined) setMinPst(cfg.min_pst);
-                    if (cfg.n_prioritized_actions !== undefined) setNPrioritizedActions(cfg.n_prioritized_actions);
-                    if (cfg.monitoring_factor !== undefined) setMonitoringFactor(cfg.monitoring_factor);
-                    if (cfg.pre_existing_overload_threshold !== undefined) setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
-                    if (cfg.ignore_reconnections !== undefined) setIgnoreReconnections(cfg.ignore_reconnections);
-                    if (cfg.pypowsybl_fast_mode !== undefined) setPypowsyblFastMode(cfg.pypowsybl_fast_mode);
+                Promise.all([
+                    axios.get(`${API_BASE}/api/user-config`),
+                    axios.get(`${API_BASE}/api/config-file-path`)
+                ]).then(([cfgRes, pathRes]) => {
+                    applyLoadedConfig(cfgRes.data);
+                    setConfigFilePath(pathRes.data.config_file_path);
                     configLoadedRef.current = true;
                 }).catch(() => {
                     console.warn('Failed to load user config from backend, using defaults');
                     configLoadedRef.current = true;
                 });
             }, []);
+
+            const changeConfigFilePath = async (newPath) => {
+                try {
+                    const res = await axios.post(`${API_BASE}/api/config-file-path`, { path: newPath });
+                    setConfigFilePath(res.data.config_file_path);
+                    configLoadedRef.current = false;
+                    applyLoadedConfig(res.data.config);
+                    configLoadedRef.current = true;
+                } catch (err) {
+                    console.warn('Failed to change config file path', err);
+                }
+            };
 
             // Persist settings to backend config file whenever they change
             useEffect(() => {
@@ -4346,6 +4367,25 @@
                                                 <div style={{ display: 'flex', gap: '5px' }}>
                                                     <input type="text" value={outputFolderPath} onChange={e => setOutputFolderPath(e.target.value)} placeholder="e.g. /home/user/sessions" style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
                                                     <button onClick={() => pickPath('dir', setOutputFolderPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📂</button>
+                                                </div>
+                                            </div>
+                                            <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '5px 0' }} />
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Config File Path</label>
+                                                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>
+                                                    Path to the <code>config.json</code> settings file. Change this to use a config stored outside the repository.
+                                                    The file will be created from defaults if it does not exist.
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '5px' }}>
+                                                    <input
+                                                        type="text"
+                                                        value={configFilePath}
+                                                        onChange={e => setConfigFilePath(e.target.value)}
+                                                        onBlur={e => changeConfigFilePath(e.target.value)}
+                                                        placeholder="e.g. /home/user/my_expertassist_config.json"
+                                                        style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                                                    />
+                                                    <button onClick={() => pickPath('file', (p) => changeConfigFilePath(p))} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📄</button>
                                                 </div>
                                             </div>
                                         </div>
