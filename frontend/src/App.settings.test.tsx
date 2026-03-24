@@ -80,6 +80,7 @@ vi.mock('./utils/svgUtils', () => ({
   applyContingencyHighlight: vi.fn(),
   getIdMap: () => new Map(),
   invalidateIdMapCache: vi.fn(),
+  isCouplingAction: vi.fn(() => false),
 }));
 
 vi.mock('./utils/svgWorkerClient', () => ({
