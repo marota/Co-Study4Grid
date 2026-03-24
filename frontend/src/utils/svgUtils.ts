@@ -181,6 +181,14 @@ export const applyOverloadedHighlights = (
 };
 
 /**
+ * Robust detection of coupling/nodal actions.
+ */
+export const isCouplingAction = (actionId: string | null, description?: string): boolean => {
+    const q = ((actionId || '') + ' ' + (description || '')).toLowerCase();
+    return q.includes('coupling') || q.includes('busbar') || q.includes('couplage') || q.includes('noeud');
+};
+
+/**
  * Determine which lines an action acts upon (for line disconnection/reconnection actions).
  */
 export const getActionTargetLines = (
@@ -193,7 +201,7 @@ export const getActionTargetLines = (
     // 1. From topology
     const topo = actionDetail?.action_topology;
     if (topo) {
-        const isCoupling = actionId?.toLowerCase().includes('coupling') || actionId?.toLowerCase().includes('busbar');
+        const isCoupling = isCouplingAction(actionId, actionDetail?.description_unitaire);
 
         // Pst taps are always included
         Object.keys(topo.pst_tap || {}).forEach(l => targets.add(l));
@@ -223,7 +231,8 @@ export const getActionTargetLines = (
     }
 
     // 2. From action ID (handles combined IDs)
-    if (actionId) {
+    const isCoupling = isCouplingAction(actionId, actionDetail?.description_unitaire);
+    if (actionId && !isCoupling) {
         actionId.split('+').forEach(part => {
             // Strip any suffix added by discovery (e.g. _inc1, _dec2)
             const cleanPart = part.replace(/_(inc|dec)\d+$/, '');
@@ -279,15 +288,28 @@ export const getActionTargetVoltageLevels = (
         const posteMatches = desc.matchAll(/(?:dans le |du |au )?poste\s+'?([^',]+?)'?(?=\s*(?:['",]|$))/gi);
         for (const match of posteMatches) {
             const vl = match[1].trim();
-            if (nodesByEquipmentId.has(vl)) targets.add(vl);
+            if (nodesByEquipmentId.has(vl)) {
+                targets.add(vl);
+            } else {
+                // Try to find the longest prefix that matches a known node (handles "MICQ P7 is open")
+                const parts = vl.split(/\s+/);
+                for (let i = parts.length; i >= 1; i--) {
+                    const candidate = parts.slice(0, i).join(' ');
+                    if (nodesByEquipmentId.has(candidate)) {
+                        targets.add(candidate);
+                        break;
+                    }
+                }
+            }
         }
     }
 
     // Fallback: action ID suffix — skip for pure line reconnection actions
     const topo = actionDetail?.action_topology;
-    const isLineReconnection = topo
+    const isCoupling = isCouplingAction(actionId, actionDetail?.description_unitaire);
+    const isLineReconnection = !isCoupling && !!topo
         && (Object.keys(topo.gens_bus || {}).length === 0 && Object.keys(topo.loads_bus || {}).length === 0)
-        && [...Object.values(topo.lines_ex_bus || {}), ...Object.values(topo.lines_or_bus || {})].some(v => v >= 0);
+        && ([...Object.values(topo.lines_ex_bus || {}), ...Object.values(topo.lines_or_bus || {})] as number[]).some(v => v >= 0);
 
     if (actionId && !isLineReconnection) {
         actionId.split('+').forEach(part => {

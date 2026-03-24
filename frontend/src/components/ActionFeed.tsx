@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction } from '../types';
 import { api } from '../api';
-import { getActionTargetVoltageLevels, getActionTargetLines } from '../utils/svgUtils';
+import { getActionTargetVoltageLevels, getActionTargetLines, isCouplingAction } from '../utils/svgUtils';
 import CombinedActionsModal from './CombinedActionsModal';
 
 interface ActionFeedProps {
@@ -429,7 +429,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                             }
 
                             // 2. Lines / Equipments
-                            const isCoupling = id.toLowerCase().includes('coupling') || id.toLowerCase().includes('busbar');
+                            const isCoupling = isCouplingAction(id, details.description_unitaire);
                             const lineNames = edgesByEquipmentId
                                 ? getActionTargetLines(details, id, edgesByEquipmentId)
                                 : Array.from(new Set([

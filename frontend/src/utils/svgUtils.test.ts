@@ -14,6 +14,18 @@ import {
 } from './svgUtils';
 import type { ActionDetail, NodeMeta, EdgeMeta, MetadataIndex } from '../types';
 
+const makeEdgeMap = (...ids: string[]) => {
+    const map = new Map<string, EdgeMeta>();
+    ids.forEach(id => map.set(id, { equipmentId: id, svgId: `svg-${id}`, node1: '', node2: '' }));
+    return map;
+};
+
+const makeNodeMap = (...ids: string[]) => {
+    const map = new Map<string, NodeMeta>();
+    ids.forEach(id => map.set(id, { equipmentId: id, svgId: `svg-${id}`, x: 0, y: 0 }));
+    return map;
+};
+
 describe('processSvg', () => {
     it('extracts viewBox from SVG string', () => {
         const svg = '<svg viewBox="0 10 800 600"><rect/></svg>';
@@ -142,11 +154,6 @@ describe('buildMetadataIndex', () => {
 });
 
 describe('getActionTargetLines', () => {
-    const makeEdgeMap = (...ids: string[]) => {
-        const map = new Map<string, EdgeMeta>();
-        ids.forEach(id => map.set(id, { equipmentId: id, svgId: `svg-${id}`, node1: '', node2: '' }));
-        return map;
-    };
 
     it('returns lines from topology when only lines are affected', () => {
         const detail: ActionDetail = {
@@ -345,11 +352,6 @@ describe('getActionTargetLines', () => {
 });
 
 describe('getActionTargetVoltageLevels', () => {
-    const makeNodeMap = (...ids: string[]) => {
-        const map = new Map<string, NodeMeta>();
-        ids.forEach(id => map.set(id, { equipmentId: id, svgId: `svg-${id}`, x: 0, y: 0 }));
-        return map;
-    };
 
     it('extracts VL from quoted string in description', () => {
         const detail: ActionDetail = {
@@ -508,6 +510,41 @@ describe('getActionTargetVoltageLevels', () => {
         const actionId = 'de829050-177c-4244-ba94-61b22d2684a4_MQIS P7_coupling';
         const result = getActionTargetVoltageLevels(detail, actionId, makeNodeMap('MQIS P7'));
         expect(result).toEqual(['MQIS P7']);
+    });
+
+    it('extracts VL using prefix matching (handles "MICQ P7 is open")', () => {
+        const detail: ActionDetail = {
+            description_unitaire: "Ouverture dans le poste MICQ P7 is open",
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+        };
+
+        const result = getActionTargetVoltageLevels(detail, null, makeNodeMap('MICQ P7'));
+        expect(result).toEqual(['MICQ P7']);
+    });
+
+    it('recognizes French "couplage" keyword for coupling detection', () => {
+        const detail: ActionDetail = {
+            description_unitaire: "Ouverture couplage DJ_OC",
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+            action_topology: {
+                lines_ex_bus: { LINE1: -1 },
+                lines_or_bus: {},
+                gens_bus: {},
+                loads_bus: {},
+            }
+        } as unknown as ActionDetail;
+
+        const result = getActionTargetLines(detail, 'some_uuid', makeEdgeMap('LINE1'));
+        // Should suppress LINE1 because it's a coupling action
+        expect(result).not.toContain('LINE1');
     });
 });
 
