@@ -57,9 +57,12 @@ circle.nad-highlight {
     filter: drop-shadow(0 0 8px #fffb00) drop-shadow(0 0 15px #fffb00) !important;
 }
 
-/* Contingency highlight in orange */
+
+
+/* Contingency highlight in orange (vibrant #ff6600) */
 .nad-contingency-highlight {
-    filter: drop-shadow(0 0 8px #ff8c00) drop-shadow(0 0 15px #ff8c00) !important;
+    filter: drop-shadow(0 0 8px #ff9800) drop-shadow(0 0 15px #ff9800) !important;
+    opacity: 0.85 !important;
 }
 
 /* For lines and paths, use grid units for stroke-width so the halo is always
@@ -77,14 +80,16 @@ circle.nad-highlight {
     stroke-linejoin: round !important;
 }
 
+
 .nad-contingency-highlight path,
 .nad-contingency-highlight line,
 .nad-contingency-highlight polyline,
 .nad-contingency-highlight rect,
 .nad-contingency-highlight polygon {
-    stroke: #ff8c00 !important;
-    stroke-width: 150px !important;
-    stroke-opacity: 0.8 !important;
+    stroke: #ff9800 !important;
+    stroke-width: 120px !important;
+    stroke-opacity: 0.85 !important;
+    opacity: 1 !important;
     fill: none !important;
     stroke-linecap: round !important;
     stroke-linejoin: round !important;
@@ -102,14 +107,23 @@ circle.nad-highlight {
     vector-effect: non-scaling-stroke !important;
 }
 
+.nad-action-target {
+    filter: drop-shadow(0 0 8px #fffb00) drop-shadow(0 0 15px #fffb00) !important;
+}
+
 .nad-contingency-highlight circle,
 .nad-contingency-highlight rect {
-    stroke: #ff8c00 !important;
+    stroke: #ff9800 !important;
     stroke-width: 45px !important;
-    stroke-opacity: 0.6 !important;
-    fill: #ff8c00 !important;
-    fill-opacity: 0.8 !important;
+    stroke-opacity: 0.7 !important;
+    fill: #ff9800 !important;
+    fill-opacity: 0.9 !important;
+    opacity: 1 !important;
     vector-effect: non-scaling-stroke !important;
+}
+
+.nad-highlight-clone {
+    opacity: 1 !important;
 }
 
 /* Hide text and foreignObjects in the background clone to avoid messy overlays */
@@ -130,7 +144,8 @@ circle.nad-highlight {
 /* Suppress expensive drop-shadow filters during active interaction.
    The compositing cost of multiple drop-shadows on cloned highlight
    elements is high — skip it while the viewBox is changing rapidly. */
-.svg-container.svg-interacting .nad-action-target {
+.svg-container.svg-interacting .nad-action-target,
+.svg-container.svg-interacting .nad-contingency-highlight {
     filter: none !important;
 }
 
@@ -140,7 +155,7 @@ circle.nad-highlight {
 .nad-delta-positive path,
 .nad-delta-positive line,
 .nad-delta-positive polyline {
-    stroke: #ff8c00 !important;
+    stroke: #ff9800 !important;
     stroke-width: 3px !important;
 }
 

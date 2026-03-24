@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../api';
 import type { AnalysisResult, CombinedAction, ActionDetail } from '../types';
 
@@ -48,6 +48,7 @@ const CombinedActionsModal: React.FC<Props> = ({
     const [simulationFeedback, setSimulationFeedback] = useState<SimulationFeedback | null>(null);
     // Per-pair simulation results tracked within this modal session
     const [sessionSimResults, setSessionSimResults] = useState<Record<string, SimulationFeedback>>({});
+    const lastSelectionRef = useRef<string>('');
 
     // Scored actions for exploration, derived from analysisResult.action_scores
     const scoredActionsList = useMemo(() => {
@@ -139,46 +140,55 @@ const CombinedActionsModal: React.FC<Props> = ({
         }
     }, [isOpen]);
 
-    // Fetch superposition preview when exactly 2 are selected
+    // Only handle automatic preview for pre-computed actions or resetting
     useEffect(() => {
-        const fetchPreview = async () => {
-            if (activeTab === 'explore' && selectedIds.size === 2 && disconnectedElement) {
-                const [id1, id2] = Array.from(selectedIds);
+        const currentSelection = Array.from(selectedIds).sort().join('+');
+        const selectionChanged = currentSelection !== lastSelectionRef.current;
+        lastSelectionRef.current = currentSelection;
 
-                // Check if already in analysisResult.combined_actions
-                const pairKey = [id1, id2].sort().join('+');
-                const preComputed = analysisResult?.combined_actions?.[pairKey];
+        if (activeTab === 'explore' && selectedIds.size === 2 && disconnectedElement) {
+            const [id1, id2] = Array.from(selectedIds);
+            const pairKey = [id1, id2].sort().join('+');
+            const preComputed = analysisResult?.combined_actions?.[pairKey];
 
-                if (preComputed) {
-                    setPreview(preComputed);
-                    setError(null);
-                    return;
-                }
-
-                setLoading(true);
+            if (preComputed) {
+                setPreview(preComputed);
                 setError(null);
-                try {
-                    const result = await api.computeSuperposition(id1, id2, disconnectedElement);
-                    if (result.error) {
-                        setError(result.error);
-                        setPreview(result);
-                    } else {
-                        setPreview(result);
-                    }
-                } catch (e: unknown) {
-                    const err = e as { response?: { data?: { detail?: string } }, message?: string };
-                    setError(err?.response?.data?.detail || err.message || 'Failed to compute superposition');
-                    setPreview(null);
-                } finally {
-                    setLoading(false);
-                }
-            } else {
+            } else if (selectionChanged) {
+                // If not pre-computed, ONLY clear if selection actually changed
                 setPreview(null);
+                setSimulationFeedback(null);
+            }
+        } else {
+            setPreview(null);
+            setError(null);
+            setSimulationFeedback(null);
+        }
+    }, [selectedIds, disconnectedElement, analysisResult, activeTab]);
+
+    const handleEstimate = async () => {
+        if (activeTab !== 'explore' || selectedIds.size !== 2 || !disconnectedElement) return;
+        const [id1, id2] = Array.from(selectedIds);
+
+        setLoading(true);
+        setError(null);
+        try {
+            const result = await api.computeSuperposition(id1, id2, disconnectedElement);
+            if (result.error) {
+                setError(result.error);
+                setPreview(result);
+            } else {
+                setPreview(result);
                 setError(null);
             }
-        };
-        fetchPreview();
-    }, [selectedIds, disconnectedElement, analysisResult, activeTab]);
+        } catch (e: unknown) {
+            const err = e as { response?: { data?: { detail?: string } }, message?: string };
+            setError(err?.response?.data?.detail || err.message || 'Failed to compute superposition');
+            setPreview(null);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     if (!isOpen) return null;
 
@@ -290,8 +300,8 @@ const CombinedActionsModal: React.FC<Props> = ({
                 </div>
 
                 <div style={{ display: 'flex', borderBottom: '1px solid #ddd', background: '#fcfcfc', padding: '0 24px' }}>
-                    <div className={`modal-tab ${activeTab === 'computed' ? 'active' : ''}`} onClick={() => setActiveTab('computed')}>Computed Pairs</div>
-                    <div className={`modal-tab ${activeTab === 'explore' ? 'active' : ''}`} onClick={() => setActiveTab('explore')}>Explore Pairs</div>
+                    <div className={`modal-tab ${activeTab === 'computed' ? 'active' : ''}`} onClick={() => setActiveTab('computed')} data-testid="tab-computed">Computed Pairs</div>
+                    <div className={`modal-tab ${activeTab === 'explore' ? 'active' : ''}`} onClick={() => setActiveTab('explore')} data-testid="tab-explore">Explore Pairs</div>
                 </div>
 
                 <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -543,22 +553,21 @@ const CombinedActionsModal: React.FC<Props> = ({
                             <div style={{ marginTop: '5px' }}>
                                 {!preview ? (
                                     <button
-                                        onClick={async () => {
-                                            // Trigger estimation manually if needed, but the effect already does it.
-                                            // This button is mainly a state indicator in standalone.
-                                        }}
+                                        onClick={handleEstimate}
                                         disabled={selectedIds.size !== 2 || loading}
+                                        data-testid="estimate-button"
                                         style={{
                                             width: '100%',
                                             padding: '12px',
-                                            background: selectedIds.size === 2 ? '#3498db' : '#ecf0f1',
-                                            color: selectedIds.size === 2 ? 'white' : '#bdc3c7',
+                                            background: (selectedIds.size === 2 && !loading) ? '#3498db' : '#ecf0f1',
+                                            color: (selectedIds.size === 2 && !loading) ? 'white' : '#bdc3c7',
                                             border: 'none',
                                             borderRadius: '6px',
                                             cursor: (selectedIds.size !== 2 || loading) ? 'not-allowed' : 'pointer',
                                             fontWeight: 'bold',
                                             fontSize: '14px',
-                                            transition: 'all 0.2s'
+                                            transition: 'all 0.2s',
+                                            boxShadow: (selectedIds.size === 2 && !loading) ? '0 4px 6px rgba(52, 152, 219, 0.2)' : 'none'
                                         }}
                                     >
                                         {loading ? '⚙️ Estimating Combination...' : (selectedIds.size === 2 ? 'Estimate combination effect' : 'Select 2 actions to estimate')}
@@ -584,7 +593,7 @@ const CombinedActionsModal: React.FC<Props> = ({
                                             </div>
                                             <div style={{ display: 'flex', gap: '8px' }}>
                                                 <button
-                                                    onClick={() => { /* Re-trigger fetchPreview if needed */ }}
+                                                    onClick={handleEstimate}
                                                     disabled={loading}
                                                     style={{ padding: '6px 12px', background: 'white', border: '1px solid #3498db', color: '#3498db', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
                                                 >

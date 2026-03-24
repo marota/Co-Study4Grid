@@ -409,7 +409,6 @@ function App() {
       } else {
         if (diagrams.actionSvgContainerRef.current) {
           applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, null, null, null);
-          diagrams.actionSvgContainerRef.current.querySelectorAll('.nad-highlight-clone.nad-contingency-highlight').forEach((el: Element) => el.remove());
         }
       }
     }
@@ -422,9 +421,12 @@ function App() {
     otherTabs.forEach(t => staleHighlights.current.add(t));
 
     if (isTabSwitch) {
+      // Double rAF to ensure browser layout is settled before getScreenCTM()
       const id = requestAnimationFrame(() => {
-        applyHighlightsForTab(activeTab);
-        staleHighlights.current.delete(activeTab);
+        requestAnimationFrame(() => {
+          applyHighlightsForTab(activeTab);
+          staleHighlights.current.delete(activeTab);
+        });
       });
       return () => cancelAnimationFrame(id);
     } else {
@@ -737,7 +739,7 @@ function App() {
       )}
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <div style={{ width: '25%', background: '#eee', borderRight: '1px solid #ccc', display: 'flex', flexDirection: 'column', padding: '15px', gap: '15px' }}>
+        <div data-testid="sidebar" style={{ width: '25%', background: '#eee', borderRight: '1px solid #ccc', display: 'flex', flexDirection: 'column', padding: '15px', gap: '15px', overflowY: 'auto' }}>
           {/* Target Contingency selector */}
           {branches.length > 0 && (
             <div style={{ padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
@@ -791,7 +793,7 @@ function App() {
               onToggleMonitorDeselected={() => analysis.setMonitorDeselected(!analysis.monitorDeselected)}
             />
           </div>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ flexShrink: 0 }}>
             <ActionFeed
               actions={result?.actions || {}}
               actionScores={result?.action_scores}

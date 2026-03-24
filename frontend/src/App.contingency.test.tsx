@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, act, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import App from './App';
@@ -50,6 +50,9 @@ vi.mock('./components/ActionFeed', () => ({
       data-pending={!!props.pendingAnalysisResult}
       data-loading={!!props.analysisLoading}
     >
+      <div>
+        <h3 data-testid="action-feed-header">Simulated Actions</h3>
+      </div>
       {props.pendingAnalysisResult && (
         <button onClick={props.onDisplayPrioritizedActions}>Display prioritized actions</button>
       )}
@@ -85,6 +88,7 @@ vi.mock('./utils/svgUtils', () => ({
   applyContingencyHighlight: vi.fn(),
   getIdMap: () => new Map(),
   invalidateIdMapCache: vi.fn(),
+  isCouplingAction: vi.fn(() => false),
 }));
 
 vi.mock('./utils/svgWorkerClient', () => ({
@@ -374,5 +378,26 @@ describe('Overload Clearing Logic', () => {
 
     // VERIFY: N-1 diagram is STILL present in the panel
     expect(screen.getByTestId('visualization-panel')).toHaveAttribute('data-n1-diagram-present', 'true');
+  });
+  it('verifies sidebar has unified scrollbar and no nested overflows', async () => {
+    await renderAndLoadStudy();
+
+    // The main sidebar container has the data-testid="sidebar"
+    const sidebar = await screen.findByTestId('sidebar');
+    expect(sidebar).toBeInTheDocument();
+    expect(sidebar).toHaveStyle({ overflowY: 'auto' });
+
+    // Find the ActionFeed header within the sidebar
+    const sidebarActionsHeader = await within(sidebar).findByTestId('action-feed-header');
+    
+    // ActionFeed wrapper should NOT have overflowY: auto
+    const actionFeedWrapper = sidebarActionsHeader.closest('div[style*="flex-shrink: 0"]');
+    expect(actionFeedWrapper).toBeInTheDocument();
+    expect(actionFeedWrapper).not.toHaveStyle({ overflowY: 'auto' });
+
+    // Internal ActionFeed root is the sibling of the header's container
+    const actionFeedRoot = sidebarActionsHeader.parentElement?.parentElement;
+    expect(actionFeedRoot).toBeInTheDocument();
+    expect(actionFeedRoot).not.toHaveStyle({ overflowY: 'auto' });
   });
 });

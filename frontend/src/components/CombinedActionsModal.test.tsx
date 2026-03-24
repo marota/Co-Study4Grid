@@ -5,13 +5,7 @@ import CombinedActionsModal from './CombinedActionsModal';
 import { api } from '../api';
 import type { AnalysisResult, CombinedAction } from '../types';
 
-// Mock API
-vi.mock('../api', () => ({
-    api: {
-        computeSuperposition: vi.fn(),
-        simulateManualAction: vi.fn(),
-    }
-}));
+// We'll use vi.spyOn below
 
 type SimulateResult = Awaited<ReturnType<typeof api.simulateManualAction>>;
 
@@ -63,14 +57,16 @@ describe('CombinedActionsModal', () => {
     };
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.restoreAllMocks();
+        vi.spyOn(api, 'computeSuperposition').mockImplementation(() => Promise.resolve({} as unknown as CombinedAction));
+        vi.spyOn(api, 'simulateManualAction').mockImplementation(() => Promise.resolve({} as unknown as SimulateResult));
     });
 
     afterEach(() => {
         cleanup();
     });
 
-    const getExploreTab = () => screen.getAllByText('Explore Pairs')[0];
+    const getExploreTab = () => screen.getByTestId('tab-explore');
 
     it('renders and shows computed pairs by default', () => {
         render(<CombinedActionsModal {...defaultProps} />);
@@ -262,7 +258,14 @@ describe('CombinedActionsModal', () => {
 
         fireEvent.click(getExploreTab());
         fireEvent.click(screen.getByText('act1'));
+        expect(await screen.findByTestId('chip-act1')).toBeInTheDocument();
         fireEvent.click(screen.getByText('act3'));
+        expect(await screen.findByTestId('chip-act3')).toBeInTheDocument();
+
+        // Manual click required now
+        const estimateBtn = screen.getByTestId('estimate-button');
+        await waitFor(() => expect(estimateBtn).not.toBeDisabled(), { timeout: 5000 });
+        fireEvent.click(estimateBtn);
 
         await waitFor(() => {
             expect(api.computeSuperposition).toHaveBeenCalled();
@@ -410,26 +413,44 @@ describe('CombinedActionsModal', () => {
     });
 
     it('handles superposition API error gracefully', async () => {
-        vi.mocked(api.computeSuperposition).mockResolvedValueOnce({ error: 'Backend exploded' } as unknown as CombinedAction);
+        vi.mocked(api.computeSuperposition).mockImplementation(async () => {
+            console.log('MOCK: computeSuperposition called');
+            return { error: 'Backend exploded' } as unknown as CombinedAction;
+        });
         const emptyResult = { ...mockAnalysisResult, combined_actions: {} };
         
         render(<CombinedActionsModal {...defaultProps} analysisResult={emptyResult as AnalysisResult} />);
         fireEvent.click(getExploreTab());
         fireEvent.click(screen.getByText('act1'));
+        expect(await screen.findByTestId('chip-act1')).toBeInTheDocument();
         fireEvent.click(screen.getByText('act3'));
+        expect(await screen.findByTestId('chip-act3')).toBeInTheDocument();
+ 
+        // Trigger manual estimation
+        const estimateBtn = screen.getByTestId('estimate-button');
+        await waitFor(() => expect(estimateBtn).not.toBeDisabled());
+        fireEvent.click(estimateBtn);
 
-        await waitFor(() => {
-            expect(screen.getByText(/Backend exploded/i)).toBeInTheDocument();
-        });
-    });
+        // Wait for the error message specifically
+        expect(await screen.findByText(/Estimation Failed/i, {}, { timeout: 8000 })).toBeInTheDocument();
+        expect(screen.getByText("Backend exploded")).toBeInTheDocument();
+    }, 15000);
 
     it('handles simulation API failure gracefully', async () => {
         vi.mocked(api.simulateManualAction).mockRejectedValueOnce(new Error('Simulation timed out'));
+        vi.mocked(api.computeSuperposition).mockResolvedValueOnce({ ...mockAnalysisResult.combined_actions!["act1+act2"], action1_id: "act1", action2_id: "act3" });
         
         render(<CombinedActionsModal {...defaultProps} />);
         fireEvent.click(getExploreTab());
         fireEvent.click(screen.getByText('act1'));
-        fireEvent.click(screen.getByText('act2'));
+        expect(await screen.findByTestId('chip-act1')).toBeInTheDocument();
+        fireEvent.click(screen.getByText('act3'));
+        expect(await screen.findByTestId('chip-act3')).toBeInTheDocument();
+ 
+        // Trigger manual estimation
+        const estimateBtn2 = screen.getByTestId('estimate-button');
+        await waitFor(() => expect(estimateBtn2).not.toBeDisabled());
+        fireEvent.click(estimateBtn2);
 
         const simButton = await screen.findByText('Simulate Combined');
         fireEvent.click(simButton);
@@ -523,7 +544,7 @@ describe('CombinedActionsModal', () => {
 
     it('renders comparison card with side-by-side estimated and actual effects', async () => {
         vi.mocked(api.simulateManualAction).mockResolvedValueOnce({
-            action_id: 'act1+act2',
+            action_id: 'act1+act3',
             description_unitaire: 'Combined',
             rho_before: [0.75],
             rho_after: [0.73],
@@ -534,23 +555,68 @@ describe('CombinedActionsModal', () => {
             lines_overloaded: []
         });
 
+        // Mock estimation with correct IDs
+        vi.mocked(api.computeSuperposition).mockResolvedValueOnce({
+            ...mockAnalysisResult.combined_actions!['act1+act2'],
+            action1_id: 'act1',
+            action2_id: 'act3'
+        });
+
         render(<CombinedActionsModal {...defaultProps} />);
         fireEvent.click(getExploreTab());
+        
         const act1Row = screen.getByText('act1').closest('tr');
-        const act2Row = screen.getByText('act2').closest('tr');
+        const act3Row = screen.getByText('act3').closest('tr');
         fireEvent.click(act1Row!);
-        fireEvent.click(act2Row!);
-
-        // Card should be visible
-        const card = screen.getByTestId('comparison-card');
+        expect(await screen.findByTestId('chip-act1')).toBeInTheDocument();
+        fireEvent.click(act3Row!);
+        expect(await screen.findByTestId('chip-act3')).toBeInTheDocument();
+ 
+        // Trigger manual estimation
+        const estimateBtn3 = screen.getByTestId('estimate-button');
+        await waitFor(() => expect(estimateBtn3).not.toBeDisabled());
+        fireEvent.click(estimateBtn3);
+        // Result should appear
+        const card = await screen.findByTestId('comparison-card');
         expect(within(card).getByText(/Estimated Effect/i)).toBeInTheDocument();
+        expect(within(card).getByText('75.0%')).toBeInTheDocument();
         
         const simButton = within(card).getByText('Simulate Combined');
         fireEvent.click(simButton);
 
         // Simulation result should appear
-        expect(await within(card).findByText(/Simulation Result/i)).toBeInTheDocument();
+        expect(await within(card).findByText(/Simulation Result/i, {}, { timeout: 8000 })).toBeInTheDocument();
         // Use a more flexible matcher for the percentage to avoid whitespace issues
         expect(await within(card).findByText((content) => content.includes('73.0%'))).toBeInTheDocument();
+    }, 15000);
+
+    it('preserves comparison card for explored pair when analysisResult updates', async () => {
+        const emptyResult = { ...mockAnalysisResult, combined_actions: {} };
+        vi.mocked(api.computeSuperposition).mockResolvedValueOnce({
+            action1_id: 'act1',
+            action2_id: 'act3',
+            estimated_max_rho: 0.85,
+            estimated_max_rho_line: 'L_NEW_EST'
+        } as unknown as CombinedAction);
+
+        const { rerender } = render(<CombinedActionsModal {...defaultProps} analysisResult={emptyResult as unknown as AnalysisResult} />);
+        fireEvent.click(getExploreTab());
+        fireEvent.click(screen.getByText('act1'));
+        expect(await screen.findByTestId('chip-act1')).toBeInTheDocument();
+        fireEvent.click(screen.getByText('act3'));
+        expect(await screen.findByTestId('chip-act3')).toBeInTheDocument();
+
+        // Manual estimate
+        fireEvent.click(screen.getByTestId('estimate-button'));
+        expect(await screen.findByTestId('comparison-card')).toBeInTheDocument();
+
+        // Simulate a prop update (e.g. from parent simulation result)
+        const updatedResult = { ...emptyResult, message: 'Updated' };
+        rerender(<CombinedActionsModal {...defaultProps} analysisResult={updatedResult as unknown as AnalysisResult} />);
+
+        // Card should STILL be there!
+        const finalCard = screen.getByTestId('comparison-card');
+        expect(finalCard).toBeInTheDocument();
+        expect(within(finalCard).getByText('85.0%')).toBeInTheDocument();
     });
 });

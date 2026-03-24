@@ -21,6 +21,7 @@ vi.mock('../utils/svgUtils', () => ({
     applyDeltaVisuals: vi.fn(),
     applyActionTargetHighlights: vi.fn(),
     applyContingencyHighlight: vi.fn(),
+    isCouplingAction: vi.fn(() => false),
 }));
 
 import ActionFeed from './ActionFeed';

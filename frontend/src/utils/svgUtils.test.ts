@@ -14,6 +14,18 @@ import {
 } from './svgUtils';
 import type { ActionDetail, NodeMeta, EdgeMeta, MetadataIndex } from '../types';
 
+const makeEdgeMap = (...ids: string[]) => {
+    const map = new Map<string, EdgeMeta>();
+    ids.forEach(id => map.set(id, { equipmentId: id, svgId: `svg-${id}`, node1: '', node2: '' }));
+    return map;
+};
+
+const makeNodeMap = (...ids: string[]) => {
+    const map = new Map<string, NodeMeta>();
+    ids.forEach(id => map.set(id, { equipmentId: id, svgId: `svg-${id}`, x: 0, y: 0 }));
+    return map;
+};
+
 describe('processSvg', () => {
     it('extracts viewBox from SVG string', () => {
         const svg = '<svg viewBox="0 10 800 600"><rect/></svg>';
@@ -142,11 +154,6 @@ describe('buildMetadataIndex', () => {
 });
 
 describe('getActionTargetLines', () => {
-    const makeEdgeMap = (...ids: string[]) => {
-        const map = new Map<string, EdgeMeta>();
-        ids.forEach(id => map.set(id, { equipmentId: id, svgId: `svg-${id}`, node1: '', node2: '' }));
-        return map;
-    };
 
     it('returns lines from topology when only lines are affected', () => {
         const detail: ActionDetail = {
@@ -345,11 +352,6 @@ describe('getActionTargetLines', () => {
 });
 
 describe('getActionTargetVoltageLevels', () => {
-    const makeNodeMap = (...ids: string[]) => {
-        const map = new Map<string, NodeMeta>();
-        ids.forEach(id => map.set(id, { equipmentId: id, svgId: `svg-${id}`, x: 0, y: 0 }));
-        return map;
-    };
 
     it('extracts VL from quoted string in description', () => {
         const detail: ActionDetail = {
@@ -508,6 +510,61 @@ describe('getActionTargetVoltageLevels', () => {
         const actionId = 'de829050-177c-4244-ba94-61b22d2684a4_MQIS P7_coupling';
         const result = getActionTargetVoltageLevels(detail, actionId, makeNodeMap('MQIS P7'));
         expect(result).toEqual(['MQIS P7']);
+    });
+
+    it('extracts VL using prefix matching (handles "MICQ P7 is open")', () => {
+        const detail: ActionDetail = {
+            description_unitaire: "Ouverture dans le poste MICQ P7 is open",
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+        };
+
+        const result = getActionTargetVoltageLevels(detail, null, makeNodeMap('MICQ P7'));
+        expect(result).toEqual(['MICQ P7']);
+    });
+
+    it('recognizes "coupl" substring (e.g. in COUCH6COUPL) for coupling detection', () => {
+        const detail: ActionDetail = {
+            description_unitaire: "Ouverture OC 'COUCH6COUPL DJ_OC' dans le poste 'COUCHP6'",
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+            action_topology: {
+                lines_ex_bus: { LINE1: -1 },
+                lines_or_bus: {},
+                gens_bus: {},
+                loads_bus: {},
+            }
+        } as unknown as ActionDetail;
+
+        const result = getActionTargetLines(detail, 'f344..._COUCHP6', makeEdgeMap('LINE1'));
+        // Should suppress LINE1 because it's a coupling action (detected "COUPL")
+        expect(result).not.toContain('LINE1');
+    });
+
+    it('recognizes French "noeud" keyword for coupling detection', () => {
+        const detail: ActionDetail = {
+            description_unitaire: "Reconfiguration au noeud",
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+            action_topology: {
+                lines_ex_bus: { LINE1: -1 },
+                lines_or_bus: {},
+                gens_bus: {},
+                loads_bus: {},
+            }
+        } as unknown as ActionDetail;
+
+        const result = getActionTargetLines(detail, 'some_uuid', makeEdgeMap('LINE1'));
+        expect(result).not.toContain('LINE1');
     });
 });
 
@@ -711,5 +768,31 @@ describe('Highlight Layering', () => {
         expect(children[0].classList.contains('nad-contingency-highlight')).toBe(true);
         // LINE_A (action) should be SECOND in DOM (on top visually)
         expect(children[1].classList.contains('nad-action-target')).toBe(true);
+    });
+
+    it('exhaustive cleanup: removes existing contingency highlights before adding new ones', () => {
+        const container = document.createElement('div');
+        container.innerHTML = '<svg><g id="svg-a"></g><g id="svg-b"></g></svg>';
+        const metaIndex = {
+            edgesByEquipmentId: new Map([
+                ['A', { equipmentId: 'A', svgId: 'svg-a' } as EdgeMeta],
+                ['B', { equipmentId: 'B', svgId: 'svg-b' } as EdgeMeta],
+            ]),
+            nodesByEquipmentId: new Map(),
+            nodesBySvgId: new Map(),
+            edgesByNode: new Map(),
+        } as unknown as MetadataIndex;
+
+        // Apply first highlight
+        applyContingencyHighlight(container, metaIndex, 'A');
+        expect(container.querySelectorAll('.nad-contingency-highlight')).toHaveLength(1);
+
+        // Apply second highlight
+        applyContingencyHighlight(container, metaIndex, 'B');
+
+        // Should STILL have only 1 highlight (the new one)
+        const highlights = container.querySelectorAll('.nad-contingency-highlight');
+        expect(highlights).toHaveLength(1);
+        expect(highlights[0].getAttribute('transform')).toBeDefined(); // CTM was applied
     });
 });
