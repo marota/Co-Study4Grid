@@ -59,7 +59,7 @@ circle.nad-highlight {
 
 /* Contingency highlight in orange */
 .nad-contingency-highlight {
-    filter: drop-shadow(0 0 10px #bf4e00) drop-shadow(0 0 20px #bf4e00) !important;
+    filter: drop-shadow(0 0 8px #ff8c00) drop-shadow(0 0 15px #ff8c00) !important;
 }
 
 /* For lines and paths, use grid units for stroke-width so the halo is always
@@ -76,15 +76,19 @@ circle.nad-highlight {
     stroke-linecap: round !important;
     stroke-linejoin: round !important;
 }
+/* Contingency highlight in orange */
+.nad-contingency-highlight {
+    filter: drop-shadow(0 0 8px #ff8c00) drop-shadow(0 0 15px #ff8c00) !important;
+}
 
 .nad-contingency-highlight path,
 .nad-contingency-highlight line,
 .nad-contingency-highlight polyline,
 .nad-contingency-highlight rect,
 .nad-contingency-highlight polygon {
-    stroke: #bf4e00 !important;
-    stroke-width: 160px !important;
-    stroke-opacity: 0.9 !important;
+    stroke: #ff8c00 !important;
+    stroke-width: 150px !important;
+    stroke-opacity: 0.8 !important;
     fill: none !important;
     stroke-linecap: round !important;
     stroke-linejoin: round !important;
@@ -102,13 +106,17 @@ circle.nad-highlight {
     vector-effect: non-scaling-stroke !important;
 }
 
+.nad-action-target {
+    filter: drop-shadow(0 0 8px #fffb00) drop-shadow(0 0 15px #fffb00) !important;
+}
+
 .nad-contingency-highlight circle,
 .nad-contingency-highlight rect {
-    stroke: #bf4e00 !important;
-    stroke-width: 50px !important;
-    stroke-opacity: 0.8 !important;
-    fill: #bf4e00 !important;
-    fill-opacity: 0.9 !important;
+    stroke: #ff8c00 !important;
+    stroke-width: 45px !important;
+    stroke-opacity: 0.6 !important;
+    fill: #ff8c00 !important;
+    fill-opacity: 0.8 !important;
     vector-effect: non-scaling-stroke !important;
 }
 
@@ -130,7 +138,8 @@ circle.nad-highlight {
 /* Suppress expensive drop-shadow filters during active interaction.
    The compositing cost of multiple drop-shadows on cloned highlight
    elements is high — skip it while the viewBox is changing rapidly. */
-.svg-container.svg-interacting .nad-action-target {
+.svg-container.svg-interacting .nad-action-target,
+.svg-container.svg-interacting .nad-contingency-highlight {
     filter: none !important;
 }
 
