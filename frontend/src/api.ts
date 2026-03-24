@@ -3,7 +3,42 @@ import type { ConfigRequest, BranchResponse, DiagramData, FlowDelta, AssetDelta,
 
 const API_BASE_URL = 'http://127.0.0.1:8000';
 
+export interface UserConfig {
+    network_path: string;
+    action_file_path: string;
+    layout_path: string;
+    output_folder_path: string;
+    lines_monitoring_path: string;
+    min_line_reconnections: number;
+    min_close_coupling: number;
+    min_open_coupling: number;
+    min_line_disconnections: number;
+    min_pst: number;
+    n_prioritized_actions: number;
+    monitoring_factor: number;
+    pre_existing_overload_threshold: number;
+    ignore_reconnections: boolean;
+    pypowsybl_fast_mode: boolean;
+}
+
 export const api = {
+    getUserConfig: async (): Promise<UserConfig> => {
+        const response = await axios.get<UserConfig>(`${API_BASE_URL}/api/user-config`);
+        return response.data;
+    },
+    saveUserConfig: async (config: UserConfig): Promise<void> => {
+        await axios.post(`${API_BASE_URL}/api/user-config`, config);
+    },
+    getConfigFilePath: async (): Promise<string> => {
+        const response = await axios.get<{ config_file_path: string }>(`${API_BASE_URL}/api/config-file-path`);
+        return response.data.config_file_path;
+    },
+    setConfigFilePath: async (path: string): Promise<{ config_file_path: string; config: UserConfig }> => {
+        const response = await axios.post<{ status: string; config_file_path: string; config: UserConfig }>(
+            `${API_BASE_URL}/api/config-file-path`, { path }
+        );
+        return response.data;
+    },
     updateConfig: async (config: ConfigRequest) => {
         const response = await axios.post(`${API_BASE_URL}/api/config`, config);
         return response.data;

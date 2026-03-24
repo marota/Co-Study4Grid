@@ -3,12 +3,69 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import os
+import json as json_module
+import shutil
 import subprocess
 import sys
+from pathlib import Path
 from expert_backend.services.network_service import network_service
 from expert_backend.services.recommender_service import recommender_service
 
 app = FastAPI()
+
+# --- User config file management ---
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_CONFIG_DEFAULT = _PROJECT_ROOT / "config.default.json"
+_CONFIG_PATH_FILE = _PROJECT_ROOT / "config_path.txt"  # stores path to user-chosen config file
+
+
+def _get_active_config_path() -> Path:
+    """Return the active config file path (user-overridden or default)."""
+    if _CONFIG_PATH_FILE.exists():
+        stored = _CONFIG_PATH_FILE.read_text(encoding="utf-8").strip()
+        if stored:
+            return Path(stored)
+    return _PROJECT_ROOT / "config.json"
+
+
+def _set_active_config_path(new_path: str) -> None:
+    """Persist a custom config file path to config_path.txt."""
+    _CONFIG_PATH_FILE.write_text(new_path.strip(), encoding="utf-8")
+
+
+def _ensure_user_config() -> None:
+    """Create the active config file from defaults if it does not exist."""
+    active = _get_active_config_path()
+    if not active.exists() and _CONFIG_DEFAULT.exists():
+        active.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(_CONFIG_DEFAULT, active)
+
+
+def _load_user_config() -> dict:
+    """Load user config from the active path, falling back to defaults."""
+    _ensure_user_config()
+    active = _get_active_config_path()
+    try:
+        with open(active, "r", encoding="utf-8") as f:
+            return json_module.load(f)
+    except (FileNotFoundError, json_module.JSONDecodeError):
+        if _CONFIG_DEFAULT.exists():
+            with open(_CONFIG_DEFAULT, "r", encoding="utf-8") as f:
+                return json_module.load(f)
+        return {}
+
+
+def _save_user_config(data: dict) -> None:
+    """Persist user config to the active config file path."""
+    active = _get_active_config_path()
+    active.parent.mkdir(parents=True, exist_ok=True)
+    with open(active, "w", encoding="utf-8") as f:
+        json_module.dump(data, f, indent=4, ensure_ascii=False)
+        f.write("\n")
+
+
+# Ensure config file exists on startup
+_ensure_user_config()
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,6 +80,48 @@ app.add_middleware(
 # Since the directory name is 'Overflow_Graph', we ensure it exists.
 os.makedirs("Overflow_Graph", exist_ok=True)
 app.mount("/results/pdf", StaticFiles(directory="Overflow_Graph"), name="pdfs")
+
+@app.get("/api/user-config")
+def get_user_config():
+    """Return the persisted user configuration."""
+    return _load_user_config()
+
+
+@app.post("/api/user-config")
+def save_user_config(config: dict = Body(...)):
+    """Save user configuration to the active config file."""
+    try:
+        _save_user_config(config)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/config-file-path")
+def get_config_file_path():
+    """Return the currently active config file path."""
+    return {"config_file_path": str(_get_active_config_path())}
+
+
+@app.post("/api/config-file-path")
+def set_config_file_path(path: str = Body(..., embed=True)):
+    """
+    Change the active config file path.
+    If the target file doesn't exist it is created from defaults.
+    Returns the loaded config so the frontend can apply the new settings.
+    """
+    try:
+        new_path = Path(path.strip())
+        if not new_path.suffix:
+            raise HTTPException(status_code=400, detail="Config path must point to a .json file")
+        _set_active_config_path(str(new_path))
+        _ensure_user_config()
+        return {"status": "success", "config_file_path": str(new_path), "config": _load_user_config()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 class ConfigRequest(BaseModel):
     network_path: str

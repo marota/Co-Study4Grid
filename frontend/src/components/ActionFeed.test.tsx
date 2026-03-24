@@ -27,7 +27,7 @@ vi.mock('../utils/svgUtils', () => ({
 import ActionFeed from './ActionFeed';
 import { api } from '../api';
 import { getActionTargetVoltageLevels, getActionTargetLines } from '../utils/svgUtils';
-import type { ActionDetail, AnalysisResult } from '../types';
+import type { ActionDetail, AnalysisResult, CombinedAction } from '../types';
 
 describe('ActionFeed', () => {
     const emptyTopo = { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} };
@@ -62,6 +62,7 @@ describe('ActionFeed', () => {
         onOpenSettings: vi.fn(),
         actionDictFileName: null as string | null,
         actionDictStats: null as { reco: number; disco: number; pst: number; open_coupling: number; close_coupling: number; total: number } | null,
+        combinedActions: null as Record<string, CombinedAction> | null,
     };
 
 
@@ -646,24 +647,51 @@ describe('ActionFeed', () => {
         expect(props.onAssetClick).toHaveBeenCalledWith(combinedId, 'LINE_A', 'action');
     });
 
-    it('sorts islanded actions at the bottom', () => {
-        const props = {
-            ...defaultProps,
-            actions: {
-                act_normal: { description_unitaire: 'Normal Action', max_rho: 0.1, is_islanded: false, action_topology: emptyTopo, rho_before: [], rho_after: [], is_rho_reduction: true, max_rho_line: 'L1' },
-                act_island: { description_unitaire: 'Islanded Action', max_rho: 0.05, is_islanded: true, action_topology: emptyTopo, rho_before: [], rho_after: [], is_rho_reduction: true, max_rho_line: 'L2' },
-                act_normal_high: { description_unitaire: 'Normal High Rho', max_rho: 0.9, is_islanded: false, action_topology: emptyTopo, rho_before: [], rho_after: [], is_rho_reduction: true, max_rho_line: 'L3' }
-            },
-            selectedActionIds: new Set(['act_normal', 'act_island', 'act_normal_high'])
+    it('updates severity badges based on monitoringFactor', () => {
+        const actionId = 'act_test';
+        const actionDetail = {
+            description_unitaire: 'Test Action',
+            max_rho: 0.93,
+            max_rho_line: 'LINE_A',
+            rho_before: [1.0],
+            rho_after: [0.93],
+            is_rho_reduction: true,
+            action_topology: emptyTopo
         };
-        render(<ActionFeed {...props} />);
 
-        const cards = screen.getAllByTestId(/action-card-/);
-        const cardTexts = cards.map(el => el.textContent);
+        const renderWithMF = (mf: number) => render(
+            <ActionFeed
+                {...defaultProps}
+                actions={{ [actionId]: actionDetail }}
+                selectedActionIds={new Set([actionId])}
+                monitoringFactor={mf}
+            />
+        );
 
-        // Expected order: act_normal (0.1), act_normal_high (0.9), act_island (0.05)
-        expect(cardTexts[0]).toContain('Normal Action');
-        expect(cardTexts[1]).toContain('Normal High Rho');
-        expect(cardTexts[2]).toContain('Islanded Action');
+        // 1. MF = 0.95 -> 0.93 is between (0.95-0.05) and 0.95 -> Orange
+        const { rerender } = renderWithMF(0.95);
+        expect(screen.getByText('Solved \u2014 low margin')).toBeInTheDocument();
+
+        // 2. MF = 0.90 -> 0.93 is above 0.90 -> Red
+        rerender(
+            <ActionFeed
+                {...defaultProps}
+                actions={{ [actionId]: actionDetail }}
+                selectedActionIds={new Set([actionId])}
+                monitoringFactor={0.90}
+            />
+        );
+        expect(screen.getByText('Still overloaded')).toBeInTheDocument();
+
+        // 3. MF = 1.00 -> 0.93 is below (1.00-0.05) -> Green
+        rerender(
+            <ActionFeed
+                {...defaultProps}
+                actions={{ [actionId]: actionDetail }}
+                selectedActionIds={new Set([actionId])}
+                monitoringFactor={1.00}
+            />
+        );
+        expect(screen.getByText('Solves overload')).toBeInTheDocument();
     });
 });

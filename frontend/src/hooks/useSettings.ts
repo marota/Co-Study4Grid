@@ -1,8 +1,13 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../api';
+import type { UserConfig } from '../api';
 import type { SettingsBackup } from '../types';
 
 export interface SettingsState {
+  // Config file path
+  configFilePath: string;
+  changeConfigFilePath: (newPath: string) => Promise<void>;
+
   // Paths
   networkPath: string;
   setNetworkPath: (v: string) => void;
@@ -84,10 +89,12 @@ export interface SettingsState {
 }
 
 export function useSettings(): SettingsState {
-  const [networkPath, setNetworkPath] = useState(() => localStorage.getItem('networkPath') || '/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z_dijon_only');
-  const [actionPath, setActionPath] = useState(() => localStorage.getItem('actionPath') || '/home/marotant/dev/Expert_op4grid_recommender/data/action_space/reduced_model_actions_20240828T0100Z_new_dijon.json');
-  const [layoutPath, setLayoutPath] = useState(() => localStorage.getItem('layoutPath') || '');
-  const [outputFolderPath, setOutputFolderPath] = useState(() => localStorage.getItem('outputFolderPath') || '');
+  const [configFilePath, setConfigFilePath] = useState('');
+
+  const [networkPath, setNetworkPath] = useState('');
+  const [actionPath, setActionPath] = useState('');
+  const [layoutPath, setLayoutPath] = useState('');
+  const [outputFolderPath, setOutputFolderPath] = useState('');
 
   const [minLineReconnections, setMinLineReconnections] = useState(2.0);
   const [minCloseCoupling, setMinCloseCoupling] = useState(3.0);
@@ -112,13 +119,80 @@ export function useSettings(): SettingsState {
   const [settingsTab, setSettingsTab] = useState<'recommender' | 'configurations' | 'paths'>('paths');
   const [settingsBackup, setSettingsBackup] = useState<SettingsBackup | null>(null);
 
+  // Track whether initial config load from backend is complete
+  const configLoadedRef = useRef(false);
 
+  // Helper to apply a loaded UserConfig object to all state fields
+  const applyLoadedConfig = useCallback((cfg: UserConfig) => {
+    if (cfg.network_path !== undefined) setNetworkPath(cfg.network_path);
+    if (cfg.action_file_path !== undefined) setActionPath(cfg.action_file_path);
+    if (cfg.layout_path !== undefined) setLayoutPath(cfg.layout_path);
+    if (cfg.output_folder_path !== undefined) setOutputFolderPath(cfg.output_folder_path);
+    if (cfg.lines_monitoring_path !== undefined) setLinesMonitoringPath(cfg.lines_monitoring_path);
+    if (cfg.min_line_reconnections !== undefined) setMinLineReconnections(cfg.min_line_reconnections);
+    if (cfg.min_close_coupling !== undefined) setMinCloseCoupling(cfg.min_close_coupling);
+    if (cfg.min_open_coupling !== undefined) setMinOpenCoupling(cfg.min_open_coupling);
+    if (cfg.min_line_disconnections !== undefined) setMinLineDisconnections(cfg.min_line_disconnections);
+    if (cfg.min_pst !== undefined) setMinPst(cfg.min_pst);
+    if (cfg.n_prioritized_actions !== undefined) setNPrioritizedActions(cfg.n_prioritized_actions);
+    if (cfg.monitoring_factor !== undefined) setMonitoringFactor(cfg.monitoring_factor);
+    if (cfg.pre_existing_overload_threshold !== undefined) setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
+    if (cfg.ignore_reconnections !== undefined) setIgnoreReconnections(cfg.ignore_reconnections);
+    if (cfg.pypowsybl_fast_mode !== undefined) setPypowsyblFastMode(cfg.pypowsybl_fast_mode);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load persisted config from backend on mount
   useEffect(() => {
-    localStorage.setItem('networkPath', networkPath);
-    localStorage.setItem('actionPath', actionPath);
-    localStorage.setItem('layoutPath', layoutPath);
-    localStorage.setItem('outputFolderPath', outputFolderPath);
-  }, [networkPath, actionPath, layoutPath, outputFolderPath]);
+    Promise.all([api.getUserConfig(), api.getConfigFilePath()])
+      .then(([cfg, cfgPath]) => {
+        applyLoadedConfig(cfg);
+        setConfigFilePath(cfgPath);
+        configLoadedRef.current = true;
+      })
+      .catch(() => {
+        console.warn('Failed to load user config from backend, using defaults');
+        configLoadedRef.current = true;
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const changeConfigFilePath = useCallback(async (newPath: string) => {
+    const result = await api.setConfigFilePath(newPath);
+    setConfigFilePath(result.config_file_path);
+    // Temporarily block auto-save so applying new config doesn't immediately overwrite
+    configLoadedRef.current = false;
+    applyLoadedConfig(result.config);
+    configLoadedRef.current = true;
+  }, [applyLoadedConfig]);
+
+  // Persist settings to backend config file whenever they change
+  useEffect(() => {
+    if (!configLoadedRef.current) return; // skip until initial load is done
+    const configToSave: UserConfig = {
+      network_path: networkPath,
+      action_file_path: actionPath,
+      layout_path: layoutPath,
+      output_folder_path: outputFolderPath,
+      lines_monitoring_path: linesMonitoringPath,
+      min_line_reconnections: minLineReconnections,
+      min_close_coupling: minCloseCoupling,
+      min_open_coupling: minOpenCoupling,
+      min_line_disconnections: minLineDisconnections,
+      min_pst: minPst,
+      n_prioritized_actions: nPrioritizedActions,
+      monitoring_factor: monitoringFactor,
+      pre_existing_overload_threshold: preExistingOverloadThreshold,
+      ignore_reconnections: ignoreReconnections,
+      pypowsybl_fast_mode: pypowsyblFastMode,
+    };
+    api.saveUserConfig(configToSave).catch(() => {
+      console.warn('Failed to persist user config to backend');
+    });
+  }, [networkPath, actionPath, layoutPath, outputFolderPath, linesMonitoringPath,
+      minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
+      minPst, nPrioritizedActions, monitoringFactor, preExistingOverloadThreshold,
+      ignoreReconnections, pypowsyblFastMode]);
 
   const pickSettingsPath = useCallback(async (type: 'file' | 'dir', setter: (path: string) => void) => {
     try {
@@ -202,6 +276,7 @@ export function useSettings(): SettingsState {
   }, []);
 
   return useMemo(() => ({
+    configFilePath, changeConfigFilePath,
     networkPath, setNetworkPath,
     actionPath, setActionPath,
     layoutPath, setLayoutPath,
@@ -238,6 +313,7 @@ export function useSettings(): SettingsState {
     linesMonitoringPath, monitoredLinesCount, totalLinesCount, showMonitoringWarning, monitoringFactor, preExistingOverloadThreshold, pypowsyblFastMode,
     actionDictFileName, actionDictStats,
     isSettingsOpen, settingsTab, settingsBackup,
+    configFilePath, changeConfigFilePath,
     pickSettingsPath, handleOpenSettings, handleCloseSettings, buildConfigRequest, applyConfigResponse, createCurrentBackup
   ]);
 }

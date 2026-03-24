@@ -89,6 +89,26 @@ vi.mock('./utils/svgWorkerClient', () => ({
 
 // Mock API — use vi.hoisted to define mock before vi.mock hoists
 const mockApi = vi.hoisted(() => ({
+  getUserConfig: vi.fn().mockResolvedValue({
+    network_path: '/home/user/data/grid.xiidm',
+    action_file_path: '/home/user/data/actions.json',
+    layout_path: '',
+    output_folder_path: '',
+    lines_monitoring_path: '',
+    min_line_reconnections: 2.0,
+    min_close_coupling: 3.0,
+    min_open_coupling: 2.0,
+    min_line_disconnections: 3.0,
+    min_pst: 1.0,
+    n_prioritized_actions: 10,
+    monitoring_factor: 0.95,
+    pre_existing_overload_threshold: 0.02,
+    ignore_reconnections: false,
+    pypowsybl_fast_mode: true,
+  }),
+  saveUserConfig: vi.fn().mockResolvedValue({}),
+  getConfigFilePath: vi.fn().mockResolvedValue('/mock/config.json'),
+  setConfigFilePath: vi.fn().mockResolvedValue({ config_file_path: '/mock/config.json', config: {} }),
   updateConfig: vi.fn().mockResolvedValue({ monitored_lines_count: 10, total_lines_count: 10 }),
   getBranches: vi.fn().mockResolvedValue(['BRANCH_A', 'BRANCH_B', 'BRANCH_C']),
   getVoltageLevels: vi.fn().mockResolvedValue(['VL1', 'VL2']),
@@ -339,6 +359,29 @@ describe('Settings Modal Enhancements', () => {
       expect(mockApi.updateConfig).toHaveBeenCalledWith(expect.objectContaining({
         network_path: '/path/to/network.xiidm',
         layout_path: '/path/to/layout.json'
+      }));
+    });
+  });
+
+  it('updates configuration with new monitoring factor', async () => {
+    await openSettings();
+
+    // Switch to Configurations tab
+    const configTab = screen.getByText('Configurations');
+    await userEvent.click(configTab);
+
+    const monitoringInput = screen.getByLabelText(/Monitoring Factor Thermal Limits/i);
+    await userEvent.clear(monitoringInput);
+    await userEvent.type(monitoringInput, '0.85');
+
+    const applyBtn = screen.getByText('Apply');
+    await act(async () => {
+      await userEvent.click(applyBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockApi.updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+        monitoring_factor: 0.85
       }));
     });
   });

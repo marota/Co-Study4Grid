@@ -17,6 +17,7 @@ function App() {
   // ===== Settings Hook =====
   const settings = useSettings();
   const {
+    configFilePath, changeConfigFilePath,
     networkPath, setNetworkPath, actionPath, setActionPath,
     layoutPath, setLayoutPath, outputFolderPath, setOutputFolderPath,
     minLineReconnections, setMinLineReconnections,
@@ -590,6 +591,28 @@ function App() {
                     <button onClick={() => pickSettingsPath('dir', setOutputFolderPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📂</button>
                   </div>
                 </div>
+                <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '5px 0' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Config File Path</label>
+                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>
+                    Path to the <code>config.json</code> settings file. Change this to use a config stored outside the repository.
+                    The file will be created from defaults if it does not exist.
+                  </div>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    <input
+                      type="text"
+                      value={configFilePath}
+                      onChange={e => changeConfigFilePath(e.target.value).catch(() => {})}
+                      onBlur={e => changeConfigFilePath(e.target.value).catch(() => {})}
+                      placeholder="e.g. /home/user/my_expertassist_config.json"
+                      style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    />
+                    <button
+                      onClick={() => pickSettingsPath('file', (p) => changeConfigFilePath(p).catch(() => {}))}
+                      style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}
+                    >📄</button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -628,6 +651,13 @@ function App() {
 
             {settingsTab === 'configurations' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label htmlFor="monitoringFactor" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Monitoring Factor Thermal Limits</label>
+                  <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                    <input id="monitoringFactor" type="number" step="0.01" min="0" max="2" value={monitoringFactor} onChange={e => setMonitoringFactor(parseFloat(e.target.value))} style={{ padding: '6px', width: '80px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                    <span style={{ fontSize: '0.85rem', color: '#666' }}>Multiplier applied to standard limits (e.g., 0.95)</span>
+                  </div>
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Lines Monitoring File (Optional)</label>
                   <div style={{ display: 'flex', gap: '5px' }}>
