@@ -15,7 +15,7 @@ vi.mock('../api', () => ({
 vi.mock('../utils/svgUtils', () => ({
     getActionTargetVoltageLevels: vi.fn(() => []),
     getActionTargetLines: vi.fn(() => []),
-    processSvg: vi.fn(),
+    processSvg: vi.fn((svg: string) => ({ svg, viewBox: { x: 0, y: 0, w: 100, h: 100 } })),
     buildMetadataIndex: vi.fn(),
     applyOverloadedHighlights: vi.fn(),
     applyDeltaVisuals: vi.fn(),

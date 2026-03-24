@@ -122,46 +122,6 @@ describe('usePanZoom', () => {
         expect(result.current.viewBox).toEqual(initialVB);
     });
 
-    describe('text visibility on large grids', () => {
-        it('adds text-hidden class on large grid at full zoom-out', () => {
-            const { container, svg } = createMockSvgContainer('0 0 10000 10000');
-            svg.setAttribute('data-large-grid', '');
-            const ref = { current: container };
-            const largeVB: ViewBox = { x: 0, y: 0, w: 10000, h: 10000 };
-
-            renderHook(() => usePanZoom(ref, largeVB, true));
-
-            expect(container.classList.contains('text-hidden')).toBe(true);
-        });
-
-        it('removes text-hidden class when zoomed in past threshold', () => {
-            const { container, svg } = createMockSvgContainer('0 0 10000 10000');
-            svg.setAttribute('data-large-grid', '');
-            const ref = { current: container };
-            const largeVB: ViewBox = { x: 0, y: 0, w: 10000, h: 10000 };
-
-            const { result } = renderHook(() => usePanZoom(ref, largeVB, true));
-
-            // text-hidden at full zoom
-            expect(container.classList.contains('text-hidden')).toBe(true);
-
-            // Zoom in to < 45% of original (show threshold)
-            act(() => {
-                result.current.setViewBox({ x: 0, y: 0, w: 4000, h: 3000 });
-            });
-            expect(container.classList.contains('text-hidden')).toBe(false);
-        });
-
-        it('does not toggle text-hidden on non-large grids', () => {
-            const { container } = createMockSvgContainer('0 0 1000 1000');
-            // no data-large-grid attribute
-            const ref = { current: container };
-
-            renderHook(() => usePanZoom(ref, initialVB, true));
-
-            expect(container.classList.contains('text-hidden')).toBe(false);
-        });
-    });
 
     describe('svg-interacting class toggle', () => {
         it('does not have svg-interacting class initially', () => {

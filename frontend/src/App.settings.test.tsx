@@ -73,6 +73,7 @@ vi.mock('./hooks/usePanZoom', () => ({
 
 // Mock SVG utilities
 vi.mock('./utils/svgUtils', () => ({
+  processSvg: (svg: string) => ({ svg, viewBox: { x: 0, y: 0, w: 100, h: 100 } }),
   buildMetadataIndex: () => null,
   applyOverloadedHighlights: vi.fn(),
   applyDeltaVisuals: vi.fn(),
@@ -83,9 +84,6 @@ vi.mock('./utils/svgUtils', () => ({
   isCouplingAction: vi.fn(() => false),
 }));
 
-vi.mock('./utils/svgWorkerClient', () => ({
-  processSvgAsync: vi.fn().mockResolvedValue({ svg: '<svg></svg>', viewBox: { x: 0, y: 0, w: 100, h: 100 } }),
-}));
 
 // Mock API — use vi.hoisted to define mock before vi.mock hoists
 const mockApi = vi.hoisted(() => ({
