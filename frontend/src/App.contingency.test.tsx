@@ -103,6 +103,13 @@ const mockApi = vi.hoisted(() => ({
   runAnalysisStep1: vi.fn().mockResolvedValue({ can_proceed: true, lines_overloaded: ['LINE_OL1'] }),
   runAnalysisStep2Stream: vi.fn(),
   getActionVariantDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
+  getUserConfig: vi.fn().mockResolvedValue({
+    network_path: '/home/user/data/grid.xiidm',
+    action_file_path: '/home/user/data/actions.json'
+  }),
+  getConfigFilePath: vi.fn().mockResolvedValue('/home/user/data/config.json'),
+  saveUserConfig: vi.fn().mockResolvedValue({}),
+  setConfigFilePath: vi.fn().mockResolvedValue({ config_file_path: '/home/user/data/config.json', config: {} }),
   getNSld: vi.fn(),
   getN1Sld: vi.fn(),
   getActionVariantSld: vi.fn(),
