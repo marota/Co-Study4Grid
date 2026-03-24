@@ -58,8 +58,8 @@ describe('CombinedActionsModal', () => {
 
     beforeEach(() => {
         vi.restoreAllMocks();
-        vi.spyOn(api, 'computeSuperposition').mockImplementation(() => Promise.resolve({} as any));
-        vi.spyOn(api, 'simulateManualAction').mockImplementation(() => Promise.resolve({} as any));
+        vi.spyOn(api, 'computeSuperposition').mockImplementation(() => Promise.resolve({} as unknown as CombinedAction));
+        vi.spyOn(api, 'simulateManualAction').mockImplementation(() => Promise.resolve({} as unknown as SimulateResult));
     });
 
     afterEach(() => {
@@ -599,7 +599,7 @@ describe('CombinedActionsModal', () => {
             estimated_max_rho_line: 'L_NEW_EST'
         } as unknown as CombinedAction);
 
-        const { rerender } = render(<CombinedActionsModal {...defaultProps} analysisResult={emptyResult as any} />);
+        const { rerender } = render(<CombinedActionsModal {...defaultProps} analysisResult={emptyResult as unknown as AnalysisResult} />);
         fireEvent.click(getExploreTab());
         fireEvent.click(screen.getByText('act1'));
         expect(await screen.findByTestId('chip-act1')).toBeInTheDocument();
@@ -612,7 +612,7 @@ describe('CombinedActionsModal', () => {
 
         // Simulate a prop update (e.g. from parent simulation result)
         const updatedResult = { ...emptyResult, message: 'Updated' };
-        rerender(<CombinedActionsModal {...defaultProps} analysisResult={updatedResult as any} />);
+        rerender(<CombinedActionsModal {...defaultProps} analysisResult={updatedResult as unknown as AnalysisResult} />);
 
         // Card should STILL be there!
         const finalCard = screen.getByTestId('comparison-card');
