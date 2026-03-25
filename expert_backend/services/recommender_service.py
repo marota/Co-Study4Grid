@@ -15,7 +15,8 @@ import numpy as np
 from expert_op4grid_recommender.environment import load_interesting_lines
 from expert_op4grid_recommender.utils.superposition import (
     compute_combined_pair_superposition,
-    _identify_action_elements
+    _identify_action_elements,
+    get_virtual_line_flow,
 )
 from expert_op4grid_recommender.action_evaluation.classifier import ActionClassifier
 
@@ -352,52 +353,41 @@ class RecommenderService:
     def _mw_start_open_coupling(self, set_bus, obs_n1, line_idx_map, load_idx_map):
         """Compute virtual line MW for an open coupling (node splitting) action.
 
-        The virtual line flow equals the net power injection at the bus being
-        created (bus 2).  Using Kirchhoff's law:
-          - lines_or_id (origin at substation, moved to bus 2):
-              injection at bus 2 = -p_or  (positive p_or leaves the bus)
-          - lines_ex_id (extremity at substation, moved to bus 2):
-              injection at bus 2 ≈ +p_or  (power arriving from origin)
-          - gens_bus (generator moved to bus 2):
-              injection = +gen_p
-          - loads_bus (load moved to bus 2):
-              injection = -load_p
+        Delegates to ``get_virtual_line_flow()`` from expert_op4grid_recommender,
+        after partitioning ``set_bus`` elements by their target bus assignment
+        and collecting observation indices for bus 1 elements.
 
-        Virtual line MW = |net injection at bus 2|
+        Virtual line MW = |get_virtual_line_flow(obs, ind_load, ind_prod, ind_lor, ind_lex)|
         """
-        net_injection = 0.0
-        found = False
+        # Determine which bus number represents "bus 1" (smallest).
+        all_buses = set()
+        for key in ("lines_or_id", "lines_ex_id", "generators_id", "loads_id"):
+            for _name, bus in set_bus.get(key, {}).items():
+                all_buses.add(int(bus))
 
-        # Lines whose origin is at this substation and moved to new bus
-        for name, bus in set_bus.get("lines_or_id", {}).items():
-            if name in line_idx_map:
-                idx = line_idx_map[name]
-                net_injection -= float(obs_n1.p_or[idx])
-                found = True
+        if not all_buses:
+            return None
 
-        # Lines whose extremity is at this substation and moved to new bus
-        for name, bus in set_bus.get("lines_ex_id", {}).items():
-            if name in line_idx_map:
-                idx = line_idx_map[name]
-                net_injection += float(obs_n1.p_or[idx])
-                found = True
+        bus1 = min(all_buses)
 
-        # Generators moved to the new bus
+        # Collect observation indices for elements on bus 1
+        ind_lor = [line_idx_map[name] for name, bus in set_bus.get("lines_or_id", {}).items()
+                    if int(bus) == bus1 and name in line_idx_map]
+        ind_lex = [line_idx_map[name] for name, bus in set_bus.get("lines_ex_id", {}).items()
+                    if int(bus) == bus1 and name in line_idx_map]
+
         gen_name_to_idx = {name: i for i, name in enumerate(obs_n1.name_gen)} if hasattr(obs_n1, 'name_gen') else {}
-        for name, bus in set_bus.get("generators_id", {}).items():
-            if name in gen_name_to_idx:
-                idx = gen_name_to_idx[name]
-                net_injection += float(obs_n1.gen_p[idx])
-                found = True
+        ind_prod = [gen_name_to_idx[name] for name, bus in set_bus.get("generators_id", {}).items()
+                     if int(bus) == bus1 and name in gen_name_to_idx]
 
-        # Loads moved to the new bus
-        for name, bus in set_bus.get("loads_id", {}).items():
-            if name in load_idx_map:
-                idx = load_idx_map[name]
-                net_injection -= float(obs_n1.load_p[idx])
-                found = True
+        ind_load = [load_idx_map[name] for name, bus in set_bus.get("loads_id", {}).items()
+                     if int(bus) == bus1 and name in load_idx_map]
 
-        return round(abs(net_injection), 1) if found else None
+        if not (ind_lor or ind_lex or ind_prod or ind_load):
+            return None
+
+        flow = get_virtual_line_flow(obs_n1, ind_load, ind_prod, ind_lor, ind_lex)
+        return round(abs(flow), 1)
 
     def update_config(self, settings):
         # Update the global config of the package

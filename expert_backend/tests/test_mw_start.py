@@ -2,9 +2,19 @@
 
 import numpy as np
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from expert_backend.services.recommender_service import RecommenderService
+
+
+def _real_get_virtual_line_flow(obs, ind_load, ind_prod, ind_lor, ind_lex):
+    """Reference implementation of get_virtual_line_flow for testing."""
+    flow = 0.0
+    flow += sum(-obs.p_or[i] for i in ind_lor)
+    flow += sum(obs.p_or[i] for i in ind_lex)
+    flow += sum(-obs.load_p[i] for i in ind_load)
+    flow += sum(obs.gen_p[i] for i in ind_prod)
+    return flow
 
 
 def _make_obs(name_line, p_or, name_load=None, load_p=None):
@@ -222,31 +232,36 @@ class TestMwStartLoadShedding:
         assert result["load_shedding"]["mw_start"]["ls_none"] is None
 
 
+@patch(
+    "expert_backend.services.recommender_service.get_virtual_line_flow",
+    side_effect=_real_get_virtual_line_flow,
+)
 class TestMwStartOpenCoupling:
-    def test_computes_net_injection_at_moved_bus(self):
-        """Virtual line flow = |net injection at bus 2|.
+    def test_computes_kcl_at_bus1_only(self, _mock_vlf):
+        """Virtual line flow = |KCL at bus 1|.
 
-        lines_or_id: origin at substation → injection = -p_or
-        lines_ex_id: extremity at substation → injection = +p_or
+        When set_bus has elements on both bus 1 and bus 2, only bus 1
+        elements contribute to the virtual line flow (matching the
+        reference get_virtual_line_flow implementation).
 
-        Example: VIELM1 (or side, p_or=-131), CPVAN1 (ex side, p_or=89),
-                 TR631 (or side, p_or=23), TR632 (or side, p_or=20)
-        If VIELM1 and TR632 are on bus 2 (or side):
-          injection = -(-131) + -(20) = 131 - 20 = 111
-        If CPVAN1 (ex side) stays on bus 1 and TR631 (or side) stays on bus 1:
-          They don't appear in lines_or_id or lines_ex_id for bus 2.
-        Virtual line = |111| = 111 MW? Depends on grouping — let's test a simpler case.
+        Example: VIELM1 (or, bus 2, p_or=-131), CPVAN1 (ex, bus 1, p_or=89),
+                 TR631 (or, bus 1, p_or=23), TR632 (or, bus 2, p_or=20)
+        KCL at bus 1:
+          CPVAN1 (ex side, bus 1): +p_or = +89
+          TR631 (or side, bus 1): -p_or = -23
+          net = 89 - 23 = 66
+        Virtual line = |66| = 66 MW
         """
-        # Bus 2 gets: LINE_A (or side, p_or=100) and LINE_B (ex side, p_or=60)
-        # injection at bus 2 = -100 + 60 = -40
-        # virtual line = |−40| = 40
-        obs = _make_obs(["LINE_A", "LINE_B", "LINE_C"], [100.0, 60.0, 30.0])
+        obs = _make_obs(
+            ["VIELM1", "CPVAN1", "TR631", "TR632"],
+            [-131.0, 89.0, 23.0, 20.0],
+        )
         dict_action = {
             "open_coupling_act": {
                 "content": {
                     "set_bus": {
-                        "lines_or_id": {"LINE_A": 2},
-                        "lines_ex_id": {"LINE_B": 2},
+                        "lines_or_id": {"VIELM1": 2, "TR631": 1, "TR632": 2},
+                        "lines_ex_id": {"CPVAN1": 1},
                     }
                 }
             }
@@ -256,12 +271,12 @@ class TestMwStartOpenCoupling:
         scores = {"open_coupling": {"scores": {"open_coupling_act": 0.75}}}
         result = svc._compute_mw_start_for_scores(scores)
 
-        assert result["open_coupling"]["mw_start"]["open_coupling_act"] == pytest.approx(40.0, abs=0.1)
+        # KCL at bus 1: +89 (CPVAN1 ex) - 23 (TR631 or) = 66
+        assert result["open_coupling"]["mw_start"]["open_coupling_act"] == pytest.approx(66.0, abs=0.1)
 
-    def test_handles_negative_p_or_correctly(self):
-        """Negative p_or means power flows toward origin (into the substation)."""
-        # Bus 2 gets: LINE_A (or side, p_or=-131) and LINE_B (or side, p_or=20)
-        # injection at bus 2 = -(-131) + -(20) = 131 - 20 = 111
+    def test_single_bus_computes_kcl_for_all(self, _mock_vlf):
+        """When all elements are on one bus, all contribute to KCL."""
+        # All on bus 2 → min({2}) = 2 = bus 1 equivalent
         obs = _make_obs(["LINE_A", "LINE_B"], [-131.0, 20.0])
         dict_action = {
             "coupling_act": {
@@ -277,11 +292,12 @@ class TestMwStartOpenCoupling:
         scores = {"open_coupling": {"scores": {"coupling_act": 7.0}}}
         result = svc._compute_mw_start_for_scores(scores)
 
+        # KCL: -(-131) + -(20) = 131 - 20 = 111
         assert result["open_coupling"]["mw_start"]["coupling_act"] == pytest.approx(111.0, abs=0.1)
 
-    def test_includes_generator_and_load_contributions(self):
-        """Generators and loads at moved bus contribute to the net injection."""
-        obs = _make_obs(["LINE_A"], [100.0], name_load=["LOAD_1"], load_p=[30.0])
+    def test_includes_generator_and_load_on_bus1(self, _mock_vlf):
+        """Generators and loads on bus 1 contribute to KCL at bus 1."""
+        obs = _make_obs(["LINE_A", "LINE_B"], [100.0, 50.0], name_load=["LOAD_1"], load_p=[30.0])
         obs.name_gen = ["GEN_1"]
         obs.gen_p = np.array([50.0])
 
@@ -289,8 +305,8 @@ class TestMwStartOpenCoupling:
             "coupling_gl": {
                 "content": {
                     "set_bus": {
-                        "lines_or_id": {"LINE_A": 2},
-                        "generators_id": {"GEN_1": 2},
+                        "lines_or_id": {"LINE_A": 1, "LINE_B": 2},
+                        "generators_id": {"GEN_1": 1},
                         "loads_id": {"LOAD_1": 2},
                     }
                 }
@@ -301,11 +317,12 @@ class TestMwStartOpenCoupling:
         scores = {"open_coupling": {"scores": {"coupling_gl": 5.0}}}
         result = svc._compute_mw_start_for_scores(scores)
 
-        # injection = -p_or(LINE_A) + gen_p(GEN_1) - load_p(LOAD_1) = -100 + 50 - 30 = -80
-        # virtual line = |−80| = 80
-        assert result["open_coupling"]["mw_start"]["coupling_gl"] == pytest.approx(80.0, abs=0.1)
+        # KCL at bus 1: -p_or(LINE_A) + gen_p(GEN_1) = -100 + 50 = -50
+        # LOAD_1 and LINE_B are on bus 2, excluded
+        # virtual line = |−50| = 50
+        assert result["open_coupling"]["mw_start"]["coupling_gl"] == pytest.approx(50.0, abs=0.1)
 
-    def test_no_lines_in_action_returns_none(self):
+    def test_no_lines_in_action_returns_none(self, _mock_vlf):
         obs = _make_obs(["LINE_A"], [50.0])
         dict_action = {
             "open_coupling_empty": {
