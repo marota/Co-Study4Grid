@@ -161,4 +161,56 @@ describe('CombinedActionsModal', () => {
         render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithMissingEst} />);
         expect(screen.getByText('99.0%')).toBeInTheDocument();
     });
+
+    // ── MW Start column ────────────────────────────────────────────────────
+
+    it('shows MW Start numeric value in explore tab for actions with mw_start', async () => {
+        const resultWithMw: AnalysisResult = {
+            ...mockAnalysisResult,
+            action_scores: {
+                'disco': {
+                    scores: { 'act1': 10, 'act2': 20, 'act3': 15 },
+                    mw_start: { 'act1': 142.5, 'act2': 88.0, 'act3': null }
+                }
+            }
+        };
+        render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithMw} />);
+        fireEvent.click(getExploreTab());
+
+        expect(await screen.findByText('142.5')).toBeInTheDocument();
+        expect(screen.getByText('88.0')).toBeInTheDocument();
+    });
+
+    it('shows N/A in explore tab for actions with null mw_start', async () => {
+        const resultWithNullMw: AnalysisResult = {
+            ...mockAnalysisResult,
+            action_scores: {
+                'line_reconnection': {
+                    scores: { 'act1': 10, 'act2': 20, 'act3': 15 },
+                    mw_start: { 'act1': null, 'act2': null, 'act3': null }
+                }
+            }
+        };
+        render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithNullMw} />);
+        fireEvent.click(getExploreTab());
+
+        const naCells = await screen.findAllByText('N/A');
+        expect(naCells.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('shows N/A when mw_start map is absent from action_scores', async () => {
+        const resultNoMwStart: AnalysisResult = {
+            ...mockAnalysisResult,
+            action_scores: {
+                'disco': {
+                    scores: { 'act1': 10 }
+                    // no mw_start field
+                }
+            }
+        };
+        render(<CombinedActionsModal {...defaultProps} analysisResult={resultNoMwStart} />);
+        fireEvent.click(getExploreTab());
+
+        expect(await screen.findByText('N/A')).toBeInTheDocument();
+    });
 });

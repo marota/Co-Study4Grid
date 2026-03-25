@@ -872,4 +872,87 @@ describe('ActionFeed', () => {
         fireEvent.click(vlButtons[0]);
         expect(onAssetClick).toHaveBeenCalledWith(actionId, 'VL_GAMMA', 'action');
     });
+
+    // ── MW Start column ────────────────────────────────────────────────────
+
+    it('shows MW Start column header in score table', async () => {
+        const props = {
+            ...defaultProps,
+            actionScores: {
+                line_reconnection: {
+                    scores: { act_reco: 8 },
+                    mw_start: { act_reco: null },
+                }
+            },
+        };
+        render(<ActionFeed {...props} />);
+        fireEvent.click(screen.getByText('+ Manual Selection'));
+
+        expect(await screen.findByText('MW Start')).toBeInTheDocument();
+    });
+
+    it('shows numeric MW Start value for disco/pst/ls actions', async () => {
+        const props = {
+            ...defaultProps,
+            actionScores: {
+                line_disconnection: {
+                    scores: { disco_L1: 9 },
+                    mw_start: { disco_L1: 125.4 },
+                }
+            },
+        };
+        render(<ActionFeed {...props} />);
+        fireEvent.click(screen.getByText('+ Manual Selection'));
+
+        expect(await screen.findByText('125.4')).toBeInTheDocument();
+    });
+
+    it('shows N/A for reconnection and close-coupling actions', async () => {
+        const props = {
+            ...defaultProps,
+            actionScores: {
+                line_reconnection: {
+                    scores: { reco_L2: 7 },
+                    mw_start: { reco_L2: null },
+                }
+            },
+        };
+        render(<ActionFeed {...props} />);
+        fireEvent.click(screen.getByText('+ Manual Selection'));
+
+        expect(await screen.findByText('N/A')).toBeInTheDocument();
+        expect(screen.queryByText(/^\d+\.\d$/)).not.toBeInTheDocument();
+    });
+
+    it('shows N/A when mw_start field is absent for the action', async () => {
+        const props = {
+            ...defaultProps,
+            actionScores: {
+                pst_tap_change: {
+                    scores: { pst_act: 5 },
+                    // no mw_start key at all
+                }
+            },
+        };
+        render(<ActionFeed {...props} />);
+        fireEvent.click(screen.getByText('+ Manual Selection'));
+
+        expect(await screen.findByText('N/A')).toBeInTheDocument();
+    });
+
+    it('shows MW Start for load shedding action', async () => {
+        const props = {
+            ...defaultProps,
+            actionScores: {
+                load_shedding: {
+                    scores: { ls_LOAD_1: 3 },
+                    mw_start: { ls_LOAD_1: 75.0 },
+                }
+            },
+        };
+        render(<ActionFeed {...props} />);
+        fireEvent.click(screen.getByText('+ Manual Selection'));
+
+        expect(await screen.findByText('75.0')).toBeInTheDocument();
+    });
 });
