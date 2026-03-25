@@ -77,7 +77,7 @@ export interface AnalysisResult {
     pdf_path: string | null;
     pdf_url: string | null;
     actions: Record<string, ActionDetail>;
-    action_scores?: Record<string, { scores: Record<string, number> }>;
+    action_scores?: Record<string, { scores: Record<string, number>; mw_start?: Record<string, number | null> }>;
     lines_overloaded: string[];
     combined_actions?: Record<string, CombinedAction>;
     message: string;

@@ -151,7 +151,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     // Format scored actions
     const scoredActionsList = useMemo(() => {
         if (!actionScores) return [];
-        const list: { type: string; actionId: string; score: number }[] = [];
+        const list: { type: string; actionId: string; score: number; mwStart: number | null }[] = [];
         for (const [type, data] of Object.entries(actionScores)) {
             // Apply filtering logic consistent with the search dropdown
             const isDiscoType = type === 'line_disconnection';
@@ -200,7 +200,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
 
                 if (!shouldShow) continue;
 
-                list.push({ type, actionId, score: Number(score) });
+                const mwStartMap = (data as { mw_start?: Record<string, number | null> })?.mw_start;
+                const mwStart = mwStartMap?.[actionId] ?? null;
+                list.push({ type, actionId, score: Number(score), mwStart: mwStart != null ? Number(mwStart) : null });
             }
         }
         return list.sort((a, b) => {
@@ -708,8 +710,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                         <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', border: '1px solid #e9ecef', borderTop: 'none' }}>
                                                             <thead>
                                                                 <tr style={{ background: '#f8f9fa', borderBottom: '1px solid #ddd' }}>
-                                                                    <th style={{ textAlign: 'left', padding: '4px 6px', width: '70%' }}>Action</th>
-                                                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: '30%' }}>Score</th>
+                                                                    <th style={{ textAlign: 'left', padding: '4px 6px', width: '55%' }}>Action</th>
+                                                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: '20%' }}>MW Start</th>
+                                                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: '25%' }}>Score</th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
@@ -763,6 +766,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                                                         onMouseLeave={hideTooltip}
                                                                                     >i</span>
                                                                                 )}
+                                                                            </td>
+                                                                            <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: item.mwStart == null ? '#aaa' : '#333' }}>
+                                                                                {item.mwStart != null ? item.mwStart.toFixed(1) : 'N/A'}
                                                                             </td>
                                                                             <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace' }}>
                                                                                 {item.score.toFixed(2)}

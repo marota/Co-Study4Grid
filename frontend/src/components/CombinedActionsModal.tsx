@@ -53,16 +53,18 @@ const CombinedActionsModal: React.FC<Props> = ({
     // Scored actions for exploration, derived from analysisResult.action_scores
     const scoredActionsList = useMemo(() => {
         if (!analysisResult?.action_scores) return [];
-        const list: { actionId: string; score: number; type: string }[] = [];
+        const list: { actionId: string; score: number; type: string; mwStart: number | null }[] = [];
         for (const [type, data] of Object.entries(analysisResult.action_scores)) {
             const scores = data?.scores || {};
+            const mwStartMap = data?.mw_start;
             for (const [actionId, score] of Object.entries(scores)) {
                 // Filter out estimated-only combined actions from the exploration list
                 if (actionId.includes('+')) {
                     const detail = analysisResult.actions?.[actionId];
                     if (detail?.is_estimated || !detail?.rho_after || detail.rho_after.length === 0) continue;
                 }
-                list.push({ actionId, score, type });
+                const mwStart = mwStartMap?.[actionId] ?? null;
+                list.push({ actionId, score, type, mwStart: mwStart != null ? Number(mwStart) : null });
             }
         }
         return list.sort((a, b) => {
@@ -502,7 +504,7 @@ const CombinedActionsModal: React.FC<Props> = ({
                                                 <tbody>
                                                     {filteredList
                                                         .filter(item => item.type === type)
-                                                        .map(({ actionId, score }) => {
+                                                        .map(({ actionId, score, mwStart }) => {
                                                             const isSelected = selectedIds.has(actionId);
                                                             const simResult = sessionSimResults[actionId] || (analysisResult?.actions?.[actionId]?.rho_after ? analysisResult.actions[actionId] : null);
                                                             
@@ -517,6 +519,9 @@ const CombinedActionsModal: React.FC<Props> = ({
                                                                         <input type="checkbox" checked={isSelected} readOnly style={{ cursor: 'pointer' }} />
                                                                     </td>
                                                                     <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{actionId}</td>
+                                                                    <td style={{ width: '65px', textAlign: 'right', fontFamily: 'monospace', fontSize: '11px', color: mwStart == null ? '#aaa' : '#333' }}>
+                                                                        {mwStart != null ? `${mwStart.toFixed(1)}` : 'N/A'}
+                                                                    </td>
                                                                     <td style={{ width: '60px', textAlign: 'right' }}>
                                                                         <span className="metric-badge metric-score" style={{ transform: 'scale(0.9)', display: 'inline-block' }}>
                                                                             {score.toFixed(2)}

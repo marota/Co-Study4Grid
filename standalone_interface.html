@@ -3260,7 +3260,9 @@
                         // Filter out combined actions that are only estimations
                         if (actionId.includes('+') && (actionDetail?.is_estimated || !actionDetail?.rho_after || actionDetail?.rho_after.length === 0)) continue;
 
-                        list.push({ actionId, score, type });
+                        const mwStartMap = data?.mw_start;
+                        const mwStart = mwStartMap?.[actionId] ?? null;
+                        list.push({ actionId, score, type, mwStart: mwStart != null ? Number(mwStart) : null });
                     }
                 }
                 return list.sort((a, b) => {
@@ -4867,8 +4869,9 @@
                                                                         <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', border: '1px solid #e9ecef', borderTop: 'none' }}>
                                                                             <thead>
                                                                                 <tr style={{ background: '#f8f9fa', borderBottom: '1px solid #ddd' }}>
-                                                                                    <th style={{ textAlign: 'left', padding: '4px 6px', width: '70%' }}>Action</th>
-                                                                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: '30%' }}>Score</th>
+                                                                                    <th style={{ textAlign: 'left', padding: '4px 6px', width: '55%' }}>Action</th>
+                                                                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: '20%' }}>MW Start</th>
+                                                                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: '25%' }}>Score</th>
                                                                                 </tr>
                                                                             </thead>
                                                                             <tbody>
@@ -4909,6 +4912,9 @@
                                                                                                         onMouseLeave={hideScoreTooltip}
                                                                                                     >ⓘ</span>
                                                                                                 )}
+                                                                                            </td>
+                                                                                            <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: item.mwStart == null ? '#aaa' : '#333' }}>
+                                                                                                {item.mwStart != null ? item.mwStart.toFixed(1) : 'N/A'}
                                                                                             </td>
                                                                                             <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace' }}>
                                                                                                 {item.score.toFixed(2)}
