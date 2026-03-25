@@ -56,6 +56,7 @@ describe('ActionFeed', () => {
         minOpenCoupling: 2,
         minLineDisconnections: 3,
         minPst: 1,
+        minLoadShedding: 0,
         nPrioritizedActions: 10,
         ignoreReconnections: false,
         pendingAnalysisResult: null as AnalysisResult | null,
@@ -693,5 +694,126 @@ describe('ActionFeed', () => {
             />
         );
         expect(screen.getByText('Solves overload')).toBeInTheDocument();
+    });
+
+    it('displays load shedding description with MW, load name, and clickable voltage level', () => {
+        const actionId = 'load_shed_1';
+        const props = {
+            ...defaultProps,
+            actions: {
+                [actionId]: {
+                    description_unitaire: 'Shedding action on load',
+                    rho_before: [1.0],
+                    rho_after: [0.8],
+                    max_rho: 0.8,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: { LOAD_1: -1 } },
+                    load_shedding_details: [
+                        { load_name: 'LOAD_1', voltage_level_id: 'VL_ALPHA', shedded_mw: 42.5 },
+                    ],
+                }
+            },
+            selectedActionIds: new Set([actionId]),
+        };
+        render(<ActionFeed {...props} />);
+
+        // Should show load shedding description
+        expect(screen.getByText(/42\.5 MW/)).toBeInTheDocument();
+        expect(screen.getByText('LOAD_1')).toBeInTheDocument();
+
+        // VL should be rendered as clickable buttons (one in description, one as badge)
+        const vlButtons = screen.getAllByText('VL_ALPHA');
+        expect(vlButtons.length).toBeGreaterThanOrEqual(1);
+        expect(vlButtons.every(el => el.tagName === 'BUTTON')).toBe(true);
+    });
+
+    it('shows VL badges from load_shedding_details instead of load name badges', () => {
+        const actionId = 'load_shed_2';
+        const props = {
+            ...defaultProps,
+            actions: {
+                [actionId]: {
+                    description_unitaire: 'Shedding action',
+                    rho_before: [1.0],
+                    rho_after: [0.8],
+                    max_rho: 0.8,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: { LOAD_X: -1 } },
+                    load_shedding_details: [
+                        { load_name: 'LOAD_X', voltage_level_id: 'VL_BETA', shedded_mw: 10.0 },
+                    ],
+                }
+            },
+            selectedActionIds: new Set([actionId]),
+        };
+        render(<ActionFeed {...props} />);
+
+        // VL badge should be present (green VL badge)
+        const badges = screen.getAllByText('VL_BETA');
+        // There should be at least one button element (the badge) with VL_BETA text
+        const buttonBadges = badges.filter(el => el.tagName === 'BUTTON');
+        expect(buttonBadges.length).toBeGreaterThan(0);
+    });
+
+    it('displays multiple load shedding entries when action sheds multiple loads', () => {
+        const actionId = 'load_shed_multi';
+        const props = {
+            ...defaultProps,
+            actions: {
+                [actionId]: {
+                    description_unitaire: 'Multi-load shedding',
+                    rho_before: [1.0],
+                    rho_after: [0.7],
+                    max_rho: 0.7,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: { LOAD_A: -1, LOAD_B: -1 } },
+                    load_shedding_details: [
+                        { load_name: 'LOAD_A', voltage_level_id: 'VL_1', shedded_mw: 20.0 },
+                        { load_name: 'LOAD_B', voltage_level_id: 'VL_2', shedded_mw: 15.3 },
+                    ],
+                }
+            },
+            selectedActionIds: new Set([actionId]),
+        };
+        render(<ActionFeed {...props} />);
+
+        expect(screen.getByText(/20 MW/)).toBeInTheDocument();
+        expect(screen.getByText(/15\.3 MW/)).toBeInTheDocument();
+        expect(screen.getByText('LOAD_A')).toBeInTheDocument();
+        expect(screen.getByText('LOAD_B')).toBeInTheDocument();
+    });
+
+    it('clicking VL button in load shedding description triggers onAssetClick', () => {
+        const onAssetClick = vi.fn();
+        const actionId = 'load_shed_click';
+        const props = {
+            ...defaultProps,
+            onAssetClick,
+            actions: {
+                [actionId]: {
+                    description_unitaire: 'Shedding for click test',
+                    rho_before: [1.0],
+                    rho_after: [0.8],
+                    max_rho: 0.8,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: { LOAD_C: -1 } },
+                    load_shedding_details: [
+                        { load_name: 'LOAD_C', voltage_level_id: 'VL_GAMMA', shedded_mw: 30.0 },
+                    ],
+                }
+            },
+            selectedActionIds: new Set([actionId]),
+        };
+        render(<ActionFeed {...props} />);
+
+        // Find the VL button in the load shedding description area (not the badge)
+        const vlButtons = screen.getAllByText('VL_GAMMA');
+        // Click the first one (description area)
+        fireEvent.click(vlButtons[0]);
+        expect(onAssetClick).toHaveBeenCalledWith(actionId, 'VL_GAMMA', 'action');
     });
 });

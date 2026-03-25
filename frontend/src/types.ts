@@ -6,6 +6,7 @@ export interface ConfigRequest {
     min_open_coupling: number;
     min_line_disconnections: number;
     min_pst?: number;
+    min_load_shedding?: number;
     n_prioritized_actions: number;
     lines_monitoring_path?: string;
     monitoring_factor: number;
@@ -29,6 +30,12 @@ export interface ActionTopology {
     switches?: Record<string, unknown>;
 }
 
+export interface LoadSheddingDetail {
+    load_name: string;
+    voltage_level_id: string | null;
+    shedded_mw: number;
+}
+
 export interface ActionDetail {
     description_unitaire: string;
     rho_before: number[] | null;
@@ -45,6 +52,7 @@ export interface ActionDetail {
     disconnected_mw?: number;
     non_convergence?: string | null;
     action_topology?: ActionTopology;
+    load_shedding_details?: LoadSheddingDetail[];
 }
 
 export interface CombinedAction {
@@ -161,6 +169,7 @@ export interface SettingsBackup {
     minCloseCoupling: number;
     minOpenCoupling: number;
     minLineDisconnections: number;
+    minLoadShedding: number;
     nPrioritizedActions: number;
     // Configurations tab
     linesMonitoringPath: string;
@@ -225,6 +234,7 @@ export interface SavedActionEntry {
     disconnected_mw?: number;
     non_convergence?: string | null;
     action_topology?: ActionTopology;
+    load_shedding_details?: LoadSheddingDetail[];
     status: SavedActionStatus;
 }
 
@@ -256,6 +266,7 @@ export interface SessionResult {
         min_open_coupling: number;
         min_line_disconnections: number;
         min_pst: number;
+        min_load_shedding: number;
         n_prioritized_actions: number;
         lines_monitoring_path: string;
         monitoring_factor: number;

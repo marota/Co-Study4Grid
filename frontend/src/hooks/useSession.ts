@@ -25,6 +25,7 @@ export interface SaveParams {
   minOpenCoupling: number;
   minLineDisconnections: number;
   minPst: number;
+  minLoadShedding: number;
   nPrioritizedActions: number;
   linesMonitoringPath: string;
   monitoringFactor: number;
@@ -55,6 +56,7 @@ export interface RestoreContext {
   setMinOpenCoupling: (v: number) => void;
   setMinLineDisconnections: (v: number) => void;
   setMinPst: (v: number) => void;
+  setMinLoadShedding: (v: number) => void;
   setNPrioritizedActions: (v: number) => void;
   setLinesMonitoringPath: (v: string) => void;
   setMonitoringFactor: (v: number) => void;
@@ -98,6 +100,7 @@ export function useSession(): SessionState {
       minOpenCoupling: params.minOpenCoupling,
       minLineDisconnections: params.minLineDisconnections,
       minPst: params.minPst,
+      minLoadShedding: params.minLoadShedding,
       nPrioritizedActions: params.nPrioritizedActions,
       linesMonitoringPath: params.linesMonitoringPath,
       monitoringFactor: params.monitoringFactor,
@@ -180,6 +183,7 @@ export function useSession(): SessionState {
       ctx.setMinOpenCoupling(cfg.min_open_coupling);
       ctx.setMinLineDisconnections(cfg.min_line_disconnections);
       ctx.setMinPst(cfg.min_pst ?? 1.0);
+      ctx.setMinLoadShedding(cfg.min_load_shedding ?? 0.0);
       ctx.setNPrioritizedActions(cfg.n_prioritized_actions);
       ctx.setLinesMonitoringPath(cfg.lines_monitoring_path || '');
       ctx.setMonitoringFactor(cfg.monitoring_factor);
@@ -197,6 +201,7 @@ export function useSession(): SessionState {
         min_open_coupling: cfg.min_open_coupling,
         min_line_disconnections: cfg.min_line_disconnections,
         min_pst: cfg.min_pst ?? 1.0,
+        min_load_shedding: cfg.min_load_shedding ?? 0.0,
         n_prioritized_actions: cfg.n_prioritized_actions,
         lines_monitoring_path: cfg.lines_monitoring_path,
         monitoring_factor: cfg.monitoring_factor,

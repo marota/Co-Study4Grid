@@ -34,6 +34,7 @@ const baseInput: SessionInput = {
     minOpenCoupling: 2.0,
     minLineDisconnections: 3.0,
     minPst: 1.0,
+    minLoadShedding: 0.0,
     nPrioritizedActions: 10,
     linesMonitoringPath: '/data/monitoring.csv',
     monitoringFactor: 0.95,
@@ -71,6 +72,7 @@ describe('buildSessionResult — structure', () => {
             min_open_coupling: 2.0,
             min_line_disconnections: 3.0,
             min_pst: 1.0,
+            min_load_shedding: 0.0,
             n_prioritized_actions: 10,
             lines_monitoring_path: '/data/monitoring.csv',
             monitoring_factor: 0.95,
@@ -478,5 +480,31 @@ describe('buildSessionResult — combined_actions', () => {
     it('combined_actions is not present when analysis is null', () => {
         const out = buildSessionResult({ ...baseInput, result: null });
         expect(out.analysis).toBeNull();
+    });
+});
+
+describe('buildSessionResult — load shedding', () => {
+    it('includes min_load_shedding in configuration', () => {
+        const out = buildSessionResult({ ...baseInput, minLoadShedding: 2.5 });
+        expect(out.configuration.min_load_shedding).toBe(2.5);
+    });
+
+    it('defaults min_load_shedding to 0 in configuration', () => {
+        const out = buildSessionResult(baseInput);
+        expect(out.configuration.min_load_shedding).toBe(0.0);
+    });
+
+    it('preserves load_shedding_details in saved action entries', () => {
+        const actionWithShedding = makeAction('Load shed action', {
+            load_shedding_details: [
+                { load_name: 'LOAD_1', voltage_level_id: 'VL_A', shedded_mw: 25.3 },
+            ],
+        });
+        const result = makeResult({ actions: { shed_act: actionWithShedding } });
+        const out = buildSessionResult({ ...baseInput, result });
+        const savedAction = out.analysis!.actions['shed_act'];
+        expect(savedAction.load_shedding_details).toEqual([
+            { load_name: 'LOAD_1', voltage_level_id: 'VL_A', shedded_mw: 25.3 },
+        ]);
     });
 });
