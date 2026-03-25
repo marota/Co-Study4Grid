@@ -81,7 +81,7 @@ describe('CombinedActionsModal', () => {
                 'load_shedding': { scores: { 'ls1': 5 } }
             }
         };
-        const { rerender } = render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithTypes as AnalysisResult} />);
+        render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithTypes as AnalysisResult} />);
 
         fireEvent.click(getExploreTab());
 

@@ -144,7 +144,6 @@ export function useSettings(): SettingsState {
     if (cfg.pre_existing_overload_threshold !== undefined) setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
     if (cfg.ignore_reconnections !== undefined) setIgnoreReconnections(cfg.ignore_reconnections);
     if (cfg.pypowsybl_fast_mode !== undefined) setPypowsyblFastMode(cfg.pypowsybl_fast_mode);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load persisted config from backend on mount
