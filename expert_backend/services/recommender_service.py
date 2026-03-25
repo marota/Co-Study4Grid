@@ -275,6 +275,12 @@ class RecommenderService:
         is_open = 'open_coupling' in t
 
         action_entry = self._dict_action.get(action_id) if self._dict_action else None
+
+        # For load shedding, try extracting the load name from the action ID
+        # even if the action entry is missing or content is incomplete
+        if is_ls:
+            return self._mw_start_load_shedding(action_id, action_entry, obs_n1, load_idx_map)
+
         if action_entry is None:
             return None
 
@@ -305,33 +311,93 @@ class RecommenderService:
                     return round(abs(float(obs_n1.p_or[idx])), 1)
             return None
 
-        if is_ls:
-            # Load shedding: find the load being shed (bus = -1)
-            loads = set_bus.get("loads_id", {})
-            total_mw = 0.0
-            found = False
-            for load_name, bus in loads.items():
-                if int(bus) == -1 and load_name in load_idx_map:
-                    idx = load_idx_map[load_name]
-                    total_mw += abs(float(obs_n1.load_p[idx]))
-                    found = True
-            return round(total_mw, 1) if found else None
-
         if is_open:
-            # Open coupling (node splitting): sum abs(p_or) of lines moved to different bus
-            # These are lines that appear in lines_or_id or lines_ex_id with a new bus assignment
-            total_mw = 0.0
-            found = False
-            for field in ("lines_or_id", "lines_ex_id"):
-                bus_map = set_bus.get(field, {})
-                for name, bus in bus_map.items():
-                    if name in line_idx_map:
-                        idx = line_idx_map[name]
-                        total_mw += abs(float(obs_n1.p_or[idx]))
-                        found = True
-            return round(total_mw, 1) if found else None
+            return self._mw_start_open_coupling(set_bus, obs_n1, line_idx_map, load_idx_map)
 
         return None
+
+    def _mw_start_load_shedding(self, action_id, action_entry, obs_n1, load_idx_map):
+        """Compute MW at start for a load shedding action.
+
+        Tries multiple strategies:
+        1. Parse content.set_bus.loads_id for loads with bus=-1
+        2. Extract load name from the action ID pattern load_shedding_<name>
+        """
+        # Strategy 1: parse content.set_bus.loads_id
+        if action_entry is not None:
+            content = action_entry.get("content", {})
+            if content:
+                set_bus = content.get("set_bus", {})
+                loads = set_bus.get("loads_id", {})
+                total_mw = 0.0
+                found = False
+                for load_name, bus in loads.items():
+                    if int(bus) == -1 and load_name in load_idx_map:
+                        idx = load_idx_map[load_name]
+                        total_mw += abs(float(obs_n1.load_p[idx]))
+                        found = True
+                if found:
+                    return round(total_mw, 1)
+
+        # Strategy 2: extract load name from action_id pattern
+        aid = action_id
+        if aid.startswith("load_shedding_"):
+            load_name = aid[len("load_shedding_"):]
+            if load_name in load_idx_map:
+                idx = load_idx_map[load_name]
+                return round(abs(float(obs_n1.load_p[idx])), 1)
+
+        return None
+
+    def _mw_start_open_coupling(self, set_bus, obs_n1, line_idx_map, load_idx_map):
+        """Compute virtual line MW for an open coupling (node splitting) action.
+
+        The virtual line flow equals the net power injection at the bus being
+        created (bus 2).  Using Kirchhoff's law:
+          - lines_or_id (origin at substation, moved to bus 2):
+              injection at bus 2 = -p_or  (positive p_or leaves the bus)
+          - lines_ex_id (extremity at substation, moved to bus 2):
+              injection at bus 2 ≈ +p_or  (power arriving from origin)
+          - gens_bus (generator moved to bus 2):
+              injection = +gen_p
+          - loads_bus (load moved to bus 2):
+              injection = -load_p
+
+        Virtual line MW = |net injection at bus 2|
+        """
+        net_injection = 0.0
+        found = False
+
+        # Lines whose origin is at this substation and moved to new bus
+        for name, bus in set_bus.get("lines_or_id", {}).items():
+            if name in line_idx_map:
+                idx = line_idx_map[name]
+                net_injection -= float(obs_n1.p_or[idx])
+                found = True
+
+        # Lines whose extremity is at this substation and moved to new bus
+        for name, bus in set_bus.get("lines_ex_id", {}).items():
+            if name in line_idx_map:
+                idx = line_idx_map[name]
+                net_injection += float(obs_n1.p_or[idx])
+                found = True
+
+        # Generators moved to the new bus
+        gen_name_to_idx = {name: i for i, name in enumerate(obs_n1.name_gen)} if hasattr(obs_n1, 'name_gen') else {}
+        for name, bus in set_bus.get("generators_id", {}).items():
+            if name in gen_name_to_idx:
+                idx = gen_name_to_idx[name]
+                net_injection += float(obs_n1.gen_p[idx])
+                found = True
+
+        # Loads moved to the new bus
+        for name, bus in set_bus.get("loads_id", {}).items():
+            if name in load_idx_map:
+                idx = load_idx_map[name]
+                net_injection -= float(obs_n1.load_p[idx])
+                found = True
+
+        return round(abs(net_injection), 1) if found else None
 
     def update_config(self, settings):
         # Update the global config of the package
