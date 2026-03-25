@@ -126,6 +126,8 @@ const CombinedActionsModal: React.FC<Props> = ({
             });
     }, [analysisResult, simulatedActions, sessionSimResults]);
 
+    const hasLS = Array.from(selectedIds).some(id => id.startsWith('load_shedding_') || id.includes('load_shedding'));
+
     // Cleanup when modal closes
     useEffect(() => {
         if (!isOpen) {
@@ -428,7 +430,7 @@ const CombinedActionsModal: React.FC<Props> = ({
 
                             {/* Filter Buttons */}
                             <div style={{ marginBottom: '12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                {['all', 'disco', 'reco', 'open', 'close', 'pst'].map(f => (
+                                {['all', 'disco', 'reco', 'ls', 'open', 'close', 'pst'].map(f => (
                                     <button
                                         key={f}
                                         onClick={() => setExploreFilter(f)}
@@ -461,6 +463,7 @@ const CombinedActionsModal: React.FC<Props> = ({
                                         if (exploreFilter === 'open') return t.includes('open_coupling');
                                         if (exploreFilter === 'close') return t.includes('close_coupling');
                                         if (exploreFilter === 'pst') return t.includes('pst');
+                                        if (exploreFilter === 'ls') return t.includes('load_shedding') || t.includes('ls');
                                         return t.includes(exploreFilter);
                                     });
 
@@ -480,6 +483,21 @@ const CombinedActionsModal: React.FC<Props> = ({
                                                 <span>{type.replace(/_/g, ' ').toUpperCase()}</span>
                                                 <span>{filteredList.filter(item => item.type === type).length} actions</span>
                                             </div>
+                                            {(type === 'load_shedding' || type === 'ls') && (
+                                                <div style={{ 
+                                                    padding: '6px 10px', 
+                                                    background: '#fff3cd', 
+                                                    color: '#856404', 
+                                                    borderBottom: '1px solid #ffeeba', 
+                                                    fontSize: '11px', 
+                                                    fontWeight: 600,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px'
+                                                }}>
+                                                    <span>⚠️</span> Load shedding actions cannot be combined for estimation.
+                                                </div>
+                                            )}
                                             <table className="action-table" style={{ margin: 0, border: 'none' }}>
                                                 <tbody>
                                                     {filteredList
@@ -552,26 +570,28 @@ const CombinedActionsModal: React.FC<Props> = ({
                             {/* Action Bar / Comparison Card */}
                             <div style={{ marginTop: '5px' }}>
                                 {!preview ? (
-                                    <button
-                                        onClick={handleEstimate}
-                                        disabled={selectedIds.size !== 2 || loading}
-                                        data-testid="estimate-button"
-                                        style={{
-                                            width: '100%',
-                                            padding: '12px',
-                                            background: (selectedIds.size === 2 && !loading) ? '#3498db' : '#ecf0f1',
-                                            color: (selectedIds.size === 2 && !loading) ? 'white' : '#bdc3c7',
-                                            border: 'none',
-                                            borderRadius: '6px',
-                                            cursor: (selectedIds.size !== 2 || loading) ? 'not-allowed' : 'pointer',
-                                            fontWeight: 'bold',
-                                            fontSize: '14px',
-                                            transition: 'all 0.2s',
-                                            boxShadow: (selectedIds.size === 2 && !loading) ? '0 4px 6px rgba(52, 152, 219, 0.2)' : 'none'
-                                        }}
-                                    >
-                                        {loading ? '⚙️ Estimating Combination...' : (selectedIds.size === 2 ? 'Estimate combination effect' : 'Select 2 actions to estimate')}
-                                    </button>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        <button
+                                            onClick={handleEstimate}
+                                            disabled={selectedIds.size !== 2 || loading || hasLS}
+                                            data-testid="estimate-button"
+                                            style={{
+                                                width: '100%',
+                                                padding: '12px',
+                                                background: (selectedIds.size === 2 && !loading && !hasLS) ? '#3498db' : '#ecf0f1',
+                                                color: (selectedIds.size === 2 && !loading && !hasLS) ? 'white' : '#bdc3c7',
+                                                border: 'none',
+                                                borderRadius: '6px',
+                                                cursor: (selectedIds.size !== 2 || loading || hasLS) ? 'not-allowed' : 'pointer',
+                                                fontWeight: 'bold',
+                                                fontSize: '14px',
+                                                transition: 'all 0.2s',
+                                                boxShadow: (selectedIds.size === 2 && !loading && !hasLS) ? '0 4px 6px rgba(52, 152, 219, 0.2)' : 'none'
+                                            }}
+                                        >
+                                            {loading ? '⚙️ Estimating Combination...' : (selectedIds.size === 2 ? (hasLS ? 'Combination not allowed' : 'Estimate combination effect') : 'Select 2 actions to estimate')}
+                                        </button>
+                                    </div>
                                 ) : (
                                     <div style={{ 
                                         padding: '15px', 
@@ -601,21 +621,21 @@ const CombinedActionsModal: React.FC<Props> = ({
                                                 </button>
                                                 <button
                                                     onClick={() => handleSimulate()}
-                                                    disabled={simulating}
+                                                    disabled={simulating || hasLS}
                                                     style={{ 
                                                         padding: '6px 16px', 
-                                                        background: simulating ? '#6c757d' : '#27ae60', 
+                                                        background: (simulating || hasLS) ? '#6c757d' : '#27ae60', 
                                                         color: 'white', 
                                                         border: 'none', 
                                                         borderRadius: '6px', 
-                                                        cursor: simulating ? 'not-allowed' : 'pointer', 
+                                                        cursor: (simulating || hasLS) ? 'not-allowed' : 'pointer', 
                                                         fontWeight: 'bold', 
                                                         fontSize: '12px', 
-                                                        boxShadow: '0 2px 4px rgba(39,174,96,0.2)', 
+                                                        boxShadow: (simulating || hasLS) ? 'none' : '0 2px 4px rgba(39,174,96,0.2)', 
                                                         minWidth: '140px' 
                                                     }}
                                                 >
-                                                    {simulating ? '⌛ Simulating...' : 'Simulate Combined'}
+                                                    {simulating ? '⌛ Simulating...' : (hasLS ? 'Simulation Locked' : 'Simulate Combined')}
                                                 </button>
                                             </div>
                                         </div>

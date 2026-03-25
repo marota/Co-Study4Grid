@@ -14,6 +14,7 @@ export interface UserConfig {
     min_open_coupling: number;
     min_line_disconnections: number;
     min_pst: number;
+    min_load_shedding: number;
     n_prioritized_actions: number;
     monitoring_factor: number;
     pre_existing_overload_threshold: number;
@@ -95,6 +96,7 @@ export const api = {
         non_convergence: string | null;
         lines_overloaded: string[];
         action_topology?: import('./types').ActionTopology;
+        load_shedding_details?: import('./types').LoadSheddingDetail[];
     }> => {
         const response = await axios.post(
             `${API_BASE_URL}/api/simulate-manual-action`,

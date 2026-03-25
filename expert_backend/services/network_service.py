@@ -149,4 +149,33 @@ class NetworkService:
 
         return []
 
+    def get_load_voltage_level(self, load_id: str) -> str | None:
+        """Return the voltage level ID that a given load belongs to."""
+        if not self.network:
+            raise ValueError("Network not loaded")
+
+        loads = self.network.get_loads()
+        if loads is not None and load_id in loads.index:
+            row = loads.loc[load_id]
+            if 'voltage_level_id' in row.index:
+                return row['voltage_level_id']
+        return None
+
+    def get_load_voltage_levels_bulk(self, load_ids: list[str]) -> dict[str, str]:
+        """Return {load_id: voltage_level_id} for a list of loads."""
+        if not self.network:
+            raise ValueError("Network not loaded")
+
+        loads = self.network.get_loads()
+        if loads is None or loads.empty:
+            return {}
+
+        result = {}
+        for lid in load_ids:
+            if lid in loads.index:
+                row = loads.loc[lid]
+                if 'voltage_level_id' in row.index:
+                    result[lid] = row['voltage_level_id']
+        return result
+
 network_service = NetworkService()

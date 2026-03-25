@@ -1157,6 +1157,7 @@
             const [minOpenCoupling, setMinOpenCoupling] = useState(2.0);
             const [minLineDisconnections, setMinLineDisconnections] = useState(3.0);
             const [minPst, setMinPst] = useState(1.0);
+            const [minLoadShedding, setMinLoadShedding] = useState(0.0);
             const [nPrioritizedActions, setNPrioritizedActions] = useState(10);
             const [monitoringFactor, setMonitoringFactor] = useState(0.95);
             const [preExistingOverloadThreshold, setPreExistingOverloadThreshold] = useState(0.02);
@@ -1401,7 +1402,7 @@
             const [loadingAvailableActions, setLoadingAvailableActions] = useState(false);
             const [simulatingActionId, setSimulatingActionId] = useState(null);
             const [searchError, setSearchError] = useState('');
-            const [typeFilters, setTypeFilters] = useState({ disco: true, reco: true, open: true, close: true, pst: true });
+            const [typeFilters, setTypeFilters] = useState({ disco: true, reco: true, open: true, close: true, pst: true, ls: true });
             const searchDropdownRef = useRef(null);
             const searchInputRef = useRef(null);
             const [scoreTooltip, setScoreTooltip] = useState(null);
@@ -1468,6 +1469,7 @@
                 if (cfg.min_open_coupling !== undefined) setMinOpenCoupling(cfg.min_open_coupling);
                 if (cfg.min_line_disconnections !== undefined) setMinLineDisconnections(cfg.min_line_disconnections);
                 if (cfg.min_pst !== undefined) setMinPst(cfg.min_pst);
+                if (cfg.min_load_shedding !== undefined) setMinLoadShedding(cfg.min_load_shedding);
                 if (cfg.n_prioritized_actions !== undefined) setNPrioritizedActions(cfg.n_prioritized_actions);
                 if (cfg.monitoring_factor !== undefined) setMonitoringFactor(cfg.monitoring_factor);
                 if (cfg.pre_existing_overload_threshold !== undefined) setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
@@ -1516,6 +1518,7 @@
                     min_open_coupling: minOpenCoupling,
                     min_line_disconnections: minLineDisconnections,
                     min_pst: minPst,
+                    min_load_shedding: minLoadShedding,
                     n_prioritized_actions: nPrioritizedActions,
                     monitoring_factor: monitoringFactor,
                     pre_existing_overload_threshold: preExistingOverloadThreshold,
@@ -1524,7 +1527,7 @@
                 }).catch(() => console.warn('Failed to persist user config'));
             }, [networkPath, actionPath, layoutPath, outputFolderPath, linesMonitoringPath,
                 minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
-                minPst, nPrioritizedActions, monitoringFactor, preExistingOverloadThreshold,
+                minPst, minLoadShedding, nPrioritizedActions, monitoringFactor, preExistingOverloadThreshold,
                 ignoreReconnections, pypowsyblFastMode]);
 
             const pickPath = async (type, setter) => {
@@ -1576,6 +1579,7 @@
                         min_open_coupling: minOpenCoupling,
                         min_line_disconnections: minLineDisconnections,
                         min_pst: minPst,
+                        min_load_shedding: minLoadShedding,
                         n_prioritized_actions: nPrioritizedActions,
                         lines_monitoring_path: linesMonitoringPath,
                         monitoring_factor: monitoringFactor,
@@ -1810,6 +1814,7 @@
                         min_open_coupling: minOpenCoupling,
                         min_line_disconnections: minLineDisconnections,
                         min_pst: minPst ?? 1.0,
+                        min_load_shedding: minLoadShedding ?? 0.0,
                         n_prioritized_actions: nPrioritizedActions,
                         lines_monitoring_path: linesMonitoringPath,
                         monitoring_factor: monitoringFactor,
@@ -1854,6 +1859,7 @@
                                         is_islanded: detail.is_islanded,
                                         n_components: detail.n_components,
                                         disconnected_mw: detail.disconnected_mw,
+                                        load_shedding_details: detail.load_shedding_details,
                                         status: {
                                             is_selected: manualActionIds.has(id),
                                             is_suggested: suggestedByRecommenderIds.has(id),
@@ -1960,6 +1966,7 @@
                     setMinOpenCoupling(cfg.min_open_coupling);
                     setMinLineDisconnections(cfg.min_line_disconnections);
                     setMinPst(cfg.min_pst ?? 1.0);
+                    setMinLoadShedding(cfg.min_load_shedding ?? 0.0);
                     setNPrioritizedActions(cfg.n_prioritized_actions);
                     setLinesMonitoringPath(cfg.lines_monitoring_path || '');
                     setMonitoringFactor(cfg.monitoring_factor);
@@ -1977,6 +1984,7 @@
                         min_open_coupling: cfg.min_open_coupling,
                         min_line_disconnections: cfg.min_line_disconnections,
                         min_pst: cfg.min_pst ?? 1.0,
+                        min_load_shedding: cfg.min_load_shedding ?? 0.0,
                         n_prioritized_actions: cfg.n_prioritized_actions,
                         lines_monitoring_path: cfg.lines_monitoring_path,
                         monitoring_factor: cfg.monitoring_factor,
@@ -2064,6 +2072,7 @@
                                 is_islanded: entry.is_islanded,
                                 n_components: entry.n_components,
                                 disconnected_mw: entry.disconnected_mw,
+                                load_shedding_details: entry.load_shedding_details,
                                 is_manual: entry.status.is_manually_simulated,
                             };
                             if (entry.status.is_selected) restoredSelected.add(id);
@@ -2332,7 +2341,7 @@
                 setActionDiagramLoading(true);
                 setActiveTab('action');
                 try {
-                    const res = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: actionId });
+                    const res = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: actionId.trim() });
                     const { svg, viewBox } = processSvg(res.data.svg, voltageLevels.length);
                     setActionDiagram({ ...res.data, svg, originalViewBox: viewBox });
                 } catch (err) {
@@ -2384,6 +2393,7 @@
                                             is_islanded: detail.is_islanded,
                                             n_components: detail.n_components,
                                             disconnected_mw: detail.disconnected_mw,
+                                            load_shedding_details: detail.load_shedding_details,
                                         },
                                     },
                                 };
@@ -2890,8 +2900,10 @@
             };
 
             const canonicalizeId = (id) => {
-                if (!id || typeof id !== 'string' || !id.includes('+')) return id;
-                return id.split('+').map(p => p.trim()).sort().join('+');
+                if (!id || typeof id !== 'string') return id;
+                const trimmed = id.trim();
+                if (!trimmed.includes('+')) return trimmed;
+                return trimmed.split('+').map(p => p.trim()).sort().join('+');
             };
 
             const handleAddManualAction = async (rawActionId) => {
@@ -2956,6 +2968,7 @@
                                     is_islanded: detail.is_islanded,
                                     n_components: detail.n_components,
                                     disconnected_mw: detail.disconnected_mw,
+                                    load_shedding_details: detail.load_shedding_details,
                                     non_convergence: detail.non_convergence,
                                     is_precomputed: isCombined ? true : (base.actions?.[actionId]?.is_precomputed || false)
                                 }
@@ -3077,6 +3090,7 @@
                                     max_rho: detail.max_rho,
                                     max_rho_line: detail.max_rho_line,
                                     is_rho_reduction: detail.is_rho_reduction,
+                                    load_shedding_details: detail.load_shedding_details,
                                     is_manual: true,
                                 }
                             }
@@ -3140,6 +3154,7 @@
                                     is_islanded: detail.is_islanded,
                                     n_components: detail.n_components,
                                     disconnected_mw: detail.disconnected_mw,
+                                    load_shedding_details: detail.load_shedding_details,
                                     non_convergence: detail.non_convergence,
                                 }
                             }
@@ -3181,14 +3196,16 @@
                         const isOpenCoupling = t.includes('open_coupling');
                         const isCloseCoupling = t.includes('close_coupling');
                         const isPstAction = (actionId.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
+                        const isLoadShedding = t.includes('load_shedding') || actionId.startsWith('load_shedding_') || actionDesc.includes('effacement');
 
                         if (isDisco) return typeFilters.disco;
                         if (isReco) return typeFilters.reco;
                         if (isOpenCoupling) return typeFilters.open;
                         if (isCloseCoupling) return typeFilters.close;
                         if (isPstAction) return typeFilters.pst;
+                        if (isLoadShedding) return typeFilters.ls;
 
-                        return typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
+                        return typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst && typeFilters.ls;
                     })
                     .filter(a => a.id.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q))
                     .slice(0, 20);
@@ -3211,6 +3228,7 @@
                         const isOpenCoupling = t.includes('open_coupling');
                         const isCloseCoupling = t.includes('close_coupling');
                         const isPstAction = (aid.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
+                        const isLoadShedding = t.includes('load_shedding') || aid.startsWith('load_shedding_') || actionDesc.includes('effacement');
 
                         let shouldShow = false;
                         if (isDisco) shouldShow = typeFilters.disco;
@@ -3218,7 +3236,8 @@
                         else if (isOpenCoupling) shouldShow = typeFilters.open;
                         else if (isCloseCoupling) shouldShow = typeFilters.close;
                         else if (isPstAction) shouldShow = typeFilters.pst;
-                        else shouldShow = typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
+                        else if (isLoadShedding) shouldShow = typeFilters.ls;
+                        else shouldShow = typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst && typeFilters.ls;
 
                         if (!shouldShow) continue;
 
@@ -4121,40 +4140,58 @@
                                             </button>
                                         );
 
-                                        // 1. Substations (VLs)
-                                        if (nodeMeta) {
-                                            const vlNames = getActionTargetVoltageLevels(details, id, nodeMeta);
-                                            vlNames.forEach(vlName => {
-                                                badges.push(badgeBtn(vlName, '#d1fae5', '#065f46', `Click: zoom to ${vlName} | Double-click: open focused diagram`, (e) => {
-                                                    e.stopPropagation(); handleVlDoubleClick(id, vlName);
-                                                }));
+                                        // For load shedding actions, show VL badges from load_shedding_details
+                                        const isLoadShedding = details.load_shedding_details && details.load_shedding_details.length > 0;
+
+                                        if (!isLoadShedding) {
+                                            // 1. Substations (VLs)
+                                            if (nodeMeta) {
+                                                const vlNames = getActionTargetVoltageLevels(details, id, nodeMeta);
+                                                vlNames.forEach(vlName => {
+                                                    badges.push(badgeBtn(vlName, '#d1fae5', '#065f46', `Click: zoom to ${vlName} | Double-click: open focused diagram`, (e) => {
+                                                        e.stopPropagation(); handleVlDoubleClick(id, vlName);
+                                                    }));
+                                                });
+                                            }
+
+                                            // 2. Lines / Equipments
+                                            const isCoupling = id.toLowerCase().includes('coupling') || id.toLowerCase().includes('busbar');
+                                            const lineNames = edgeMeta
+                                                ? getActionTargetLines(details, id, edgeMeta)
+                                                : Array.from(new Set([
+                                                    ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_ex_bus || {})),
+                                                    ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_or_bus || {})),
+                                                    ...Object.keys(details.action_topology?.pst_tap || {}),
+                                                ]));
+
+                                            lineNames.forEach(name => {
+                                                if (badges.some(b => b.key === name)) return;
+                                                badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
                                             });
+
+                                            // 3. Fallback
+                                            if (badges.length === 0) {
+                                                const topo = details.action_topology;
+                                                const equipNames = Array.from(new Set([
+                                                    ...Object.keys(topo?.gens_bus || {}),
+                                                    ...Object.keys(topo?.loads_bus || {}),
+                                                ]));
+                                                equipNames.forEach(name => {
+                                                    badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
+                                                });
+                                            }
                                         }
 
-                                        // 2. Lines / Equipments
-                                        const isCoupling = id.toLowerCase().includes('coupling') || id.toLowerCase().includes('busbar');
-                                        const lineNames = edgeMeta
-                                            ? getActionTargetLines(details, id, edgeMeta)
-                                            : Array.from(new Set([
-                                                ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_ex_bus || {})),
-                                                ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_or_bus || {})),
-                                                ...Object.keys(details.action_topology?.pst_tap || {}),
-                                            ]));
-
-                                        lineNames.forEach(name => {
-                                            if (badges.some(b => b.key === name)) return;
-                                            badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
-                                        });
-
-                                        // 3. Fallback
-                                        if (badges.length === 0) {
-                                            const topo = details.action_topology;
-                                            const equipNames = Array.from(new Set([
-                                                ...Object.keys(topo?.gens_bus || {}),
-                                                ...Object.keys(topo?.loads_bus || {}),
-                                            ]));
-                                            equipNames.forEach(name => {
-                                                badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
+                                        if (isLoadShedding) {
+                                            const vlSet = new Set();
+                                            details.load_shedding_details.forEach(ls => {
+                                                if (ls.voltage_level_id && !vlSet.has(ls.voltage_level_id)) {
+                                                    vlSet.add(ls.voltage_level_id);
+                                                    badges.push(badgeBtn(ls.voltage_level_id, '#d1fae5', '#065f46', `Click: zoom | Double-click: open SLD`, (e) => {
+                                                        e.stopPropagation();
+                                                        handleVlDoubleClick(id, ls.voltage_level_id);
+                                                    }));
+                                                }
                                             });
                                         }
 
@@ -4165,6 +4202,25 @@
                                         );
                                     })()}
                                 </div>
+                                {
+                                    details.load_shedding_details && details.load_shedding_details.length > 0 && (
+                                        <div style={{ fontSize: '12px', background: '#fef3c7', color: '#92400e', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #fcd34d', fontWeight: 500 }}>
+                                            {details.load_shedding_details.map((ls, i) => (
+                                                <div key={ls.load_name}>
+                                                    Load shedding of <strong>{ls.shedded_mw} MW</strong> on load <strong>{ls.load_name}</strong>
+                                                    {ls.voltage_level_id && (
+                                                        <> at voltage level <button
+                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', color: '#92400e', fontWeight: 700, textDecoration: 'underline dotted' }}
+                                                            title={`Double-click to open SLD for ${ls.voltage_level_id}`}
+                                                            onClick={(e) => { e.stopPropagation(); handleAssetClick(id, ls.voltage_level_id, 'action'); }}
+                                                            onDoubleClick={(e) => { e.stopPropagation(); handleVlDoubleClick(id, ls.voltage_level_id); }}
+                                                        >{ls.voltage_level_id}</button></>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )
+                                }
                                 {
                                     details.non_convergence && (
                                         <div style={{ fontSize: '12px', background: '#fff8f1', color: '#9a3412', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #ffedd5', fontWeight: 500 }}>
@@ -4379,6 +4435,10 @@
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                 <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min PST Actions</label>
                                                 <input type="number" step="0.1" value={minPst} onChange={e => setMinPst(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px' }} />
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Load Shedding</label>
+                                                <input type="number" step="0.1" value={minLoadShedding} onChange={e => setMinLoadShedding(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px' }} />
                                             </div>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                 <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>N Prioritized Actions</label>
@@ -4730,7 +4790,7 @@
                                             />
                                         </div>
                                         <div style={{ padding: '4px 8px', display: 'flex', flexWrap: 'wrap', gap: '6px', borderTop: '1px solid #eee', fontSize: '11px' }}>
-                                            {[['disco', 'Disconnections'], ['reco', 'Reconnections'], ['pst', 'PST'], ['open', 'Open coupling'], ['close', 'Close coupling']].map(([key, label]) => (
+                                            {[['disco', 'Disconnections'], ['reco', 'Reconnections'], ['pst', 'PST'], ['open', 'Open coupling'], ['close', 'Close coupling'], ['ls', 'Load shedding']].map(([key, label]) => (
                                                 <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', color: '#555' }}>
                                                     <input
                                                         type="checkbox"
@@ -4853,9 +4913,27 @@
                                                             All actions already added
                                                         </div>
                                                     )}
-                                                    {(searchQuery && filteredSearchActions.length === 0) && (
+                                                    {searchQuery && !filteredSearchActions.some(a => a.id === searchQuery) && (
+                                                        <div
+                                                            onClick={() => handleAddManualAction(searchQuery)}
+                                                            style={{
+                                                                padding: '8px 10px',
+                                                                cursor: simulatingActionId ? 'wait' : 'pointer',
+                                                                borderTop: '1px solid #eee',
+                                                                backgroundColor: '#f8f9fa',
+                                                                color: '#007bff',
+                                                                fontSize: '12px',
+                                                                fontWeight: 600,
+                                                            }}
+                                                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#eef6ff'}
+                                                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                                                        >
+                                                            ✨ Simulate manual ID: <strong>{searchQuery}</strong>
+                                                        </div>
+                                                    )}
+                                                    {(searchQuery && filteredSearchActions.length === 0 && searchQuery !== (filteredSearchActions[0]?.id)) && (
                                                         <div style={{ padding: '10px', textAlign: 'center', color: '#888', fontSize: '13px' }}>
-                                                            No matching actions
+                                                            No other matching actions
                                                         </div>
                                                     )}
                                                     {((!searchQuery && scoredActionsList.length === 0) || searchQuery) && filteredSearchActions.map(a => (
@@ -5073,7 +5151,7 @@
                                                                 Change in settings
                                                             </button>
                                                         </div>
-                                                        <div>• Minimum actions: {minLineReconnections} reco, {minCloseCoupling} close, {minOpenCoupling} open, {minLineDisconnections} disco, {minPst} PST</div>
+                                                        <div>• Minimum actions: {minLineReconnections} reco, {minCloseCoupling} close, {minOpenCoupling} open, {minLineDisconnections} disco, {minPst} PST, {minLoadShedding} load shedding</div>
                                                         <div>• Maximum suggestions: {nPrioritizedActions}</div>
                                                         <div>• Ignore reconnections: {ignoreReconnections ? 'Yes' : 'No'}</div>
                                                     </div>
@@ -5526,7 +5604,7 @@
                                         </div>
 
                                         <div style={{ marginBottom: '12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                            {['all', 'disco', 'reco', 'open', 'close', 'pst'].map(f => (
+                                            {['all', 'disco', 'reco', 'open', 'close', 'pst', 'ls'].map(f => (
                                                 <button
                                                     key={f}
                                                     onClick={() => setExploreFilter(f)}
@@ -5550,13 +5628,18 @@
 
                                         <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '4px' }}>
                                             {Array.from(new Set(scoredActionsList.map(item => item.type)))
-                                                .filter(type => exploreFilter === 'all' || type.includes(exploreFilter))
+                                                .filter(type => exploreFilter === 'all' || type.includes(exploreFilter) || (exploreFilter === 'ls' && type === 'load_shedding'))
                                                 .map(type => (
                                                     <div key={type} style={{ marginBottom: '1px' }}>
                                                         <div style={{ fontSize: '11px', fontWeight: 600, color: '#444', backgroundColor: '#f0f2f5', padding: '4px 8px', borderBottom: '1px solid #e1e4e8', display: 'flex', justifyContent: 'space-between' }}>
                                                             <span>{type.replace('_', ' ').toUpperCase()}</span>
                                                             <span>{scoredActionsList.filter(item => item.type === type).length} actions</span>
                                                         </div>
+                                                        {type === 'load_shedding' && (
+                                                            <div style={{ padding: '6px 10px', background: '#fff3cd', color: '#856404', borderBottom: '1px solid #ffeeba', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                <span>⚠️</span> Load shedding actions cannot be combined for estimation.
+                                                            </div>
+                                                        )}
                                                         <table className="action-table" style={{ margin: 0, border: 'none' }}>
                                                             <tbody>
                                                                 {scoredActionsList
@@ -5618,105 +5701,113 @@
                                         </div>
 
                                         <div style={{ marginTop: '15px' }}>
-                                            {!superpositionResult ? (
-                                                <button
-                                                    onClick={handleComputeSuperposition}
-                                                    disabled={selectedCombineActionIds.length !== 2 || isComputingSuperposition}
-                                                    style={{
-                                                        width: '100%',
-                                                        padding: '12px',
-                                                        background: selectedCombineActionIds.length === 2 ? '#3498db' : '#ecf0f1',
-                                                        color: selectedCombineActionIds.length === 2 ? 'white' : '#bdc3c7',
-                                                        border: 'none',
-                                                        borderRadius: '6px',
-                                                        cursor: (selectedCombineActionIds.length !== 2 || isComputingSuperposition) ? 'not-allowed' : 'pointer',
-                                                        fontWeight: 'bold',
-                                                        fontSize: '14px',
-                                                        transition: 'all 0.2s'
-                                                    }}
-                                                >
-                                                    {isComputingSuperposition ? '⚙️ Estimating Combination...' : (selectedCombineActionIds.length === 2 ? 'Estimate combination effect' : 'Select 2 actions to estimate')}
-                                                </button>
-                                            ) : (
-                                                <div style={{ padding: '15px', background: superpositionResult.error ? '#fff3cd' : '#e1f5fe', borderRadius: '8px', borderLeft: '5px solid ' + (superpositionResult.error ? '#856404' : '#0288d1'), boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                                                        <div style={{ flex: 1 }}>
-                                                            {superpositionResult.betas && (
-                                                                <div style={{ marginBottom: '8px', fontSize: '11px', color: '#666', background: 'rgba(255,255,255,0.6)', padding: '2px 8px', borderRadius: '4px', display: 'inline-block', fontWeight: 600 }}>
-                                                                    Betas: {superpositionResult.betas.map(b => b.toFixed(3)).join(', ')}
-                                                                </div>
-                                                            )}
-                                                            <div style={{ fontWeight: 800, color: superpositionResult.error ? '#856404' : '#01579b', fontSize: '15px' }}>
-                                                                {superpositionResult.error ? '⚠️ Estimation Failed' : 'Explore Pairs Comparison'}
-                                                            </div>
-                                                        </div>
-                                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            {(() => {
+                                                const hasLS = selectedCombineActionIds.some(id => id.startsWith('load_shedding_') || id.includes('load_shedding'));
+                                                return (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                        {!superpositionResult ? (
                                                             <button
                                                                 onClick={handleComputeSuperposition}
-                                                                disabled={isComputingSuperposition}
-                                                                style={{ padding: '6px 12px', background: 'white', border: '1px solid #3498db', color: '#3498db', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                                                                disabled={selectedCombineActionIds.length !== 2 || isComputingSuperposition || hasLS}
+                                                                style={{
+                                                                    width: '100%',
+                                                                    padding: '12px',
+                                                                    background: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasLS) ? '#3498db' : '#ecf0f1',
+                                                                    color: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasLS) ? 'white' : '#bdc3c7',
+                                                                    border: 'none',
+                                                                    borderRadius: '6px',
+                                                                    cursor: (selectedCombineActionIds.length !== 2 || isComputingSuperposition || hasLS) ? 'not-allowed' : 'pointer',
+                                                                    fontWeight: 'bold',
+                                                                    fontSize: '14px',
+                                                                    transition: 'all 0.2s',
+                                                                    boxShadow: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasLS) ? '0 4px 6px rgba(52,152,219,0.2)' : 'none'
+                                                                }}
                                                             >
-                                                                {isComputingSuperposition ? '...' : 'Estimate combination effect'}
+                                                                {isComputingSuperposition ? '⚙️ Estimating Combination...' : (selectedCombineActionIds.length === 2 ? (hasLS ? 'Combination not allowed' : 'Estimate combination effect') : 'Select 2 actions to estimate')}
                                                             </button>
-                                                            <button
-                                                                onClick={() => handleSimulateCombined()}
-                                                                disabled={isSimulatingCombined}
-                                                                style={{ padding: '6px 16px', background: isSimulatingCombined ? '#6c757d' : '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: isSimulatingCombined ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '12px', boxShadow: '0 2px 4px rgba(39,174,96,0.2)', minWidth: '140px' }}
-                                                            >
-                                                                {isSimulatingCombined ? '⌛ Simulating...' : 'Simulate Combined'}
-                                                            </button>
-                                                        </div>
-                                                    </div>
+                                                        ) : (
+                                                            <div style={{ padding: '15px', background: superpositionResult.error ? '#fff3cd' : '#e1f5fe', borderRadius: '8px', borderLeft: '5px solid ' + (superpositionResult.error ? '#856404' : '#0288d1'), boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                                                                    <div style={{ flex: 1 }}>
+                                                                        {superpositionResult.betas && (
+                                                                            <div style={{ marginBottom: '8px', fontSize: '11px', color: '#666', background: 'rgba(255,255,255,0.6)', padding: '2px 8px', borderRadius: '4px', display: 'inline-block', fontWeight: 600 }}>
+                                                                                Betas: {superpositionResult.betas.map(b => b.toFixed(3)).join(', ')}
+                                                                            </div>
+                                                                        )}
+                                                                        <div style={{ fontWeight: 800, color: superpositionResult.error ? '#856404' : '#01579b', fontSize: '15px' }}>
+                                                                            {superpositionResult.error ? '⚠️ Estimation Failed' : 'Explore Pairs Comparison'}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                                                        <button
+                                                                            onClick={handleComputeSuperposition}
+                                                                            disabled={isComputingSuperposition || hasLS}
+                                                                            style={{ padding: '6px 12px', background: 'white', border: '1px solid #3498db', color: '#3498db', borderRadius: '4px', cursor: (isComputingSuperposition || hasLS) ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                                                                        >
+                                                                            {isComputingSuperposition ? '...' : (hasLS ? 'Locked' : 'Estimate combination effect')}
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleSimulateCombined()}
+                                                                            disabled={isSimulatingCombined || hasLS}
+                                                                            style={{ padding: '6px 16px', background: (isSimulatingCombined || hasLS) ? '#6c757d' : '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: (isSimulatingCombined || hasLS) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '12px', boxShadow: (isSimulatingCombined || hasLS) ? 'none' : '0 2px 4px rgba(39,174,96,0.2)', minWidth: '140px' }}
+                                                                        >
+                                                                            {isSimulatingCombined ? '⌛ Simulating...' : (hasLS ? 'Simulation Locked' : 'Simulate Combined')}
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
 
-                                                    {!superpositionResult.error && (
-                                                        <div style={{ display: 'flex', gap: '30px', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '12px' }}>
-                                                            <div style={{ flex: 1, borderRight: '1px solid rgba(0,0,0,0.05)', paddingRight: '15px' }}>
-                                                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Estimated Effect</div>
-                                                                <div style={{ fontSize: '13px', marginBottom: '4px' }}>
-                                                                    Estimated Max Loading: <strong style={{ color: superpositionResult.max_rho <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{(superpositionResult.max_rho * 100).toFixed(1)}%</strong>
-                                                                </div>
-                                                                <div style={{ fontSize: '12px', color: '#666' }}>
-                                                                    Line: {superpositionResult.max_rho_line}
-                                                                </div>
-                                                            </div>
-                                                            <div style={{ flex: 1 }}>
-                                                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Simulation Result</div>
-                                                                {isSimulatingCombined && (
-                                                                    <div style={{ color: '#0056b3', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                        <span>⌛</span> Simulating combined action...
+                                                                {!superpositionResult.error && (
+                                                                    <div style={{ display: 'flex', gap: '30px', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '12px' }}>
+                                                                        <div style={{ flex: 1, borderRight: '1px solid rgba(0,0,0,0.05)', paddingRight: '15px' }}>
+                                                                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Estimated Effect</div>
+                                                                            <div style={{ fontSize: '13px', marginBottom: '4px' }}>
+                                                                                Estimated Max Loading: <strong style={{ color: superpositionResult.max_rho <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{(superpositionResult.max_rho * 100).toFixed(1)}%</strong>
+                                                                            </div>
+                                                                            <div style={{ fontSize: '12px', color: '#666' }}>
+                                                                                Line: {superpositionResult.max_rho_line}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div style={{ flex: 1 }}>
+                                                                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Simulation Result</div>
+                                                                            {isSimulatingCombined && (
+                                                                                <div style={{ color: '#0056b3', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                                    <span>⌛</span> Simulating combined action...
+                                                                                </div>
+                                                                            )}
+                                                                            {!isSimulatingCombined && combinedSimulationFeedback && (
+                                                                                <>
+                                                                                    <div style={{ fontSize: '13px', marginBottom: '4px' }}>
+                                                                                        Actual Max Loading: <strong style={{ color: (combinedSimulationFeedback.max_rho ?? 1) <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{combinedSimulationFeedback.max_rho != null ? `${(combinedSimulationFeedback.max_rho * 100).toFixed(1)}%` : 'N/A'}</strong>
+                                                                                    </div>
+                                                                                    <div style={{ fontSize: '12px', color: '#666' }}>
+                                                                                        Line: {combinedSimulationFeedback.max_rho_line}
+                                                                                    </div>
+                                                                                    {combinedSimulationFeedback.is_islanded && (
+                                                                                        <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                                                                                            Islanding detected ({combinedSimulationFeedback.disconnected_mw?.toFixed(1)} MW disconnected)
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {combinedSimulationFeedback.non_convergence && (
+                                                                                        <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                                                                                            Non-convergence: {combinedSimulationFeedback.non_convergence}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </>
+                                                                            )}
+                                                                            {!isSimulatingCombined && !combinedSimulationFeedback && (
+                                                                                <div style={{ color: '#aaa', fontSize: '12px', fontStyle: 'italic', marginTop: '5px' }}>Click "Simulate Combined" to run</div>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
                                                                 )}
-                                                                {!isSimulatingCombined && combinedSimulationFeedback && (
-                                                                    <>
-                                                                        <div style={{ fontSize: '13px', marginBottom: '4px' }}>
-                                                                            Actual Max Loading: <strong style={{ color: (combinedSimulationFeedback.max_rho ?? 1) <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{combinedSimulationFeedback.max_rho != null ? `${(combinedSimulationFeedback.max_rho * 100).toFixed(1)}%` : 'N/A'}</strong>
-                                                                        </div>
-                                                                        <div style={{ fontSize: '12px', color: '#666' }}>
-                                                                            Line: {combinedSimulationFeedback.max_rho_line}
-                                                                        </div>
-                                                                        {combinedSimulationFeedback.is_islanded && (
-                                                                            <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
-                                                                                Islanding detected ({combinedSimulationFeedback.disconnected_mw?.toFixed(1)} MW disconnected)
-                                                                            </div>
-                                                                        )}
-                                                                        {combinedSimulationFeedback.non_convergence && (
-                                                                            <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
-                                                                                Non-convergence: {combinedSimulationFeedback.non_convergence}
-                                                                            </div>
-                                                                        )}
-                                                                    </>
-                                                                )}
-                                                                {!isSimulatingCombined && !combinedSimulationFeedback && (
-                                                                    <div style={{ color: '#aaa', fontSize: '12px', fontStyle: 'italic', marginTop: '5px' }}>Click "Simulate Combined" to run</div>
+                                                                {superpositionResult.error && (
+                                                                    <div style={{ fontSize: '13px', color: '#856404' }}>{superpositionResult.error}</div>
                                                                 )}
                                                             </div>
-                                                        </div>
-                                                    )}
-                                                    {superpositionResult.error && (
-                                                        <div style={{ fontSize: '13px', color: '#856404' }}>{superpositionResult.error}</div>
-                                                    )}
-                                                </div>
-                                            )}
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     </>
                                 )}
@@ -5727,7 +5818,7 @@
                             </div>
                         </div>
                     )}
-                </div >
+                </div>
             );
         }
 

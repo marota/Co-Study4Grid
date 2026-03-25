@@ -131,6 +131,7 @@ class ConfigRequest(BaseModel):
     min_open_coupling: float = 2.0
     min_line_disconnections: float = 3.0
     min_pst: float = 1.0
+    min_load_shedding: float = 0.0
     n_prioritized_actions: int = 10
     lines_monitoring_path: str | None = None
     monitoring_factor: float = 0.95

@@ -35,7 +35,7 @@ describe('ActionFeed', () => {
     const defaultProps = {
         actions: {} as Record<string, ActionDetail>,
         actionScores: {} as Record<string, Record<string, unknown>>,
-        linesOverloaded: [] as string[],
+        linesOverloaded: ['LINE_1'] as string[],
         selectedActionId: null,
         selectedActionIds: new Set<string>(),
         rejectedActionIds: new Set<string>(),
@@ -46,7 +46,7 @@ describe('ActionFeed', () => {
         onDisplayPrioritizedActions: vi.fn(),
         nodesByEquipmentId: new Map(),
         edgesByEquipmentId: new Map(),
-        disconnectedElement: null,
+        disconnectedElement: 'LINE_1',
         onManualActionAdded: vi.fn(),
         analysisLoading: false,
         monitoringFactor: 0.95,
@@ -56,6 +56,7 @@ describe('ActionFeed', () => {
         minOpenCoupling: 2,
         minLineDisconnections: 3,
         minPst: 1,
+        minLoadShedding: 0,
         nPrioritizedActions: 10,
         ignoreReconnections: false,
         pendingAnalysisResult: null as AnalysisResult | null,
@@ -345,7 +346,11 @@ describe('ActionFeed', () => {
 
         // PST action should NOT be visible even if it matches search query
         expect(screen.queryByText('pst_tap_up')).not.toBeInTheDocument();
-        expect(screen.getByText('No matching actions')).toBeInTheDocument();
+        expect(screen.getByText('No other matching actions')).toBeInTheDocument();
+        
+        // Manual simulation option should be visible
+        expect(screen.getByText(/Simulate manual ID:/)).toBeInTheDocument();
+        expect(screen.getByText('pst')).toBeInTheDocument();
     });
 
     it('shows ONLY PST actions when only PST filter is checked', async () => {
@@ -372,6 +377,58 @@ describe('ActionFeed', () => {
         // Disco and Unknown should NOT be visible
         expect(screen.queryByText('abc')).not.toBeInTheDocument();
         expect(screen.queryByText('xyz')).not.toBeInTheDocument();
+    });
+    
+    it('shows Load shedding actions when Load shedding filter is checked', async () => {
+        const lsAction = { id: 'load_shedding_LOAD1', description: 'Load shedding LOAD1' };
+        const regularAction = { id: 'line_reco_1', description: 'Reconnexion' };
+
+        vi.mocked(api.getAvailableActions).mockResolvedValueOnce([lsAction, regularAction]);
+
+        render(<ActionFeed {...defaultProps} />);
+
+        // Open search
+        fireEvent.click(screen.getByText('+ Manual Selection'));
+
+        // Both visible initially
+        expect(await screen.findByText('load_shedding_LOAD1')).toBeInTheDocument();
+        expect(screen.getByText('line_reco_1')).toBeInTheDocument();
+
+        // Uncheck Load shedding filter
+        const lsCheckbox = screen.getByLabelText('Load Shedding');
+        fireEvent.click(lsCheckbox);
+
+        // Load shedding should be hidden
+        expect(screen.queryByText('load_shedding_LOAD1')).not.toBeInTheDocument();
+        expect(screen.getByText('line_reco_1')).toBeInTheDocument();
+    });
+
+    it('triggers manual simulation when "Simulate manual ID" is clicked', async () => {
+        render(<ActionFeed {...defaultProps} />);
+
+        // Open search
+        fireEvent.click(screen.getByText('+ Manual Selection'));
+
+        // Type something that doesn't exist
+        const searchInput = screen.getByPlaceholderText(/Search action/);
+        fireEvent.change(searchInput, { target: { value: 'custom_action_123' } });
+
+        // Wait for loading to finish
+        await waitFor(() => {
+            expect(screen.queryByText('Loading actions...')).not.toBeInTheDocument();
+        });
+
+        // Click "Simulate manual ID"
+        const manualOption = screen.getByText(/Simulate manual ID:/);
+        fireEvent.click(manualOption);
+
+        // Verify simulateManualAction was called
+        expect(api.simulateManualAction).toHaveBeenCalledWith(
+            'custom_action_123',
+            'LINE_1',
+            null,
+            ['LINE_1']
+        );
     });
 
     it('hides disconnections on PST branches when Disconnections filter is off but PST is on', async () => {
@@ -693,5 +750,126 @@ describe('ActionFeed', () => {
             />
         );
         expect(screen.getByText('Solves overload')).toBeInTheDocument();
+    });
+
+    it('displays load shedding description with MW, load name, and clickable voltage level', () => {
+        const actionId = 'load_shed_1';
+        const props = {
+            ...defaultProps,
+            actions: {
+                [actionId]: {
+                    description_unitaire: 'Shedding action on load',
+                    rho_before: [1.0],
+                    rho_after: [0.8],
+                    max_rho: 0.8,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: { LOAD_1: -1 } },
+                    load_shedding_details: [
+                        { load_name: 'LOAD_1', voltage_level_id: 'VL_ALPHA', shedded_mw: 42.5 },
+                    ],
+                }
+            },
+            selectedActionIds: new Set([actionId]),
+        };
+        render(<ActionFeed {...props} />);
+
+        // Should show load shedding description
+        expect(screen.getByText(/42\.5 MW/)).toBeInTheDocument();
+        expect(screen.getByText('LOAD_1')).toBeInTheDocument();
+
+        // VL should be rendered as clickable buttons (one in description, one as badge)
+        const vlButtons = screen.getAllByText('VL_ALPHA');
+        expect(vlButtons.length).toBeGreaterThanOrEqual(1);
+        expect(vlButtons.every(el => el.tagName === 'BUTTON')).toBe(true);
+    });
+
+    it('shows VL badges from load_shedding_details instead of load name badges', () => {
+        const actionId = 'load_shed_2';
+        const props = {
+            ...defaultProps,
+            actions: {
+                [actionId]: {
+                    description_unitaire: 'Shedding action',
+                    rho_before: [1.0],
+                    rho_after: [0.8],
+                    max_rho: 0.8,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: { LOAD_X: -1 } },
+                    load_shedding_details: [
+                        { load_name: 'LOAD_X', voltage_level_id: 'VL_BETA', shedded_mw: 10.0 },
+                    ],
+                }
+            },
+            selectedActionIds: new Set([actionId]),
+        };
+        render(<ActionFeed {...props} />);
+
+        // VL badge should be present (green VL badge)
+        const badges = screen.getAllByText('VL_BETA');
+        // There should be at least one button element (the badge) with VL_BETA text
+        const buttonBadges = badges.filter(el => el.tagName === 'BUTTON');
+        expect(buttonBadges.length).toBeGreaterThan(0);
+    });
+
+    it('displays multiple load shedding entries when action sheds multiple loads', () => {
+        const actionId = 'load_shed_multi';
+        const props = {
+            ...defaultProps,
+            actions: {
+                [actionId]: {
+                    description_unitaire: 'Multi-load shedding',
+                    rho_before: [1.0],
+                    rho_after: [0.7],
+                    max_rho: 0.7,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: { LOAD_A: -1, LOAD_B: -1 } },
+                    load_shedding_details: [
+                        { load_name: 'LOAD_A', voltage_level_id: 'VL_1', shedded_mw: 20.0 },
+                        { load_name: 'LOAD_B', voltage_level_id: 'VL_2', shedded_mw: 15.3 },
+                    ],
+                }
+            },
+            selectedActionIds: new Set([actionId]),
+        };
+        render(<ActionFeed {...props} />);
+
+        expect(screen.getByText(/20 MW/)).toBeInTheDocument();
+        expect(screen.getByText(/15\.3 MW/)).toBeInTheDocument();
+        expect(screen.getByText('LOAD_A')).toBeInTheDocument();
+        expect(screen.getByText('LOAD_B')).toBeInTheDocument();
+    });
+
+    it('clicking VL button in load shedding description triggers onAssetClick', () => {
+        const onAssetClick = vi.fn();
+        const actionId = 'load_shed_click';
+        const props = {
+            ...defaultProps,
+            onAssetClick,
+            actions: {
+                [actionId]: {
+                    description_unitaire: 'Shedding for click test',
+                    rho_before: [1.0],
+                    rho_after: [0.8],
+                    max_rho: 0.8,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: { LOAD_C: -1 } },
+                    load_shedding_details: [
+                        { load_name: 'LOAD_C', voltage_level_id: 'VL_GAMMA', shedded_mw: 30.0 },
+                    ],
+                }
+            },
+            selectedActionIds: new Set([actionId]),
+        };
+        render(<ActionFeed {...props} />);
+
+        // Find the VL button in the load shedding description area (not the badge)
+        const vlButtons = screen.getAllByText('VL_GAMMA');
+        // Click the first one (description area)
+        fireEvent.click(vlButtons[0]);
+        expect(onAssetClick).toHaveBeenCalledWith(actionId, 'VL_GAMMA', 'action');
     });
 });

@@ -31,6 +31,8 @@ export interface SettingsState {
   setNPrioritizedActions: (v: number) => void;
   minPst: number;
   setMinPst: (v: number) => void;
+  minLoadShedding: number;
+  setMinLoadShedding: (v: number) => void;
   ignoreReconnections: boolean;
   setIgnoreReconnections: (v: boolean) => void;
 
@@ -77,6 +79,7 @@ export interface SettingsState {
     min_open_coupling: number;
     min_line_disconnections: number;
     min_pst: number;
+    min_load_shedding: number;
     n_prioritized_actions: number;
     lines_monitoring_path: string;
     monitoring_factor: number;
@@ -102,6 +105,7 @@ export function useSettings(): SettingsState {
   const [minLineDisconnections, setMinLineDisconnections] = useState(3.0);
   const [nPrioritizedActions, setNPrioritizedActions] = useState(10);
   const [minPst, setMinPst] = useState(1.0);
+  const [minLoadShedding, setMinLoadShedding] = useState(0.0);
   const [ignoreReconnections, setIgnoreReconnections] = useState(false);
 
   const [linesMonitoringPath, setLinesMonitoringPath] = useState('');
@@ -134,12 +138,12 @@ export function useSettings(): SettingsState {
     if (cfg.min_open_coupling !== undefined) setMinOpenCoupling(cfg.min_open_coupling);
     if (cfg.min_line_disconnections !== undefined) setMinLineDisconnections(cfg.min_line_disconnections);
     if (cfg.min_pst !== undefined) setMinPst(cfg.min_pst);
+    if (cfg.min_load_shedding !== undefined) setMinLoadShedding(cfg.min_load_shedding);
     if (cfg.n_prioritized_actions !== undefined) setNPrioritizedActions(cfg.n_prioritized_actions);
     if (cfg.monitoring_factor !== undefined) setMonitoringFactor(cfg.monitoring_factor);
     if (cfg.pre_existing_overload_threshold !== undefined) setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
     if (cfg.ignore_reconnections !== undefined) setIgnoreReconnections(cfg.ignore_reconnections);
     if (cfg.pypowsybl_fast_mode !== undefined) setPypowsyblFastMode(cfg.pypowsybl_fast_mode);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load persisted config from backend on mount
@@ -180,6 +184,7 @@ export function useSettings(): SettingsState {
       min_open_coupling: minOpenCoupling,
       min_line_disconnections: minLineDisconnections,
       min_pst: minPst,
+      min_load_shedding: minLoadShedding,
       n_prioritized_actions: nPrioritizedActions,
       monitoring_factor: monitoringFactor,
       pre_existing_overload_threshold: preExistingOverloadThreshold,
@@ -191,7 +196,7 @@ export function useSettings(): SettingsState {
     });
   }, [networkPath, actionPath, layoutPath, outputFolderPath, linesMonitoringPath,
       minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
-      minPst, nPrioritizedActions, monitoringFactor, preExistingOverloadThreshold,
+      minPst, minLoadShedding, nPrioritizedActions, monitoringFactor, preExistingOverloadThreshold,
       ignoreReconnections, pypowsyblFastMode]);
 
   const pickSettingsPath = useCallback(async (type: 'file' | 'dir', setter: (path: string) => void) => {
@@ -212,13 +217,14 @@ export function useSettings(): SettingsState {
     minCloseCoupling,
     minOpenCoupling,
     minLineDisconnections,
+    minLoadShedding,
     nPrioritizedActions,
     linesMonitoringPath,
     monitoringFactor,
     preExistingOverloadThreshold,
     ignoreReconnections,
     pypowsyblFastMode,
-  }), [networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
+  }), [networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minLoadShedding, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
 
   const handleOpenSettings = useCallback((tab: 'recommender' | 'configurations' | 'paths' = 'paths') => {
     setSettingsBackup(createCurrentBackup());
@@ -236,6 +242,7 @@ export function useSettings(): SettingsState {
       setMinCloseCoupling(settingsBackup.minCloseCoupling);
       setMinOpenCoupling(settingsBackup.minOpenCoupling);
       setMinLineDisconnections(settingsBackup.minLineDisconnections);
+      setMinLoadShedding(settingsBackup.minLoadShedding ?? 0.0);
       setNPrioritizedActions(settingsBackup.nPrioritizedActions);
       setLinesMonitoringPath(settingsBackup.linesMonitoringPath);
       setMonitoringFactor(settingsBackup.monitoringFactor);
@@ -255,13 +262,14 @@ export function useSettings(): SettingsState {
     min_open_coupling: minOpenCoupling,
     min_line_disconnections: minLineDisconnections,
     min_pst: minPst,
+    min_load_shedding: minLoadShedding,
     n_prioritized_actions: nPrioritizedActions,
     lines_monitoring_path: linesMonitoringPath,
     monitoring_factor: monitoringFactor,
     pre_existing_overload_threshold: preExistingOverloadThreshold,
     ignore_reconnections: ignoreReconnections,
     pypowsybl_fast_mode: pypowsyblFastMode,
-  }), [networkPath, actionPath, layoutPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
+  }), [networkPath, actionPath, layoutPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst, minLoadShedding, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
 
   const applyConfigResponse = useCallback((configRes: Record<string, unknown>) => {
     if (configRes && configRes.total_lines_count !== undefined) {
@@ -287,6 +295,7 @@ export function useSettings(): SettingsState {
     minLineDisconnections, setMinLineDisconnections,
     nPrioritizedActions, setNPrioritizedActions,
     minPst, setMinPst,
+    minLoadShedding, setMinLoadShedding,
     ignoreReconnections, setIgnoreReconnections,
     linesMonitoringPath, setLinesMonitoringPath,
     monitoredLinesCount, setMonitoredLinesCount,
@@ -309,7 +318,7 @@ export function useSettings(): SettingsState {
   }), [
     networkPath, actionPath, layoutPath, outputFolderPath,
     minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
-    nPrioritizedActions, minPst, ignoreReconnections,
+    nPrioritizedActions, minPst, minLoadShedding, ignoreReconnections,
     linesMonitoringPath, monitoredLinesCount, totalLinesCount, showMonitoringWarning, monitoringFactor, preExistingOverloadThreshold, pypowsyblFastMode,
     actionDictFileName, actionDictStats,
     isSettingsOpen, settingsTab, settingsBackup,

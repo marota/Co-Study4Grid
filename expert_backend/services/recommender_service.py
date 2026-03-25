@@ -104,7 +104,7 @@ class RecommenderService:
         """Helper to convert raw prioritized actions into enriched dict for JSON response."""
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
         enriched_actions = {}
-        
+
         for action_id, action_data in prioritized_actions_dict.items():
             rho_before_raw = action_data.get("rho_before")
             rho_after_raw = action_data.get("rho_after")
@@ -147,8 +147,73 @@ class RecommenderService:
                         val = action_obj.get(field)
                     topo[field] = sanitize_for_json(val) if val else {}
                 enriched_actions[action_id]["action_topology"] = topo
-                
+
+            # Detect load shedding actions and compute shedded MW per load
+            load_shedding = self._compute_load_shedding_details(action_data)
+            if load_shedding:
+                enriched_actions[action_id]["load_shedding_details"] = load_shedding
+
         return enriched_actions
+
+    def _compute_load_shedding_details(self, action_data):
+        """Compute per-load shedding details by comparing N-1 and action observations.
+
+        Returns a list of {load_name, voltage_level_id, shedded_mw} or None.
+        """
+        action_obj = action_data.get("action")
+        if action_obj is None:
+            return None
+
+        # Get loads_bus from the action topology to identify affected loads
+        loads_bus = getattr(action_obj, "loads_bus", None)
+        if loads_bus is None and isinstance(action_obj, dict):
+            loads_bus = action_obj.get("loads_bus")
+        if not loads_bus:
+            return None
+
+        # Filter to loads that are being disconnected (bus = -1)
+        shed_load_names = [name for name, bus in loads_bus.items() if bus == -1]
+        if not shed_load_names:
+            return None
+
+        obs_action = action_data.get("observation")
+        if obs_action is None:
+            return None
+
+        # Get the N-1 observation from the analysis context
+        obs_n1 = None
+        if self._analysis_context and "obs_simu_defaut" in self._analysis_context:
+            obs_n1 = self._analysis_context["obs_simu_defaut"]
+
+        details = []
+        from expert_backend.services.network_service import network_service
+
+        for load_name in shed_load_names:
+            # Compute shedded MW: difference between N-1 load_p and action load_p
+            shedded_mw = 0.0
+            if obs_n1 is not None and obs_action is not None:
+                try:
+                    load_idx = list(obs_action.name_load).index(load_name)
+                    p_before = float(obs_n1.load_p[load_idx])
+                    p_after = float(obs_action.load_p[load_idx])
+                    shedded_mw = max(0.0, p_before - p_after)
+                except (ValueError, IndexError):
+                    shedded_mw = 0.0
+
+            # Resolve voltage level
+            vl_id = None
+            try:
+                vl_id = network_service.get_load_voltage_level(load_name)
+            except Exception:
+                pass
+
+            details.append({
+                "load_name": load_name,
+                "voltage_level_id": vl_id,
+                "shedded_mw": round(shedded_mw, 1),
+            })
+
+        return details if details else None
 
     def update_config(self, settings):
         # Update the global config of the package
@@ -175,6 +240,8 @@ class RecommenderService:
             config.PYPOWSYBL_FAST_MODE = settings.pypowsybl_fast_mode
         if hasattr(settings, 'min_pst') and settings.min_pst is not None:
             config.MIN_PST = settings.min_pst
+        if hasattr(settings, 'min_load_shedding') and settings.min_load_shedding is not None:
+            config.MIN_LOAD_SHEDDING = settings.min_load_shedding
         
         # New layout file path
         if hasattr(settings, 'layout_path') and settings.layout_path:
@@ -1522,6 +1589,11 @@ class RecommenderService:
         if switches:
             content["switches"] = switches
 
+        # Include PST tap if present
+        pst_tap = topo.get("pst_tap") or {}
+        if pst_tap:
+            content["pst_tap"] = pst_tap
+
         entry["content"] = content if content else {}
         return entry
 
@@ -1538,7 +1610,9 @@ class RecommenderService:
         if not self._dict_action:
             raise ValueError("No action dictionary loaded. Load a config first.")
 
-        action_id = self._canonicalize_id(raw_action_id)
+        action_id = self._canonicalize_id(raw_action_id.strip())
+        if lines_overloaded is None:
+            lines_overloaded = []
 
         action_ids = action_id.split("+")
         recent_actions = self._last_result.get("prioritized_actions", {}) if self._last_result else {}
@@ -1566,6 +1640,47 @@ class RecommenderService:
                     entry = self._build_action_entry_from_topology(aid, topo)
                     self._dict_action[aid] = entry
                     print(f"[simulate_manual_action] Injected restored action '{aid}' into dict")
+
+        # Handle dynamic action creation for special prefixes (load shedding, PST)
+        for aid in action_ids:
+            if aid not in self._dict_action and aid not in recent_actions:
+                # Try to create on-the-fly
+                if aid.startswith("load_shedding_"):
+                    load_name = aid[len("load_shedding_"):]
+                    topo = {"loads_bus": {load_name: -1}} # _build_action_entry_from_topology expects loads_bus
+                    entry = self._build_action_entry_from_topology(aid, topo)
+                    entry["description"] = f"Load shedding for load {load_name}"
+                    entry["description_unitaire"] = f"Effacement {load_name}"
+                    self._dict_action[aid] = entry
+                    print(f"[simulate_manual_action] Created dynamic load shedding action '{aid}'")
+
+                elif aid.startswith("pst_tap_") or aid.startswith("pst_"):
+                    # Example: pst_tap_PST_ID_inc1 or pst_tap_PST_ID_dec2
+                    import re
+                    # Look for pattern pst_tap_<id>_(inc|dec)<val> or pst_<id>_(inc|dec)<val>
+                    match = re.match(r'(pst(?:_tap)?_(.+))_(inc|dec)(\d+)$', aid)
+                    if match:
+                        _, pst_id, direction, val_str = match.groups()
+                        val = int(val_str)
+                        
+                        # Get current tap info from network
+                        env = self._get_simulation_env()
+                        nm = env.network_manager
+                        pst_info = nm.get_pst_tap_info(pst_id)
+                        
+                        if pst_info:
+                            current_tap = pst_info['tap']
+                            variation = val if direction == 'inc' else -val
+                            new_tap = current_tap + variation
+                            # Clamp to bounds
+                            new_tap = max(pst_info['low_tap'], min(pst_info['high_tap'], new_tap))
+                            
+                            topo = {"pst_tap": {pst_id: new_tap}}
+                            entry = self._build_action_entry_from_topology(aid, topo)
+                            entry["description"] = f"PST tap change for {pst_id} (tap: {current_tap} -> {new_tap})"
+                            entry["description_unitaire"] = f"Variation PST {pst_id}"
+                            self._dict_action[aid] = entry
+                            print(f"[simulate_manual_action] Created dynamic PST action '{aid}'")
 
         for aid in action_ids:
             if aid not in self._dict_action and aid not in recent_actions:
@@ -1754,7 +1869,35 @@ class RecommenderService:
                 "is_estimated": False,
             }
 
-        return {
+        # Compute load shedding details for this action
+        load_shedding_details = None
+        loads_bus = getattr(action, "loads_bus", None)
+        if loads_bus and obs_simu_action is not None:
+            shed_load_names = [name for name, bus in loads_bus.items() if bus == -1]
+            if shed_load_names:
+                load_shedding_details = []
+                for load_name in shed_load_names:
+                    shedded_mw = 0.0
+                    try:
+                        load_idx = list(obs_simu_action.name_load).index(load_name)
+                        p_before = float(obs_simu_defaut.load_p[load_idx])
+                        p_after = float(obs_simu_action.load_p[load_idx])
+                        shedded_mw = max(0.0, p_before - p_after)
+                    except (ValueError, IndexError):
+                        shedded_mw = 0.0
+                    vl_id = None
+                    try:
+                        from expert_backend.services.network_service import network_service as ns
+                        vl_id = ns.get_load_voltage_level(load_name)
+                    except Exception:
+                        pass
+                    load_shedding_details.append({
+                        "load_name": load_name,
+                        "voltage_level_id": vl_id,
+                        "shedded_mw": round(shedded_mw, 1),
+                    })
+
+        result = {
             "action_id": action_id,
             "description_unitaire": description_unitaire,
             "rho_before": sanitize_for_json(rho_before),
@@ -1768,6 +1911,9 @@ class RecommenderService:
             "non_convergence": non_convergence,
             "lines_overloaded": sanitize_for_json(lines_overloaded_names),
         }
+        if load_shedding_details:
+            result["load_shedding_details"] = load_shedding_details
+        return result
 
     def compute_superposition(self, action1_id: str, action2_id: str, disconnected_element: str):
         """Compute the combined effect of two actions using the superposition theorem.

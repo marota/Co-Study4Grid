@@ -31,6 +31,7 @@ interface ActionFeedProps {
     minLineDisconnections: number;
     nPrioritizedActions: number;
     minPst: number;
+    minLoadShedding: number;
     ignoreReconnections: boolean;
     onOpenSettings?: (tab?: 'recommender' | 'configurations' | 'paths') => void;
     actionDictFileName?: string | null;
@@ -64,6 +65,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     minOpenCoupling,
     minLineDisconnections,
     minPst,
+    minLoadShedding,
     nPrioritizedActions,
     ignoreReconnections,
     onOpenSettings,
@@ -78,7 +80,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     const [loadingActions, setLoadingActions] = useState(false);
     const [simulating, setSimulating] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [typeFilters, setTypeFilters] = useState({ disco: true, reco: true, open: true, close: true, pst: true });
+    const [typeFilters, setTypeFilters] = useState({ disco: true, reco: true, open: true, close: true, pst: true, ls: true });
     const searchInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [tooltip, setTooltip] = useState<{ content: React.ReactNode; x: number; y: number } | null>(null);
@@ -130,12 +132,14 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 const isOpenCoupling = t.includes('open_coupling');
                 const isCloseCoupling = t.includes('close_coupling');
                 const isPstAction = (actionId.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
+                const isLoadShedding = (actionId.includes('load_shedding') || actionDesc.includes('load shedding') || t.includes('load_shedding')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction;
 
                 if (isDisco) return typeFilters.disco;
                 if (isReco) return typeFilters.reco;
                 if (isOpenCoupling) return typeFilters.open;
                 if (isCloseCoupling) return typeFilters.close;
                 if (isPstAction) return typeFilters.pst;
+                if (isLoadShedding) return typeFilters.ls;
 
                 // Handle unknown or categories not explicitly listed above
                 return typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
@@ -161,11 +165,12 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             if (isOpenType && !typeFilters.open) continue;
             if (isCloseType && !typeFilters.close) continue;
             if (isPstType && !typeFilters.pst) continue;
+            if ((type === 'load_shedding' || type.includes('load_shedding')) && !typeFilters.ls) continue;
 
             // If it's a known type but its filter is off, it's already skipped.
             // If it's an unknown type, we show it only if ALL filters are active.
-            const isKnownType = isDiscoType || isRecoType || isOpenType || isCloseType || isPstType;
-            if (!isKnownType && !(typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst)) {
+            const isKnownType = isDiscoType || isRecoType || isOpenType || isCloseType || isPstType || type === 'load_shedding' || type.includes('load_shedding');
+            if (!isKnownType && !(typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst && typeFilters.ls)) {
                 continue;
             }
 
@@ -182,6 +187,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 const isOpenCoupling = t.includes('open_coupling');
                 const isCloseCoupling = t.includes('close_coupling');
                 const isPstAction = (aid.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
+                const isLoadShedding = (aid.includes('load_shedding') || actionDesc.includes('load shedding') || t.includes('load_shedding')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction;
 
                 let shouldShow = false;
                 if (isDisco) shouldShow = typeFilters.disco;
@@ -189,7 +195,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 else if (isOpenCoupling) shouldShow = typeFilters.open;
                 else if (isCloseCoupling) shouldShow = typeFilters.close;
                 else if (isPstAction) shouldShow = typeFilters.pst;
-                else shouldShow = typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
+                else if (isLoadShedding) shouldShow = typeFilters.ls;
+                else shouldShow = typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst && typeFilters.ls;
 
                 if (!shouldShow) continue;
 
@@ -221,14 +228,36 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     }, [searchOpen]);
 
     const handleAddAction = async (actionId: string) => {
+        const trimmedId = actionId.trim();
         if (!disconnectedElement) {
             setError('Select a contingency first.');
             return;
         }
-        setSimulating(actionId);
+        setSimulating(trimmedId);
         setError(null);
         try {
-            const result = await api.simulateManualAction(actionId, disconnectedElement);
+            // Build actionContent from topologies if available (especially for combined actions)
+            let actionContent: Record<string, unknown> | null = null;
+            if (trimmedId.includes('+')) {
+                const parts = trimmedId.split('+').map(p => p.trim());
+                const perAction: Record<string, unknown> = {};
+                for (const part of parts) {
+                    const partDetail = actions[part];
+                    if (partDetail?.action_topology) {
+                        perAction[part] = partDetail.action_topology;
+                    }
+                }
+                if (Object.keys(perAction).length > 0) {
+                    actionContent = perAction;
+                }
+            } else {
+                const detail = actions[trimmedId];
+                if (detail?.action_topology) {
+                    actionContent = detail.action_topology as unknown as Record<string, unknown>;
+                }
+            }
+
+            const result = await api.simulateManualAction(trimmedId, disconnectedElement, actionContent, linesOverloaded);
             const detail: ActionDetail = {
                 description_unitaire: result.description_unitaire,
                 rho_before: result.rho_before,
@@ -240,8 +269,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 n_components: result.n_components,
                 disconnected_mw: result.disconnected_mw,
                 non_convergence: result.non_convergence,
+                load_shedding_details: result.load_shedding_details,
             };
-            onManualActionAdded(actionId, detail, result.lines_overloaded || []);
+            onManualActionAdded(trimmedId, detail, result.lines_overloaded || []);
             setSearchOpen(false);
             setSearchQuery('');
         } catch (e: unknown) {
@@ -394,6 +424,24 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', margin: '4px 0 5px' }}>
                         <div style={{ flex: 1 }}>
                             <p style={{ fontSize: '13px', margin: 0 }}>{details.description_unitaire}</p>
+                            {details.load_shedding_details && details.load_shedding_details.length > 0 && (
+                                <div style={{ fontSize: '12px', background: '#fef3c7', color: '#92400e', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #fcd34d', fontWeight: 500 }}>
+                                    {details.load_shedding_details.map((ls, i) => (
+                                        <div key={ls.load_name}>
+                                            {i > 0 && <br />}
+                                            Load shedding of <strong>{ls.shedded_mw} MW</strong> on load <strong>{ls.load_name}</strong>
+                                            {ls.voltage_level_id && (
+                                                <> at voltage level <button
+                                                    style={{ ...clickableLinkStyle, fontSize: '12px', color: '#92400e', fontWeight: 700 }}
+                                                    title={`Double-click to open SLD for ${ls.voltage_level_id}`}
+                                                    onClick={(e) => { e.stopPropagation(); onAssetClick(id, ls.voltage_level_id!, 'action'); }}
+                                                    onDoubleClick={(e) => { e.stopPropagation(); onVlDoubleClick?.(id, ls.voltage_level_id!); }}
+                                                >{ls.voltage_level_id}</button></>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                             {details.non_convergence && (
                                 <div style={{ fontSize: '11px', color: '#9a3412', backgroundColor: '#fff8f1', padding: '2px 6px', borderRadius: '4px', marginTop: '4px', border: '1px solid #ffedd5', display: 'inline-block' }}>
                                     ⚠️ LoadFlow failure: {details.non_convergence}
@@ -407,6 +455,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         </div>
                         {(() => {
                             const badges: React.ReactNode[] = [];
+                            const isLoadShedding = details.load_shedding_details && details.load_shedding_details.length > 0;
                             const badgeBtn = (name: string, bg: string, color: string, title: string, onDoubleClick?: (e: React.MouseEvent) => void) => (
                                 <button key={name}
                                     style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, textDecoration: 'underline dotted', flexShrink: 0, backgroundColor: bg, color }}
@@ -417,43 +466,56 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                 </button>
                             );
 
-                            // 1. Substations (VLs)
-                            if (nodesByEquipmentId) {
-                                const vlNames = getActionTargetVoltageLevels(details, id, nodesByEquipmentId);
-                                vlNames.forEach(vlName => {
-                                    badges.push(badgeBtn(vlName, '#d1fae5', '#065f46', `Click: zoom to ${vlName} | Double-click: open SLD`, (e) => {
-                                        e.stopPropagation();
-                                        onVlDoubleClick?.(id, vlName);
-                                    }));
+                            // For load shedding actions, show VL badges from load_shedding_details
+                            if (isLoadShedding) {
+                                const vlSet = new Set<string>();
+                                details.load_shedding_details!.forEach(ls => {
+                                    if (ls.voltage_level_id && !vlSet.has(ls.voltage_level_id)) {
+                                        vlSet.add(ls.voltage_level_id);
+                                        badges.push(badgeBtn(ls.voltage_level_id, '#d1fae5', '#065f46', `Click: zoom to ${ls.voltage_level_id} | Double-click: open SLD`, (e) => {
+                                            e.stopPropagation();
+                                            onVlDoubleClick?.(id, ls.voltage_level_id!);
+                                        }));
+                                    }
                                 });
-                            }
+                            } else {
+                                // 1. Substations (VLs)
+                                if (nodesByEquipmentId) {
+                                    const vlNames = getActionTargetVoltageLevels(details, id, nodesByEquipmentId);
+                                    vlNames.forEach(vlName => {
+                                        badges.push(badgeBtn(vlName, '#d1fae5', '#065f46', `Click: zoom to ${vlName} | Double-click: open SLD`, (e) => {
+                                            e.stopPropagation();
+                                            onVlDoubleClick?.(id, vlName);
+                                        }));
+                                    });
+                                }
 
-                            // 2. Lines / Equipments
-                            const isCoupling = isCouplingAction(id, details.description_unitaire);
-                            const lineNames = edgesByEquipmentId
-                                ? getActionTargetLines(details, id, edgesByEquipmentId)
-                                : Array.from(new Set([
-                                    ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_ex_bus || {})),
-                                    ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_or_bus || {})),
-                                    ...Object.keys(details.action_topology?.pst_tap || {}),
-                                ]));
+                                // 2. Lines / Equipments
+                                const isCoupling = isCouplingAction(id, details.description_unitaire);
+                                const lineNames = edgesByEquipmentId
+                                    ? getActionTargetLines(details, id, edgesByEquipmentId)
+                                    : Array.from(new Set([
+                                        ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_ex_bus || {})),
+                                        ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_or_bus || {})),
+                                        ...Object.keys(details.action_topology?.pst_tap || {}),
+                                    ]));
 
-                            lineNames.forEach(name => {
-                                // Avoid duplicates if already added as VL (unlikely but possible)
-                                if (badges.some(b => React.isValidElement(b) && b.key === name)) return;
-                                badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
-                            });
-
-                            // 3. Fallback: gen/load equipment names from topology
-                            if (badges.length === 0) {
-                                const topo = details.action_topology;
-                                const equipNames = Array.from(new Set([
-                                    ...Object.keys(topo?.gens_bus || {}),
-                                    ...Object.keys(topo?.loads_bus || {}),
-                                ]));
-                                equipNames.forEach(name => {
+                                lineNames.forEach(name => {
+                                    if (badges.some(b => React.isValidElement(b) && b.key === name)) return;
                                     badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
                                 });
+
+                                // 3. Fallback: gen/load equipment names from topology
+                                if (badges.length === 0) {
+                                    const topo = details.action_topology;
+                                    const equipNames = Array.from(new Set([
+                                        ...Object.keys(topo?.gens_bus || {}),
+                                        ...Object.keys(topo?.loads_bus || {}),
+                                    ]));
+                                    equipNames.forEach(name => {
+                                        badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
+                                    });
+                                }
                             }
 
                             return (
@@ -576,12 +638,12 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         </div>
                         {/* Action type filter checkboxes */}
                         <div style={{ padding: '4px 8px', display: 'flex', flexWrap: 'wrap', gap: '6px', borderTop: '1px solid #eee', fontSize: '11px' }}>
-                            {([['disco', 'Disconnections'], ['reco', 'Reconnections'], ['pst', 'PST'], ['open', 'Open coupling'], ['close', 'Close coupling']] as const).map(([key, label]) => (
+                            {([['disco', 'Disconnections'], ['reco', 'Reconnections'], ['ls', 'Load Shedding'], ['pst', 'PST'], ['open', 'Open coupling'], ['close', 'Close coupling']] as const).map(([key, label]) => (
                                 <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', color: '#555' }}>
                                     <input
                                         type="checkbox"
-                                        checked={typeFilters[key as keyof typeof typeFilters]}
-                                        onChange={() => setTypeFilters(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))}
+                                        checked={typeFilters[key]}
+                                        onChange={() => setTypeFilters(prev => ({ ...prev, [key]: !prev[key] }))}
                                         style={{ margin: 0, cursor: 'pointer' }}
                                     />
                                     {label}
@@ -722,9 +784,28 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                             All actions already added
                                         </div>
                                     )}
-                                    {(searchQuery && filteredActions.length === 0) && (
+                                    {searchQuery && !filteredActions.some(a => a.id === searchQuery) && (
+                                        <div
+                                            data-testid={`manual-id-option-${searchQuery}`}
+                                            onClick={() => handleAddAction(searchQuery)}
+                                            style={{
+                                                padding: '8px 10px',
+                                                cursor: simulating ? 'wait' : 'pointer',
+                                                borderTop: '1px solid #eee',
+                                                backgroundColor: '#f8f9fa',
+                                                color: '#007bff',
+                                                fontSize: '12px',
+                                                fontWeight: 600,
+                                            }}
+                                            onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = '#eef6ff'}
+                                            onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = '#f8f9fa'}
+                                        >
+                                            ✨ Simulate manual ID: <strong>{searchQuery}</strong>
+                                        </div>
+                                    )}
+                                    {(searchQuery && filteredActions.length === 0 && searchQuery !== (filteredActions[0]?.id)) && (
                                         <div style={{ padding: '10px', textAlign: 'center', color: '#888', fontSize: '13px' }}>
-                                            No matching actions
+                                            No other matching actions
                                         </div>
                                     )}
                                     {((!searchQuery && scoredActionsList.length === 0) || searchQuery) && filteredActions.map(a => (
@@ -898,7 +979,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                 </button>
                                             )}
                                         </div>
-                                        <div>• Minimum actions: {minLineReconnections} reco, {minCloseCoupling} close, {minOpenCoupling} open, {minLineDisconnections} disco, {minPst} PST</div>
+                                        <div>• Minimum actions: {minLineReconnections} reco, {minCloseCoupling} close, {minOpenCoupling} open, {minLineDisconnections} disco, {minPst} PST, {minLoadShedding} load shedding</div>
                                         <div>• Maximum suggestions: {nPrioritizedActions}</div>
                                         <div>• Ignore reconnections: {ignoreReconnections ? 'Yes' : 'No'}</div>
                                     </div>

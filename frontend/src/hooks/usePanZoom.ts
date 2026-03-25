@@ -59,7 +59,7 @@ export const usePanZoom = (
         // Invalidate CTM cache after viewBox change
         ctmCacheRef.current = null;
 
-    }, [svgRef]);
+    }, []);
 
     // Flush ref -> React state for downstream consumers
     const commitViewBox = () => {
