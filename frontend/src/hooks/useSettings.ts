@@ -6,6 +6,7 @@ import type { SettingsBackup } from '../types';
 export interface SettingsState {
   // Config file path
   configFilePath: string;
+  lastActiveConfigFilePath: string;
   changeConfigFilePath: (newPath: string) => Promise<void>;
 
   // Paths
@@ -93,6 +94,7 @@ export interface SettingsState {
 
 export function useSettings(): SettingsState {
   const [configFilePath, setConfigFilePath] = useState('');
+  const lastConfigFilePathRef = useRef('');
 
   const [networkPath, setNetworkPath] = useState('');
   const [actionPath, setActionPath] = useState('');
@@ -152,18 +154,20 @@ export function useSettings(): SettingsState {
       .then(([cfg, cfgPath]) => {
         applyLoadedConfig(cfg);
         setConfigFilePath(cfgPath);
+        lastConfigFilePathRef.current = cfgPath;
         configLoadedRef.current = true;
       })
       .catch(() => {
         console.warn('Failed to load user config from backend, using defaults');
         configLoadedRef.current = true;
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const changeConfigFilePath = useCallback(async (newPath: string) => {
     const result = await api.setConfigFilePath(newPath);
     setConfigFilePath(result.config_file_path);
+    lastConfigFilePathRef.current = result.config_file_path;
     // Temporarily block auto-save so applying new config doesn't immediately overwrite
     configLoadedRef.current = false;
     applyLoadedConfig(result.config);
@@ -195,9 +199,9 @@ export function useSettings(): SettingsState {
       console.warn('Failed to persist user config to backend');
     });
   }, [networkPath, actionPath, layoutPath, outputFolderPath, linesMonitoringPath,
-      minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
-      minPst, minLoadShedding, nPrioritizedActions, monitoringFactor, preExistingOverloadThreshold,
-      ignoreReconnections, pypowsyblFastMode]);
+    minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
+    minPst, minLoadShedding, nPrioritizedActions, monitoringFactor, preExistingOverloadThreshold,
+    ignoreReconnections, pypowsyblFastMode]);
 
   const pickSettingsPath = useCallback(async (type: 'file' | 'dir', setter: (path: string) => void) => {
     try {
@@ -284,7 +288,7 @@ export function useSettings(): SettingsState {
   }, []);
 
   return useMemo(() => ({
-    configFilePath, changeConfigFilePath,
+    configFilePath, changeConfigFilePath, lastActiveConfigFilePath: lastConfigFilePathRef.current,
     networkPath, setNetworkPath,
     actionPath, setActionPath,
     layoutPath, setLayoutPath,

@@ -16,7 +16,7 @@ function App() {
   // ===== Settings Hook =====
   const settings = useSettings();
   const {
-    configFilePath, changeConfigFilePath,
+    configFilePath, changeConfigFilePath, lastActiveConfigFilePath,
     networkPath, setNetworkPath, actionPath, setActionPath,
     layoutPath, setLayoutPath, outputFolderPath, setOutputFolderPath,
     minLineReconnections, setMinLineReconnections,
@@ -59,7 +59,7 @@ function App() {
 
   const analysis = useAnalysis();
   const {
-    result, setResult, pendingAnalysisResult, analysisLoading, 
+    result, setResult, pendingAnalysisResult, analysisLoading,
     infoMessage, selectedOverloads, monitorDeselected
   } = analysis;
 
@@ -132,25 +132,25 @@ function App() {
 
   const wrappedRestoreSession = (sessionName: string) => {
     session.handleRestoreSession(sessionName, {
-       outputFolderPath,
-       setNetworkPath, setActionPath, setLayoutPath,
-       setMinLineReconnections, setMinCloseCoupling, setMinOpenCoupling, setMinLineDisconnections, setMinPst, setMinLoadShedding,
-       setNPrioritizedActions, setLinesMonitoringPath, setMonitoringFactor, setPreExistingOverloadThreshold,
-       setIgnoreReconnections, setPypowsyblFastMode,
-       setMonitorDeselected: analysis.setMonitorDeselected,
-       setSelectedOverloads: analysis.setSelectedOverloads,
-       setResult,
-       setSelectedActionIds: actionsHook.setSelectedActionIds,
-       setRejectedActionIds: actionsHook.setRejectedActionIds,
-       setManuallyAddedIds: actionsHook.setManuallyAddedIds,
-       setSuggestedByRecommenderIds: actionsHook.setSuggestedByRecommenderIds,
-       setSelectedBranch,
-       restoringSessionRef: diagrams.restoringSessionRef,
-       committedBranchRef: diagrams.committedBranchRef,
-       setError, setInfoMessage: analysis.setInfoMessage,
-       applyConfigResponse, setBranches, setVoltageLevels, setNominalVoltageMap: diagrams.setNominalVoltageMap,
-       setUniqueVoltages: diagrams.setUniqueVoltages, fetchBaseDiagram: diagrams.fetchBaseDiagram,
-       setVoltageRange: diagrams.setVoltageRange
+      outputFolderPath,
+      setNetworkPath, setActionPath, setLayoutPath,
+      setMinLineReconnections, setMinCloseCoupling, setMinOpenCoupling, setMinLineDisconnections, setMinPst, setMinLoadShedding,
+      setNPrioritizedActions, setLinesMonitoringPath, setMonitoringFactor, setPreExistingOverloadThreshold,
+      setIgnoreReconnections, setPypowsyblFastMode,
+      setMonitorDeselected: analysis.setMonitorDeselected,
+      setSelectedOverloads: analysis.setSelectedOverloads,
+      setResult,
+      setSelectedActionIds: actionsHook.setSelectedActionIds,
+      setRejectedActionIds: actionsHook.setRejectedActionIds,
+      setManuallyAddedIds: actionsHook.setManuallyAddedIds,
+      setSuggestedByRecommenderIds: actionsHook.setSuggestedByRecommenderIds,
+      setSelectedBranch,
+      restoringSessionRef: diagrams.restoringSessionRef,
+      committedBranchRef: diagrams.committedBranchRef,
+      setError, setInfoMessage: analysis.setInfoMessage,
+      applyConfigResponse, setBranches, setVoltageLevels, setNominalVoltageMap: diagrams.setNominalVoltageMap,
+      setUniqueVoltages: diagrams.setUniqueVoltages, fetchBaseDiagram: diagrams.fetchBaseDiagram,
+      setVoltageRange: diagrams.setVoltageRange
     });
   };
 
@@ -190,6 +190,10 @@ function App() {
         setSettingsBackup(createCurrentBackup());
         setIsSettingsOpen(false);
         return;
+      }
+
+      if (configFilePath && configFilePath !== lastActiveConfigFilePath) {
+        await changeConfigFilePath(configFilePath);
       }
 
       const configRes = await api.updateConfig(buildConfigRequest());
@@ -249,6 +253,9 @@ function App() {
     setShowMonitoringWarning(false);
 
     try {
+      if (configFilePath && configFilePath !== lastActiveConfigFilePath) {
+        await changeConfigFilePath(configFilePath);
+      }
       const configRes = await api.updateConfig(buildConfigRequest());
       applyConfigResponse(configRes as Record<string, unknown>);
 
@@ -593,22 +600,23 @@ function App() {
                 </div>
                 <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '5px 0' }} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Config File Path</label>
+                  <label htmlFor="configFilePathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Config File Path</label>
                   <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>
                     Path to the <code>config.json</code> settings file. Change this to use a config stored outside the repository.
                     The file will be created from defaults if it does not exist.
                   </div>
                   <div style={{ display: 'flex', gap: '5px' }}>
                     <input
+                      id="configFilePathInput"
                       type="text"
                       value={configFilePath}
-                      onChange={e => changeConfigFilePath(e.target.value).catch(() => {})}
-                      onBlur={e => changeConfigFilePath(e.target.value).catch(() => {})}
+                      onChange={e => changeConfigFilePath(e.target.value).catch(() => { })}
+                      onBlur={e => changeConfigFilePath(e.target.value).catch(() => { })}
                       placeholder="e.g. /home/user/my_expertassist_config.json"
                       style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
                     />
                     <button
-                      onClick={() => pickSettingsPath('file', (p) => changeConfigFilePath(p).catch(() => {}))}
+                      onClick={() => pickSettingsPath('file', (p) => changeConfigFilePath(p).catch(() => { }))}
                       style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}
                     >📄</button>
                   </div>

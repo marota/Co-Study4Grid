@@ -1,0 +1,18 @@
+{
+    "network_path": "/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z/grid.xiidm",
+    "action_file_path": "/home/marotant/dev/Expert_op4grid_recommender/data/action_space/All_France_actions_from_REPAS.2024.12.10_withPSTs.json",
+    "layout_path": "/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z/grid_layout.json",
+    "output_folder_path": "/home/marotant/dev/AntiGravity/ExpertAssist/sessions",
+    "lines_monitoring_path": "",
+    "min_line_reconnections": 2,
+    "min_close_coupling": 3,
+    "min_open_coupling": 2,
+    "min_line_disconnections": 3,
+    "min_pst": 1,
+    "min_load_shedding": 2,
+    "n_prioritized_actions": 10,
+    "monitoring_factor": 0.95,
+    "pre_existing_overload_threshold": 0.02,
+    "ignore_reconnections": false,
+    "pypowsybl_fast_mode": true
+}

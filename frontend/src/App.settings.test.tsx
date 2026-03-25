@@ -332,6 +332,32 @@ describe('Settings Modal Enhancements', () => {
     });
   });
 
+  it('switches config file before applying if path changed', async () => {
+    await openSettings();
+
+    const configPathInput = screen.getByLabelText(/Config File Path/i);
+    await userEvent.clear(configPathInput);
+    await userEvent.type(configPathInput, '/new/config.json');
+
+    mockApi.setConfigFilePath.mockClear();
+    mockApi.updateConfig.mockClear();
+
+    const applyBtn = screen.getByText('Apply');
+    await act(async () => {
+      await userEvent.click(applyBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockApi.setConfigFilePath).toHaveBeenCalledWith('/new/config.json');
+    });
+
+    expect(mockApi.updateConfig).toHaveBeenCalled();
+    // Ensure setConfigFilePath was called BEFORE updateConfig
+    const setConfigCallOrder = mockApi.setConfigFilePath.mock.invocationCallOrder[0];
+    const updateConfigCallOrder = mockApi.updateConfig.mock.invocationCallOrder[0];
+    expect(setConfigCallOrder).toBeLessThan(updateConfigCallOrder);
+  });
+
   it('updates configuration with new network and layout paths', async () => {
     await openSettings();
 
@@ -501,7 +527,7 @@ describe('Settings Modal Enhancements', () => {
   describe('Processing State UI', () => {
     it('shows yellow "Running..." button during analysis', async () => {
       render(<App />);
-      
+
       const loadBtn = screen.getByText('🔄 Load Study');
       await userEvent.click(loadBtn);
       await waitFor(() => {
