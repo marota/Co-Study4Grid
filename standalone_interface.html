@@ -291,6 +291,54 @@
             fill-opacity: 0.5 !important;
         }
 
+        /* ===== SLD impact highlights ===== */
+        /* Contingency element on N-1 SLD (orange glow) */
+        .sld-highlight-contingency {
+            filter: drop-shadow(0 0 4px #ff9800) drop-shadow(0 0 8px #ff9800);
+        }
+        .sld-highlight-contingency path,
+        .sld-highlight-contingency line,
+        .sld-highlight-contingency polyline,
+        .sld-highlight-contingency rect,
+        .sld-highlight-contingency circle {
+            stroke: #ff9800 !important;
+            stroke-width: 3px !important;
+        }
+
+        /* Action target on action SLD (yellow glow) */
+        .sld-highlight-action {
+            filter: drop-shadow(0 0 4px #fffb00) drop-shadow(0 0 8px #fffb00);
+        }
+        .sld-highlight-action path,
+        .sld-highlight-action line,
+        .sld-highlight-action polyline,
+        .sld-highlight-action rect,
+        .sld-highlight-action circle {
+            stroke: #fffb00 !important;
+            stroke-width: 3px !important;
+        }
+
+        /* Overloaded lines on SLD (dashed orange) */
+        .sld-highlight-overloaded path,
+        .sld-highlight-overloaded line,
+        .sld-highlight-overloaded polyline {
+            stroke: #ff8c00 !important;
+            stroke-width: 3px !important;
+            stroke-dasharray: 6 3 !important;
+        }
+
+        /* Affected breakers/switches on SLD (purple glow) */
+        .sld-highlight-breaker {
+            filter: drop-shadow(0 0 3px #e040fb) drop-shadow(0 0 6px #e040fb);
+        }
+        .sld-highlight-breaker path,
+        .sld-highlight-breaker line,
+        .sld-highlight-breaker rect,
+        .sld-highlight-breaker circle {
+            stroke: #e040fb !important;
+            stroke-width: 3px !important;
+        }
+
         /* ===== Voltage Range Slider (vertical, right sidebar) ===== */
         .voltage-sidebar {
             position: absolute;
@@ -2848,6 +2896,148 @@
                 }
             }, [vlOverlay?.svg, vlOverlay?.sldMetadata, vlOverlay?.tab, actionViewMode,
             vlOverlay?.flow_deltas, vlOverlay?.reactive_flow_deltas, vlOverlay?.asset_deltas]);
+
+            // ===== Highlight impacted assets on the SLD =====
+            // Highlights contingency element (N-1), action targets (action), overloaded lines,
+            // and affected breakers/switches — independently of the delta flow coloring.
+            useEffect(() => {
+                const container = overlayBodyRef.current;
+                if (!container || !vlOverlay?.svg) return;
+
+                // Clear previous highlights
+                const HIGHLIGHT_CLASSES = [
+                    'sld-highlight-contingency', 'sld-highlight-action',
+                    'sld-highlight-overloaded', 'sld-highlight-breaker',
+                ];
+                container.querySelectorAll(HIGHLIGHT_CLASSES.map(c => '.' + c).join(','))
+                    .forEach(el => el.classList.remove(...HIGHLIGHT_CLASSES));
+
+                // Build equipmentId → SVG element ID map from SLD metadata
+                const equipIdToSvgIds = new Map();
+                if (vlOverlay.sldMetadata) {
+                    try {
+                        const meta = JSON.parse(vlOverlay.sldMetadata);
+                        const sources = [
+                            ...(meta.nodes ?? []),
+                            ...(meta.feederInfos ?? []),
+                            ...(meta.feederNodes ?? []),
+                        ];
+                        for (const fn of sources) {
+                            if (fn.equipmentId && fn.id) {
+                                const ids = equipIdToSvgIds.get(fn.equipmentId) ?? [];
+                                ids.push(fn.id);
+                                equipIdToSvgIds.set(fn.equipmentId, ids);
+                            }
+                        }
+                    } catch {
+                        // metadata parse failed
+                    }
+                }
+                if (equipIdToSvgIds.size === 0) return;
+
+                // Build element ID → DOM element map
+                const elMap = new Map();
+                container.querySelectorAll('[id]').forEach(el => elMap.set(el.id, el));
+
+                const lookupById = (svgId) =>
+                    elMap.get(svgId)
+                    ?? elMap.get(svgId.replace(/\./g, '_'))
+                    ?? elMap.get(svgId.replace(/_/g, '.'));
+
+                const walkUpToCell = (el) => {
+                    let cellEl = el;
+                    let cur = el.parentElement;
+                    while (cur && cur !== container) {
+                        if (cur.classList.contains('sld-extern-cell') ||
+                            cur.classList.contains('sld-intern-cell') ||
+                            cur.classList.contains('sld-shunt-cell')) {
+                            cellEl = cur;
+                            break;
+                        }
+                        cur = cur.parentElement;
+                    }
+                    return cellEl;
+                };
+
+                const findCellForEquipment = (equipId) => {
+                    const svgIds = equipIdToSvgIds.get(equipId)
+                        ?? equipIdToSvgIds.get(equipId.replace(/\./g, '_'))
+                        ?? equipIdToSvgIds.get(equipId.replace(/_/g, '.'));
+                    if (svgIds) {
+                        for (const svgId of svgIds) {
+                            const el = lookupById(svgId);
+                            if (el) return walkUpToCell(el);
+                        }
+                    }
+                    // Substring fallback
+                    const sanitized = equipId.replace(/\./g, '_');
+                    for (const [eid, el] of elMap) {
+                        if (eid.includes(equipId) || (sanitized !== equipId && eid.includes(sanitized))) {
+                            return walkUpToCell(el);
+                        }
+                    }
+                    return null;
+                };
+
+                const highlightedCells = new Set();
+
+                // --- Contingency highlight (N-1 tab) ---
+                if (vlOverlay.tab === 'n-1' && selectedBranch) {
+                    const cell = findCellForEquipment(selectedBranch);
+                    if (cell) {
+                        cell.classList.add('sld-highlight-contingency');
+                        highlightedCells.add(cell);
+                    }
+                }
+
+                // --- Action target highlights (action tab) ---
+                if (vlOverlay.tab === 'action' && selectedActionId && result) {
+                    const actionDetail = result.actions?.[selectedActionId];
+                    if (actionDetail?.action_topology) {
+                        const topo = actionDetail.action_topology;
+                        const targetEquipIds = new Set();
+                        for (const id of Object.keys(topo.lines_ex_bus || {})) targetEquipIds.add(id);
+                        for (const id of Object.keys(topo.lines_or_bus || {})) targetEquipIds.add(id);
+                        for (const id of Object.keys(topo.gens_bus || {})) targetEquipIds.add(id);
+                        for (const id of Object.keys(topo.loads_bus || {})) targetEquipIds.add(id);
+                        for (const id of Object.keys(topo.pst_tap || {})) targetEquipIds.add(id);
+
+                        for (const equipId of targetEquipIds) {
+                            const cell = findCellForEquipment(equipId);
+                            if (cell && !highlightedCells.has(cell)) {
+                                cell.classList.add('sld-highlight-action');
+                                highlightedCells.add(cell);
+                            }
+                        }
+
+                        // Highlight affected breakers/switches
+                        const switches = topo.switches;
+                        if (switches) {
+                            for (const switchId of Object.keys(switches)) {
+                                const cell = findCellForEquipment(switchId);
+                                if (cell && !highlightedCells.has(cell)) {
+                                    cell.classList.add('sld-highlight-breaker');
+                                    highlightedCells.add(cell);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // --- Overloaded lines (N-1 and action tabs) ---
+                const overloadedLines = result?.lines_overloaded;
+                if (overloadedLines && overloadedLines.length > 0 && vlOverlay.tab !== 'n') {
+                    for (const lineId of overloadedLines) {
+                        const cell = findCellForEquipment(lineId);
+                        if (cell && !highlightedCells.has(cell)) {
+                            cell.classList.add('sld-highlight-overloaded');
+                            highlightedCells.add(cell);
+                        }
+                    }
+                }
+
+            }, [vlOverlay?.svg, vlOverlay?.sldMetadata, vlOverlay?.tab,
+                selectedBranch, result, selectedActionId]);
 
             // Mouse pan inside overlay body
             const startOverlayPan = (e) => {
