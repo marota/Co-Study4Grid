@@ -2960,6 +2960,7 @@
                 };
 
                 const findCellForEquipment = (equipId) => {
+                    // 1. Exact metadata lookup (with dot/underscore variants)
                     const svgIds = equipIdToSvgIds.get(equipId)
                         ?? equipIdToSvgIds.get(equipId.replace(/\./g, '_'))
                         ?? equipIdToSvgIds.get(equipId.replace(/_/g, '.'));
@@ -2969,7 +2970,16 @@
                             if (el) return walkUpToCell(el);
                         }
                     }
-                    // Substring fallback
+                    // 2. Check if equipId is a substring of any metadata equipmentId
+                    for (const [metaEquipId, metaSvgIds] of equipIdToSvgIds) {
+                        if (metaEquipId.includes(equipId) || equipId.includes(metaEquipId)) {
+                            for (const svgId of metaSvgIds) {
+                                const el = lookupById(svgId);
+                                if (el) return walkUpToCell(el);
+                            }
+                        }
+                    }
+                    // 3. Substring fallback against SVG element IDs
                     const sanitized = equipId.replace(/\./g, '_');
                     for (const [eid, el] of elMap) {
                         if (eid.includes(equipId) || (sanitized !== equipId && eid.includes(sanitized))) {
@@ -2981,8 +2991,14 @@
 
                 const highlightedCells = new Set();
 
-                // --- Contingency highlight (N-1 tab) ---
-                if (vlOverlay.tab === 'n-1' && selectedBranch) {
+                // Use vlOverlay.actionId (set when the overlay was opened)
+                const actionId = vlOverlay.actionId;
+
+                // Resolve the action detail from the result
+                const actionDetail = (actionId && result?.actions) ? result.actions[actionId] : undefined;
+
+                // --- Contingency highlight (N-1 and action tabs) ---
+                if (vlOverlay.tab !== 'n' && selectedBranch) {
                     const cell = findCellForEquipment(selectedBranch);
                     if (cell) {
                         cell.classList.add('sld-highlight-contingency');
@@ -2991,10 +3007,9 @@
                 }
 
                 // --- Action target highlights (action tab) ---
-                if (vlOverlay.tab === 'action' && selectedActionId && result) {
-                    const actionDetail = result.actions?.[selectedActionId];
-                    if (actionDetail?.action_topology) {
-                        const topo = actionDetail.action_topology;
+                if (vlOverlay.tab === 'action' && actionDetail) {
+                    const topo = actionDetail.action_topology;
+                    if (topo) {
                         const targetEquipIds = new Set();
                         for (const id of Object.keys(topo.lines_ex_bus || {})) targetEquipIds.add(id);
                         for (const id of Object.keys(topo.lines_or_bus || {})) targetEquipIds.add(id);
@@ -3010,7 +3025,7 @@
                             }
                         }
 
-                        // Highlight affected breakers/switches
+                        // Highlight affected breakers/switches from topology
                         const switches = topo.switches;
                         if (switches) {
                             for (const switchId of Object.keys(switches)) {
@@ -3019,6 +3034,31 @@
                                     cell.classList.add('sld-highlight-breaker');
                                     highlightedCells.add(cell);
                                 }
+                            }
+                        }
+                    }
+
+                    // Fallback: parse description for breaker/switch names
+                    const desc = actionDetail.description_unitaire;
+                    if (desc && highlightedCells.size === 0) {
+                        // Extract quoted OC name like 'COUCH6COUPL DJ_OC'
+                        const ocMatch = desc.match(/OC\s+'([^']+)'/);
+                        if (ocMatch) {
+                            const ocName = ocMatch[1].replace(/\s+DJ_OC$/, '');
+                            const cell = findCellForEquipment(ocName);
+                            if (cell && !highlightedCells.has(cell)) {
+                                cell.classList.add('sld-highlight-breaker');
+                                highlightedCells.add(cell);
+                            }
+                        }
+                        // Extract line/element name like "Ouverture LOUHAP3_LOUHA3SSUSU.1 DJ_OC"
+                        const lineMatch = desc.match(/(?:Ouverture|Fermeture)\s+(\S+)\s+DJ_OC/);
+                        if (lineMatch) {
+                            const fullName = lineMatch[1];
+                            const cell = findCellForEquipment(fullName);
+                            if (cell && !highlightedCells.has(cell)) {
+                                cell.classList.add('sld-highlight-breaker');
+                                highlightedCells.add(cell);
                             }
                         }
                     }
@@ -3036,8 +3076,8 @@
                     }
                 }
 
-            }, [vlOverlay?.svg, vlOverlay?.sldMetadata, vlOverlay?.tab,
-                selectedBranch, result, selectedActionId]);
+            }, [vlOverlay?.svg, vlOverlay?.sldMetadata, vlOverlay?.tab, vlOverlay?.actionId,
+                selectedBranch, result]);
 
             // Mouse pan inside overlay body
             const startOverlayPan = (e) => {

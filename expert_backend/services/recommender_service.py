@@ -147,6 +147,21 @@ class RecommenderService:
                     if val is None and isinstance(action_obj, dict):
                         val = action_obj.get(field)
                     topo[field] = sanitize_for_json(val) if val else {}
+
+                # Supplement switches from the original action dictionary entry
+                # (grid2op Action objects may not carry the 'switches' attribute;
+                #  the raw dict_action entry always has it for switch-based actions)
+                if not topo.get("switches") and self._dict_action:
+                    dict_entry = self._dict_action.get(action_id)
+                    if dict_entry:
+                        sw = dict_entry.get("switches")
+                        if not sw:
+                            content = dict_entry.get("content")
+                            if isinstance(content, dict):
+                                sw = content.get("switches")
+                        if sw:
+                            topo["switches"] = sanitize_for_json(sw)
+
                 enriched_actions[action_id]["action_topology"] = topo
 
             # Detect load shedding actions and compute shedded MW per load
@@ -2029,11 +2044,23 @@ class RecommenderService:
             if "prioritized_actions" not in self._last_result:
                 self._last_result["prioritized_actions"] = {}
             
-            # Fetch topo
+            # Fetch topo (include all topology fields, not just line/gen/load buses)
             topo = {}
-            for field in ("lines_ex_bus", "lines_or_bus", "gens_bus", "loads_bus"):
+            for field in ("lines_ex_bus", "lines_or_bus", "gens_bus", "loads_bus", "pst_tap", "substations", "switches"):
                 val = getattr(action, field, None)
                 topo[field] = sanitize_for_json(val) if val else {}
+
+            # Supplement switches from the original action dictionary entry
+            if not topo.get("switches") and self._dict_action:
+                dict_entry = self._dict_action.get(action_id)
+                if dict_entry:
+                    sw = dict_entry.get("switches")
+                    if not sw:
+                        content = dict_entry.get("content")
+                        if isinstance(content, dict):
+                            sw = content.get("switches")
+                    if sw:
+                        topo["switches"] = sanitize_for_json(sw)
 
             self._last_result["prioritized_actions"][action_id] = {
                 "observation": obs_simu_action,
