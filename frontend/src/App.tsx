@@ -16,7 +16,7 @@ function App() {
   // ===== Settings Hook =====
   const settings = useSettings();
   const {
-    configFilePath, changeConfigFilePath, lastActiveConfigFilePath,
+    configFilePath, setConfigFilePath, changeConfigFilePath, lastActiveConfigFilePath,
     networkPath, setNetworkPath, actionPath, setActionPath,
     layoutPath, setLayoutPath, outputFolderPath, setOutputFolderPath,
     minLineReconnections, setMinLineReconnections,
@@ -610,7 +610,7 @@ function App() {
                       id="configFilePathInput"
                       type="text"
                       value={configFilePath}
-                      onChange={e => changeConfigFilePath(e.target.value).catch(() => { })}
+                      onChange={e => setConfigFilePath(e.target.value)}
                       onBlur={e => changeConfigFilePath(e.target.value).catch(() => { })}
                       placeholder="e.g. /home/user/my_expertassist_config.json"
                       style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}

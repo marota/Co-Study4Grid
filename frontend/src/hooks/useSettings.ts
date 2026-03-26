@@ -6,6 +6,7 @@ import type { SettingsBackup } from '../types';
 export interface SettingsState {
   // Config file path
   configFilePath: string;
+  setConfigFilePath: (v: string) => void;
   lastActiveConfigFilePath: string;
   changeConfigFilePath: (newPath: string) => Promise<void>;
 
@@ -288,7 +289,7 @@ export function useSettings(): SettingsState {
   }, []);
 
   return useMemo(() => ({
-    configFilePath, changeConfigFilePath, lastActiveConfigFilePath: lastConfigFilePathRef.current,
+    configFilePath, setConfigFilePath, changeConfigFilePath, lastActiveConfigFilePath: lastConfigFilePathRef.current,
     networkPath, setNetworkPath,
     actionPath, setActionPath,
     layoutPath, setLayoutPath,
