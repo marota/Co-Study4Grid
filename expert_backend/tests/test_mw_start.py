@@ -322,6 +322,53 @@ class TestMwStartOpenCoupling:
         # virtual line = |−50| = 50
         assert result["open_coupling"]["mw_start"]["coupling_gl"] == pytest.approx(50.0, abs=0.1)
 
+    def test_ignores_disconnected_elements_bus_minus1(self, _mock_vlf):
+        """Elements with bus=-1 are disconnected and excluded from KCL.
+
+        Reproduces the real C.REGP6 pattern where generators have bus=-1.
+        Without filtering, min({-1,1,2})=-1 → KCL on disconnected elements → 0.
+        """
+        obs = _make_obs(
+            ["C.REGL61VIELM", "C.REGL61ZMAGN", "C.REGL62VIELM", "C.REGY633", "C.REGY631"],
+            [-105.0, 118.0, -99.0, 32.0, 10.0],
+            name_load=["C.REG6TR615", "C.REG6TR614", "C.REG6TR613"],
+            load_p=[32.0, 32.0, 10.0],
+        )
+        obs.name_gen = ["C.REGIN3", "C.REGINF", "C.REGING"]
+        obs.gen_p = np.array([0.0, 0.0, 0.0])
+
+        dict_action = {
+            "coupling_creg": {
+                "content": {
+                    "set_bus": {
+                        "lines_or_id": {
+                            "C.REGL61VIELM": 2, "C.REGL61ZMAGN": 1,
+                            "C.REGL62VIELM": 1, "C.REGY633": 1, "C.REGY631": 2,
+                        },
+                        "lines_ex_id": {},
+                        "loads_id": {
+                            "C.REG6TR615": 2, "C.REG6TR614": 1, "C.REG6TR613": 1,
+                        },
+                        "generators_id": {
+                            "C.REGIN3": 1, "C.REGINF": -1, "C.REGING": -1,
+                        },
+                    }
+                }
+            }
+        }
+        svc = _make_service_with_context(obs, dict_action)
+
+        scores = {"open_coupling": {"scores": {"coupling_creg": 5.0}}}
+        result = svc._compute_mw_start_for_scores(scores)
+
+        mw = result["open_coupling"]["mw_start"]["coupling_creg"]
+        # Bus 1 elements: ZMAGN(or,118), VIELM2(or,-99), Y633(or,32),
+        #                  TR614(load,32), TR613(load,10), GEN3(gen,0)
+        # KCL at bus 1: -(118) -(-99) -(32) - 32 - 10 + 0 = -118+99-32-32-10 = -93
+        # virtual line = |−93| = 93
+        assert mw is not None
+        assert mw > 0  # Must not be 0; disconnected elements excluded
+
     def test_no_lines_in_action_returns_none(self, _mock_vlf):
         obs = _make_obs(["LINE_A"], [50.0])
         dict_action = {

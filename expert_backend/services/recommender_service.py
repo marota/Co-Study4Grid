@@ -359,11 +359,14 @@ class RecommenderService:
 
         Virtual line MW = |get_virtual_line_flow(obs, ind_load, ind_prod, ind_lor, ind_lex)|
         """
-        # Determine which bus number represents "bus 1" (smallest).
+        # Determine which bus number represents "bus 1" (smallest positive).
+        # Bus -1 means the element is disconnected and must be excluded.
         all_buses = set()
         for key in ("lines_or_id", "lines_ex_id", "generators_id", "loads_id"):
             for _name, bus in set_bus.get(key, {}).items():
-                all_buses.add(int(bus))
+                b = int(bus)
+                if b > 0:
+                    all_buses.add(b)
 
         if not all_buses:
             return None
