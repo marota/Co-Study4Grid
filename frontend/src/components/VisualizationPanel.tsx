@@ -568,10 +568,16 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                     }
                 }
 
-                // Highlight affected breakers/switches from topology
-                const switches = topo.switches as Record<string, unknown> | undefined;
-                if (switches) {
-                    for (const switchId of Object.keys(switches)) {
+                // Highlight affected breakers/switches.
+                // Prefer changed_switches from SLD response (robust N-1 vs action comparison)
+                // over action_topology.switches (may be empty for grid2op actions).
+                const changedSwitches = vlOverlay.changed_switches;
+                const topoSwitches = topo.switches as Record<string, unknown> | undefined;
+                const switchSource = changedSwitches && Object.keys(changedSwitches).length > 0
+                    ? changedSwitches
+                    : topoSwitches;
+                if (switchSource) {
+                    for (const switchId of Object.keys(switchSource)) {
                         const cell = findCellForEquipment(switchId);
                         if (cell && !highlightedCells.has(cell)) {
                             cloneHighlight(cell, 'sld-highlight-breaker');
@@ -604,20 +610,22 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             }
         }
 
-        // --- Overloaded lines (N-1 and action tabs) ---
-        const overloadedLines = result?.lines_overloaded;
-        if (overloadedLines && overloadedLines.length > 0 && vlOverlay.tab !== 'n') {
-            for (const lineId of overloadedLines) {
-                const cell = findCellForEquipment(lineId);
-                if (cell && !highlightedCells.has(cell)) {
-                    cloneHighlight(cell, 'sld-highlight-overloaded');
-                    highlightedCells.add(cell);
+        // --- Overloaded lines (N-1 tab only) ---
+        if (vlOverlay.tab === 'n-1') {
+            const overloadedLines = result?.lines_overloaded;
+            if (overloadedLines && overloadedLines.length > 0) {
+                for (const lineId of overloadedLines) {
+                    const cell = findCellForEquipment(lineId);
+                    if (cell && !highlightedCells.has(cell)) {
+                        cloneHighlight(cell, 'sld-highlight-overloaded');
+                        highlightedCells.add(cell);
+                    }
                 }
             }
         }
 
     }, [vlOverlay.svg, vlOverlay.sldMetadata, vlOverlay.tab, vlOverlay.actionId,
-        selectedBranch, result]);
+        vlOverlay.changed_switches, selectedBranch, result]);
 
     // Non-passive wheel zoom on overlay body
     useEffect(() => {

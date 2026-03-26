@@ -208,6 +208,7 @@ export interface VlOverlay {
     flow_deltas?: Record<string, FlowDelta>;
     reactive_flow_deltas?: Record<string, FlowDelta>;
     asset_deltas?: Record<string, AssetDelta>;
+    changed_switches?: Record<string, { from_open: boolean; to_open: boolean }>;
 }
 
 // ===== Session Save =====

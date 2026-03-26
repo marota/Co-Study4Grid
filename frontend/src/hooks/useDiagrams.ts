@@ -362,6 +362,7 @@ export function useDiagrams(
       let flowDeltas: Record<string, FlowDelta> | undefined;
       let reactiveFlowDeltas: Record<string, FlowDelta> | undefined;
       let assetDeltas: Record<string, AssetDelta> | undefined;
+      let changedSwitches: Record<string, { from_open: boolean; to_open: boolean }> | undefined;
 
       if (sldTab === 'n') {
         const res = await api.getNSld(vlName);
@@ -381,12 +382,14 @@ export function useDiagrams(
         flowDeltas = res.flow_deltas;
         reactiveFlowDeltas = res.reactive_flow_deltas;
         assetDeltas = res.asset_deltas;
+        changedSwitches = res.changed_switches;
       }
       setVlOverlay(prev =>
         prev && prev.vlName === vlName && prev.tab === sldTab
           ? {
             ...prev, svg: svgData, sldMetadata: metaData, loading: false,
-            flow_deltas: flowDeltas, reactive_flow_deltas: reactiveFlowDeltas, asset_deltas: assetDeltas
+            flow_deltas: flowDeltas, reactive_flow_deltas: reactiveFlowDeltas, asset_deltas: assetDeltas,
+            changed_switches: changedSwitches,
           }
           : prev
       );
