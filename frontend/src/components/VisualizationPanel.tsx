@@ -412,8 +412,9 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
     vlOverlay.flow_deltas, vlOverlay.reactive_flow_deltas, vlOverlay.asset_deltas]);
 
     // ===== Highlight impacted assets on the SLD =====
-    // Uses a clone-behind technique (like NAD highlights): clones target elements
-    // into a background layer so the original SLD rendering is not affected.
+    // Uses a clone-behind technique: clones target elements and inserts them as
+    // direct siblings (before the original) so they naturally track the original
+    // during pan/zoom without needing CTM-based repositioning.
     useEffect(() => {
         const container = overlayBodyRef.current;
         if (!container || !vlOverlay.svg) return;
@@ -450,15 +451,6 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
 
         const svg = container.querySelector('svg');
         if (!svg) return;
-
-        // Create or reuse background layer at the root of the SVG
-        let bgLayer = svg.querySelector('#sld-highlight-layer') as SVGGElement | null;
-        if (!bgLayer) {
-            bgLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            bgLayer.setAttribute('id', 'sld-highlight-layer');
-            if (svg.firstChild) svg.insertBefore(bgLayer, svg.firstChild);
-            else svg.appendChild(bgLayer);
-        }
 
         // Build element ID → DOM element map
         const elMap = new Map<string, Element>();
@@ -511,21 +503,16 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             return null;
         };
 
-        // Clone an element into the background layer with the given highlight class
-        let cachedBgCTM: DOMMatrix | null = null;
+        // Clone an element and insert it right before the original in the DOM.
+        // SVG renders in document order, so the clone (earlier) appears behind
+        // the original (later). Being a sibling in the same parent group means
+        // the clone moves with the original during pan/zoom — no CTM needed.
         const cloneHighlight = (el: Element, highlightClass: string) => {
             const clone = el.cloneNode(true) as SVGGraphicsElement;
             clone.removeAttribute('id');
+            clone.querySelectorAll('[id]').forEach(child => child.removeAttribute('id'));
             clone.classList.add('sld-highlight-clone', highlightClass);
-            try {
-                const elCTM = (el as SVGGraphicsElement).getScreenCTM();
-                if (!cachedBgCTM) cachedBgCTM = (bgLayer as SVGGraphicsElement).getScreenCTM();
-                if (elCTM && cachedBgCTM) {
-                    const rel = cachedBgCTM.inverse().multiply(elCTM);
-                    clone.setAttribute('transform', `matrix(${rel.a},${rel.b},${rel.c},${rel.d},${rel.e},${rel.f})`);
-                }
-            } catch { /* CTM unavailable */ }
-            bgLayer!.appendChild(clone);
+            el.parentNode?.insertBefore(clone, el);
         };
 
         const highlightedCells = new Set<Element>();
@@ -576,11 +563,14 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                 const switchSource = changedSwitches && Object.keys(changedSwitches).length > 0
                     ? changedSwitches
                     : topoSwitches;
+                // Coupling action breakers highlighted yellow (same as action targets);
+                // regular breaker/switch actions use purple.
+                const breakerClass = isCoupling ? 'sld-highlight-action' : 'sld-highlight-breaker';
                 if (switchSource) {
                     for (const switchId of Object.keys(switchSource)) {
                         const cell = findCellForEquipment(switchId);
                         if (cell && !highlightedCells.has(cell)) {
-                            cloneHighlight(cell, 'sld-highlight-breaker');
+                            cloneHighlight(cell, breakerClass);
                             highlightedCells.add(cell);
                         }
                     }
@@ -588,6 +578,8 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             }
 
             // Fallback: parse description for breaker/switch names
+            const breakerClass = isCouplingAction(actionId, actionDetail.description_unitaire)
+                ? 'sld-highlight-action' : 'sld-highlight-breaker';
             const desc = actionDetail.description_unitaire;
             if (desc && highlightedCells.size === 0) {
                 const ocMatch = desc.match(/OC\s+'([^']+)'/);
@@ -595,7 +587,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                     const ocName = ocMatch[1].replace(/\s+DJ_OC$/, '');
                     const cell = findCellForEquipment(ocName);
                     if (cell && !highlightedCells.has(cell)) {
-                        cloneHighlight(cell, 'sld-highlight-breaker');
+                        cloneHighlight(cell, breakerClass);
                         highlightedCells.add(cell);
                     }
                 }
@@ -603,7 +595,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                 if (lineMatch) {
                     const cell = findCellForEquipment(lineMatch[1]);
                     if (cell && !highlightedCells.has(cell)) {
-                        cloneHighlight(cell, 'sld-highlight-breaker');
+                        cloneHighlight(cell, breakerClass);
                         highlightedCells.add(cell);
                     }
                 }

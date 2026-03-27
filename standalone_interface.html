@@ -2914,8 +2914,9 @@
             vlOverlay?.flow_deltas, vlOverlay?.reactive_flow_deltas, vlOverlay?.asset_deltas]);
 
             // ===== Highlight impacted assets on the SLD =====
-            // Uses clone-behind technique: clones target elements into a background
-            // layer so the original SLD rendering is not affected.
+            // Uses clone-behind technique: clones target elements and inserts them as
+            // direct siblings (before the original) so they naturally track the original
+            // during pan/zoom without needing CTM-based repositioning.
             useEffect(() => {
                 const container = overlayBodyRef.current;
                 if (!container || !vlOverlay?.svg) return;
@@ -2948,15 +2949,6 @@
 
                 const svg = container.querySelector('svg');
                 if (!svg) return;
-
-                // Create or reuse background layer
-                let bgLayer = svg.querySelector('#sld-highlight-layer');
-                if (!bgLayer) {
-                    bgLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-                    bgLayer.setAttribute('id', 'sld-highlight-layer');
-                    if (svg.firstChild) svg.insertBefore(bgLayer, svg.firstChild);
-                    else svg.appendChild(bgLayer);
-                }
 
                 const elMap = new Map();
                 container.querySelectorAll('[id]').forEach(el => elMap.set(el.id, el));
@@ -3008,21 +3000,15 @@
                     return null;
                 };
 
-                // Clone element into the background layer with a highlight class
-                let cachedBgCTM = null;
+                // Clone element and insert right before the original in the DOM.
+                // SVG renders in document order, so the clone appears behind the original.
+                // Being a sibling means it naturally moves with the original during pan/zoom.
                 const cloneHighlight = (el, highlightClass) => {
                     const clone = el.cloneNode(true);
                     clone.removeAttribute('id');
+                    clone.querySelectorAll('[id]').forEach(child => child.removeAttribute('id'));
                     clone.classList.add('sld-highlight-clone', highlightClass);
-                    try {
-                        const elCTM = el.getScreenCTM();
-                        if (!cachedBgCTM) cachedBgCTM = bgLayer.getScreenCTM();
-                        if (elCTM && cachedBgCTM) {
-                            const rel = cachedBgCTM.inverse().multiply(elCTM);
-                            clone.setAttribute('transform', `matrix(${rel.a},${rel.b},${rel.c},${rel.d},${rel.e},${rel.f})`);
-                        }
-                    } catch (e) { /* CTM unavailable */ }
-                    bgLayer.appendChild(clone);
+                    el.parentNode?.insertBefore(clone, el);
                 };
 
                 const highlightedCells = new Set();
@@ -3076,11 +3062,14 @@
                         const switchSource = changedSwitches && Object.keys(changedSwitches).length > 0
                             ? changedSwitches
                             : topoSwitches;
+                        // Coupling action breakers highlighted yellow (same as action targets);
+                        // regular breaker/switch actions use purple.
+                        const breakerClass = isCoupling ? 'sld-highlight-action' : 'sld-highlight-breaker';
                         if (switchSource) {
                             for (const switchId of Object.keys(switchSource)) {
                                 const cell = findCellForEquipment(switchId);
                                 if (cell && !highlightedCells.has(cell)) {
-                                    cloneHighlight(cell, 'sld-highlight-breaker');
+                                    cloneHighlight(cell, breakerClass);
                                     highlightedCells.add(cell);
                                 }
                             }
@@ -3088,6 +3077,7 @@
                     }
 
                     // Fallback: parse description for breaker/switch names
+                    const breakerClass = isCoupling ? 'sld-highlight-action' : 'sld-highlight-breaker';
                     const desc = actionDetail.description_unitaire;
                     if (desc && highlightedCells.size === 0) {
                         const ocMatch = desc.match(/OC\s+'([^']+)'/);
@@ -3095,7 +3085,7 @@
                             const ocName = ocMatch[1].replace(/\s+DJ_OC$/, '');
                             const cell = findCellForEquipment(ocName);
                             if (cell && !highlightedCells.has(cell)) {
-                                cloneHighlight(cell, 'sld-highlight-breaker');
+                                cloneHighlight(cell, breakerClass);
                                 highlightedCells.add(cell);
                             }
                         }
@@ -3103,7 +3093,7 @@
                         if (lineMatch) {
                             const cell = findCellForEquipment(lineMatch[1]);
                             if (cell && !highlightedCells.has(cell)) {
-                                cloneHighlight(cell, 'sld-highlight-breaker');
+                                cloneHighlight(cell, breakerClass);
                                 highlightedCells.add(cell);
                             }
                         }
