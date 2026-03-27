@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useAnalysis } from './useAnalysis';
+import { interactionLogger } from '../utils/interactionLogger';
 
 // Mock the api module (dynamic import in useAnalysis)
 const mockRunAnalysisStep1 = vi.fn();
@@ -27,6 +28,7 @@ function makeStream(ndjson: string): ReadableStream<Uint8Array> {
 describe('useAnalysis', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        interactionLogger.clear();
     });
 
     it('initializes with null result and no loading', () => {
@@ -391,6 +393,159 @@ describe('useAnalysis', () => {
             expect(result.current.infoMessage).toBe('');
 
             vi.useRealTimers();
+        });
+    });
+
+    describe('interaction logging', () => {
+        it('logs analysis_step1_started and analysis_step1_completed on successful step1', async () => {
+            mockRunAnalysisStep1.mockResolvedValue({
+                can_proceed: true,
+                message: 'No overloads detected',
+                lines_overloaded: [],
+            });
+
+            const { result } = renderHook(() => useAnalysis());
+
+            await act(async () => {
+                await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+            });
+
+            const log = interactionLogger.getLog();
+            expect(log.length).toBeGreaterThanOrEqual(2);
+            expect(log[0].type).toBe('analysis_step1_started');
+            expect(log[0].details).toEqual({ element: 'LINE_X' });
+            expect(log[1].type).toBe('analysis_step1_completed');
+            expect(log[1].details).toEqual({ can_proceed: true, overloads_detected: 0 });
+            // Both should share same correlation_id
+            expect(log[1].correlation_id).toBe(log[0].correlation_id);
+            expect(log[1].duration_ms).toBeGreaterThanOrEqual(0);
+        });
+
+        it('logs step1_started but not step1_completed when can_proceed=false', async () => {
+            mockRunAnalysisStep1.mockResolvedValue({
+                can_proceed: false,
+                message: 'Network not loaded',
+                lines_overloaded: [],
+            });
+
+            const { result } = renderHook(() => useAnalysis());
+
+            await act(async () => {
+                await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+            });
+
+            const log = interactionLogger.getLog();
+            expect(log).toHaveLength(1);
+            expect(log[0].type).toBe('analysis_step1_started');
+        });
+
+        it('logs full step1+step2 cycle with correlation IDs', async () => {
+            const detected = ['LINE_A'];
+            mockRunAnalysisStep1.mockResolvedValue({
+                can_proceed: true, message: '', lines_overloaded: detected,
+            });
+
+            const resultEvent = JSON.stringify({
+                type: 'result',
+                actions: { act_1: { description_unitaire: 'A', rho_before: [1.1], rho_after: [0.9], max_rho: 0.9, max_rho_line: 'LINE_A', is_rho_reduction: true } },
+                lines_overloaded: detected,
+                message: 'Done', dc_fallback: false,
+            });
+            const stream = makeStream(`${resultEvent}\n`);
+            mockRunAnalysisStep2Stream.mockResolvedValue({ ok: true, body: stream });
+
+            const { result } = renderHook(() => useAnalysis());
+
+            await act(async () => {
+                await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+            });
+
+            const log = interactionLogger.getLog();
+            const types = log.map(e => e.type);
+            expect(types).toContain('analysis_step1_started');
+            expect(types).toContain('analysis_step1_completed');
+            expect(types).toContain('analysis_step2_started');
+            expect(types).toContain('analysis_step2_completed');
+
+            // step1 pair shares correlation
+            const s1Start = log.find(e => e.type === 'analysis_step1_started')!;
+            const s1End = log.find(e => e.type === 'analysis_step1_completed')!;
+            expect(s1End.correlation_id).toBe(s1Start.correlation_id);
+
+            // step2 pair shares a different correlation
+            const s2Start = log.find(e => e.type === 'analysis_step2_started')!;
+            const s2End = log.find(e => e.type === 'analysis_step2_completed')!;
+            expect(s2End.correlation_id).toBe(s2Start.correlation_id);
+            expect(s2Start.correlation_id).not.toBe(s1Start.correlation_id);
+
+            // step2 completion has actions_count
+            expect(s2End.details.actions_count).toBe(1);
+        });
+
+        it('logs overload_toggled with correct overload name', () => {
+            const { result } = renderHook(() => useAnalysis());
+
+            act(() => { result.current.handleToggleOverload('LINE_B'); });
+
+            const log = interactionLogger.getLog();
+            expect(log).toHaveLength(1);
+            expect(log[0].type).toBe('overload_toggled');
+            expect(log[0].details).toEqual({ overload: 'LINE_B' });
+        });
+
+        it('logs prioritized_actions_displayed with count', () => {
+            const { result } = renderHook(() => useAnalysis());
+
+            act(() => {
+                result.current.setPendingAnalysisResult({
+                    actions: {
+                        a1: { description_unitaire: 'X', rho_before: [1.0], rho_after: [0.9], max_rho: 0.9, max_rho_line: 'L', is_rho_reduction: true },
+                        a2: { description_unitaire: 'Y', rho_before: [1.0], rho_after: [0.85], max_rho: 0.85, max_rho_line: 'L', is_rho_reduction: true },
+                    },
+                    lines_overloaded: ['L'], message: 'OK', dc_fallback: false, pdf_path: null, pdf_url: null,
+                });
+            });
+
+            act(() => {
+                result.current.handleDisplayPrioritizedActions(new Set());
+            });
+
+            const log = interactionLogger.getLog();
+            expect(log).toHaveLength(1);
+            expect(log[0].type).toBe('prioritized_actions_displayed');
+            expect(log[0].details).toEqual({ actions_count: 2 });
+        });
+
+        it('does not log when handleRunAnalysis is called with empty branch', async () => {
+            const { result } = renderHook(() => useAnalysis());
+
+            await act(async () => {
+                await result.current.handleRunAnalysis('', vi.fn(), vi.fn());
+            });
+
+            expect(interactionLogger.getLog()).toHaveLength(0);
+        });
+
+        it('step2_started includes selected_overloads in details', async () => {
+            const detected = ['LINE_A', 'LINE_B'];
+            mockRunAnalysisStep1.mockResolvedValue({
+                can_proceed: true, message: '', lines_overloaded: detected,
+            });
+
+            const stream = makeStream(
+                JSON.stringify({ type: 'result', actions: {}, lines_overloaded: detected, message: '', dc_fallback: false }) + '\n',
+            );
+            mockRunAnalysisStep2Stream.mockResolvedValue({ ok: true, body: stream });
+
+            const { result } = renderHook(() => useAnalysis());
+
+            await act(async () => {
+                await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+            });
+
+            const s2Start = interactionLogger.getLog().find(e => e.type === 'analysis_step2_started')!;
+            expect(s2Start.details.selected_overloads).toEqual(detected);
+            expect(s2Start.details.monitor_deselected).toBe(false);
         });
     });
 });
