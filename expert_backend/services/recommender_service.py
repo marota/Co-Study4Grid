@@ -1042,7 +1042,6 @@ class RecommenderService:
 
             # Include flow deltas vs base (N) state
             try:
-                t0 = time.time()
                 # IMPORTANT: Extract N-1 flows while N-1 variant is STILL ACTIVE on 'n'
                 n1_flows = self._get_network_flows(n)
                 n1_assets = self._get_asset_flows(n)
@@ -1426,32 +1425,26 @@ class RecommenderService:
         can determine which terminal corresponds to the SLD voltage level.
         """
         import numpy as np
+        import pandas as pd
 
         lines = network.get_lines()[['p1', 'p2', 'q1', 'q2', 'voltage_level1_id', 'voltage_level2_id']]
         trafos = network.get_2_windings_transformers()[['p1', 'p2', 'q1', 'q2', 'voltage_level1_id', 'voltage_level2_id']]
 
-        p1 = {}
-        p2 = {}
-        q1 = {}
-        q2 = {}
-        vl1 = {}
-        vl2 = {}
-        for lid in lines.index:
-            p1[lid] = lines.loc[lid, 'p1'] if not np.isnan(lines.loc[lid, 'p1']) else 0.0
-            p2[lid] = lines.loc[lid, 'p2'] if not np.isnan(lines.loc[lid, 'p2']) else 0.0
-            q1[lid] = lines.loc[lid, 'q1'] if not np.isnan(lines.loc[lid, 'q1']) else 0.0
-            q2[lid] = lines.loc[lid, 'q2'] if not np.isnan(lines.loc[lid, 'q2']) else 0.0
-            vl1[lid] = lines.loc[lid, 'voltage_level1_id']
-            vl2[lid] = lines.loc[lid, 'voltage_level2_id']
-        for tid in trafos.index:
-            p1[tid] = trafos.loc[tid, 'p1'] if not np.isnan(trafos.loc[tid, 'p1']) else 0.0
-            p2[tid] = trafos.loc[tid, 'p2'] if not np.isnan(trafos.loc[tid, 'p2']) else 0.0
-            q1[tid] = trafos.loc[tid, 'q1'] if not np.isnan(trafos.loc[tid, 'q1']) else 0.0
-            q2[tid] = trafos.loc[tid, 'q2'] if not np.isnan(trafos.loc[tid, 'q2']) else 0.0
-            vl1[tid] = trafos.loc[tid, 'voltage_level1_id']
-            vl2[tid] = trafos.loc[tid, 'voltage_level2_id']
-
-        return {"p1": p1, "p2": p2, "q1": q1, "q2": q2, "vl1": vl1, "vl2": vl2}
+        # Vectorized approach
+        combined = pd.concat([lines, trafos])
+        
+        # Fill NaN with 0.0
+        combined[['p1', 'p2', 'q1', 'q2']] = combined[['p1', 'p2', 'q1', 'q2']].fillna(0.0)
+        
+        # Convert to dicts
+        return {
+            "p1": combined['p1'].to_dict(),
+            "p2": combined['p2'].to_dict(),
+            "q1": combined['q1'].to_dict(),
+            "q2": combined['q2'].to_dict(),
+            "vl1": combined['voltage_level1_id'].to_dict(),
+            "vl2": combined['voltage_level2_id'].to_dict(),
+        }
 
     def _get_asset_flows(self, network):
         """Extract p/q flows for loads and generators from a simulated network."""
@@ -1949,20 +1942,22 @@ class RecommenderService:
             lines_overloaded_ids = [name_to_idx[l] for l in lines_overloaded if l in name_to_idx]
             lines_overloaded_names = [obs_simu_defaut.name_line[i] for i in lines_overloaded_ids]
         else:
-            lines_overloaded_ids = []
-            for i, l in enumerate(obs_simu_defaut.name_line):
-                if l not in lines_we_care_about:
-                    continue
-                if l not in branches_with_limits:
-                    continue
-                if obs_simu_defaut.rho[i] < monitoring_factor:
-                    continue
-                # Exclude pre-existing N overloads unless worsened
-                if obs.rho[i] >= monitoring_factor:
-                    if obs_simu_defaut.rho[i] <= obs.rho[i] * (1 + worsening_threshold):
-                        continue
-                lines_overloaded_ids.append(i)
-            lines_overloaded_names = [obs_simu_defaut.name_line[i] for i in lines_overloaded_ids]
+            # Vectorized overload detection
+            action_names = obs_simu_defaut.name_line
+            action_rho = obs_simu_defaut.rho
+            base_rho = obs.rho
+            
+            mask = np.isin(action_names, list(lines_we_care_about))
+            mask &= np.isin(action_names, list(branches_with_limits))
+            mask &= (action_rho >= monitoring_factor)
+            
+            # Exclude pre-existing N overloads unless worsened
+            pre_existing = base_rho >= monitoring_factor
+            not_worsened = action_rho <= base_rho * (1 + worsening_threshold)
+            mask &= ~(pre_existing & not_worsened)
+            
+            lines_overloaded_ids = np.where(mask)[0].tolist()
+            lines_overloaded_names = action_names[mask].tolist()
 
         # Build the action object
         try:
@@ -1992,6 +1987,7 @@ class RecommenderService:
         n.set_working_variant(original_variant) # Restore variant
 
         # Post-process results
+        _t = time.perf_counter()
         if len(action_ids) == 1:
             aid = action_ids[0]
             if aid in self._dict_action:
@@ -2032,25 +2028,30 @@ class RecommenderService:
             # Build care_mask for max_rho computation.
             # Always include lines_overloaded_ids — these are the lines we're
             # actively monitoring and their post-action loading must be reported.
-            overloaded_set = set(lines_overloaded_ids)
-            care_mask = np.isin(obs_simu_action.name_line, lines_we_care_about)
-            for i in range(len(obs_simu_action.name_line)):
-                if i in overloaded_set:
-                    # Always include overloaded lines in max_rho
-                    care_mask[i] = True
-                    continue
-                l = obs_simu_action.name_line[i]
-                if care_mask[i]:
-                    if l not in branches_with_limits:
-                        care_mask[i] = False
-                    elif obs.rho[i] >= monitoring_factor:
-                        if obs_simu_action.rho[i] <= obs.rho[i] * (1 + worsening_threshold):
-                            care_mask[i] = False
+            # Vectorized care_mask
+            action_names = obs_simu_action.name_line
+            action_rho = obs_simu_action.rho
+            base_rho = obs.rho
+
+            care_mask = np.isin(action_names, list(lines_we_care_about))
+            limits_mask = np.isin(action_names, list(branches_with_limits))
+            care_mask &= limits_mask
+
+            # Exclude pre-existing overloads unless worsened
+            pre_existing = base_rho >= monitoring_factor
+            not_worsened = action_rho <= base_rho * (1 + worsening_threshold)
+            care_mask &= ~(pre_existing & not_worsened)
+
+            # Always include overloaded lines
+            # This is a small list (usually < 10), so a loop is fine here
+            for idx in lines_overloaded_ids:
+                if idx < len(care_mask):
+                    care_mask[idx] = True
             
             if np.any(care_mask):
-                rhos_of_interest = obs_simu_action.rho[care_mask] * monitoring_factor
+                rhos_of_interest = action_rho[care_mask] * monitoring_factor
                 max_rho = float(np.max(rhos_of_interest))
-                valid_line_names = np.array(obs_simu_action.name_line)[care_mask]
+                valid_line_names = action_names[care_mask]
                 max_rho_line = valid_line_names[np.argmax(rhos_of_interest)]
 
         # Capture non-convergence reason

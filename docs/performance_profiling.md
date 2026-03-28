@@ -2,38 +2,38 @@
 
 This document details the performance bottlenecks identified in ExpertAssist when working with large electrical grids (e.g., the French grid with ~10k branches).
 
-## Performance Characterization
+### Scenario Timings (Optimized v1)
 
-Profiling was conducted using `config_large_grid.json` across three primary user scenarios.
+Profiling was conducted using `config_large_grid.json` (French grid, ~10k branches).
 
-### Scenario Timings
+| Scenario | Component | Before | After (v1) | Note |
+|---|---|---|---|---|
+| **1. Initial Load** | `pp.network.load` | ~2.4s | ~2.4s | I/O bound |
+| | Base Diagram | ~7.2s | **3.5s** | Optimized flow extraction |
+| **2. Contingency** | N-1 Analysis | ~19.8s | **17.2s** | Baseline simulation |
+| | Flow Extraction | 0.8s | **0.06s** | **13x speedup** via vectorization |
+| **3. Manual Action** | Simulation Body | 16.5s | **3.6s** | **4.5x speedup** |
+| | `care_mask` loop | 12.17s | **0.01s** | **1,100x speedup** |
 
-| Scenario | Component | Duration | Note |
-|---|---|---|---|
-| **1. Initial Load** | `pp.network.load` | ~2.4s | XIIDM parsing overhead |
-| | Action Dict Load | ~2.3s | Loading/enriching the action space |
-| | Base Diagram | ~2.5s | pypowsybl NAD generation for full grid |
-| **2. Contingency Selection** | N-1 Analysis | ~12.5s | Core contingency load flow |
-| | Flow Delta Calculation | ~3.5s | Python-side loop over 10k branches |
-| | N-1 Diagram | ~2.5s | pypowsybl NAD generation |
-| **3. Manual Action** | Action Simulation | ~15.9s | Re-simulating N-1 then applying action |
-| | Action Diagram | ~2.4s | pypowsybl NAD generation |
+## Identified Bottlenecks & Fixes
 
-## Identified Bottlenecks
+### 1. Python-Side Overhead: Array Copying (FIXED)
+The most significant bottleneck was a 12s overhead in the `care_mask` loop during manual action simulation.
+- **Root Cause**: Accessing `obs.rho` inside a 10k-iteration Python loop triggered a full `.copy()` of the 10k-element NumPy array on every element access. Similarly, `obs.name_line` recreated a new NumPy array from strings every call.
+- **Fix**: Cache these arrays as local variables before entering loops and use NumPy vectorized masking/indexing. This achieved a **1,100x speedup** for this specific component.
 
-### 1. Large SVG Payload (~13 MB)
-The pypowsybl Network Area Diagram (NAD) for the full French grid produces an SVG string of approximately 13 MB. 
-- **Impact**: High latency during transmission and significant DOM thrashing in the frontend during rendering and pan/zoom.
-- **Current Mitigation**: `boostSvgForLargeGrid` attempts to scale elements but doesn't reduce total element count.
+### 2. Row-by-Row Flow Extraction (FIXED)
+Extracting P/Q flows from pypowsybl DataFrames using `.loc` in a loop took ~0.8s per diagram.
+- **Fix**: Replaced loops with pandas vectorized `.to_dict()` and `pd.concat`. Reduced extraction time to **0.06s**.
 
-### 2. Python-Side Flow Deltas
-The `_compute_deltas` method in `recommender_service.py` iterates over every branch in Python.
-- **Impact**: Takes 2.0s to 3.5s per diagram update.
-- **Optimization Potential**: Vectorizing this logic using NumPy would reduce this to <0.1s.
+### 3. Large SVG Payload (~13 MB)
+The pypowsybl Network Area Diagram (NAD) for the full grid produces an SVG string of ~13.2 MB.
+- **Impact**: High transmission latency and DOM thrashing in the frontend.
+- **Status**: Still present. Requires server-side SVG pruning or tiling.
 
-### 3. Simulation Latency
-- **N-1 Contingency Analysis**: 12.5s is the baseline for a full grid simulation.
-- **Manual Action Simulation**: 16s is unexpectedly high for a single action, suggesting inefficiencies in how the action is applied or how the environment state is managed.
+### 4. Simulation Environment Rebuild
+Building the simulation environment takes ~1.7s per request.
+- **Potential Optimization**: Reusing the `SimulationEnvironment` instance and caching converged observations (N and N-1) across requests.
 
 ## Profiling Tools
 
