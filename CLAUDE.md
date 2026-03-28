@@ -1,15 +1,15 @@
-# CLAUDE.md - ExpertAssist
+# CLAUDE.md - Co-Study4Grid
 
 ## Project Overview
 
-ExpertAssist is a full-stack web application for **power grid contingency analysis and N-1 planning**. It provides an interface to the `expert_op4grid_recommender` library, allowing operators to simulate element disconnections, visualize network overflow graphs, and receive prioritized remedial action recommendations.
+Co-Study4Grid is a full-stack web application for **power grid contingency analysis and N-1 planning**. It provides an interface to the `expert_op4grid_recommender` library, allowing operators to simulate element disconnections, visualize network overflow graphs, and receive prioritized remedial action recommendations.
 
 ## Architecture
 
 **Monorepo** with two main components:
 
 ```
-ExpertAssist/
+Co-Study4Grid/
 ├── .gitignore               # Excludes __pycache__/, *.pyc, *.pyo
 ├── CLAUDE.md                # Project documentation for AI assistants
 ├── expert_backend/          # Python FastAPI backend
@@ -190,7 +190,7 @@ npm run test         # Run Vitest test suite
 ### Session Save/Load
 - **Save**: `buildSessionResult()` in `sessionUtils.ts` serializes all state (config, contingency, actions with status tags, combined pairs) -> `POST /api/save-session` writes to disk
 - **Load**: `POST /api/load-session` reads `session.json` -> frontend restores all state without re-simulating actions
-- **Output folder**: `<output_folder>/expertassist_session_<contingency>_<timestamp>/` contains `session.json` + overflow PDF
+- **Output folder**: `<output_folder>/costudy4grid_session_<contingency>_<timestamp>/` contains `session.json` + overflow PDF
 - **Interaction logging**: Every user interaction is logged as a timestamped, replay-ready event via `interactionLogger`. Saved as `interaction_log.json` alongside `session.json`.
 - See `docs/save-results.md` for session save/load and `docs/interaction-logging.md` for the replay contract
 

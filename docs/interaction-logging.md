@@ -2,7 +2,7 @@
 
 ## Overview
 
-ExpertAssist logs every user interaction during a session as a timestamped, **replay-ready** event log. The log contains enough data for an automated agent (e.g. browser automation) to deterministically reproduce the exact same session — same clicks, same selections, same analysis runs — without human input.
+Co-Study4Grid logs every user interaction during a session as a timestamped, **replay-ready** event log. The log contains enough data for an automated agent (e.g. browser automation) to deterministically reproduce the exact same session — same clicks, same selections, same analysis runs — without human input.
 
 The log is saved as a dedicated `interaction_log.json` file alongside `session.json` when saving results.
 
@@ -229,7 +229,7 @@ After saving, the session folder contains:
 
 ```
 <output_folder>/
-  expertassist_session_LINE_XYZ_2026-03-18T10-30-00/
+  costudy4grid_session_LINE_XYZ_2026-03-18T10-30-00/
     session.json            ← full state snapshot
     interaction_log.json    ← replay-ready event log
     overflow_abc123.pdf     ← overflow graph copy
@@ -363,7 +363,7 @@ After saving, the session folder contains:
     "type": "session_saved",
     "correlation_id": "e1f2a3b4",
     "details": {
-      "session_name": "expertassist_session_LINE_XYZ_2026-03-18T10-25-00",
+      "session_name": "costudy4grid_session_LINE_XYZ_2026-03-18T10-25-00",
       "output_folder": "/data/output"
     }
   }

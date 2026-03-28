@@ -617,7 +617,7 @@ function App() {
                       value={configFilePath}
                       onChange={e => setConfigFilePath(e.target.value)}
                       onBlur={e => changeConfigFilePath(e.target.value).catch(() => { })}
-                      placeholder="e.g. /home/user/my_expertassist_config.json"
+                      placeholder="e.g. /home/user/my_costudy4grid_config.json"
                       style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
                     />
                     <button

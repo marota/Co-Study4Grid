@@ -1924,7 +1924,7 @@
             const handleSaveSession = async () => {
                 const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
                 const contingencyLabel = selectedBranch ? `_${selectedBranch.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
-                const sessionName = `expertassist_session${contingencyLabel}_${ts}`;
+                const sessionName = `costudy4grid_session${contingencyLabel}_${ts}`;
 
                 // Build the session JSON (same structure as the React app)
                 const session = {
@@ -4806,7 +4806,7 @@
                                                         value={configFilePath}
                                                         onChange={e => setConfigFilePath(e.target.value)}
                                                         onBlur={e => changeConfigFilePath(e.target.value)}
-                                                        placeholder="e.g. /home/user/my_expertassist_config.json"
+                                                        placeholder="e.g. /home/user/my_costudy4grid_config.json"
                                                         style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
                                                     />
                                                     <button onClick={() => pickPath('file', (p) => changeConfigFilePath(p))} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📄</button>

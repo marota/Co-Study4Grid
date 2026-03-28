@@ -124,7 +124,7 @@ export function useSession(): SessionState {
 
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const contingencyLabel = params.selectedBranch ? `_${params.selectedBranch.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
-    const sessionName = `expertassist_session${contingencyLabel}_${ts}`;
+    const sessionName = `costudy4grid_session${contingencyLabel}_${ts}`;
 
     if (params.outputFolderPath) {
       try {

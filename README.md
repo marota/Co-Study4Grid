@@ -1,6 +1,6 @@
-# ExpertAssist
+# Co-Study4Grid
 
-A full-stack web application for **power grid contingency analysis and N-1 planning**. ExpertAssist provides an interface to the [`expert_op4grid_recommender`](https://github.com/rte-france/expert_op4grid_recommender) library, allowing grid operators to:
+A full-stack web application for **power grid contingency analysis and N-1 planning**. Co-Study4Grid provides an interface to the [`expert_op4grid_recommender`](https://github.com/rte-france/expert_op4grid_recommender) library, allowing grid operators to:
 
 - Simulate element disconnections (N-1 contingency analysis)
 - Visualize network overflow graphs and network-area diagrams
@@ -8,10 +8,10 @@ A full-stack web application for **power grid contingency analysis and N-1 plann
 
 ## Architecture
 
-ExpertAssist is a monorepo with a **Python FastAPI backend** and a **React + TypeScript frontend**.
+Co-Study4Grid is a monorepo with a **Python FastAPI backend** and a **React + TypeScript frontend**.
 
 ```
-ExpertAssist/
+Co-Study4Grid/
 ├── expert_backend/           # FastAPI backend (Python)
 │   ├── main.py               # API endpoints and app configuration
 │   └── services/

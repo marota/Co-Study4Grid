@@ -13,7 +13,7 @@ Co-Study4Grid supports **saving** and **reloading** full analysis sessions:
 - **`interaction_log.json`** — timestamped log of every user interaction, suitable for automated session replay (see [docs/interaction-logging.md](interaction-logging.md))
 - **`<overflow>.pdf`** — a copy of the overflow graph PDF (when an analysis has been run)
 
-All files are written to a **session folder** named `expertassist_session_<contingency>_<timestamp>/` inside the configured **Output Folder Path**.
+All files are written to a **session folder** named `costudy4grid_session_<contingency>_<timestamp>/` inside the configured **Output Folder Path**.
 
 ---
 
@@ -52,7 +52,7 @@ Settings → gear icon → Paths tab → Output Folder Path
 
 ```
 <output_folder_path>/
-  expertassist_session_LINE_XYZ_2026-03-11T14-23-05/
+  costudy4grid_session_LINE_XYZ_2026-03-11T14-23-05/
     session.json
     interaction_log.json   <- replay-ready event log
     overflow_abc123.pdf    <- copy of the overflow graph

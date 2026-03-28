@@ -2,7 +2,7 @@
 
 ## Overview
 
-ExpertAssist manages complex analysis state across contingency selections, N-1 simulations, manual action simulations, and prioritized action results. To prevent stale data from interfering with new analyses, the application implements two complementary mechanisms:
+Co-Study4Grid manages complex analysis state across contingency selections, N-1 simulations, manual action simulations, and prioritized action results. To prevent stale data from interfering with new analyses, the application implements two complementary mechanisms:
 
 1. **Confirmation dialogs** when switching contingency or reloading a study with existing analysis state
 2. **Full state reset** when loading a new study or applying new settings

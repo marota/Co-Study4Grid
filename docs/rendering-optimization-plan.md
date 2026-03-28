@@ -2,7 +2,7 @@
 
 ## Overview
 
-ExpertAssist renders pypowsybl Network Area Diagrams (NAD) for power grids with 11,000+ lines and 500+ voltage levels. At this scale, naive rendering causes multi-second tab switches, invisible line colors at zoom-out, and zoom lag/crashes. This document traces the critical rendering features, their rationale, and regression risks.
+Co-Study4Grid renders pypowsybl Network Area Diagrams (NAD) for power grids with 11,000+ lines and 500+ voltage levels. At this scale, naive rendering causes multi-second tab switches, invisible line colors at zoom-out, and zoom lag/crashes. This document traces the critical rendering features, their rationale, and regression risks.
 
 ## Critical CSS Properties
 

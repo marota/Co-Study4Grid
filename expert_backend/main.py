@@ -365,7 +365,7 @@ def list_sessions(folder_path: str = Query(...)):
     try:
         for entry in os.listdir(folder_path):
             entry_path = os.path.join(folder_path, entry)
-            if os.path.isdir(entry_path) and entry.startswith("expertassist_session"):
+            if os.path.isdir(entry_path) and (entry.startswith("costudy4grid_session") or entry.startswith("expertassist_session")):
                 json_path = os.path.join(entry_path, "session.json")
                 if os.path.isfile(json_path):
                     sessions.append(entry)

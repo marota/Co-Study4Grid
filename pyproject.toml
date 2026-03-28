@@ -3,12 +3,12 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "expert_assist"
+name = "co_study4grid"
 version = "0.1.0"
 authors = [
     { name="RTE", email="rte@rte-france.com" },
 ]
-description = "Expert Assist interface for power grid analysis."
+description = "Co-Study4Grid — power grid contingency analysis interface"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MPL-2.0"

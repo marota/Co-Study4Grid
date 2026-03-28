@@ -10,7 +10,7 @@ def test_non_reconnectable_detection_with_date():
     Verify that non-reconnectable lines are detected correctly even when an analysis_date is provided.
     This was previously a bug where the detection was bypassed if analysis_date was not None.
     """
-    # 1. Setup paths relative to ExpertAssist root
+    # 1. Setup paths relative to Co-Study4Grid root
     project_root = Path(__file__).parent.parent.parent
     test_env_path = project_root / "data" / "bare_env_small_grid_test"
     

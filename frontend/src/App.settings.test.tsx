@@ -211,7 +211,7 @@ describe('Save Results button', () => {
     expect(createObjectURL).toHaveBeenCalledOnce();
     expect(anchorClicks).toHaveLength(1);
     const anchor = anchorClicks[0];
-    expect(anchor.download).toMatch(/^expertassist_session_BRANCH_A_/);
+    expect(anchor.download).toMatch(/^costudy4grid_session_BRANCH_A_/);
     expect(anchor.download).toMatch(/\.json$/);
   });
 
