@@ -98,10 +98,10 @@ export function useSettings(): SettingsState {
   const [configFilePath, setConfigFilePath] = useState('');
   const lastConfigFilePathRef = useRef('');
 
-  const [networkPath, setNetworkPath] = useState('');
-  const [actionPath, setActionPath] = useState('');
-  const [layoutPath, setLayoutPath] = useState('');
-  const [outputFolderPath, setOutputFolderPath] = useState('');
+  const [networkPath, setNetworkPath] = useState(localStorage.getItem('networkPath') || '');
+  const [actionPath, setActionPath] = useState(localStorage.getItem('actionPath') || '');
+  const [layoutPath, setLayoutPath] = useState(localStorage.getItem('layoutPath') || '');
+  const [outputFolderPath, setOutputFolderPath] = useState(localStorage.getItem('outputFolderPath') || '');
 
   const [minLineReconnections, setMinLineReconnections] = useState(2.0);
   const [minCloseCoupling, setMinCloseCoupling] = useState(3.0);
@@ -197,6 +197,13 @@ export function useSettings(): SettingsState {
       ignore_reconnections: ignoreReconnections,
       pypowsybl_fast_mode: pypowsyblFastMode,
     };
+
+    // Sync to localStorage for instant UI availability on next reload/test
+    localStorage.setItem('networkPath', networkPath);
+    localStorage.setItem('actionPath', actionPath);
+    localStorage.setItem('layoutPath', layoutPath);
+    localStorage.setItem('outputFolderPath', outputFolderPath);
+
     api.saveUserConfig(configToSave).catch(() => {
       console.warn('Failed to persist user config to backend');
     });

@@ -520,7 +520,6 @@ def get_element_voltage_levels(element_id: str = Query(...)):
         return {"voltage_level_ids": vls}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
 @app.post("/api/focused-diagram")
 def get_focused_diagram(request: FocusedDiagramRequest):
     """Generate a NAD focused on a specific element's voltage levels.

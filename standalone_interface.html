@@ -296,6 +296,7 @@
         .sld-highlight-clone.sld-highlight-contingency {
             filter: drop-shadow(0 0 4px #ff9800) drop-shadow(0 0 8px #ff9800);
         }
+
         .sld-highlight-clone.sld-highlight-contingency path,
         .sld-highlight-clone.sld-highlight-contingency line,
         .sld-highlight-clone.sld-highlight-contingency polyline,
@@ -311,6 +312,7 @@
         .sld-highlight-clone.sld-highlight-action {
             filter: drop-shadow(0 0 4px #fffb00) drop-shadow(0 0 8px #fffb00);
         }
+
         .sld-highlight-clone.sld-highlight-action path,
         .sld-highlight-clone.sld-highlight-action line,
         .sld-highlight-clone.sld-highlight-action polyline,
@@ -337,6 +339,7 @@
         .sld-highlight-clone.sld-highlight-breaker {
             filter: drop-shadow(0 0 3px #e040fb) drop-shadow(0 0 6px #e040fb);
         }
+
         .sld-highlight-clone.sld-highlight-breaker path,
         .sld-highlight-clone.sld-highlight-breaker line,
         .sld-highlight-clone.sld-highlight-breaker rect,
@@ -2754,12 +2757,12 @@
                 const reactiveDeltas = vlOverlay.reactive_flow_deltas;
                 const assetDeltas = vlOverlay.asset_deltas;
 
-                if (!flowDeltas && !assetDeltas) return;
+                if (!flowDeltas) return;
 
-                // Build equipmentId → [svgId, ...] multimap from SLD metadata.
+                // Build equipmentId -> [svgId, ...] mapping from SLD metadata.
                 // pypowsybl SLD metadata uses 'nodes' (for lines, transformers, breakers,
-                // bus-bar sections) and 'feederInfos' (for ARROW_ACTIVE/ARROW_REACTIVE).
-                // Older versions may use 'feederNodes' instead.
+                // bus-bar sections) and 'activeArrows' (for ARROW_ACTIVE/ARROW_REACTIVE).
+                // Older variants might use 'feederNodes' instead.
                 const equipIdToSvgIds = new Map();
                 if (vlOverlay.sldMetadata) {
                     try {
@@ -3166,7 +3169,7 @@
                         }
                     }
 
-                    // Fallback: parse description for breaker/switch names
+                    // Fallback: parse description for breaker /switch names
                     const breakerClass = isCoupling ? 'sld-highlight-action' : 'sld-highlight-breaker';
                     const desc = actionDetail.description_unitaire;
                     if (desc && highlightedCells.size === 0) {
@@ -3205,7 +3208,7 @@
                 }
 
             }, [vlOverlay?.svg, vlOverlay?.sldMetadata, vlOverlay?.tab, vlOverlay?.actionId,
-                vlOverlay?.changed_switches, selectedBranch, result]);
+            vlOverlay?.changed_switches, selectedBranch, result]);
 
             // Mouse pan inside overlay body
             const startOverlayPan = (e) => {
@@ -4248,7 +4251,7 @@
                                     <div className="svg-container" ref={actionSvgContainerRef} dangerouslySetInnerHTML={{ __html: actionDiagram.svg }} />
                                     : (selectedActionId ?
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Failed to load diagram for action {selectedActionId}</div>
-                                        : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Select an action card to view its network variant</div>
+                                        : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Select an action to view its variant diagram</div>
                                     )
                                 )
                             }
