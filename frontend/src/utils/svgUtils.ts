@@ -83,10 +83,15 @@ export const boostSvgForLargeGrid = (svgString: string, viewBox: ViewBox | null,
             if (g.children.length > 5 && g.querySelector('foreignObject')) continue;
             
             scaledGroups.add(g);
-            const cx = circle.getAttribute('cx') || '0';
-            const cy = circle.getAttribute('cy') || '0';
-            const t = g.getAttribute('transform') || '';
-            g.setAttribute('transform', `${t} translate(${cx},${cy}) scale(${boostStr}) translate(${-parseFloat(cx)},${-parseFloat(cy)})`);
+            const cx = circle.getAttribute('cx');
+            const cy = circle.getAttribute('cy');
+            const cxNum = parseFloat(cx || '0');
+            const cyNum = parseFloat(cy || '0');
+            
+            if (!isNaN(cxNum) && !isNaN(cyNum)) {
+                const t = g.getAttribute('transform') || '';
+                g.setAttribute('transform', `${t} translate(${cxNum},${cyNum}) scale(${boostStr}) translate(${-cxNum},${-cyNum})`);
+            }
             
             // Performance guard: stop if taking too long (e.g. 2s for boosting stage)
             if (i % 100 === 0 && Date.now() - start > 2000) {
