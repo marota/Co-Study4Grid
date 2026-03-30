@@ -554,7 +554,8 @@ class RecommenderService:
                 current_timestep=config.TIMESTEP,
                 current_lines_defaut=[disconnected_element],
                 backend=Backend.PYPOWSYBL,
-                fast_mode=getattr(config, 'PYPOWSYBL_FAST_MODE', True)
+                fast_mode=getattr(config, 'PYPOWSYBL_FAST_MODE', True),
+                dict_action=self._dict_action,
             )
             
             self._last_disconnected_element = disconnected_element
