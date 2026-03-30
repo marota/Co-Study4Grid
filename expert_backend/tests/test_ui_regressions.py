@@ -12,20 +12,22 @@ class TestUIRegressions(unittest.TestCase):
     
     def test_critical_ui_strings(self):
         """Verify that standalone_interface.html contains fixed regressions."""
-        ui_file = "/Users/antoine/Dev/Co-Study4Grid/standalone_interface.html"
-        self.assertTrue(os.path.exists(ui_file))
+        # Use relative path from this test file
+        test_dir = os.path.dirname(os.path.abspath(__file__))
+        ui_file = os.path.abspath(os.path.join(test_dir, "../../standalone_interface.html"))
+        self.assertTrue(os.path.exists(ui_file), f"File not found: {ui_file}")
         
         with open(ui_file, 'r') as f:
             content = f.read()
             
         # 1. Flow deltas check
-        self.assertIn('!flowDeltas && !assetDeltas', content, "Regression: check for assetDeltas missing")
+        self.assertIn('!flowDeltas && !assetDeltas', content, "Regression: check for assetDeltas missing in standalone_interface.html")
         
         # 2. Action highlight class
-        self.assertIn('sld-highlight-action', content, "Regression: highlight class for actions missing")
+        self.assertIn('sld-highlight-action', content, "Regression: highlight class 'sld-highlight-action' missing in standalone_interface.html")
         
         # 3. Placeholder text
-        self.assertIn('Select an action card to view its network variant', content, "Regression: placeholder text incorrect")
+        self.assertIn('Select an action card to view its network variant', content, "Regression: placeholder text 'Select an action card to view its network variant' missing in standalone_interface.html")
 
 if __name__ == '__main__':
     unittest.main()
