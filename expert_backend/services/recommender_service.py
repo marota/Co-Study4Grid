@@ -947,22 +947,72 @@ class RecommenderService:
 
         return lines_we_care_about, branches_with_limits
 
-    def _generate_diagram(self, network):
+    def _load_layout(self):
+        """Load layout DataFrame from grid_layout.json if available."""
+        import pandas as pd
+        import json
+
+        layout_file = getattr(config, 'LAYOUT_FILE_PATH', None)
+        if layout_file and layout_file.exists():
+            try:
+                with open(layout_file, 'r') as f:
+                    layout_data = json.load(f)
+                records = [{'id': k, 'x': v[0], 'y': v[1]} for k, v in layout_data.items()]
+                return pd.DataFrame(records).set_index('id')
+            except Exception as e:
+                print(f"Warning: Could not load layout: {e}")
+        return None
+
+    def _default_nad_parameters(self):
+        """Return default NadParameters for diagram generation."""
+        from pypowsybl.network import NadParameters
+        return NadParameters(
+            edge_name_displayed=False,
+            id_displayed=False,
+            edge_info_along_edge=True,
+            power_value_precision=1,
+            angle_value_precision=0,
+            current_value_precision=1,
+            voltage_value_precision=0,
+            bus_legend=True,
+            substation_description_displayed=True
+        )
+
+    def _generate_diagram(self, network, voltage_level_ids=None, depth=0):
         """Generate NAD and return svg + metadata dict."""
         from pypowsybl_jupyter.util import _get_svg_string, _get_svg_metadata
+        import time
+
+        print(f"[RECO] Generating diagram (VLs={voltage_level_ids}, depth={depth})...")
+        t0 = time.time()
         
-        diagram = network.get_network_area_diagram()
+        df_layout = self._load_layout()
+        npars = self._default_nad_parameters()
+
+        kwargs = dict(nad_parameters=npars)
+        if df_layout is not None:
+            kwargs['fixed_positions'] = df_layout
+        if voltage_level_ids is not None:
+            kwargs['voltage_level_ids'] = voltage_level_ids
+            kwargs['depth'] = depth
+
+        diagram = network.get_network_area_diagram(**kwargs)
+        t1 = time.time()
         
         svg = _get_svg_string(diagram)
+        t2 = time.time()
         
         meta = _get_svg_metadata(diagram)
+        t3 = time.time()
         
+        print(f"[RECO] Diagram generated: NAD {t1-t0:.2f}s, SVG {t2-t1:.2f}s, Meta {t3-t2:.2f}s (SVG length={len(svg)})")
+
         return {
             "svg": svg,
             "metadata": meta,
         }
 
-    def get_network_diagram(self):
+    def get_network_diagram(self, voltage_level_ids=None, depth=0):
         import pypowsybl as pp
         n = self._get_base_network()
         original_variant = n.get_working_variant_id()
@@ -970,7 +1020,7 @@ class RecommenderService:
         n.set_working_variant(n_variant_id)
 
         try:
-            diagram = self._generate_diagram(n)
+            diagram = self._generate_diagram(n, voltage_level_ids=voltage_level_ids, depth=depth)
             diagram["lines_overloaded"] = self._get_overloaded_lines(n, lines_we_care_about=self._get_lines_we_care_about())
             # Cache N-state element currents for N-1 comparison
             self._n_state_currents = self._get_element_max_currents(n)
@@ -978,7 +1028,7 @@ class RecommenderService:
         finally:
             n.set_working_variant(original_variant) # Restore original variant
 
-    def get_n1_diagram(self, disconnected_element: str):
+    def get_n1_diagram(self, disconnected_element: str, voltage_level_ids=None, depth=0):
         import pypowsybl as pp
         import time
 
@@ -991,14 +1041,19 @@ class RecommenderService:
         n.set_working_variant(n1_variant_id)
 
         try:
+            # Check convergence — partial AC results are still better than DC
             # (DC only computes angles/power, not voltage magnitudes).
             # We need to re-run AC to get the results object for status
+            t0 = time.time()
             params = create_olf_rte_parameter()
             results = self._run_ac_with_fallback(n, params)
             converged = any(r.status.name == 'CONVERGED' for r in results)
             lf_status = results[0].status.name if results else "UNKNOWN"
+            if not converged:
+                print(f"Warning: AC load flow did not converge for N-1 ({disconnected_element}): {lf_status}")
+            print(f"[RECO] N-1 LF check {disconnected_element}: {time.time()-t0:.2f}s")
 
-            diagram = self._generate_diagram(n)
+            diagram = self._generate_diagram(n, voltage_level_ids=voltage_level_ids, depth=depth)
             diagram["lf_converged"] = converged
             diagram["lf_status"] = lf_status
 

@@ -2766,7 +2766,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 const reactiveDeltas = vlOverlay.reactive_flow_deltas;
                 const assetDeltas = vlOverlay.asset_deltas;
 
-                if (!flowDeltas) return;
+                if (!flowDeltas && !assetDeltas) return;
 
                 // Build equipmentId -> [svgId, ...] mapping from SLD metadata.
                 // pypowsybl SLD metadata uses 'nodes' (for lines, transformers, breakers,
@@ -4260,7 +4260,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     <div className="svg-container" ref={actionSvgContainerRef} dangerouslySetInnerHTML={{ __html: actionDiagram.svg }} />
                                     : (selectedActionId ?
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Failed to load diagram for action {selectedActionId}</div>
-                                        : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Select an action to view its variant diagram</div>
+                                        : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Select an action card to view its network variant</div>
                                     )
                                 )
                             }
