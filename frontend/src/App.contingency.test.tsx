@@ -19,13 +19,14 @@ vi.mock('./components/VisualizationPanel', () => {
   interface MockProps {
     nDiagram: Record<string, unknown> | null;
     n1Diagram: Record<string, unknown> | null;
+    activeTab: string;
     configLoading: boolean;
     layoutPath: string;
     networkPath: string;
     onOpenSettings: (tab: string) => void;
   }
   const MockVisualizationPanel = (props: MockProps) => {
-    const { nDiagram, n1Diagram, configLoading, layoutPath, networkPath, onOpenSettings } = props;
+    const { nDiagram, n1Diagram, activeTab, configLoading, layoutPath, networkPath, onOpenSettings } = props;
     const [warningDismissed, setWarningDismissed] = React.useState(false);
     const hasAnyDiagram = !!nDiagram?.svg || !!n1Diagram?.svg;
     const showPathWarning = !warningDismissed && !hasAnyDiagram;
@@ -34,6 +35,7 @@ vi.mock('./components/VisualizationPanel', () => {
       <div
         data-testid="visualization-panel"
         data-n1-diagram-present={!!n1Diagram}
+        data-active-tab={activeTab}
       >
         {!hasAnyDiagram && !configLoading && showPathWarning && (
           <div>
@@ -411,5 +413,60 @@ describe('Overload Clearing Logic', () => {
     const actionFeedRoot = sidebarActionsHeader.parentElement?.parentElement;
     expect(actionFeedRoot).toBeInTheDocument();
     expect(actionFeedRoot).not.toHaveStyle({ overflowY: 'auto' });
+  });
+
+  it('switches to overflow tab as soon as PDF event is received (regression test)', async () => {
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+
+    // Mock a streaming response that yields a PDF event first, then delays the result
+    let resolveStream: (value: void) => void;
+    const streamDelay = new Promise<void>(resolve => { resolveStream = resolve; });
+
+    const mockStream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+        // 1. Send PDF event
+        controller.enqueue(encoder.encode(
+          JSON.stringify({ type: 'pdf', pdf_url: '/results/pdf/graph.pdf', pdf_path: '/tmp/graph.pdf' }) + '\n'
+        ));
+        
+        // Wait for a bit to simulate processing delay before the final result
+        await streamDelay;
+
+        // 2. Send Result event
+        controller.enqueue(encoder.encode(
+          JSON.stringify({ type: 'result', actions: {}, lines_overloaded: ['LINE_OL1'], message: 'done', dc_fallback: false }) + '\n'
+        ));
+        controller.close();
+      },
+    });
+
+    mockApi.runAnalysisStep2Stream.mockResolvedValue({
+      ok: true,
+      body: mockStream,
+    });
+
+    // Start analysis
+    const runBtn = screen.getByText('🚀 Run Analysis');
+    await act(async () => {
+      await userEvent.click(runBtn);
+    });
+
+    // VERIFY: Tab should have switched to 'overflow' immediately after PDF event, 
+    // even though the stream is still pending (resolveStream not called yet).
+    await waitFor(() => {
+      expect(screen.getByTestId('visualization-panel')).toHaveAttribute('data-active-tab', 'overflow');
+    }, { timeout: 3000 });
+
+    // Now complete the stream
+    await act(async () => {
+      resolveStream();
+    });
+
+    // Final result should now be processed
+    await waitFor(() => {
+      expect(screen.queryByText(/Display.*prioritized actions/)).toBeInTheDocument();
+    });
   });
 });

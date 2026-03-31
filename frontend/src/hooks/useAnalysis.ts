@@ -6,7 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import { useState, useEffect, useCallback, useMemo, useRef, type Dispatch, type SetStateAction, type MutableRefObject } from 'react';
-import type { ActionDetail, AnalysisResult } from '../types';
+import type { ActionDetail, AnalysisResult, TabId } from '../types';
 import { interactionLogger } from '../utils/interactionLogger';
 
 export interface AnalysisState {
@@ -34,6 +34,7 @@ export interface AnalysisState {
     selectedBranch: string,
     clearContingencyState: () => void,
     setSuggestedByRecommenderIds: Dispatch<SetStateAction<Set<string>>>,
+    setActiveTab?: (tab: TabId) => void
   ) => Promise<void>;
   handleDisplayPrioritizedActions: (selectedActionIds: Set<string>) => void;
   handleToggleOverload: (overload: string) => void;
@@ -64,6 +65,7 @@ export function useAnalysis(): AnalysisState {
     selectedBranch: string,
     clearContingencyState: () => void,
     setSuggestedByRecommenderIds: (fn: (prev: Set<string>) => Set<string>) => void,
+    setActiveTab?: (tab: TabId) => void
   ) => {
     if (!selectedBranch) return;
     clearContingencyState();
@@ -148,6 +150,9 @@ export function useAnalysis(): AnalysisState {
                 pdf_url: event.pdf_url,
                 pdf_path: event.pdf_path
               } as AnalysisResult));
+              if (setActiveTab) {
+                setActiveTab('overflow');
+              }
             } else if (event.type === 'result') {
               const actionsWithFlags = { ...event.actions };
               for (const id in actionsWithFlags) {

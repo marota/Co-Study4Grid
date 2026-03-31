@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
-import React, { useState, useEffect, useRef, type RefObject } from 'react';
+import React, { useState, useEffect, useRef, useMemo, type RefObject } from 'react';
 import type { DiagramData, AnalysisResult, ActionDetail, TabId, VlOverlay, SldTab, SldFeederNode } from '../types';
 import { isCouplingAction } from '../utils/svgUtils';
 
@@ -796,6 +796,12 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
         (activeTab === 'action' && !!actionDiagram?.svg)
     );
 
+    const filteredInspectables = useMemo(() => {
+        const q = inspectQuery.toUpperCase();
+        if (!q) return inspectableItems.slice(0, 50);
+        return inspectableItems.filter(b => b.toUpperCase().includes(q)).slice(0, 50);
+    }, [inspectableItems, inspectQuery]);
+
     return (
         <>
             {/* Tab bar */}
@@ -1206,7 +1212,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                     }}
                                 />
                                 <datalist id="inspectables">
-                                    {inspectableItems.map(b => <option key={b} value={b} />)}
+                                    {filteredInspectables.map(b => <option key={b} value={b} />)}
                                 </datalist>
                                 {inspectQuery && voltageLevels.includes(inspectQuery) && (
                                     <button

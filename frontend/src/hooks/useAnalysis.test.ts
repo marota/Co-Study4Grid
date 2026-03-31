@@ -199,6 +199,38 @@ describe('useAnalysis', () => {
         expect(setSuggested).toHaveBeenCalled();
     });
 
+    it("triggers setActiveTab('overflow') immediately when pdf event is received", async () => {
+        const detected = ['LINE_A'];
+        mockRunAnalysisStep1.mockResolvedValue({
+            can_proceed: true, message: '', lines_overloaded: detected,
+        });
+
+        const pdfEvent = JSON.stringify({ type: 'pdf', pdf_url: '/results/pdf/graph.pdf', pdf_path: '/tmp/graph.pdf' });
+        const resultEvent = JSON.stringify({
+            type: 'result',
+            actions: {},
+            lines_overloaded: detected,
+            message: 'Analysis done',
+            dc_fallback: false,
+        });
+
+        const stream = makeStream(`${pdfEvent}\n${resultEvent}\n`);
+        mockRunAnalysisStep2Stream.mockResolvedValue({ ok: true, body: stream });
+
+        const { result } = renderHook(() => useAnalysis());
+        const setSuggested = vi.fn();
+        const setActiveTab = vi.fn();
+
+        await act(async () => {
+            await result.current.handleRunAnalysis('LINE_X', vi.fn(), setSuggested, setActiveTab);
+        });
+
+        // Verify setActiveTab was called with 'overflow'
+        expect(setActiveTab).toHaveBeenCalledWith('overflow');
+        // Ensure it was called before or same time as result update
+        expect(result.current.result?.pdf_url).toBe('/results/pdf/graph.pdf');
+    });
+
     it('sets error on stream error event', async () => {
         const detected = ['LINE_A'];
         mockRunAnalysisStep1.mockResolvedValue({

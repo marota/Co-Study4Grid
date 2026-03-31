@@ -70,28 +70,39 @@ export const boostSvgForLargeGrid = (svgString: string, viewBox: ViewBox | null,
         });
 
         // === 2. Scale node groups (circles + inner bus sectors/paths) ===
-        // OPTIMIZATION: Use a single pass and check parent type once.
         const circles = svgEl.querySelectorAll('circle');
         const scaledGroups = new Set<Element>();
-        
+
         for (let i = 0; i < circles.length; i++) {
             const circle = circles[i];
-            const g = circle.parentElement;
-            if (!g || g.tagName !== 'g' || scaledGroups.has(g)) continue;
-            
-            // Skip scaling for groups that are already scaled or are action targets
-            if (g.children.length > 5 && g.querySelector('foreignObject')) continue;
-            
-            scaledGroups.add(g);
-            const cx = circle.getAttribute('cx') || '0';
-            const cy = circle.getAttribute('cy') || '0';
-            const t = g.getAttribute('transform') || '';
-            g.setAttribute('transform', `${t} translate(${cx},${cy}) scale(${boostStr}) translate(${-parseFloat(cx)},${-parseFloat(cy)})`);
-            
-            // Performance guard: stop if taking too long (e.g. 2s for boosting stage)
-            if (i % 100 === 0 && Date.now() - start > 2000) {
-                console.warn('[SVG] Boosting taking too long, aborting optimization pass.');
-                return svgString;
+            let targetEl: Element = circle.parentElement as Element;
+
+            // If flattened, target might not be a 'g' or might be a large container
+            if (!targetEl || targetEl.tagName !== 'g' || (targetEl.children.length > 5 && targetEl.querySelector('foreignObject'))) {
+                targetEl = circle;
+            }
+
+            if (scaledGroups.has(targetEl)) continue;
+
+            const t = targetEl.getAttribute('transform') || '';
+            if (t.includes('NaN')) continue;
+
+            scaledGroups.add(targetEl);
+            const cx = circle.getAttribute('cx');
+            const cy = circle.getAttribute('cy');
+
+            if (cx === 'NaN' || cy === 'NaN') continue;
+
+            const cxNum = parseFloat(cx || '0');
+            const cyNum = parseFloat(cy || '0');
+
+            if (!isNaN(cxNum) && !isNaN(cyNum)) {
+                targetEl.setAttribute('transform', `${t} translate(${cxNum},${cyNum}) scale(${boostStr}) translate(${-cxNum},${-cyNum})`);
+            }
+
+            if (i % 100 === 0 && Date.now() - start > 5000) {
+                console.warn('[SVG] Boosting taking too long, some elements might not be scaled.');
+                break;
             }
         }
 
@@ -102,7 +113,7 @@ export const boostSvgForLargeGrid = (svgString: string, viewBox: ViewBox | null,
             for (let i = 0; i < infoGs.length; i++) {
                 const g = infoGs[i];
                 const t = g.getAttribute('transform');
-                if (t && t.includes('translate(') && !t.includes('scale(')) {
+                if (t && t.includes('translate(') && !t.includes('scale(') && !t.includes('NaN')) {
                     g.setAttribute('transform', t + ` scale(${boostStr})`);
                 }
             }

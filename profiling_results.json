@@ -1,0 +1,17 @@
+{
+    "1_InitialLoad_N_Diagram": {
+        "update_config": 5.939410630002385,
+        "get_base_network": 2.0080340890272055,
+        "nad_generation": 6.010365410009399,
+        "svg_size_bytes": 9719031,
+        "metadata_size_bytes": 10463786,
+        "get_network_diagram": 8.069185022992315,
+        "total_scenario_1": 14.008649205992697
+    },
+    "2_ContingencySelection_N1_Diagram": {
+        "run_analysis_step1": 11.166040082986001,
+        "get_n1_diagram": 6.581929056002991,
+        "svg_size_bytes": 9718700,
+        "total_scenario_2": 17.757849895977415
+    }
+}

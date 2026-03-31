@@ -1507,6 +1507,18 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             // useLayoutEffect to ensure ref is updated before any layout effects (like svg-pan-zoom) run
             useLayoutEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
             const prevTabRef = useRef(activeTab);
+            
+            // Auto-switch to overflow tab when PDF becomes available
+            const lastAutoSwitchedPdfRef = useRef(null);
+            useEffect(() => {
+                if (result?.pdf_url && result.pdf_url !== lastAutoSwitchedPdfRef.current) {
+                    console.log('[Analysis] New PDF URL detected, auto-switching to overflow tab');
+                    lastAutoSwitchedPdfRef.current = result.pdf_url;
+                    setActiveTab('overflow');
+                } else if (!result?.pdf_url) {
+                    lastAutoSwitchedPdfRef.current = null;
+                }
+            }, [result?.pdf_url]);
 
             const [nDiagram, setNDiagram] = useState(null);
             const [n1Diagram, setN1Diagram] = useState(null);
@@ -2303,7 +2315,9 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     for (const [id, data] of Object.entries(prev.actions || {})) {
                         if (data.is_manual) manuals[id] = data;
                     }
-                    return { ...prev, actions: manuals, lines_overloaded: [] };
+                    // Explicitly clear old graph data so the "Generating..." screen shows up 
+                    // until the new event is received in the stream.
+                    return { ...prev, actions: manuals, lines_overloaded: [], pdf_url: null, pdf_path: null };
                 });
 
                 const step1CorrId = interactionLogger.record('analysis_step1_started', { element: selectedBranch });
@@ -2391,6 +2405,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             try {
                                 const event = JSON.parse(line);
                                 if (event.type === 'pdf') {
+                                    console.log('[Analysis] PDF ready event received, switching to overflow tab:', event.pdf_url);
                                     setResult(p => ({
                                         ...(p || {}),
                                         pdf_url: event.pdf_url,

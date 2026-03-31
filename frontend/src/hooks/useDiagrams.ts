@@ -582,6 +582,12 @@ export function useDiagrams(
     [branches, voltageLevels]
   );
 
+  // Set for O(1) lookup used by the zoom guard
+  const knownItemsSet = useMemo(() =>
+    new Set([...branches, ...voltageLevels]),
+    [branches, voltageLevels]
+  );
+
   // ===== Voltage Range Filter =====
   const staleVoltageFilter = useRef<Set<TabId>>(new Set());
   const prevVFTabRef = useRef<TabId>(activeTab);
@@ -690,6 +696,11 @@ export function useDiagrams(
 
     if (!targetId) return;
 
+    // Only zoom when targetId is a confirmed known element (exact match).
+    // Partial keystrokes like "LIN" won't match → zoom skipped.
+    // Datalist selection sets the input to the full exact value → match fires.
+    if (!knownItemsSet.has(targetId)) return;
+
     // Branch changes should zoom on the N-1 tab, not N.
     // In the same render cycle, setActiveTab('n-1') is batched but
     // not committed — this effect still sees activeTab='n'. Skip here;
@@ -706,7 +717,7 @@ export function useDiagrams(
     lastZoomState.current = { query: inspectQuery, branch: selectedBranch };
     zoomToElement(targetId);
 
-  }, [activeTab, nDiagram, n1Diagram, actionDiagram, inspectQuery, selectedBranch, handleManualReset, zoomToElement]);
+  }, [activeTab, nDiagram, n1Diagram, actionDiagram, inspectQuery, selectedBranch, handleManualReset, zoomToElement, knownItemsSet]);
 
   return useMemo(() => ({
     activeTab, setActiveTab,

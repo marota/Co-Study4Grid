@@ -1,0 +1,81 @@
+
+--- SVG Analysis: n_diagram.svg (9.28 MB) ---
+
+Top 10 Element Counts:
+  g              : 35300
+  polyline       : 29175
+  div            : 28283
+  path           : 21821
+  text           : 20680
+  circle         : 12087
+  span           : 7777
+  svg            : 1
+  style          : 1
+  foreignObject  : 1
+
+Top 10 Attribute Sizes:
+  transform      : 1.30 MB
+  points         : 1.23 MB
+  class          : 0.85 MB
+  d              : 0.53 MB
+  style          : 0.48 MB
+  id             : 0.25 MB
+  x              : 0.09 MB
+  cy             : 0.05 MB
+  r              : 0.05 MB
+  cx             : 0.04 MB
+
+--- Metadata Analysis: n_metadata.json ---
+
+Top Level Categories:
+  layoutParameters    : (object),   0.00 MB
+  svgParameters       : (object),   0.00 MB
+  busNodes            :   7777 items,   0.94 MB
+  nodes               :   6835 items,   1.09 MB
+  edges               :  11231 items,   3.53 MB
+  textNodes           :   6835 items,   0.99 MB
+
+Field Breakdown for 'busNodes':
+  Field                     |    Count |   Total Size
+-------------------------------------------------------
+  legend                    |     7777 |       0.08 MB
+  equipmentId               |     7777 |       0.07 MB
+  svgId                     |     7777 |       0.03 MB
+  vlNode                    |     7777 |       0.03 MB
+  nbNeighbours              |     7777 |       0.01 MB
+  index                     |     7777 |       0.01 MB
+
+Field Breakdown for 'nodes':
+  Field                     |    Count |   Total Size
+-------------------------------------------------------
+  legendHeader              |     6835 |       0.13 MB
+  y                         |     6835 |       0.07 MB
+  x                         |     6835 |       0.05 MB
+  equipmentId               |     6835 |       0.05 MB
+  legendEdgeSvgId           |     6835 |       0.03 MB
+  svgId                     |     6835 |       0.03 MB
+  legendSvgId               |     6835 |       0.03 MB
+
+Field Breakdown for 'edges':
+  Field                     |    Count |   Total Size
+-------------------------------------------------------
+  edgeInfo1                 |    10347 |       0.83 MB
+  edgeInfo2                 |    10347 |       0.83 MB
+  equipmentId               |    11231 |       0.13 MB
+  type                      |    11231 |       0.09 MB
+  svgId                     |    11231 |       0.05 MB
+  node2                     |    11231 |       0.05 MB
+  busNode2                  |    11231 |       0.05 MB
+  node1                     |    11231 |       0.05 MB
+  busNode1                  |    11231 |       0.05 MB
+
+Field Breakdown for 'textNodes':
+  Field                     |    Count |   Total Size
+-------------------------------------------------------
+  equipmentId               |     6835 |       0.05 MB
+  shiftX                    |     6835 |       0.03 MB
+  shiftY                    |     6835 |       0.03 MB
+  connectionShiftX          |     6835 |       0.03 MB
+  connectionShiftY          |     6835 |       0.03 MB
+  svgId                     |     6835 |       0.03 MB
+  vlNode                    |     6835 |       0.03 MB
