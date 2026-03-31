@@ -2391,6 +2391,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             try {
                                 const event = JSON.parse(line);
                                 if (event.type === 'pdf') {
+                                    console.log('[Analysis] PDF ready event received, switching to overflow tab:', event.pdf_url);
                                     setResult(p => ({
                                         ...(p || {}),
                                         pdf_url: event.pdf_url,

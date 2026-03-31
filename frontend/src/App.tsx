@@ -114,7 +114,7 @@ function App() {
   }, [setError, actionsHook, analysis, diagrams]);
 
   const wrappedRunAnalysis = () =>
-    analysis.handleRunAnalysis(selectedBranch, clearContingencyState, actionsHook.setSuggestedByRecommenderIds);
+    analysis.handleRunAnalysis(selectedBranch, clearContingencyState, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab);
 
   const wrappedDisplayPrioritized = () =>
     analysis.handleDisplayPrioritizedActions(selectedActionIds);
@@ -322,11 +322,6 @@ function App() {
     diagrams.selectedBranchForSld.current = selectedBranch;
   }, [selectedBranch, diagrams.selectedBranchForSld]);
 
-  useEffect(() => {
-    if (result?.pdf_url && analysisLoading) {
-      diagrams.setActiveTab('overflow');
-    }
-  }, [result?.pdf_url, analysisLoading, diagrams]);
 
 
   useEffect(() => {
