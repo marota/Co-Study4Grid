@@ -286,7 +286,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 disconnected_mw: result.disconnected_mw,
                 non_convergence: result.non_convergence,
                 load_shedding_details: result.load_shedding_details,
-                curtailment_details: (result as any).curtailment_details,
+                curtailment_details: result.curtailment_details,
+
             };
             onManualActionAdded(trimmedId, detail, result.lines_overloaded || []);
             setSearchOpen(false);

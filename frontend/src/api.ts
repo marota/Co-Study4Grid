@@ -105,7 +105,9 @@ export const api = {
         lines_overloaded: string[];
         action_topology?: import('./types').ActionTopology;
         load_shedding_details?: import('./types').LoadSheddingDetail[];
+        curtailment_details?: import('./types').CurtailmentDetail[];
     }> => {
+
         const response = await axios.post(
             `${API_BASE_URL}/api/simulate-manual-action`,
             { action_id: actionId, disconnected_element: disconnectedElement, action_content: actionContent ?? null, lines_overloaded: linesOverloaded ?? null }

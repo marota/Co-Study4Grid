@@ -240,7 +240,8 @@ function App() {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
       setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
     }
-  }, [networkPath, actionPath, buildConfigRequest, applyConfigResponse, createCurrentBackup, setResult, setError, setShowMonitoringWarning, setSettingsBackup, setIsSettingsOpen, actionsHook, analysis, diagrams]);
+  }, [networkPath, actionPath, buildConfigRequest, applyConfigResponse, createCurrentBackup, setResult, setError, setShowMonitoringWarning, setSettingsBackup, setIsSettingsOpen, actionsHook, analysis, diagrams, configFilePath, lastActiveConfigFilePath, changeConfigFilePath]);
+
 
 
   const handleLoadConfig = useCallback(async () => {
@@ -300,7 +301,8 @@ function App() {
     } finally {
       setConfigLoading(false);
     }
-  }, [buildConfigRequest, applyConfigResponse, setResult, setError, setShowMonitoringWarning, actionsHook, analysis, diagrams]);
+  }, [buildConfigRequest, applyConfigResponse, setResult, setError, setShowMonitoringWarning, actionsHook, analysis, diagrams, networkPath, actionPath, configFilePath, lastActiveConfigFilePath, changeConfigFilePath]);
+
 
   const handleLoadStudyClick = useCallback(() => {
     if (hasAnalysisState()) {
