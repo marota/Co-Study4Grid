@@ -237,7 +237,7 @@ class RecommenderService:
                     load_idx = list(obs_action.name_load).index(load_name)
                     p_before = float(obs_n1.load_p[load_idx])
                     p_after = float(obs_action.load_p[load_idx])
-                    shedded_mw = max(0.0, p_before - p_after)
+                    shedded_mw = abs(p_before - p_after)
                 except (ValueError, IndexError):
                     shedded_mw = 0.0
 
@@ -327,7 +327,7 @@ class RecommenderService:
                     else:
                         p_before = float(obs_n1.prod_p[gen_idx])
                         p_after = float(obs_action.prod_p[gen_idx])
-                    curtailed_mw = max(0.0, p_before - p_after)
+                    curtailed_mw = abs(p_before - p_after)
                 except (ValueError, IndexError, AttributeError):
                     curtailed_mw = 0.0
 
