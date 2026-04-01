@@ -160,7 +160,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             fill: #e74c3c !important;
         }
 
-        /* Highlight overloaded lines in orange */
+        /* Highlight overloaded lines in orange with glow */
+        .nad-overloaded {
+            filter: drop-shadow(0 0 6px #ff8c00) drop-shadow(0 0 12px #ff8c00) !important;
+        }
+
         .nad-overloaded path,
         .nad-overloaded line,
         .nad-overloaded polyline {
@@ -169,13 +173,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         }
 
         /* Apply drop-shadow to the parent clone group to create a glowing halo effect */
+        /* Remedial action targets: purple-pink */
         .nad-action-target {
-            filter: drop-shadow(0 0 8px #fffb00) drop-shadow(0 0 15px #fffb00) !important;
+            filter: drop-shadow(0 0 8px #e040fb) drop-shadow(0 0 15px #e040fb) !important;
         }
 
-        /* Contingency highlight in orange */
+        /* Contingency highlight: yellow */
         .nad-contingency-highlight {
-            filter: drop-shadow(0 0 8px #ff8c00) drop-shadow(0 0 15px #ff8c00) !important;
+            filter: drop-shadow(0 0 8px #f5c542) drop-shadow(0 0 15px #f5c542) !important;
         }
 
         /* For lines and paths, use grid units for stroke-width so the halo is always significantly wider than the actual element it highlights. Using non-scaling-stroke makes it stay a fixed pixel width on screen, which can be narrower than the line when heavily zoomed in. */
@@ -184,7 +189,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .nad-action-target polyline,
         .nad-action-target rect,
         .nad-action-target polygon {
-            stroke: #fffb00 !important;
+            stroke: #e040fb !important;
             stroke-width: 150px !important;
             stroke-opacity: 0.8 !important;
             fill: none !important;
@@ -197,7 +202,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .nad-contingency-highlight polyline,
         .nad-contingency-highlight rect,
         .nad-contingency-highlight polygon {
-            stroke: #ff8c00 !important;
+            stroke: #f5c542 !important;
             stroke-width: 150px !important;
             stroke-opacity: 0.8 !important;
             fill: none !important;
@@ -208,20 +213,20 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         /* For nodes (circles and rects), add a screen-space stroke to create a glowing background halo that doesn't shrink into invisibility on large grids, avoiding obscuring the original node in the foreground. */
         .nad-action-target circle,
         .nad-action-target rect {
-            stroke: #ffe600 !important;
+            stroke: #e040fb !important;
             stroke-width: 45px !important;
             stroke-opacity: 0.6 !important;
-            fill: #ffe600 !important;
-            fill-opacity: 0.8 !important;
+            fill: #e040fb !important;
+            fill-opacity: 0.6 !important;
             vector-effect: non-scaling-stroke !important;
         }
 
         .nad-contingency-highlight circle,
         .nad-contingency-highlight rect {
-            stroke: #ff8c00 !important;
+            stroke: #f5c542 !important;
             stroke-width: 45px !important;
             stroke-opacity: 0.6 !important;
-            fill: #ff8c00 !important;
+            fill: #f5c542 !important;
             fill-opacity: 0.8 !important;
             vector-effect: non-scaling-stroke !important;
         }
@@ -301,9 +306,9 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         }
 
         /* ===== SLD impact highlights ===== */
-        /* Contingency element on N-1 SLD (orange glow) */
+        /* Contingency element on N-1 SLD (yellow glow) */
         .sld-highlight-clone.sld-highlight-contingency {
-            filter: drop-shadow(0 0 4px #ff9800) drop-shadow(0 0 8px #ff9800);
+            filter: drop-shadow(0 0 4px #f5c542) drop-shadow(0 0 8px #f5c542);
         }
 
         .sld-highlight-clone.sld-highlight-contingency path,
@@ -311,15 +316,15 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .sld-highlight-clone.sld-highlight-contingency polyline,
         .sld-highlight-clone.sld-highlight-contingency rect,
         .sld-highlight-clone.sld-highlight-contingency circle {
-            stroke: #ff9800 !important;
+            stroke: #f5c542 !important;
             stroke-width: 6px !important;
             stroke-opacity: 0.7 !important;
             fill: none !important;
         }
 
-        /* Action target on action SLD (yellow halo behind) */
+        /* Action target on action SLD (purple-pink halo behind) */
         .sld-highlight-clone.sld-highlight-action {
-            filter: drop-shadow(0 0 4px #fffb00) drop-shadow(0 0 8px #fffb00);
+            filter: drop-shadow(0 0 4px #e040fb) drop-shadow(0 0 8px #e040fb);
         }
 
         .sld-highlight-clone.sld-highlight-action path,
@@ -327,7 +332,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .sld-highlight-clone.sld-highlight-action polyline,
         .sld-highlight-clone.sld-highlight-action rect,
         .sld-highlight-clone.sld-highlight-action circle {
-            stroke: #fffb00 !important;
+            stroke: #e040fb !important;
             stroke-width: 6px !important;
             stroke-opacity: 0.7 !important;
             fill: none !important;
@@ -344,16 +349,16 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             fill: none !important;
         }
 
-        /* Affected breakers/switches on SLD (purple halo behind) */
+        /* Affected breakers/switches on SLD (light purple halo behind) */
         .sld-highlight-clone.sld-highlight-breaker {
-            filter: drop-shadow(0 0 3px #e040fb) drop-shadow(0 0 6px #e040fb);
+            filter: drop-shadow(0 0 3px #ce93d8) drop-shadow(0 0 6px #ce93d8);
         }
 
         .sld-highlight-clone.sld-highlight-breaker path,
         .sld-highlight-clone.sld-highlight-breaker line,
         .sld-highlight-clone.sld-highlight-breaker rect,
         .sld-highlight-clone.sld-highlight-breaker circle {
-            stroke: #e040fb !important;
+            stroke: #ce93d8 !important;
             stroke-width: 6px !important;
             stroke-opacity: 0.7 !important;
             fill: none !important;

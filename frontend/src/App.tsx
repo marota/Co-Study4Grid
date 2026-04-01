@@ -809,24 +809,6 @@ function App() {
               <datalist id="contingencies">
                 {filteredBranches.map(b => <option key={b} value={b} />)}
               </datalist>
-              <button
-                onClick={wrappedRunAnalysis}
-                disabled={!selectedBranch || analysisLoading}
-                style={{
-                  marginTop: '8px',
-                  width: '100%',
-                  padding: '8px',
-                  background: analysisLoading ? '#f1c40f' : (!selectedBranch ? '#95a5a6' : '#27ae60'),
-                  color: analysisLoading ? '#856404' : 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer',
-                  fontWeight: 'bold',
-                  fontSize: '0.85rem'
-                }}
-              >
-                {analysisLoading ? '⚙️ Running...' : '🚀 Run Analysis'}
-              </button>
             </div>
           )}
 
@@ -860,6 +842,8 @@ function App() {
               combinedActions={result?.combined_actions ?? null}
               pendingAnalysisResult={pendingAnalysisResult}
               onDisplayPrioritizedActions={wrappedDisplayPrioritized}
+              onRunAnalysis={wrappedRunAnalysis}
+              canRunAnalysis={!!selectedBranch && !analysisLoading}
               onActionSelect={wrappedActionSelect}
               onActionFavorite={wrappedActionFavorite}
               onActionReject={actionsHook.handleActionReject}

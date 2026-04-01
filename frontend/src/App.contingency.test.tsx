@@ -52,7 +52,7 @@ vi.mock('./components/VisualizationPanel', () => {
   return { default: MockVisualizationPanel };
 });
 vi.mock('./components/ActionFeed', () => ({
-  default: (props: { linesOverloaded: string[]; pendingAnalysisResult: object | null; analysisLoading: boolean; onDisplayPrioritizedActions: () => void }) => (
+  default: (props: { linesOverloaded: string[]; pendingAnalysisResult: object | null; analysisLoading: boolean; onDisplayPrioritizedActions: () => void; onRunAnalysis: () => void; canRunAnalysis: boolean }) => (
     <div
       data-testid="action-feed"
       data-ol-count={props.linesOverloaded?.length || 0}
@@ -62,8 +62,12 @@ vi.mock('./components/ActionFeed', () => ({
       <div>
         <h3 data-testid="action-feed-header">Simulated Actions</h3>
       </div>
-      {props.pendingAnalysisResult && (
+      {props.analysisLoading ? (
+        <button disabled>⚙️ Analyzing…</button>
+      ) : props.pendingAnalysisResult ? (
         <button onClick={props.onDisplayPrioritizedActions}>Display prioritized actions</button>
+      ) : (
+        <button onClick={props.onRunAnalysis} disabled={!props.canRunAnalysis}>🔍 Analyze & Suggest</button>
       )}
     </div>
   ),
@@ -177,13 +181,13 @@ async function runAnalysis() {
     body: mockStream,
   });
 
-  const runBtn = screen.getByText('🚀 Run Analysis');
+  const runBtn = screen.getByText('🔍 Analyze & Suggest');
   await act(async () => {
     await userEvent.click(runBtn);
   });
 
   await waitFor(() => {
-    const running = screen.queryByText('⚙️ Running...');
+    const running = screen.queryByText('⚙️ Analyzing…');
     if (running) throw new Error('Still running...');
   }, { timeout: 5000 });
 
@@ -367,7 +371,7 @@ describe('Overload Clearing Logic', () => {
     const slowStep1 = new Promise<{ can_proceed: boolean; lines_overloaded: string[] }>(resolve => { resolveStep1 = resolve; });
     mockApi.runAnalysisStep1.mockReturnValue(slowStep1 as Promise<{ can_proceed: boolean; lines_overloaded: string[] }>);
 
-    await userEvent.click(screen.getByText('🚀 Run Analysis'));
+    await userEvent.click(screen.getByText('🔍 Analyze & Suggest'));
 
     // VERIFY IMMEDIATE CLEAR in ActionFeed
     await waitFor(() => {
@@ -448,7 +452,7 @@ describe('Overload Clearing Logic', () => {
     });
 
     // Start analysis
-    const runBtn = screen.getByText('🚀 Run Analysis');
+    const runBtn = screen.getByText('🔍 Analyze & Suggest');
     await act(async () => {
       await userEvent.click(runBtn);
     });

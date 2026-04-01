@@ -53,7 +53,11 @@ circle.nad-highlight {
     fill: #e74c3c !important;
 }
 
-/* Highlight overloaded lines in orange */
+/* Highlight overloaded lines in orange with glow */
+.nad-overloaded {
+    filter: drop-shadow(0 0 6px #ff8c00) drop-shadow(0 0 12px #ff8c00) !important;
+}
+
 .nad-overloaded path,
 .nad-overloaded line,
 .nad-overloaded polyline {
@@ -62,15 +66,14 @@ circle.nad-highlight {
 }
 
 /* Apply drop-shadow to the parent clone group to create a glowing halo effect */
+/* Remedial action targets: purple-pink */
 .nad-action-target {
-    filter: drop-shadow(0 0 8px #fffb00) drop-shadow(0 0 15px #fffb00) !important;
+    filter: drop-shadow(0 0 8px #e040fb) drop-shadow(0 0 15px #e040fb) !important;
 }
 
-
-
-/* Contingency highlight in orange (vibrant #ff6600) */
+/* Contingency highlight: yellow */
 .nad-contingency-highlight {
-    filter: drop-shadow(0 0 8px #ff9800) drop-shadow(0 0 15px #ff9800) !important;
+    filter: drop-shadow(0 0 8px #f5c542) drop-shadow(0 0 15px #f5c542) !important;
     opacity: 0.85 !important;
 }
 
@@ -81,7 +84,7 @@ circle.nad-highlight {
 .nad-action-target polyline,
 .nad-action-target rect,
 .nad-action-target polygon {
-    stroke: #fffb00 !important;
+    stroke: #e040fb !important;
     stroke-width: 150px !important;
     stroke-opacity: 0.8 !important;
     fill: none !important;
@@ -95,7 +98,7 @@ circle.nad-highlight {
 .nad-contingency-highlight polyline,
 .nad-contingency-highlight rect,
 .nad-contingency-highlight polygon {
-    stroke: #ff9800 !important;
+    stroke: #f5c542 !important;
     stroke-width: 120px !important;
     stroke-opacity: 0.85 !important;
     opacity: 1 !important;
@@ -108,24 +111,24 @@ circle.nad-highlight {
    background halo that doesn't shrink into invisibility on large grids. */
 .nad-action-target circle,
 .nad-action-target rect {
-    stroke: #ffe600 !important;
+    stroke: #e040fb !important;
     stroke-width: 45px !important;
     stroke-opacity: 0.6 !important;
-    fill: #ffe600 !important;
-    fill-opacity: 0.8 !important;
+    fill: #e040fb !important;
+    fill-opacity: 0.6 !important;
     vector-effect: non-scaling-stroke !important;
 }
 
 .nad-action-target {
-    filter: drop-shadow(0 0 8px #fffb00) drop-shadow(0 0 15px #fffb00) !important;
+    filter: drop-shadow(0 0 8px #e040fb) drop-shadow(0 0 15px #e040fb) !important;
 }
 
 .nad-contingency-highlight circle,
 .nad-contingency-highlight rect {
-    stroke: #ff9800 !important;
+    stroke: #f5c542 !important;
     stroke-width: 45px !important;
     stroke-opacity: 0.7 !important;
-    fill: #ff9800 !important;
+    fill: #f5c542 !important;
     fill-opacity: 0.9 !important;
     opacity: 1 !important;
     vector-effect: non-scaling-stroke !important;
@@ -226,31 +229,31 @@ circle.nad-highlight {
 /* These classes are applied to CLONED elements placed in a background layer,
    so they don't affect the original SLD rendering (flows/impacts modes). */
 
-/* Contingency element on N-1 SLD (orange halo behind) */
+/* Contingency element on N-1 SLD (yellow halo behind) */
 .sld-highlight-clone.sld-highlight-contingency {
-    filter: drop-shadow(0 0 4px #ff9800) drop-shadow(0 0 8px #ff9800);
+    filter: drop-shadow(0 0 4px #f5c542) drop-shadow(0 0 8px #f5c542);
 }
 .sld-highlight-clone.sld-highlight-contingency path,
 .sld-highlight-clone.sld-highlight-contingency line,
 .sld-highlight-clone.sld-highlight-contingency polyline,
 .sld-highlight-clone.sld-highlight-contingency rect,
 .sld-highlight-clone.sld-highlight-contingency circle {
-    stroke: #ff9800 !important;
+    stroke: #f5c542 !important;
     stroke-width: 6px !important;
     stroke-opacity: 0.7 !important;
     fill: none !important;
 }
 
-/* Action target on action SLD (yellow halo behind) */
+/* Action target on action SLD (purple-pink halo behind) */
 .sld-highlight-clone.sld-highlight-action {
-    filter: drop-shadow(0 0 4px #fffb00) drop-shadow(0 0 8px #fffb00);
+    filter: drop-shadow(0 0 4px #e040fb) drop-shadow(0 0 8px #e040fb);
 }
 .sld-highlight-clone.sld-highlight-action path,
 .sld-highlight-clone.sld-highlight-action line,
 .sld-highlight-clone.sld-highlight-action polyline,
 .sld-highlight-clone.sld-highlight-action rect,
 .sld-highlight-clone.sld-highlight-action circle {
-    stroke: #fffb00 !important;
+    stroke: #e040fb !important;
     stroke-width: 6px !important;
     stroke-opacity: 0.7 !important;
     fill: none !important;
@@ -267,15 +270,15 @@ circle.nad-highlight {
     fill: none !important;
 }
 
-/* Affected breakers/switches on SLD (purple halo behind) */
+/* Affected breakers/switches on SLD (light purple halo behind) */
 .sld-highlight-clone.sld-highlight-breaker {
-    filter: drop-shadow(0 0 3px #e040fb) drop-shadow(0 0 6px #e040fb);
+    filter: drop-shadow(0 0 3px #ce93d8) drop-shadow(0 0 6px #ce93d8);
 }
 .sld-highlight-clone.sld-highlight-breaker path,
 .sld-highlight-clone.sld-highlight-breaker line,
 .sld-highlight-clone.sld-highlight-breaker rect,
 .sld-highlight-clone.sld-highlight-breaker circle {
-    stroke: #e040fb !important;
+    stroke: #ce93d8 !important;
     stroke-width: 6px !important;
     stroke-opacity: 0.7 !important;
     fill: none !important;
@@ -403,4 +406,29 @@ circle.nad-highlight {
     white-space: nowrap;
     transform: translateY(-50%);
     left: 2px;
+}
+
+/* Collapsed voltage filter toggle button */
+.voltage-sidebar-toggle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 24px;
+    background: rgba(244, 244, 244, 0.85);
+    border: none;
+    border-left: 1px solid #ccc;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 15;
+    color: #666;
+    font-size: 11px;
+    padding: 0;
+}
+
+.voltage-sidebar-toggle:hover {
+    background: rgba(220, 220, 220, 0.95);
+    color: #333;
 }
