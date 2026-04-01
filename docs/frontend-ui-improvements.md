@@ -1,6 +1,6 @@
 # Frontend UI Improvements Plan
 
-> **Status**: Planned  
+> **Status**: Implemented  
 > **Scope**: `frontend/` components + `standalone_interface.html`  
 > **Date**: 2026-04-01
 
