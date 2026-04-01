@@ -3499,6 +3499,16 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         return prev.filter(id => id !== actionId);
                     }
                     if (prev.length >= 2) return prev;
+                    
+                    const detail = result?.actions?.[actionId];
+                    const isLS = actionId.includes('load_shedding') || !!detail?.load_shedding_details;
+                    const isRC = actionId.includes('renewable_curtailment') || !!detail?.curtailment_details;
+                    if (isLS || isRC) {
+                        setError(`Selection restricted: ${actionId} cannot be combined.`);
+                        setTimeout(() => setError(null), 5000);
+                        return prev;
+                    }
+
                     interactionLogger.record('combine_pair_toggled', { action_id: actionId, selected: true });
                     return [...prev, actionId];
                 });
@@ -6191,6 +6201,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                                 <span>⚠️</span> Load shedding actions cannot be combined for estimation.
                                                             </div>
                                                         )}
+                                                        {type === 'renewable_curtailment' && (
+                                                            <div style={{ padding: '6px 10px', background: '#fff3cd', color: '#856404', borderBottom: '1px solid #ffeeba', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                <span>⚠️</span> Renewable curtailment actions cannot be combined for estimation.
+                                                            </div>
+                                                        )}
                                                         <table className="action-table" style={{ margin: 0, border: 'none' }}>
                                                             <tbody>
                                                                 {scoredActionsList
@@ -6253,28 +6268,32 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
                                         <div style={{ marginTop: '15px' }}>
                                             {(() => {
-                                                const hasLS = selectedCombineActionIds.some(id => id.startsWith('load_shedding_') || id.includes('load_shedding'));
+                                                const hasRestricted = selectedCombineActionIds.some(id => {
+                                                    const detail = result?.actions?.[id];
+                                                    return id.includes('load_shedding') || !!detail?.load_shedding_details || 
+                                                           id.includes('renewable_curtailment') || !!detail?.curtailment_details;
+                                                });
                                                 return (
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                                         {!superpositionResult ? (
                                                             <button
                                                                 onClick={handleComputeSuperposition}
-                                                                disabled={selectedCombineActionIds.length !== 2 || isComputingSuperposition || hasLS}
+                                                                disabled={selectedCombineActionIds.length !== 2 || isComputingSuperposition || hasRestricted}
                                                                 style={{
                                                                     width: '100%',
                                                                     padding: '12px',
-                                                                    background: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasLS) ? '#3498db' : '#ecf0f1',
-                                                                    color: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasLS) ? 'white' : '#bdc3c7',
+                                                                    background: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasRestricted) ? '#3498db' : '#ecf0f1',
+                                                                    color: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasRestricted) ? 'white' : '#bdc3c7',
                                                                     border: 'none',
                                                                     borderRadius: '6px',
-                                                                    cursor: (selectedCombineActionIds.length !== 2 || isComputingSuperposition || hasLS) ? 'not-allowed' : 'pointer',
+                                                                    cursor: (selectedCombineActionIds.length !== 2 || isComputingSuperposition || hasRestricted) ? 'not-allowed' : 'pointer',
                                                                     fontWeight: 'bold',
                                                                     fontSize: '14px',
                                                                     transition: 'all 0.2s',
-                                                                    boxShadow: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasLS) ? '0 4px 6px rgba(52,152,219,0.2)' : 'none'
+                                                                    boxShadow: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasRestricted) ? '0 4px 6px rgba(52,152,219,0.2)' : 'none'
                                                                 }}
                                                             >
-                                                                {isComputingSuperposition ? '⚙️ Estimating Combination...' : (selectedCombineActionIds.length === 2 ? (hasLS ? 'Combination not allowed' : 'Estimate combination effect') : 'Select 2 actions to estimate')}
+                                                                {isComputingSuperposition ? '⚙️ Estimating Combination...' : (selectedCombineActionIds.length === 2 ? (hasRestricted ? 'Combination not allowed' : 'Estimate combination effect') : 'Select 2 actions to estimate')}
                                                             </button>
                                                         ) : (
                                                             <div style={{ padding: '15px', background: superpositionResult.error ? '#fff3cd' : '#e1f5fe', borderRadius: '8px', borderLeft: '5px solid ' + (superpositionResult.error ? '#856404' : '#0288d1'), boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
@@ -6292,17 +6311,17 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                                     <div style={{ display: 'flex', gap: '8px' }}>
                                                                         <button
                                                                             onClick={handleComputeSuperposition}
-                                                                            disabled={isComputingSuperposition || hasLS}
-                                                                            style={{ padding: '6px 12px', background: 'white', border: '1px solid #3498db', color: '#3498db', borderRadius: '4px', cursor: (isComputingSuperposition || hasLS) ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                                                                            disabled={isComputingSuperposition || hasRestricted}
+                                                                            style={{ padding: '6px 12px', background: 'white', border: '1px solid #3498db', color: '#3498db', borderRadius: '4px', cursor: (isComputingSuperposition || hasRestricted) ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 'bold' }}
                                                                         >
-                                                                            {isComputingSuperposition ? '...' : (hasLS ? 'Locked' : 'Estimate combination effect')}
+                                                                            {isComputingSuperposition ? '...' : (hasRestricted ? 'Locked' : 'Estimate combination effect')}
                                                                         </button>
                                                                         <button
                                                                             onClick={() => handleSimulateCombined()}
-                                                                            disabled={isSimulatingCombined || hasLS}
-                                                                            style={{ padding: '6px 16px', background: (isSimulatingCombined || hasLS) ? '#6c757d' : '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: (isSimulatingCombined || hasLS) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '12px', boxShadow: (isSimulatingCombined || hasLS) ? 'none' : '0 2px 4px rgba(39,174,96,0.2)', minWidth: '140px' }}
+                                                                            disabled={isSimulatingCombined || hasRestricted}
+                                                                            style={{ padding: '6px 16px', background: (isSimulatingCombined || hasRestricted) ? '#6c757d' : '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: (isSimulatingCombined || hasRestricted) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '12px', boxShadow: (isSimulatingCombined || hasRestricted) ? 'none' : '0 2px 4px rgba(39,174,96,0.2)', minWidth: '140px' }}
                                                                         >
-                                                                            {isSimulatingCombined ? '⌛ Simulating...' : (hasLS ? 'Simulation Locked' : 'Simulate Combined')}
+                                                                            {isSimulatingCombined ? '⌛ Simulating...' : (hasRestricted ? 'Simulation Locked' : 'Simulate Combined')}
                                                                         </button>
                                                                     </div>
                                                                 </div>
