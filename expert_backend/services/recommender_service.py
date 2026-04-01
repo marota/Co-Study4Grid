@@ -321,10 +321,14 @@ class RecommenderService:
             if obs_n1 is not None and obs_action is not None:
                 try:
                     gen_idx = list(obs_action.name_gen).index(gen_name)
-                    p_before = float(obs_n1.prod_p[gen_idx])
-                    p_after = float(obs_action.prod_p[gen_idx])
+                    if hasattr(obs_n1, "gen_p"):
+                        p_before = float(obs_n1.gen_p[gen_idx])
+                        p_after = float(obs_action.gen_p[gen_idx])
+                    else:
+                        p_before = float(obs_n1.prod_p[gen_idx])
+                        p_after = float(obs_action.prod_p[gen_idx])
                     curtailed_mw = max(0.0, p_before - p_after)
-                except (ValueError, IndexError):
+                except (ValueError, IndexError, AttributeError):
                     curtailed_mw = 0.0
 
             vl_id = None
@@ -519,7 +523,10 @@ class RecommenderService:
                 for gen_name, bus in gens.items():
                     if int(bus) == -1 and gen_name in gen_idx_map:
                         idx = gen_idx_map[gen_name]
-                        total_mw += abs(float(obs_n1.prod_p[idx]))
+                        if hasattr(obs_n1, "gen_p"):
+                            total_mw += abs(float(obs_n1.gen_p[idx]))
+                        else:
+                            total_mw += abs(float(obs_n1.prod_p[idx]))
                         found = True
                 if found:
                     return round(total_mw, 1)
@@ -529,7 +536,10 @@ class RecommenderService:
             gen_name = action_id[len("curtail_"):]
             if gen_name in gen_idx_map:
                 idx = gen_idx_map[gen_name]
-                return round(abs(float(obs_n1.prod_p[idx])), 1)
+                if hasattr(obs_n1, "gen_p"):
+                    return round(abs(float(obs_n1.gen_p[idx])), 1)
+                else:
+                    return round(abs(float(obs_n1.prod_p[idx])), 1)
 
         return None
 
