@@ -213,12 +213,13 @@ const CombinedActionsModal: React.FC<Props> = ({
 
     if (!isOpen) return null;
 
-    // Check if any selected action involves load shedding (combination not supported)
+    // Check if any selected action involves load shedding or curtailment (combination not supported)
     const allActions = { ...simulatedActions, ...analysisResult?.actions };
-    const hasLS = Array.from(selectedIds).some(id => {
-        const detail = allActions[id];
-        return detail?.load_shedding_details && detail.load_shedding_details.length > 0;
-    });
+    const selectedActionsDetails = Array.from(selectedIds).map(id => allActions[id]);
+    const hasRestricted = selectedActionsDetails.some(detail => 
+        (detail?.load_shedding_details && detail.load_shedding_details.length > 0) ||
+        (detail?.curtailment_details && detail.curtailment_details.length > 0)
+    );
 
     const handleToggle = (id: string) => {
         setSimulationFeedback(null);
@@ -229,6 +230,17 @@ const CombinedActionsModal: React.FC<Props> = ({
             interactionLogger.record('combine_pair_toggled', { action_id: id, selected: false });
         } else {
             if (newSet.size >= 2) return; // Only allow 2
+            
+            // Prevent selecting load shedding or curtailment for combination
+            const detail = allActions[id];
+            const isRestricted = (detail?.load_shedding_details && detail.load_shedding_details.length > 0) ||
+                                (detail?.curtailment_details && detail.curtailment_details.length > 0);
+            
+            if (isRestricted) {
+                setError("Load shedding and curtailment actions cannot be combined with other actions.");
+                return;
+            }
+            
             newSet.add(id);
             interactionLogger.record('combine_pair_toggled', { action_id: id, selected: true });
         }
@@ -536,6 +548,21 @@ const CombinedActionsModal: React.FC<Props> = ({
                                                     <span>⚠️</span> Load shedding actions cannot be combined for estimation.
                                                 </div>
                                             )}
+                                            {(type === 'renewable_curtailment' || type === 'rc') && (
+                                                <div style={{ 
+                                                    padding: '6px 10px', 
+                                                    background: '#e3f2fd', 
+                                                    color: '#0d47a1', 
+                                                    borderBottom: '1px solid #bbdefb', 
+                                                    fontSize: '11px', 
+                                                    fontWeight: 600,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px'
+                                                }}>
+                                                    <span>ℹ️</span> Renewable curtailment actions cannot be combined for estimation.
+                                                </div>
+                                            )}
                                             <table className="action-table" style={{ margin: 0, border: 'none' }}>
                                                 <tbody>
                                                     {filteredList
@@ -614,23 +641,23 @@ const CombinedActionsModal: React.FC<Props> = ({
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                         <button
                                             onClick={handleEstimate}
-                                            disabled={selectedIds.size !== 2 || loading || hasLS}
+                                            disabled={selectedIds.size !== 2 || loading || hasRestricted}
                                             data-testid="estimate-button"
                                             style={{
                                                 width: '100%',
                                                 padding: '12px',
-                                                background: (selectedIds.size === 2 && !loading && !hasLS) ? '#3498db' : '#ecf0f1',
-                                                color: (selectedIds.size === 2 && !loading && !hasLS) ? 'white' : '#bdc3c7',
+                                                background: (selectedIds.size === 2 && !loading && !hasRestricted) ? '#3498db' : '#ecf0f1',
+                                                color: (selectedIds.size === 2 && !loading && !hasRestricted) ? 'white' : '#bdc3c7',
                                                 border: 'none',
                                                 borderRadius: '6px',
-                                                cursor: (selectedIds.size !== 2 || loading || hasLS) ? 'not-allowed' : 'pointer',
+                                                cursor: (selectedIds.size !== 2 || loading || hasRestricted) ? 'not-allowed' : 'pointer',
                                                 fontWeight: 'bold',
                                                 fontSize: '14px',
                                                 transition: 'all 0.2s',
-                                                boxShadow: (selectedIds.size === 2 && !loading && !hasLS) ? '0 4px 6px rgba(52, 152, 219, 0.2)' : 'none'
+                                                boxShadow: (selectedIds.size === 2 && !loading && !hasRestricted) ? '0 4px 6px rgba(52, 152, 219, 0.2)' : 'none'
                                             }}
                                         >
-                                            {loading ? '⚙️ Estimating Combination...' : (selectedIds.size === 2 ? (hasLS ? 'Combination not allowed' : 'Estimate combination effect') : 'Select 2 actions to estimate')}
+                                            {loading ? '⚙️ Estimating Combination...' : (selectedIds.size === 2 ? (hasRestricted ? 'Combination not allowed' : 'Estimate combination effect') : 'Select 2 actions to estimate')}
                                         </button>
                                     </div>
                                 ) : (
@@ -662,21 +689,21 @@ const CombinedActionsModal: React.FC<Props> = ({
                                                 </button>
                                                 <button
                                                     onClick={() => handleSimulate()}
-                                                    disabled={simulating || hasLS}
+                                                    disabled={simulating || hasRestricted}
                                                     style={{ 
                                                         padding: '6px 16px', 
-                                                        background: (simulating || hasLS) ? '#6c757d' : '#27ae60', 
+                                                        background: (simulating || hasRestricted) ? '#6c757d' : '#27ae60', 
                                                         color: 'white', 
                                                         border: 'none', 
                                                         borderRadius: '6px', 
-                                                        cursor: (simulating || hasLS) ? 'not-allowed' : 'pointer', 
+                                                        cursor: (simulating || hasRestricted) ? 'not-allowed' : 'pointer', 
                                                         fontWeight: 'bold', 
                                                         fontSize: '12px', 
-                                                        boxShadow: (simulating || hasLS) ? 'none' : '0 2px 4px rgba(39,174,96,0.2)', 
+                                                        boxShadow: (simulating || hasRestricted) ? 'none' : '0 2px 4px rgba(39,174,96,0.2)', 
                                                         minWidth: '140px' 
                                                     }}
                                                 >
-                                                    {simulating ? '⌛ Simulating...' : (hasLS ? 'Simulation Locked' : 'Simulate Combined')}
+                                                    {simulating ? '⌛ Simulating...' : (hasRestricted ? 'Simulation Locked' : 'Simulate Combined')}
                                                 </button>
                                             </div>
                                         </div>
