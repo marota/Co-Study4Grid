@@ -2276,18 +2276,19 @@ class RecommenderService:
         n.set_working_variant(n1_variant_id)
         obs_start = env.get_obs()
         
+        # Filter lines we care about
+        monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
+        lines_overloaded_ids = []
+        for i in range(len(obs_start.rho)):
+            if obs_start.rho[i] >= monitoring_factor:
+                 lines_overloaded_ids.append(i)
+                 
         # Get pre-existing rho for reduction calculation
         n_variant_id = self._get_n_variant()
         n.set_working_variant(n_variant_id)
         obs_n = env.get_obs()
-        pre_existing_rho = {i: obs_n.rho[i] for i in range(len(obs_n.rho))}
-        
-        # Filter lines we care about
-        lines_overloaded_ids = []
-        monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
-        for i in range(len(obs_start.rho)):
-            if obs_start.rho[i] >= monitoring_factor:
-                 lines_overloaded_ids.append(i)
+        # Only consider a line as "pre-existing" if it is actually an overload in the N state
+        pre_existing_rho = {i: obs_n.rho[i] for i in range(len(obs_n.rho)) if obs_n.rho[i] >= monitoring_factor}
                  
         lines_we_care_about, branches_with_limits = self._get_monitoring_parameters(obs_start)
 
