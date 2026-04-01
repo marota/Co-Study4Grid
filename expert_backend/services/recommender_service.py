@@ -2061,6 +2061,15 @@ class RecommenderService:
                     self._dict_action[aid] = entry
                     print(f"[simulate_manual_action] Created dynamic load shedding action '{aid}'")
 
+                elif aid.startswith("curtail_"):
+                    gen_name = aid[len("curtail_"):]
+                    topo = {"gens_bus": {gen_name: -1}}
+                    entry = self._build_action_entry_from_topology(aid, topo)
+                    entry["description"] = f"Renewable curtailment for generator {gen_name}"
+                    entry["description_unitaire"] = f"Effacement {gen_name}"
+                    self._dict_action[aid] = entry
+                    print(f"[simulate_manual_action] Created dynamic curtailment action '{aid}'")
+
                 elif aid.startswith("pst_tap_") or aid.startswith("pst_"):
                     # Example: pst_tap_PST_ID_inc1 or pst_tap_PST_ID_dec2
                     import re
