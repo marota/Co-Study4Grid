@@ -489,6 +489,31 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             left: 2px;
         }
 
+        /* Collapsed voltage filter toggle button */
+        .voltage-sidebar-toggle {
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 24px;
+            background: rgba(244, 244, 244, 0.85);
+            border: none;
+            border-left: 1px solid #ccc;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 15;
+            color: #666;
+            font-size: 11px;
+            padding: 0;
+        }
+
+        .voltage-sidebar-toggle:hover {
+            background: rgba(220, 220, 220, 0.95);
+            color: #333;
+        }
+
         /* VL focused diagram overlay body — SVG scales to fit width */
         .vl-overlay-body svg {
             width: 100%;
@@ -1249,6 +1274,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             const [nominalVoltageMap, setNominalVoltageMap] = useState({});  // {vl_id: kv}
             const [uniqueVoltages, setUniqueVoltages] = useState([]);       // sorted [kv1, kv2, ...]
             const [voltageRange, setVoltageRange] = useState([0, 400]);     // [minKv, maxKv] cursor positions
+            const [voltageFilterExpanded, setVoltageFilterExpanded] = useState(false);
             const [selectedBranch, setSelectedBranch] = useState('');
             const [configLoading, setConfigLoading] = useState(false);
 
@@ -4285,17 +4311,37 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 )
                             }
                         </div>
+                        {/* Voltage Range Sidebar — collapsed by default, toggle to expand */}
                         {uniqueVoltages.length > 1 && (() => {
                             const minV = uniqueVoltages[0];
                             const maxV = uniqueVoltages[uniqueVoltages.length - 1];
                             const logMin = Math.log(minV);
                             const logMax = Math.log(maxV);
                             const logScale = (kv) => ((Math.log(kv) - logMin) / (logMax - logMin)) * 100;
-                            // For the vertical slider: 0% = bottom (low kV), 100% = top (high kV)
                             const pctLow = logScale(voltageRange[0]);
                             const pctHigh = logScale(voltageRange[1]);
+                            if (!voltageFilterExpanded) {
+                                return (
+                                    <button
+                                        className="voltage-sidebar-toggle"
+                                        onClick={() => setVoltageFilterExpanded(true)}
+                                        title="Show voltage filter"
+                                    >
+                                        <span style={{ writingMode: 'vertical-rl', fontSize: '11px', letterSpacing: '1px' }}>kV ▸</span>
+                                    </button>
+                                );
+                            }
                             return (
                                 <div className="voltage-sidebar">
+                                    <button
+                                        onClick={() => setVoltageFilterExpanded(false)}
+                                        title="Hide voltage filter"
+                                        style={{
+                                            alignSelf: 'flex-end', background: 'none', border: 'none',
+                                            cursor: 'pointer', fontSize: '14px', color: '#666',
+                                            padding: '0 4px', lineHeight: 1,
+                                        }}
+                                    >✕</button>
                                     <span className="vs-label">kV Filter</span>
                                     <span className="vs-range-label">
                                         {voltageRange[1]}<br />{voltageRange[0]}
@@ -4308,7 +4354,6 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                             value={Math.log(voltageRange[0])}
                                             onChange={e => {
                                                 const logV = parseFloat(e.target.value);
-                                                const kv = Math.exp(logV);
                                                 const snapped = uniqueVoltages.reduce((best, uv) => Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best);
                                                 if (snapped <= voltageRange[1]) {
                                                     interactionLogger.record('voltage_range_changed', { min_kv: snapped, max_kv: voltageRange[1] });
@@ -4996,20 +5041,6 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
                                     <input list="contingencies" value={selectedBranch} onChange={e => { const val = e.target.value; if (branches.includes(val)) interactionLogger.record('contingency_selected', { element: val }); setSelectedBranch(val); }} placeholder="Search line/bus..." style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }} />
                                     <datalist id="contingencies">{branches.map(b => <option key={b} value={b} />)}</datalist>
-                                    <button
-                                        onClick={handleRunAnalysis}
-                                        disabled={!selectedBranch || analysisLoading}
-                                        style={{
-                                            marginTop: '8px', width: '100%', padding: '8px',
-                                            background: analysisLoading ? '#f1c40f' : (!selectedBranch ? '#95a5a6' : '#27ae60'),
-                                            color: analysisLoading ? '#856404' : 'white',
-                                            border: 'none', borderRadius: '4px',
-                                            cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer',
-                                            fontWeight: 'bold', fontSize: '0.85rem'
-                                        }}
-                                    >
-                                        {analysisLoading ? '⚙️ Running...' : '🚀 Run Analysis'}
-                                    </button>
                                 </div>
                             )}
 
@@ -5493,55 +5524,60 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     >Rejected Actions {rejectedEntries.length > 0 && <span style={{ background: suggestedTab === 'rejected' ? '#fdecea' : '#f8f9fa', color: suggestedTab === 'rejected' ? '#e74c3c' : '#6c757d', fontSize: '11px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>{rejectedEntries.length}</span>}</button>
                                 </div>
 
-                                {analysisLoading && (
-                                    <div style={{
-                                        padding: '12px',
-                                        background: '#fff3cd',
-                                        border: '1px solid #ffeeba',
-                                        borderRadius: '8px',
-                                        marginBottom: '15px',
-                                        textAlign: 'center',
-                                        color: '#856404',
-                                        fontWeight: 600,
-                                        fontSize: '14px',
-                                        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                                        animation: 'pulse 2s infinite ease-in-out'
-                                    }}>
-                                        ⚙️ Processing analysis...
-                                    </div>
-                                )}
-
-                                {/* Display prioritized actions button inside Suggested Actions section */}
-                                {pendingAnalysisResult && !analysisLoading && (
-                                    <button
-                                        onClick={handleDisplayPrioritizedActions}
-                                        style={{
-                                            width: '100%',
-                                            padding: '10px 16px',
-                                            margin: '0 0 10px 0',
-                                            background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
-                                            color: 'white',
-                                            border: 'none',
-                                            borderRadius: '8px',
-                                            cursor: 'pointer',
-                                            fontSize: '14px',
-                                            fontWeight: 700,
-                                            boxShadow: '0 2px 8px rgba(39,174,96,0.3)',
-                                            transition: 'transform 0.1s',
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                                    >
-                                        📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
-                                    </button>
-                                )}
+                                {/* Unified analysis action slot: Analyze & Suggest → Analyzing… → Display N prioritized actions */}
+                                <div style={{ marginBottom: '10px' }}>
+                                    {analysisLoading ? (
+                                        <button disabled style={{
+                                            width: '100%', padding: '10px 16px',
+                                            background: '#fff3cd', color: '#856404',
+                                            border: '1px solid #ffeeba', borderRadius: '8px',
+                                            cursor: 'not-allowed', fontSize: '14px', fontWeight: 700,
+                                            boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                                        }}>
+                                            ⚙️ Analyzing…
+                                        </button>
+                                    ) : pendingAnalysisResult ? (
+                                        <button
+                                            onClick={handleDisplayPrioritizedActions}
+                                            style={{
+                                                width: '100%', padding: '10px 16px',
+                                                background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
+                                                color: 'white', border: 'none', borderRadius: '8px',
+                                                cursor: 'pointer', fontSize: '14px', fontWeight: 700,
+                                                boxShadow: '0 2px 8px rgba(39,174,96,0.3)', transition: 'transform 0.1s',
+                                            }}
+                                            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                                            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                                        >
+                                            📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={handleRunAnalysis}
+                                            disabled={!selectedBranch || analysisLoading}
+                                            style={{
+                                                width: '100%', padding: '10px 16px',
+                                                background: selectedBranch ? '#27ae60' : '#95a5a6',
+                                                color: 'white', border: 'none', borderRadius: '8px',
+                                                cursor: selectedBranch ? 'pointer' : 'not-allowed',
+                                                fontSize: '14px', fontWeight: 700,
+                                                boxShadow: selectedBranch ? '0 2px 8px rgba(39,174,96,0.3)' : 'none',
+                                                transition: 'transform 0.1s',
+                                            }}
+                                            onMouseEnter={(e) => { if (selectedBranch) e.currentTarget.style.transform = 'scale(1.02)'; }}
+                                            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                                        >
+                                            🔍 Analyze & Suggest
+                                        </button>
+                                    )}
+                                </div>
 
                                 {suggestedTab === 'prioritized' && (
                                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
                                         !analysisLoading ? (
                                             <div style={{ textAlign: 'center' }}>
                                                 <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0' }}>
-                                                    {!pendingAnalysisResult ? 'Run analysis to get action suggestions.' : 'No suggested actions available.'}
+                                                    {!pendingAnalysisResult ? 'Click \u201cAnalyze & Suggest\u201d above to get action suggestions.' : 'No suggested actions available.'}
                                                 </p>
                                                 {!pendingAnalysisResult && (
                                                     <div style={{
@@ -5644,38 +5680,36 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             )}
                         </div>
                         <div className="visualization" style={{ display: 'flex', flexDirection: 'column' }}>
+                            {/* Tab bar — all 4 tabs always visible; unavailable ones dimmed/italic with placeholder tooltips */}
                             <div style={{ display: 'flex', borderBottom: '1px solid #ccc' }}>
-                                <button
-                                    onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: 'n' }); setActiveTab('n'); }}
-                                    style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'n' ? 'white' : '#ecf0f1', color: activeTab === 'n' ? '#2c3e50' : '#7f8c8d', borderBottom: activeTab === 'n' ? '3px solid #3498db' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'n' ? 'bold' : 400 }}
-                                >
-                                    Network (N)
-                                </button>
-                                {selectedBranch && (
-                                    <button
-                                        onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: 'n-1' }); setActiveTab('n-1'); }}
-                                        style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'n-1' ? 'white' : '#ecf0f1', color: activeTab === 'n-1' ? '#2c3e50' : '#7f8c8d', borderBottom: activeTab === 'n-1' ? '3px solid #e74c3c' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'n-1' ? 'bold' : 400 }}
-                                    >
-                                        Contingency (N-1)
-                                    </button>
-                                )}
-                                {selectedActionId && (
-                                    <button
-                                        onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: 'action' }); setActiveTab('action'); }}
-                                        style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'action' ? 'white' : '#ecf0f1', color: activeTab === 'action' ? '#0056b3' : '#7f8c8d', borderBottom: activeTab === 'action' ? '3px solid #007bff' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'action' ? 'bold' : 400 }}
-                                    >
-                                        Action: {selectedActionId}
-                                    </button>
-                                )}
-                                {result?.pdf_url && (
-                                    <button
-                                        onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: 'overflow' }); setActiveTab('overflow'); }}
-                                        style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'overflow' ? 'white' : '#ecf0f1', color: activeTab === 'overflow' ? '#2c3e50' : '#7f8c8d', borderBottom: activeTab === 'overflow' ? '3px solid #27ae60' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'overflow' ? 'bold' : 400 }}
-                                    >
-                                        Overflow Analysis
-                                    </button>
-                                )}
-
+                                {[
+                                    { id: 'n', label: 'Network (N)', available: !!nDiagram?.svg, accentColor: '#3498db', placeholder: 'Configure a network path to load the base-case diagram.' },
+                                    { id: 'n-1', label: 'Contingency (N-1)', available: !!n1Diagram?.svg, accentColor: '#e74c3c', placeholder: 'Select a contingency element from the dropdown to view the N-1 state.' },
+                                    { id: 'action', label: selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action', available: !!actionDiagram?.svg, accentColor: '#9c27b0', placeholder: 'Select an action card from the suggestions panel to view its effect on the network.' },
+                                    { id: 'overflow', label: 'Overflow Analysis', available: !!result?.pdf_url, accentColor: '#27ae60', placeholder: 'Run an analysis to generate the overflow graph.' },
+                                ].map(tab => {
+                                    const isActive = activeTab === tab.id;
+                                    return (
+                                        <button
+                                            key={tab.id}
+                                            onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: tab.id }); setActiveTab(tab.id); }}
+                                            title={tab.available ? undefined : tab.placeholder}
+                                            style={{
+                                                flex: 1, borderRadius: 0, border: 'none', padding: '8px 6px',
+                                                cursor: 'pointer',
+                                                fontWeight: isActive && tab.available ? 'bold' : 400,
+                                                fontStyle: !tab.available ? 'italic' : 'normal',
+                                                background: isActive ? 'white' : '#ecf0f1',
+                                                color: tab.available ? (isActive ? '#2c3e50' : '#7f8c8d') : '#bbb',
+                                                borderBottom: isActive && tab.available ? `3px solid ${tab.accentColor}` : 'none',
+                                                fontSize: tab.id === 'action' && selectedActionId ? '0.75rem' : '0.85rem',
+                                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                            }}
+                                        >
+                                            {tab.label}
+                                        </button>
+                                    );
+                                })}
                             </div>
                             <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                                 {/* Path Warning Banner */}
