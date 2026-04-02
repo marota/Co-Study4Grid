@@ -97,7 +97,7 @@ circle.nad-highlight {
 .nad-action-target polygon {
     stroke: #ff4081 !important;
     stroke-width: 150px !important;
-    stroke-opacity: 0.8 !important;
+    stroke-opacity: 1 !important;
     fill: none !important;
     stroke-linecap: round !important;
     stroke-linejoin: round !important;
@@ -124,9 +124,9 @@ circle.nad-highlight {
 .nad-action-target rect {
     stroke: #ff4081 !important;
     stroke-width: 45px !important;
-    stroke-opacity: 0.6 !important;
+    stroke-opacity: 1 !important;
     fill: #ff4081 !important;
-    fill-opacity: 0.6 !important;
+    fill-opacity: 1 !important;
     vector-effect: non-scaling-stroke !important;
 }
 

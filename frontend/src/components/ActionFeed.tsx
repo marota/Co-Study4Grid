@@ -957,6 +957,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
 
 
                 {/* Unified analysis action slot: Analyze & Suggest → Analyzing… → Display N prioritized actions */}
+                {(analysisLoading || pendingAnalysisResult || Object.keys(actions).length === 0) && (
                 <div style={{ marginBottom: '10px' }}>
                     {analysisLoading ? (
                         <button disabled style={{
@@ -1003,6 +1004,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         </button>
                     )}
                 </div>
+                )}
 
                 {suggestedTab === 'prioritized' && (
                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (

@@ -202,7 +202,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .nad-action-target polygon {
             stroke: #ff4081 !important;
             stroke-width: 150px !important;
-            stroke-opacity: 0.8 !important;
+            stroke-opacity: 1 !important;
             fill: none !important;
             stroke-linecap: round !important;
             stroke-linejoin: round !important;
@@ -226,9 +226,9 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .nad-action-target rect {
             stroke: #ff4081 !important;
             stroke-width: 45px !important;
-            stroke-opacity: 0.6 !important;
+            stroke-opacity: 1 !important;
             fill: #ff4081 !important;
-            fill-opacity: 0.6 !important;
+            fill-opacity: 1 !important;
             vector-effect: non-scaling-stroke !important;
         }
 
@@ -1189,7 +1189,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         const applyActionTargetHighlights = (container, metaIndex, actionDetail, actionId) => {
             if (!container) return;
             container.querySelectorAll('.nad-action-target').forEach(el => el.classList.remove('nad-action-target'));
-            container.querySelectorAll('.nad-highlight-clone').forEach(el => el.remove());
+            container.querySelectorAll('.nad-highlight-clone.nad-action-target').forEach(el => el.remove());
             if (!metaIndex || !actionDetail) return;
 
             const { edgesByEquipmentId, nodesByEquipmentId } = metaIndex;
@@ -4109,6 +4109,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         const actionDetail = result?.actions?.[selectedActionId];
 
                         if (actionDetail) {
+                            applyActionTargetHighlights(actionSvgContainerRef.current, actionMetaIndex, actionDetail, selectedActionId);
+                            // Also highlight the contingency in the action view
+                            applyContingencyHighlight(actionSvgContainerRef.current, actionMetaIndex, selectedBranch);
+
                             if (actionViewMode !== 'delta') {
                                 const stillOverloaded = [];
                                 if (overloadedLines.length > 0 && actionDetail.rho_after) {
@@ -4125,10 +4129,6 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 }
                                 applyOverloadedHighlights(actionSvgContainerRef.current, actionMetaIndex, stillOverloaded);
                             }
-
-                            applyActionTargetHighlights(actionSvgContainerRef.current, actionMetaIndex, actionDetail, selectedActionId);
-                            // Also highlight the contingency in the action view
-                            applyContingencyHighlight(actionSvgContainerRef.current, actionMetaIndex, selectedBranch);
                         } else {
                             if (actionSvgContainerRef.current) {
                                 applyActionTargetHighlights(actionSvgContainerRef.current, null, null, null);
@@ -5765,6 +5765,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 </div>
 
                                 {/* Unified analysis action slot: Analyze & Suggest → Analyzing… → Display N prioritized actions */}
+                                {(analysisLoading || pendingAnalysisResult || Object.keys(result?.actions || {}).length === 0) && (
                                 <div style={{ marginBottom: '10px' }}>
                                     {analysisLoading ? (
                                         <button disabled style={{
@@ -5811,6 +5812,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                         </button>
                                     )}
                                 </div>
+                                )}
 
                                 {suggestedTab === 'prioritized' && (
                                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
