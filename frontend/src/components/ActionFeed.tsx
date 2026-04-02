@@ -957,53 +957,53 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
 
 
                 {/* Unified analysis action slot: Analyze & Suggest → Analyzing… → Display N prioritized actions */}
-                {(analysisLoading || pendingAnalysisResult || Object.keys(actions).length === 0) && (
-                <div style={{ marginBottom: '10px' }}>
-                    {analysisLoading ? (
-                        <button disabled style={{
-                            width: '100%', padding: '10px 16px',
-                            background: '#fff3cd', color: '#856404',
-                            border: '1px solid #ffeeba', borderRadius: '8px',
-                            cursor: 'not-allowed', fontSize: '14px', fontWeight: 700,
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                        }}>
-                            ⚙️ Analyzing…
-                        </button>
-                    ) : pendingAnalysisResult ? (
-                        <button
-                            onClick={onDisplayPrioritizedActions}
-                            style={{
+                {(analysisLoading || pendingAnalysisResult || !Object.values(actions).some(a => !a.is_manual)) && (
+                    <div style={{ marginBottom: '10px' }}>
+                        {analysisLoading ? (
+                            <button disabled style={{
                                 width: '100%', padding: '10px 16px',
-                                background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
-                                color: 'white', border: 'none', borderRadius: '8px',
-                                cursor: 'pointer', fontSize: '14px', fontWeight: 700,
-                                boxShadow: '0 2px 8px rgba(39,174,96,0.3)', transition: 'transform 0.1s',
-                            }}
-                            onMouseEnter={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'}
-                            onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
-                        >
-                            📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
-                        </button>
-                    ) : (
-                        <button
-                            onClick={onRunAnalysis}
-                            disabled={!canRunAnalysis}
-                            style={{
-                                width: '100%', padding: '10px 16px',
-                                background: canRunAnalysis ? '#27ae60' : '#95a5a6',
-                                color: 'white', border: 'none', borderRadius: '8px',
-                                cursor: canRunAnalysis ? 'pointer' : 'not-allowed',
-                                fontSize: '14px', fontWeight: 700,
-                                boxShadow: canRunAnalysis ? '0 2px 8px rgba(39,174,96,0.3)' : 'none',
-                                transition: 'transform 0.1s',
-                            }}
-                            onMouseEnter={(e) => { if (canRunAnalysis) (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'; }}
-                            onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
-                        >
-                            🔍 Analyze & Suggest
-                        </button>
-                    )}
-                </div>
+                                background: '#fff3cd', color: '#856404',
+                                border: '1px solid #ffeeba', borderRadius: '8px',
+                                cursor: 'not-allowed', fontSize: '14px', fontWeight: 700,
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                            }}>
+                                ⚙️ Analyzing…
+                            </button>
+                        ) : pendingAnalysisResult ? (
+                            <button
+                                onClick={onDisplayPrioritizedActions}
+                                style={{
+                                    width: '100%', padding: '10px 16px',
+                                    background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
+                                    color: 'white', border: 'none', borderRadius: '8px',
+                                    cursor: 'pointer', fontSize: '14px', fontWeight: 700,
+                                    boxShadow: '0 2px 8px rgba(39,174,96,0.3)', transition: 'transform 0.1s',
+                                }}
+                                onMouseEnter={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'}
+                                onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
+                            >
+                                📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
+                            </button>
+                        ) : (
+                            <button
+                                onClick={onRunAnalysis}
+                                disabled={!canRunAnalysis}
+                                style={{
+                                    width: '100%', padding: '10px 16px',
+                                    background: canRunAnalysis ? '#27ae60' : '#95a5a6',
+                                    color: 'white', border: 'none', borderRadius: '8px',
+                                    cursor: canRunAnalysis ? 'pointer' : 'not-allowed',
+                                    fontSize: '14px', fontWeight: 700,
+                                    boxShadow: canRunAnalysis ? '0 2px 8px rgba(39,174,96,0.3)' : 'none',
+                                    transition: 'transform 0.1s',
+                                }}
+                                onMouseEnter={(e) => { if (canRunAnalysis) (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'; }}
+                                onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
+                            >
+                                🔍 Analyze & Suggest
+                            </button>
+                        )}
+                    </div>
                 )}
 
                 {suggestedTab === 'prioritized' && (

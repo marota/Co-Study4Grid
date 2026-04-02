@@ -46,7 +46,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 .nad-highlight {
     stroke: #e74c3c !important;
     stroke-width: 4px !important;
-    opacity: 0.9;
+    opacity: 1;
 }
 
 circle.nad-highlight {
@@ -65,7 +65,7 @@ circle.nad-highlight {
 .nad-overloaded polygon {
     stroke: #ff8c00 !important;
     stroke-width: 120px !important;
-    stroke-opacity: 0.85 !important;
+    stroke-opacity: 1 !important;
     fill: none !important;
     stroke-linecap: round !important;
     stroke-linejoin: round !important;
@@ -85,7 +85,7 @@ circle.nad-highlight {
 /* Contingency highlight: yellow */
 .nad-contingency-highlight {
     filter: drop-shadow(0 0 8px #ffe033) drop-shadow(0 0 15px #ffe033) !important;
-    opacity: 0.85 !important;
+    opacity: 1 !important;
 }
 
 /* For lines and paths, use grid units for stroke-width so the halo is always
@@ -111,7 +111,7 @@ circle.nad-highlight {
 .nad-contingency-highlight polygon {
     stroke: #ffe033 !important;
     stroke-width: 120px !important;
-    stroke-opacity: 0.85 !important;
+    stroke-opacity: 1 !important;
     opacity: 1 !important;
     fill: none !important;
     stroke-linecap: round !important;
@@ -138,9 +138,9 @@ circle.nad-highlight {
 .nad-contingency-highlight rect {
     stroke: #ffe033 !important;
     stroke-width: 45px !important;
-    stroke-opacity: 0.7 !important;
+    stroke-opacity: 1 !important;
     fill: #ffe033 !important;
-    fill-opacity: 0.9 !important;
+    fill-opacity: 1 !important;
     opacity: 1 !important;
     vector-effect: non-scaling-stroke !important;
 }
@@ -252,7 +252,7 @@ circle.nad-highlight {
 .sld-highlight-clone.sld-highlight-contingency circle {
     stroke: #ffe033 !important;
     stroke-width: 6px !important;
-    stroke-opacity: 0.7 !important;
+    stroke-opacity: 1 !important;
     fill: none !important;
 }
 
@@ -267,7 +267,7 @@ circle.nad-highlight {
 .sld-highlight-clone.sld-highlight-action circle {
     stroke: #ff4081 !important;
     stroke-width: 6px !important;
-    stroke-opacity: 0.7 !important;
+    stroke-opacity: 1 !important;
     fill: none !important;
 }
 
@@ -278,7 +278,7 @@ circle.nad-highlight {
     stroke: #ff8c00 !important;
     stroke-width: 5px !important;
     stroke-dasharray: 6 3 !important;
-    stroke-opacity: 0.7 !important;
+    stroke-opacity: 1 !important;
     fill: none !important;
 }
 
@@ -292,7 +292,7 @@ circle.nad-highlight {
 .sld-highlight-clone.sld-highlight-breaker circle {
     stroke: #ce93d8 !important;
     stroke-width: 6px !important;
-    stroke-opacity: 0.7 !important;
+    stroke-opacity: 1 !important;
     fill: none !important;
 }
 

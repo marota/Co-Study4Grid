@@ -174,6 +174,26 @@ export const buildMetadataIndex = (metadata: unknown): MetadataIndex | null => {
 };
 
 /**
+ * Create or find background layer at the root of the SVG.
+ */
+const getBackgroundLayer = (container: HTMLElement): Element | null => {
+    let backgroundLayer = container.querySelector('#nad-background-layer');
+    if (!backgroundLayer) {
+        const svg = container.querySelector('svg');
+        if (svg) {
+            backgroundLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            backgroundLayer.setAttribute('id', 'nad-background-layer');
+            if (svg.firstChild) {
+                svg.insertBefore(backgroundLayer, svg.firstChild);
+            } else {
+                svg.appendChild(backgroundLayer);
+            }
+        }
+    }
+    return backgroundLayer;
+};
+
+/**
  * Apply orange highlights to overloaded line edges on a given SVG container.
  */
 export const applyOverloadedHighlights = (
@@ -181,17 +201,55 @@ export const applyOverloadedHighlights = (
     metaIndex: MetadataIndex,
     overloadedLines: string[],
 ) => {
-    if (!container || !metaIndex || !overloadedLines || overloadedLines.length === 0) return;
+    if (!container || !metaIndex) return;
 
-    container.querySelectorAll('.nad-overloaded').forEach(el => el.classList.remove('nad-overloaded'));
+    // Remove existing highlights from both originals and clones
+    container.querySelectorAll('.nad-overloaded').forEach(el => {
+        if (el.classList.contains('nad-highlight-clone')) {
+            el.remove();
+        } else {
+            el.classList.remove('nad-overloaded');
+        }
+    });
 
+    if (!overloadedLines || overloadedLines.length === 0) return;
+
+    const backgroundLayer = getBackgroundLayer(container);
     const { edgesByEquipmentId } = metaIndex;
     const idMap = getIdMap(container);
+
+    let cachedBgCTM: DOMMatrix | null = null;
+
     overloadedLines.forEach(lineName => {
         const edge = edgesByEquipmentId.get(lineName);
         if (edge && edge.svgId) {
             const el = idMap.get(edge.svgId);
-            if (el) el.classList.add('nad-overloaded');
+            if (el) {
+                if (backgroundLayer) {
+                    const clone = el.cloneNode(true) as SVGGraphicsElement;
+                    clone.classList.add('nad-overloaded');
+                    clone.classList.add('nad-highlight-clone');
+                    clone.removeAttribute('id');
+                    clone.style.display = 'block';
+                    clone.style.visibility = 'visible';
+
+                    try {
+                        const elCTM = (el as SVGGraphicsElement).getScreenCTM();
+                        if (!cachedBgCTM) cachedBgCTM = (backgroundLayer as unknown as SVGGraphicsElement).getScreenCTM();
+                        if (elCTM && cachedBgCTM) {
+                            const relativeCTM = cachedBgCTM.inverse().multiply(elCTM);
+                            const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
+                            clone.setAttribute('transform', matrixStr);
+                        }
+                    } catch (e) {
+                        console.warn('Failed to get CTM for overloaded highlight:', e);
+                    }
+
+                    backgroundLayer.appendChild(clone);
+                } else {
+                    el.classList.add('nad-overloaded');
+                }
+            }
         }
     });
 };
@@ -380,19 +438,7 @@ export const applyActionTargetHighlights = (
     const { edgesByEquipmentId, nodesByEquipmentId } = metaIndex;
 
     // Create or find background layer at the root of the SVG
-    let backgroundLayer = container.querySelector('#nad-background-layer');
-    if (!backgroundLayer) {
-        const svg = container.querySelector('svg');
-        if (svg) {
-            backgroundLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            backgroundLayer.setAttribute('id', 'nad-background-layer');
-            if (svg.firstChild) {
-                svg.insertBefore(backgroundLayer, svg.firstChild);
-            } else {
-                svg.appendChild(backgroundLayer);
-            }
-        }
-    }
+    const backgroundLayer = getBackgroundLayer(container);
 
     // Cache bgCTM per call — constant for all highlights in a single pass
     let cachedBgCTM: DOMMatrix | null = null;

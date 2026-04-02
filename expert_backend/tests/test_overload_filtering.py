@@ -154,3 +154,49 @@ class TestOverloadFiltering:
         # "L2" was in all_overloads but not in selected, so it should be removed from care
         assert service._analysis_context["lines_we_care_about"] == {"L1", "L3"}
 
+    @patch("expert_backend.services.recommender_service.run_analysis_step2_graph")
+    @patch("expert_backend.services.recommender_service.run_analysis_step2_discovery")
+    def test_run_analysis_step2_handles_error(self, mock_run_discovery, mock_run_graph, service):
+        """Verify that backend errors are caught and yielded as error events."""
+        mock_run_graph.side_effect = Exception("Simulated Backend Crash")
+        
+        service._analysis_context = {
+            "env": MagicMock(),
+            "lines_overloaded_names": ["L1"],
+            "lines_overloaded_ids": [0],
+            "lines_overloaded_ids_kept": [0]
+        }
+        
+        events = list(service.run_analysis_step2(selected_overloads=["L1"], all_overloads=["L1"]))
+        
+        assert any(e.get("type") == "error" and "Simulated Backend Crash" in e.get("message") for e in events)
+
+    @patch("expert_backend.services.recommender_service.run_analysis_step2_graph")
+    @patch("expert_backend.services.recommender_service.run_analysis_step2_discovery")
+    def test_run_analysis_step2_care_initialization(self, mock_run_discovery, mock_run_graph, service):
+        """Verify that 'care' is correctly handled (fixing UnboundLocalError regression)."""
+        mock_run_graph.side_effect = lambda ctx: ctx
+        mock_run_discovery.return_value = {
+            "prioritized_actions": {},
+            "action_scores": {},
+            "lines_overloaded_names": ["L1"]
+        }
+        
+        # Scenario where monitor_deselected is True (skips the filtering block where 'care' was defined)
+        service._analysis_context = {
+            "env": MagicMock(),
+            "lines_overloaded_names": ["L1", "L2"],
+            "lines_overloaded_ids": [0, 1],
+            "lines_overloaded_ids_kept": [0, 1],
+            "lines_we_care_about": ["L1", "L2"]
+        }
+        
+        # This should NOT raise UnboundLocalError
+        events = list(service.run_analysis_step2(
+            selected_overloads=["L1"],
+            all_overloads=["L1", "L2"],
+            monitor_deselected=True
+        ))
+        
+        result_event = next(e for e in events if e.get("type") == "result")
+        assert result_event["lines_we_care_about"] == ["L1", "L2"]
