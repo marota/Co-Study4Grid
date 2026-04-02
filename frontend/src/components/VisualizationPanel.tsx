@@ -811,7 +811,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                     [
                         { id: 'n' as TabId, label: 'Network (N)', available: !!nDiagram?.svg, accentColor: '#3498db', dimColor: '#7f8c8d', placeholder: 'Configure a network path in Settings to load the base-case diagram.' },
                         { id: 'n-1' as TabId, label: 'Contingency (N-1)', available: !!n1Diagram?.svg, accentColor: '#e74c3c', dimColor: '#aab', placeholder: 'Select a contingency element from the dropdown to view the N-1 state.' },
-                        { id: 'action' as TabId, label: selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action', available: !!actionDiagram?.svg, accentColor: '#9c27b0', dimColor: '#aab', placeholder: 'Select an action card from the suggestions panel to view its effect on the network.' },
+                        { id: 'action' as TabId, label: selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action', available: !!actionDiagram?.svg, accentColor: '#ff4081', dimColor: '#aab', placeholder: 'Select an action card from the suggestions panel to view its effect on the network.' },
                         { id: 'overflow' as TabId, label: 'Overflow Analysis', available: !!result?.pdf_url, accentColor: '#27ae60', dimColor: '#aab', placeholder: 'Run \u201cAnalyze & Suggest\u201d to see the overflow graph.' },
                     ] as const
                 ).map(tab => {

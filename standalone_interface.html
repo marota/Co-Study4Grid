@@ -160,27 +160,38 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             fill: #e74c3c !important;
         }
 
-        /* Highlight overloaded lines in orange with glow */
+        /* Highlight overloaded lines in orange with glow (clone-based halo) */
         .nad-overloaded {
-            filter: drop-shadow(0 0 6px #ff8c00) drop-shadow(0 0 12px #ff8c00) !important;
+            filter: drop-shadow(0 0 8px #ff8c00) drop-shadow(0 0 15px #ff8c00) !important;
         }
 
         .nad-overloaded path,
         .nad-overloaded line,
-        .nad-overloaded polyline {
+        .nad-overloaded polyline,
+        .nad-overloaded rect,
+        .nad-overloaded polygon {
             stroke: #ff8c00 !important;
-            stroke-width: 3px !important;
+            stroke-width: 120px !important;
+            stroke-opacity: 0.85 !important;
+            fill: none !important;
+            stroke-linecap: round !important;
+            stroke-linejoin: round !important;
+        }
+
+        .nad-overloaded text,
+        .nad-overloaded foreignObject {
+            display: none !important;
         }
 
         /* Apply drop-shadow to the parent clone group to create a glowing halo effect */
         /* Remedial action targets: purple-pink */
         .nad-action-target {
-            filter: drop-shadow(0 0 8px #e040fb) drop-shadow(0 0 15px #e040fb) !important;
+            filter: drop-shadow(0 0 8px #ff4081) drop-shadow(0 0 15px #ff4081) !important;
         }
 
         /* Contingency highlight: yellow */
         .nad-contingency-highlight {
-            filter: drop-shadow(0 0 8px #f5c542) drop-shadow(0 0 15px #f5c542) !important;
+            filter: drop-shadow(0 0 8px #ffe033) drop-shadow(0 0 15px #ffe033) !important;
         }
 
         /* For lines and paths, use grid units for stroke-width so the halo is always significantly wider than the actual element it highlights. Using non-scaling-stroke makes it stay a fixed pixel width on screen, which can be narrower than the line when heavily zoomed in. */
@@ -189,7 +200,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .nad-action-target polyline,
         .nad-action-target rect,
         .nad-action-target polygon {
-            stroke: #e040fb !important;
+            stroke: #ff4081 !important;
             stroke-width: 150px !important;
             stroke-opacity: 0.8 !important;
             fill: none !important;
@@ -202,7 +213,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .nad-contingency-highlight polyline,
         .nad-contingency-highlight rect,
         .nad-contingency-highlight polygon {
-            stroke: #f5c542 !important;
+            stroke: #ffe033 !important;
             stroke-width: 150px !important;
             stroke-opacity: 0.8 !important;
             fill: none !important;
@@ -213,20 +224,20 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         /* For nodes (circles and rects), add a screen-space stroke to create a glowing background halo that doesn't shrink into invisibility on large grids, avoiding obscuring the original node in the foreground. */
         .nad-action-target circle,
         .nad-action-target rect {
-            stroke: #e040fb !important;
+            stroke: #ff4081 !important;
             stroke-width: 45px !important;
             stroke-opacity: 0.6 !important;
-            fill: #e040fb !important;
+            fill: #ff4081 !important;
             fill-opacity: 0.6 !important;
             vector-effect: non-scaling-stroke !important;
         }
 
         .nad-contingency-highlight circle,
         .nad-contingency-highlight rect {
-            stroke: #f5c542 !important;
+            stroke: #ffe033 !important;
             stroke-width: 45px !important;
             stroke-opacity: 0.6 !important;
-            fill: #f5c542 !important;
+            fill: #ffe033 !important;
             fill-opacity: 0.8 !important;
             vector-effect: non-scaling-stroke !important;
         }
@@ -308,7 +319,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         /* ===== SLD impact highlights ===== */
         /* Contingency element on N-1 SLD (yellow glow) */
         .sld-highlight-clone.sld-highlight-contingency {
-            filter: drop-shadow(0 0 4px #f5c542) drop-shadow(0 0 8px #f5c542);
+            filter: drop-shadow(0 0 4px #ffe033) drop-shadow(0 0 8px #ffe033);
         }
 
         .sld-highlight-clone.sld-highlight-contingency path,
@@ -316,7 +327,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .sld-highlight-clone.sld-highlight-contingency polyline,
         .sld-highlight-clone.sld-highlight-contingency rect,
         .sld-highlight-clone.sld-highlight-contingency circle {
-            stroke: #f5c542 !important;
+            stroke: #ffe033 !important;
             stroke-width: 6px !important;
             stroke-opacity: 0.7 !important;
             fill: none !important;
@@ -324,7 +335,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
         /* Action target on action SLD (purple-pink halo behind) */
         .sld-highlight-clone.sld-highlight-action {
-            filter: drop-shadow(0 0 4px #e040fb) drop-shadow(0 0 8px #e040fb);
+            filter: drop-shadow(0 0 4px #ff4081) drop-shadow(0 0 8px #ff4081);
         }
 
         .sld-highlight-clone.sld-highlight-action path,
@@ -332,7 +343,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .sld-highlight-clone.sld-highlight-action polyline,
         .sld-highlight-clone.sld-highlight-action rect,
         .sld-highlight-clone.sld-highlight-action circle {
-            stroke: #e040fb !important;
+            stroke: #ff4081 !important;
             stroke-width: 6px !important;
             stroke-opacity: 0.7 !important;
             fill: none !important;
@@ -1002,19 +1013,58 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         };
 
         // Apply orange highlights to overloaded line edges on a given SVG container
+        // Uses clone-based halo approach (like action/contingency highlights) for large visible halos.
         const applyOverloadedHighlights = (container, metaIndex, overloadedLines) => {
-            if (!container || !metaIndex || !overloadedLines || overloadedLines.length === 0) return;
+            if (!container) return;
 
-            // Clear previous overloaded highlights
-            container.querySelectorAll('.nad-overloaded').forEach(el => el.classList.remove('nad-overloaded'));
+            // Clear previous overloaded highlight clones
+            container.querySelectorAll('.nad-highlight-clone.nad-overloaded').forEach(el => el.remove());
 
+            if (!metaIndex || !overloadedLines || overloadedLines.length === 0) return;
+
+            // Ensure background layer exists
+            let backgroundLayer = container.querySelector('#nad-background-layer');
+            if (!backgroundLayer) {
+                const svg = container.querySelector('svg');
+                if (svg) {
+                    backgroundLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                    backgroundLayer.setAttribute('id', 'nad-background-layer');
+                    if (svg.firstChild) {
+                        svg.insertBefore(backgroundLayer, svg.firstChild);
+                    } else {
+                        svg.appendChild(backgroundLayer);
+                    }
+                }
+            }
+            if (!backgroundLayer) return;
+
+            let cachedBgCTM = null;
             const { edgesByEquipmentId } = metaIndex;
             const idMap = getIdMap(container);
+
             overloadedLines.forEach(lineName => {
                 const edge = edgesByEquipmentId.get(lineName);
                 if (edge && edge.svgId) {
                     const el = idMap.get(edge.svgId);
-                    if (el) el.classList.add('nad-overloaded');
+                    if (!el) return;
+
+                    const clone = el.cloneNode(true);
+                    clone.removeAttribute('id');
+                    clone.classList.add('nad-overloaded');
+                    clone.classList.add('nad-highlight-clone');
+
+                    try {
+                        const elCTM = el.getScreenCTM();
+                        if (!cachedBgCTM) cachedBgCTM = backgroundLayer.getScreenCTM();
+                        if (elCTM && cachedBgCTM) {
+                            const relativeCTM = cachedBgCTM.inverse().multiply(elCTM);
+                            const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
+                            clone.setAttribute('transform', matrixStr);
+                        }
+                    } catch (e) {
+                        console.warn('Failed to get CTM for overloaded highlight:', e);
+                    }
+                    backgroundLayer.appendChild(clone);
                 }
             });
         };
@@ -5875,7 +5925,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 {[
                                     { id: 'n', label: 'Network (N)', available: !!nDiagram?.svg, accentColor: '#3498db', placeholder: 'Configure a network path to load the base-case diagram.' },
                                     { id: 'n-1', label: 'Contingency (N-1)', available: !!n1Diagram?.svg, accentColor: '#e74c3c', placeholder: 'Select a contingency element from the dropdown to view the N-1 state.' },
-                                    { id: 'action', label: selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action', available: !!actionDiagram?.svg, accentColor: '#9c27b0', placeholder: 'Select an action card from the suggestions panel to view its effect on the network.' },
+                                    { id: 'action', label: selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action', available: !!actionDiagram?.svg, accentColor: '#ff4081', placeholder: 'Select an action card from the suggestions panel to view its effect on the network.' },
                                     { id: 'overflow', label: 'Overflow Analysis', available: !!result?.pdf_url, accentColor: '#27ae60', placeholder: 'Run \u201cAnalyze & Suggest\u201d to see the overflow graph.' },
                                 ].map(tab => {
                                     const isActive = activeTab === tab.id;

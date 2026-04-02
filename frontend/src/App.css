@@ -53,27 +53,38 @@ circle.nad-highlight {
     fill: #e74c3c !important;
 }
 
-/* Highlight overloaded lines in orange with glow */
+/* Highlight overloaded lines in orange with glow (clone-based halo) */
 .nad-overloaded {
-    filter: drop-shadow(0 0 6px #ff8c00) drop-shadow(0 0 12px #ff8c00) !important;
+    filter: drop-shadow(0 0 8px #ff8c00) drop-shadow(0 0 15px #ff8c00) !important;
 }
 
 .nad-overloaded path,
 .nad-overloaded line,
-.nad-overloaded polyline {
+.nad-overloaded polyline,
+.nad-overloaded rect,
+.nad-overloaded polygon {
     stroke: #ff8c00 !important;
-    stroke-width: 3px !important;
+    stroke-width: 120px !important;
+    stroke-opacity: 0.85 !important;
+    fill: none !important;
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
+}
+
+.nad-overloaded text,
+.nad-overloaded foreignObject {
+    display: none !important;
 }
 
 /* Apply drop-shadow to the parent clone group to create a glowing halo effect */
 /* Remedial action targets: purple-pink */
 .nad-action-target {
-    filter: drop-shadow(0 0 8px #e040fb) drop-shadow(0 0 15px #e040fb) !important;
+    filter: drop-shadow(0 0 8px #ff4081) drop-shadow(0 0 15px #ff4081) !important;
 }
 
 /* Contingency highlight: yellow */
 .nad-contingency-highlight {
-    filter: drop-shadow(0 0 8px #f5c542) drop-shadow(0 0 15px #f5c542) !important;
+    filter: drop-shadow(0 0 8px #ffe033) drop-shadow(0 0 15px #ffe033) !important;
     opacity: 0.85 !important;
 }
 
@@ -84,7 +95,7 @@ circle.nad-highlight {
 .nad-action-target polyline,
 .nad-action-target rect,
 .nad-action-target polygon {
-    stroke: #e040fb !important;
+    stroke: #ff4081 !important;
     stroke-width: 150px !important;
     stroke-opacity: 0.8 !important;
     fill: none !important;
@@ -98,7 +109,7 @@ circle.nad-highlight {
 .nad-contingency-highlight polyline,
 .nad-contingency-highlight rect,
 .nad-contingency-highlight polygon {
-    stroke: #f5c542 !important;
+    stroke: #ffe033 !important;
     stroke-width: 120px !important;
     stroke-opacity: 0.85 !important;
     opacity: 1 !important;
@@ -111,24 +122,24 @@ circle.nad-highlight {
    background halo that doesn't shrink into invisibility on large grids. */
 .nad-action-target circle,
 .nad-action-target rect {
-    stroke: #e040fb !important;
+    stroke: #ff4081 !important;
     stroke-width: 45px !important;
     stroke-opacity: 0.6 !important;
-    fill: #e040fb !important;
+    fill: #ff4081 !important;
     fill-opacity: 0.6 !important;
     vector-effect: non-scaling-stroke !important;
 }
 
 .nad-action-target {
-    filter: drop-shadow(0 0 8px #e040fb) drop-shadow(0 0 15px #e040fb) !important;
+    filter: drop-shadow(0 0 8px #ff4081) drop-shadow(0 0 15px #ff4081) !important;
 }
 
 .nad-contingency-highlight circle,
 .nad-contingency-highlight rect {
-    stroke: #f5c542 !important;
+    stroke: #ffe033 !important;
     stroke-width: 45px !important;
     stroke-opacity: 0.7 !important;
-    fill: #f5c542 !important;
+    fill: #ffe033 !important;
     fill-opacity: 0.9 !important;
     opacity: 1 !important;
     vector-effect: non-scaling-stroke !important;
@@ -149,7 +160,8 @@ circle.nad-highlight {
    The compositing cost of multiple drop-shadows on cloned highlight
    elements is high — skip it while the viewBox is changing rapidly. */
 .svg-container.svg-interacting .nad-action-target,
-.svg-container.svg-interacting .nad-contingency-highlight {
+.svg-container.svg-interacting .nad-contingency-highlight,
+.svg-container.svg-interacting .nad-overloaded {
     filter: none !important;
 }
 
@@ -231,14 +243,14 @@ circle.nad-highlight {
 
 /* Contingency element on N-1 SLD (yellow halo behind) */
 .sld-highlight-clone.sld-highlight-contingency {
-    filter: drop-shadow(0 0 4px #f5c542) drop-shadow(0 0 8px #f5c542);
+    filter: drop-shadow(0 0 4px #ffe033) drop-shadow(0 0 8px #ffe033);
 }
 .sld-highlight-clone.sld-highlight-contingency path,
 .sld-highlight-clone.sld-highlight-contingency line,
 .sld-highlight-clone.sld-highlight-contingency polyline,
 .sld-highlight-clone.sld-highlight-contingency rect,
 .sld-highlight-clone.sld-highlight-contingency circle {
-    stroke: #f5c542 !important;
+    stroke: #ffe033 !important;
     stroke-width: 6px !important;
     stroke-opacity: 0.7 !important;
     fill: none !important;
@@ -246,14 +258,14 @@ circle.nad-highlight {
 
 /* Action target on action SLD (purple-pink halo behind) */
 .sld-highlight-clone.sld-highlight-action {
-    filter: drop-shadow(0 0 4px #e040fb) drop-shadow(0 0 8px #e040fb);
+    filter: drop-shadow(0 0 4px #ff4081) drop-shadow(0 0 8px #ff4081);
 }
 .sld-highlight-clone.sld-highlight-action path,
 .sld-highlight-clone.sld-highlight-action line,
 .sld-highlight-clone.sld-highlight-action polyline,
 .sld-highlight-clone.sld-highlight-action rect,
 .sld-highlight-clone.sld-highlight-action circle {
-    stroke: #e040fb !important;
+    stroke: #ff4081 !important;
     stroke-width: 6px !important;
     stroke-opacity: 0.7 !important;
     fill: none !important;
