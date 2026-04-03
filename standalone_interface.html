@@ -1050,8 +1050,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     clone.classList.add('nad-highlight-clone');
 
                     try {
-                        const elCTM = el.getScreenCTM();
-                        if (!cachedBgCTM) cachedBgCTM = backgroundLayer.getScreenCTM();
+                        const elCTM = el.getCTM();
+                        if (!cachedBgCTM) cachedBgCTM = backgroundLayer.getCTM();
                         if (elCTM && cachedBgCTM) {
                             const relativeCTM = cachedBgCTM.inverse().multiply(elCTM);
                             const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
@@ -1225,8 +1225,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     clone.classList.add('nad-highlight-clone');
 
                     try {
-                        const elCTM = el.getScreenCTM();
-                        if (!cachedBgCTM) cachedBgCTM = backgroundLayer.getScreenCTM();
+                        const elCTM = el.getCTM();
+                        if (!cachedBgCTM) cachedBgCTM = backgroundLayer.getCTM();
                         if (elCTM && cachedBgCTM) {
                             const relativeCTM = cachedBgCTM.inverse().multiply(elCTM);
                             const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
@@ -1278,22 +1278,22 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             const edge = edgesByEquipmentId.get(disconnectedElement);
             if (!edge || !edge.svgId) return;
 
+            const svg = container.querySelector('svg');
+            if (!svg) return;
+
             let backgroundLayer = container.querySelector('#nad-background-layer');
             if (!backgroundLayer) {
-                const svg = container.querySelector('svg');
-                if (svg) {
-                    backgroundLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-                    backgroundLayer.setAttribute('id', 'nad-background-layer');
-                    if (svg.firstChild) {
-                        svg.insertBefore(backgroundLayer, svg.firstChild);
-                    } else {
-                        svg.appendChild(backgroundLayer);
-                    }
+                backgroundLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                backgroundLayer.setAttribute('id', 'nad-background-layer');
+                if (svg.firstChild) {
+                    svg.insertBefore(backgroundLayer, svg.firstChild);
+                } else {
+                    svg.appendChild(backgroundLayer);
                 }
             }
 
             const el = getIdMap(container).get(edge.svgId);
-            if (!el || !backgroundLayer) return;
+            if (!el) return;
 
             const clone = el.cloneNode(true);
             clone.removeAttribute('id');
@@ -1302,9 +1302,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             clone.classList.add('nad-contingency-highlight');
             clone.classList.add('nad-highlight-clone');
 
+            // Compute the cumulative transform from the SVG root to the element,
+            // then compensate for the background layer's own transform (if any).
+            // getCTM() gives the transform relative to the SVG viewport, which is
+            // stable across pan/zoom (unlike getScreenCTM which includes screen offset).
             try {
-                const elCTM = el.getScreenCTM();
-                const bgCTM = backgroundLayer.getScreenCTM();
+                const elCTM = el.getCTM();
+                const bgCTM = backgroundLayer.getCTM();
                 if (elCTM && bgCTM) {
                     const relativeCTM = bgCTM.inverse().multiply(elCTM);
                     const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
