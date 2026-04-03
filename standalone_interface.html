@@ -1282,7 +1282,23 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             if (!edge || !edge.svgId) return;
 
             const el = getIdMap(container).get(edge.svgId);
-            if (!el || !el.parentNode) return;
+            if (!el) return;
+
+            // Ensure background layer exists
+            let backgroundLayer = container.querySelector('#nad-background-layer');
+            if (!backgroundLayer) {
+                const svg = container.querySelector('svg');
+                if (svg) {
+                    backgroundLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                    backgroundLayer.setAttribute('id', 'nad-background-layer');
+                    if (svg.firstChild) {
+                        svg.insertBefore(backgroundLayer, svg.firstChild);
+                    } else {
+                        svg.appendChild(backgroundLayer);
+                    }
+                }
+            }
+            if (!backgroundLayer) return;
 
             const clone = el.cloneNode(true);
             clone.removeAttribute('id');
@@ -1291,9 +1307,19 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             clone.classList.add('nad-contingency-highlight');
             clone.classList.add('nad-highlight-clone');
 
-            // Insert right before the original — same parent = same transforms,
-            // and SVG paint order means the clone (halo) renders behind the original.
-            el.parentNode.insertBefore(clone, el);
+            try {
+                const elCTM = el.getCTM();
+                const bgCTM = backgroundLayer.getCTM();
+                if (elCTM && bgCTM) {
+                    const relativeCTM = bgCTM.inverse().multiply(elCTM);
+                    const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
+                    clone.setAttribute('transform', matrixStr);
+                }
+            } catch (e) {
+                console.warn('Failed to get CTM for contingency highlight:', e);
+            }
+
+            backgroundLayer.appendChild(clone);
         };
 
         function App() {
