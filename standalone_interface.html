@@ -1267,7 +1267,12 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
         // Apply orange halo to the disconnected branch in the N-1 state.
         const applyContingencyHighlight = (container, metaIndex, disconnectedElement) => {
-            if (!container || !metaIndex || !disconnectedElement) return;
+            if (!container) return;
+
+            // Clear previous contingency highlight clones
+            container.querySelectorAll('.nad-highlight-clone.nad-contingency-highlight').forEach(el => el.remove());
+
+            if (!metaIndex || !disconnectedElement) return;
 
             const { edgesByEquipmentId } = metaIndex;
             const edge = edgesByEquipmentId.get(disconnectedElement);
@@ -1299,8 +1304,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
             try {
                 const elCTM = el.getScreenCTM();
-                // Cache bgCTM — only one contingency highlight per call
-                const bgCTM = backgroundLayer._cachedScreenCTM || (backgroundLayer._cachedScreenCTM = backgroundLayer.getScreenCTM());
+                const bgCTM = backgroundLayer.getScreenCTM();
                 if (elCTM && bgCTM) {
                     const relativeCTM = bgCTM.inverse().multiply(elCTM);
                     const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
