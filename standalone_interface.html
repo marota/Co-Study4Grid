@@ -1265,7 +1265,12 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             });
         };
 
-        // Apply orange halo to the disconnected branch in the N-1 state.
+        // Apply yellow halo to the disconnected branch in the N-1 / action state.
+        // Instead of placing clones in a separate background layer (which requires
+        // fragile CTM compensation that drifts on tab switch / pan), we insert the
+        // clone as an immediate previous sibling of the original element.  This way
+        // it inherits ALL parent transforms naturally and stays locked to the asset.
+        // The clone renders behind the original because SVG paints in document order.
         const applyContingencyHighlight = (container, metaIndex, disconnectedElement) => {
             if (!container) return;
 
@@ -1278,22 +1283,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             const edge = edgesByEquipmentId.get(disconnectedElement);
             if (!edge || !edge.svgId) return;
 
-            const svg = container.querySelector('svg');
-            if (!svg) return;
-
-            let backgroundLayer = container.querySelector('#nad-background-layer');
-            if (!backgroundLayer) {
-                backgroundLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-                backgroundLayer.setAttribute('id', 'nad-background-layer');
-                if (svg.firstChild) {
-                    svg.insertBefore(backgroundLayer, svg.firstChild);
-                } else {
-                    svg.appendChild(backgroundLayer);
-                }
-            }
-
             const el = getIdMap(container).get(edge.svgId);
-            if (!el) return;
+            if (!el || !el.parentNode) return;
 
             const clone = el.cloneNode(true);
             clone.removeAttribute('id');
@@ -1302,22 +1293,9 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             clone.classList.add('nad-contingency-highlight');
             clone.classList.add('nad-highlight-clone');
 
-            // Compute the cumulative transform from the SVG root to the element,
-            // then compensate for the background layer's own transform (if any).
-            // getCTM() gives the transform relative to the SVG viewport, which is
-            // stable across pan/zoom (unlike getScreenCTM which includes screen offset).
-            try {
-                const elCTM = el.getCTM();
-                const bgCTM = backgroundLayer.getCTM();
-                if (elCTM && bgCTM) {
-                    const relativeCTM = bgCTM.inverse().multiply(elCTM);
-                    const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
-                    clone.setAttribute('transform', matrixStr);
-                }
-            } catch (e) {
-                console.warn('Failed to get CTM for contingency highlight:', e);
-            }
-            backgroundLayer.prepend(clone);
+            // Insert right before the original — same parent = same transforms,
+            // and SVG paint order means the clone (halo) renders behind the original.
+            el.parentNode.insertBefore(clone, el);
         };
 
         function App() {
