@@ -410,7 +410,7 @@ function App() {
         if (actionViewMode !== 'delta') {
           let overloadsToHighlight: string[] = [];
 
-          if (actionDetail.lines_overloaded_after) {
+          if (actionDetail.lines_overloaded_after && actionDetail.lines_overloaded_after.length > 0) {
             overloadsToHighlight = actionDetail.lines_overloaded_after;
           } else {
             // Fallback for legacy results or actions without full enrichment

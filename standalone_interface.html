@@ -4138,7 +4138,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
                             if (actionViewMode !== 'delta') {
                                 let overloadsToHighlight = [];
-                                if (actionDetail.lines_overloaded_after) {
+                                if (actionDetail.lines_overloaded_after && actionDetail.lines_overloaded_after.length > 0) {
                                     overloadsToHighlight = actionDetail.lines_overloaded_after;
                                 } else {
                                     // Fallback for legacy results or actions without full enrichment

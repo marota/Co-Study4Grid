@@ -125,18 +125,21 @@ class RecommenderService:
         """Helper to convert raw prioritized actions into enriched dict for JSON response.
 
         The discovery engine returns raw obs.rho values (physical loading
-        fraction where 1.0 = 100% of the thermal limit).  We pass them
-        through unchanged so the frontend displays the true loading
-        percentages.  The monitoring_factor is used only as a threshold
-        to decide whether a line counts as overloaded, NOT as a scaling
-        factor on display values.
+        fraction where 1.0 = 100% of the thermal limit).  We scale them
+        by monitoring_factor so the frontend displays operational loading
+        percentages (relative to the reduced operational limit).
         """
+        monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
         enriched_actions = {}
 
         for action_id, action_data in prioritized_actions_dict.items():
-            rho_before = action_data.get("rho_before")
-            rho_after = action_data.get("rho_after")
-            max_rho = action_data.get("max_rho")
+            rho_before_raw = action_data.get("rho_before")
+            rho_after_raw = action_data.get("rho_after")
+            max_rho_raw = action_data.get("max_rho")
+
+            rho_before = [r * monitoring_factor for r in rho_before_raw] if rho_before_raw is not None else None
+            rho_after = [r * monitoring_factor for r in rho_after_raw] if rho_after_raw is not None else None
+            max_rho = (max_rho_raw * monitoring_factor) if max_rho_raw is not None else None
 
             non_convergence = action_data.get("non_convergence")
             if not non_convergence:
@@ -2264,7 +2267,7 @@ class RecommenderService:
         # Important: Extract rho as 1D array to support indexing even if it's a mock/list
         # Return raw rho values (physical loading fraction) — monitoring_factor is only
         # a threshold, not a display scaling factor.
-        rho_before = np.atleast_1d(obs_simu_defaut.rho)[lines_overloaded_ids].tolist() if lines_overloaded_ids else []
+        rho_before = (np.atleast_1d(obs_simu_defaut.rho)[lines_overloaded_ids] * float(monitoring_factor)).tolist() if lines_overloaded_ids else []
         rho_after = None
         max_rho = 0.0
         max_rho_line = "N/A"
@@ -2281,7 +2284,7 @@ class RecommenderService:
                 # Compute disconnected MW
                 disconnected_mw = float(max(0.0, obs_simu_defaut.main_component_load_mw - obs_simu_action.main_component_load_mw))
             
-            rho_after = np.atleast_1d(obs_simu_action.rho)[lines_overloaded_ids].tolist()
+            rho_after = (np.atleast_1d(obs_simu_action.rho)[lines_overloaded_ids] * float(monitoring_factor)).tolist()
             if rho_before:
                 try:
                     is_rho_reduction = bool(np.all(np.array(rho_after) + 0.01 < np.array(rho_before)))
@@ -2327,9 +2330,9 @@ class RecommenderService:
                 lines_overloaded_after = monitored_names[overload_mask].tolist()
 
                 # 2. Update max_rho: global worst case among MONITORED lines after the action
-                # Return raw rho (no monitoring_factor scaling) for display
+                # Scale by monitoring_factor for operational loading display
                 if len(monitored_rho) > 0:
-                    max_rho = float(np.max(monitored_rho))
+                    max_rho = float(np.max(monitored_rho)) * mf
                     max_rho_line = monitored_names[np.argmax(monitored_rho)]
                 else:
                     max_rho = 0.0
@@ -2645,10 +2648,10 @@ class RecommenderService:
                  max_rho = float(masked_rho[max_idx])
                  max_rho_line = name_line[np.where(eligible_mask)[0][max_idx]]
 
-             # Return raw rho values (physical loading fraction)
-             res_max_rho = max_rho
-             res_rho_after = rho_combined[lines_overloaded_ids].tolist()
-             res_rho_before = obs_start.rho[lines_overloaded_ids].tolist()
+             # Scale by monitoring_factor for operational loading display
+             res_max_rho = max_rho * monitoring_factor
+             res_rho_after = (rho_combined[lines_overloaded_ids] * monitoring_factor).tolist()
+             res_rho_before = (obs_start.rho[lines_overloaded_ids] * monitoring_factor).tolist()
 
              # Check if it reduces loading on ALL overloaded lines
              # Use 0.01 (1%) as a robust epsilon for "reduction"
