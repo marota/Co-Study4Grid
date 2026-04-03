@@ -20,6 +20,8 @@ interface ActionFeedProps {
     rejectedActionIds: Set<string>;
     pendingAnalysisResult: AnalysisResult | null;
     onDisplayPrioritizedActions: () => void;
+    onRunAnalysis: () => void;
+    canRunAnalysis: boolean;
     onActionSelect: (actionId: string | null) => void;
     onActionFavorite: (actionId: string) => void;
     onActionReject: (actionId: string) => void;
@@ -56,6 +58,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     rejectedActionIds,
     pendingAnalysisResult,
     onDisplayPrioritizedActions,
+    onRunAnalysis,
+    canRunAnalysis,
     onActionSelect,
     onActionFavorite,
     onActionReject,
@@ -97,6 +101,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     const [dismissedSelectedWarning, setDismissedSelectedWarning] = useState(false);
     const [dismissedRejectedWarning, setDismissedRejectedWarning] = useState(false);
     const [showActionDictWarning, setShowActionDictWarning] = useState(true);
+    const [showRecommenderWarning, setShowRecommenderWarning] = useState(true);
 
     const showTooltip = (e: React.MouseEvent, content: React.ReactNode) => {
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -951,47 +956,54 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 </div>
 
 
-                {/* Processing indicator during analysis */}
-                {analysisLoading && (
-                    <div style={{
-                        padding: '12px',
-                        background: '#fff3cd',
-                        border: '1px solid #ffeeba',
-                        borderRadius: '8px',
-                        marginBottom: '15px',
-                        textAlign: 'center',
-                        color: '#856404',
-                        fontWeight: 600,
-                        fontSize: '14px',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                        animation: 'pulse 2s infinite ease-in-out'
-                    }}>
-                        ⚙️ Processing analysis...
+                {/* Unified analysis action slot: Analyze & Suggest → Analyzing… → Display N prioritized actions */}
+                {(analysisLoading || pendingAnalysisResult || !Object.values(actions).some(a => !a.is_manual)) && (
+                    <div style={{ marginBottom: '10px' }}>
+                        {analysisLoading ? (
+                            <button disabled style={{
+                                width: '100%', padding: '10px 16px',
+                                background: '#fff3cd', color: '#856404',
+                                border: '1px solid #ffeeba', borderRadius: '8px',
+                                cursor: 'not-allowed', fontSize: '14px', fontWeight: 700,
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                            }}>
+                                ⚙️ Analyzing…
+                            </button>
+                        ) : pendingAnalysisResult ? (
+                            <button
+                                onClick={onDisplayPrioritizedActions}
+                                style={{
+                                    width: '100%', padding: '10px 16px',
+                                    background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
+                                    color: 'white', border: 'none', borderRadius: '8px',
+                                    cursor: 'pointer', fontSize: '14px', fontWeight: 700,
+                                    boxShadow: '0 2px 8px rgba(39,174,96,0.3)', transition: 'transform 0.1s',
+                                }}
+                                onMouseEnter={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'}
+                                onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
+                            >
+                                📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
+                            </button>
+                        ) : (
+                            <button
+                                onClick={onRunAnalysis}
+                                disabled={!canRunAnalysis}
+                                style={{
+                                    width: '100%', padding: '10px 16px',
+                                    background: canRunAnalysis ? '#27ae60' : '#95a5a6',
+                                    color: 'white', border: 'none', borderRadius: '8px',
+                                    cursor: canRunAnalysis ? 'pointer' : 'not-allowed',
+                                    fontSize: '14px', fontWeight: 700,
+                                    boxShadow: canRunAnalysis ? '0 2px 8px rgba(39,174,96,0.3)' : 'none',
+                                    transition: 'transform 0.1s',
+                                }}
+                                onMouseEnter={(e) => { if (canRunAnalysis) (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'; }}
+                                onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
+                            >
+                                🔍 Analyze & Suggest
+                            </button>
+                        )}
                     </div>
-                )}
-                {/* Display prioritized actions button inside Suggested Actions section */}
-                {pendingAnalysisResult && !analysisLoading && (
-                    <button
-                        onClick={onDisplayPrioritizedActions}
-                        style={{
-                            width: '100%',
-                            padding: '10px 16px',
-                            margin: '0 0 10px 0',
-                            background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            fontWeight: 700,
-                            boxShadow: '0 2px 8px rgba(39,174,96,0.3)',
-                            transition: 'transform 0.1s',
-                        }}
-                        onMouseEnter={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'}
-                        onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
-                    >
-                        📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
-                    </button>
                 )}
 
                 {suggestedTab === 'prioritized' && (
@@ -999,9 +1011,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         !analysisLoading ? (
                             <div style={{ textAlign: 'center' }}>
                                 <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0' }}>
-                                    {!pendingAnalysisResult ? 'Run analysis to get action suggestions.' : 'No suggested actions available.'}
+                                    {!pendingAnalysisResult ? 'Click \u201cAnalyze & Suggest\u201d above to get action suggestions.' : 'No suggested actions available.'}
                                 </p>
-                                {!pendingAnalysisResult && (
+                                {!pendingAnalysisResult && showRecommenderWarning && (
                                     <div style={{
                                         marginTop: '10px',
                                         padding: '10px',
@@ -1012,24 +1024,31 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                         color: '#856404',
                                         textAlign: 'left'
                                     }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
                                             <div style={{ fontWeight: 'bold' }}>Recommender Settings:</div>
-                                            {onOpenSettings && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                {onOpenSettings && (
+                                                    <button
+                                                        onClick={() => onOpenSettings('recommender')}
+                                                        style={{
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            color: '#0056b3',
+                                                            textDecoration: 'underline',
+                                                            cursor: 'pointer',
+                                                            padding: '0',
+                                                            fontSize: '11px'
+                                                        }}
+                                                    >
+                                                        Change in settings
+                                                    </button>
+                                                )}
                                                 <button
-                                                    onClick={() => onOpenSettings('recommender')}
-                                                    style={{
-                                                        background: 'none',
-                                                        border: 'none',
-                                                        color: '#0056b3',
-                                                        textDecoration: 'underline',
-                                                        cursor: 'pointer',
-                                                        padding: '0',
-                                                        fontSize: '11px'
-                                                    }}
-                                                >
-                                                    Change in settings
-                                                </button>
-                                            )}
+                                                    onClick={() => setShowRecommenderWarning(false)}
+                                                    style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: '#856404' }}
+                                                    title="Dismiss"
+                                                >&times;</button>
+                                            </div>
                                         </div>
                                         <div>• Minimum actions: {minLineReconnections} reco, {minCloseCoupling} close, {minOpenCoupling} open, {minLineDisconnections} disco, {minPst} PST, {minLoadShedding} load shedding, {minRenewableCurtailmentActions} RC</div>
                                         <div>• Maximum suggestions: {nPrioritizedActions}</div>

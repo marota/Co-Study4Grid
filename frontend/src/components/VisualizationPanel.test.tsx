@@ -58,9 +58,9 @@ describe('VisualizationPanel', () => {
         expect(screen.getByText('Network (N)')).toBeInTheDocument();
     });
 
-    it('does not render N-1 tab when no branch selected', () => {
+    it('always renders N-1 tab (even without branch selected)', () => {
         render(<VisualizationPanel {...createDefaultProps()} />);
-        expect(screen.queryByText('Contingency (N-1)')).not.toBeInTheDocument();
+        expect(screen.getByText('Contingency (N-1)')).toBeInTheDocument();
     });
 
     it('renders N-1 tab when branch is selected', () => {
@@ -68,12 +68,22 @@ describe('VisualizationPanel', () => {
         expect(screen.getByText('Contingency (N-1)')).toBeInTheDocument();
     });
 
-    it('renders action tab when action is selected', () => {
+    it('renders action tab with action ID when action is selected', () => {
         render(<VisualizationPanel {...createDefaultProps({ selectedActionId: 'action_1' })} />);
-        expect(screen.getByText('Action: action_1')).toBeInTheDocument();
+        expect(screen.getByText('Remedial Action: action_1')).toBeInTheDocument();
     });
 
-    it('renders overflow tab when PDF URL is available', () => {
+    it('renders action tab with default label when no action selected', () => {
+        render(<VisualizationPanel {...createDefaultProps()} />);
+        expect(screen.getByText('Remedial Action')).toBeInTheDocument();
+    });
+
+    it('always renders overflow tab (even without pdf_url)', () => {
+        render(<VisualizationPanel {...createDefaultProps()} />);
+        expect(screen.getByText('Overflow Analysis')).toBeInTheDocument();
+    });
+
+    it('overflow tab is always visible regardless of pdf_url', () => {
         const result: AnalysisResult = {
             pdf_path: '/tmp/graph.pdf',
             pdf_url: '/results/pdf/graph.pdf',
@@ -218,7 +228,7 @@ describe('VisualizationPanel', () => {
         expect(iframe?.getAttribute('src')).toContain('/results/pdf/graph.pdf');
     });
 
-    it('does not show overflow tab when result has no pdf_url', () => {
+    it('shows placeholder message in overflow tab when result has no pdf_url', () => {
         const result: AnalysisResult = {
             pdf_path: null,
             pdf_url: null,
@@ -227,8 +237,11 @@ describe('VisualizationPanel', () => {
             message: 'Done',
             dc_fallback: false,
         };
-        render(<VisualizationPanel {...createDefaultProps({ result })} />);
-        expect(screen.queryByText('Overflow Analysis')).not.toBeInTheDocument();
+        render(<VisualizationPanel {...createDefaultProps({ result, activeTab: 'overflow' })} />);
+        // Tab is always visible
+        expect(screen.getByText('Overflow Analysis')).toBeInTheDocument();
+        // But no iframe
+        expect(document.querySelector('iframe[title="Overflow Graph"]')).not.toBeInTheDocument();
     });
 
     it('overflow tab remains when result is updated but pdf_url is preserved', () => {
@@ -257,7 +270,7 @@ describe('VisualizationPanel', () => {
         expect(iframe).toBeInTheDocument();
     });
 
-    it('overflow tab disappears when result loses pdf_url (regression scenario)', () => {
+    it('overflow tab stays visible when result loses pdf_url; iframe disappears', () => {
         const result1: AnalysisResult = {
             pdf_path: '/tmp/graph.pdf',
             pdf_url: '/results/pdf/graph.pdf',
@@ -268,8 +281,9 @@ describe('VisualizationPanel', () => {
         };
         const { rerender } = render(<VisualizationPanel {...createDefaultProps({ result: result1, activeTab: 'overflow' })} />);
         expect(screen.getByText('Overflow Analysis')).toBeInTheDocument();
+        expect(document.querySelector('iframe[title="Overflow Graph"]')).toBeInTheDocument();
 
-        // If pdf_url were lost (the bug), overflow tab would disappear
+        // Simulate loss of pdf_url
         const resultNoPdf: AnalysisResult = {
             pdf_path: null,
             pdf_url: null,
@@ -280,8 +294,9 @@ describe('VisualizationPanel', () => {
         };
         rerender(<VisualizationPanel {...createDefaultProps({ result: resultNoPdf, activeTab: 'overflow' })} />);
 
-        // Without pdf_url, overflow tab should be gone
-        expect(screen.queryByText('Overflow Analysis')).not.toBeInTheDocument();
+        // Tab is always visible, but iframe is gone
+        expect(screen.getByText('Overflow Analysis')).toBeInTheDocument();
+        expect(document.querySelector('iframe[title="Overflow Graph"]')).not.toBeInTheDocument();
     });
 
     describe('SLD Overlay Delta Class Cleanup', () => {

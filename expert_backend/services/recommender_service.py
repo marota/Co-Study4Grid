@@ -122,7 +122,13 @@ class RecommenderService:
         return self._saved_computed_pairs
 
     def _enrich_actions(self, prioritized_actions_dict):
-        """Helper to convert raw prioritized actions into enriched dict for JSON response."""
+        """Helper to convert raw prioritized actions into enriched dict for JSON response.
+
+        The discovery engine returns raw obs.rho values (physical loading
+        fraction where 1.0 = 100% of the thermal limit).  We scale them
+        by monitoring_factor so the frontend displays operational loading
+        percentages (relative to the reduced operational limit).
+        """
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
         enriched_actions = {}
 
@@ -155,6 +161,7 @@ class RecommenderService:
                 "max_rho_line": action_data.get("max_rho_line", ""),
                 "is_rho_reduction": bool(action_data.get("is_rho_reduction", False)),
                 "non_convergence": non_convergence,
+                "lines_overloaded_after": sanitize_for_json(action_data.get("lines_overloaded_after", [])),
             }
 
             # Extract topology from the underlying action object
@@ -807,39 +814,45 @@ class RecommenderService:
         else:
             print(f"[Step2] monitor_deselected={monitor_deselected}, all_overloads={all_overloads} -> NOT filtering lines_we_care_about")
 
-        # Part 1: Graph generation and PDF
-        context = run_analysis_step2_graph(context)
-        
-        # Yield PDF event (graph is generated in Step 2 Part 1)
-        yield {"type": "pdf", "pdf_path": self._get_latest_pdf_path(analysis_start_time)}
-        
-        # Part 2: Action discovery
-        results = run_analysis_step2_discovery(context)
-        self._last_result = results # Store for diagram generation
+        try:
+            # Part 1: Graph generation and PDF
+            context = run_analysis_step2_graph(context)
+            
+            # Yield PDF event (graph is generated in Step 2 Part 1)
+            yield {"type": "pdf", "pdf_path": self._get_latest_pdf_path(analysis_start_time)}
+            
+            # Part 2: Action discovery
+            results = run_analysis_step2_discovery(context)
+            self._last_result = results # Store for diagram generation
 
-        # Build enriched actions the same way as run_analysis - with monitoring_factor applied and topology
-        enriched_actions = self._enrich_actions(results["prioritized_actions"])
+            # Build enriched actions the same way as run_analysis - with monitoring_factor applied and topology
+            enriched_actions = self._enrich_actions(results["prioritized_actions"])
 
-        # Safety filter: ensure no combined actions (with '+') leak into the main actions feed during initial analysis
-        # They should only exist in combined_actions as estimations.
-        enriched_actions = {aid: data for aid, data in enriched_actions.items() if "+" not in aid}
+            # Safety filter: ensure no combined actions (with '+') leak into the main actions feed during initial analysis
+            # They should only exist in combined_actions as estimations.
+            enriched_actions = {aid: data for aid, data in enriched_actions.items() if "+" not in aid}
 
-        # Compute MW at start for score tables
-        action_scores = self._compute_mw_start_for_scores(results.get("action_scores", {}))
+            # Compute MW at start for score tables
+            action_scores = self._compute_mw_start_for_scores(results.get("action_scores", {}))
 
-        # Yield result
-        care = context.get("lines_we_care_about")
-        yield sanitize_for_json({
-            "type": "result",
-            "actions": enriched_actions,
-            "action_scores": action_scores,
-            "lines_overloaded": results["lines_overloaded_names"],
-            "pre_existing_overloads": results.get("pre_existing_overloads", []),
-            "combined_actions": results.get("combined_actions", {}),
-            "lines_we_care_about": list(care) if care is not None else None,
-            "message": "Analysis completed",
-            "dc_fallback": False,
-        })
+            print(f"[Step 2] Yielding final result event with {len(enriched_actions)} enriched actions")
+            # Yield result
+            lines_we_care_about = context.get("lines_we_care_about")
+            yield sanitize_for_json({
+                "type": "result",
+                "actions": enriched_actions,
+                "action_scores": action_scores,
+                "lines_overloaded": results["lines_overloaded_names"],
+                "pre_existing_overloads": results.get("pre_existing_overloads", []),
+                "combined_actions": results.get("combined_actions", {}),
+                "lines_we_care_about": list(lines_we_care_about) if lines_we_care_about is not None else None,
+                "message": "Analysis completed",
+                "dc_fallback": False,
+            })
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield {"type": "error", "message": f"Backend Error in Analysis Resolution: {str(e)}"}
 
     def run_analysis(self, disconnected_element: str):
         import io
@@ -962,8 +975,6 @@ class RecommenderService:
             prioritized = result.get("prioritized_actions", {})
             action_scores = sanitize_for_json(result.get("action_scores", {}))
             action_scores = self._compute_mw_start_for_scores(action_scores)
-
-            monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
 
             enriched_actions = self._enrich_actions(prioritized)
 
@@ -2254,6 +2265,8 @@ class RecommenderService:
             description_unitaire = "[COMBINED] " + " + ".join([str(get_desc(aid)) for aid in action_ids])
         
         # Important: Extract rho as 1D array to support indexing even if it's a mock/list
+        # Return raw rho values (physical loading fraction) — monitoring_factor is only
+        # a threshold, not a display scaling factor.
         rho_before = (np.atleast_1d(obs_simu_defaut.rho)[lines_overloaded_ids] * float(monitoring_factor)).tolist() if lines_overloaded_ids else []
         rho_after = None
         max_rho = 0.0
@@ -2306,17 +2319,31 @@ class RecommenderService:
                 if idx < len(care_mask):
                     care_mask[idx] = True
             
-            if np.any(care_mask):
-                # Handle potential mock multiplication failures by coercing or safe-accessing
-                try:
-                    rhos_of_interest = action_rho[care_mask] * mf
-                    max_rho = float(np.max(rhos_of_interest))
-                    valid_line_names = action_names[care_mask]
-                    max_rho_line = valid_line_names[np.argmax(rhos_of_interest)]
-                except Exception as e:
-                    print(f"Warning: Calculation of max_rho failed in test context: {e}")
+            # Handle potential mock failures by coercing or safe-accessing
+            try:
+                # Filter by care_mask if available
+                monitored_rho = action_rho[care_mask] if care_mask is not None else action_rho
+                monitored_names = action_names[care_mask] if care_mask is not None else action_names
+
+                # 1. Update lines_overloaded_after: ANY MONITORED line above mf
+                overload_mask = (monitored_rho >= mf)
+                lines_overloaded_after = monitored_names[overload_mask].tolist()
+
+                # 2. Update max_rho: global worst case among MONITORED lines after the action
+                # Scale by monitoring_factor for operational loading display
+                if len(monitored_rho) > 0:
+                    max_rho = float(np.max(monitored_rho)) * mf
+                    max_rho_line = monitored_names[np.argmax(monitored_rho)]
+                else:
                     max_rho = 0.0
                     max_rho_line = "N/A"
+            except Exception as e:
+                print(f"Warning: Calculation of max_rho or overloads failed: {e}")
+                max_rho = 0.0
+                max_rho_line = "N/A"
+                lines_overloaded_after = []
+        else:
+            lines_overloaded_after = []
 
         # Capture non-convergence reason
         sim_exception = info_action.get("exception")
@@ -2388,6 +2415,7 @@ class RecommenderService:
             "is_rho_reduction": is_rho_reduction,
             "is_islanded": is_islanded,
             "non_convergence": non_convergence,
+            "lines_overloaded_after": sanitize_for_json(lines_overloaded_after),
             "is_estimated": False,
         }
         if not info_action["exception"] and obs_simu_action is not None:
@@ -2481,6 +2509,7 @@ class RecommenderService:
             "disconnected_mw": disconnected_mw,
             "non_convergence": non_convergence,
             "lines_overloaded": sanitize_for_json(lines_overloaded_names),
+            "lines_overloaded_after": sanitize_for_json(lines_overloaded_after),
             "content": content,
         }
 
@@ -2619,7 +2648,7 @@ class RecommenderService:
                  max_rho = float(masked_rho[max_idx])
                  max_rho_line = name_line[np.where(eligible_mask)[0][max_idx]]
 
-             # Scale results by monitoring_factor for consistency with other simulations
+             # Scale by monitoring_factor for operational loading display
              res_max_rho = max_rho * monitoring_factor
              res_rho_after = (rho_combined[lines_overloaded_ids] * monitoring_factor).tolist()
              res_rho_before = (obs_start.rho[lines_overloaded_ids] * monitoring_factor).tolist()

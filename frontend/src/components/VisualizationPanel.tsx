@@ -786,6 +786,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onOpenSettings,
 }) => {
     const [warningDismissed, setWarningDismissed] = useState(false);
+    const [voltageFilterExpanded, setVoltageFilterExpanded] = useState(false);
 
     const hasAnyDiagram = !!(nDiagram?.svg || n1Diagram?.svg || actionDiagram?.svg);
     const showPathWarning = !warningDismissed && !hasAnyDiagram;
@@ -804,59 +805,38 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
 
     return (
         <>
-            {/* Tab bar */}
+            {/* Tab bar — all 4 tabs always visible; unavailable ones show placeholder */}
             <div style={{ display: 'flex', borderBottom: '1px solid #ccc', flexShrink: 0 }}>
-                <button
-                    onClick={() => onTabChange('n')}
-                    style={{
-                        flex: 1, borderRadius: 0, border: 'none', padding: '8px 15px', cursor: 'pointer', fontWeight: activeTab === 'n' ? 'bold' : 400,
-                        background: activeTab === 'n' ? 'white' : '#ecf0f1',
-                        color: activeTab === 'n' ? '#2c3e50' : '#7f8c8d',
-                        borderBottom: activeTab === 'n' ? '3px solid #3498db' : 'none',
-                    }}
-                >
-                    Network (N)
-                </button>
-                {selectedBranch && (
-                    <button
-                        onClick={() => onTabChange('n-1')}
-                        style={{
-                            flex: 1, borderRadius: 0, border: 'none', padding: '8px 15px', cursor: 'pointer', fontWeight: activeTab === 'n-1' ? 'bold' : 400,
-                            background: activeTab === 'n-1' ? 'white' : '#ecf0f1',
-                            color: activeTab === 'n-1' ? '#2c3e50' : '#7f8c8d',
-                            borderBottom: activeTab === 'n-1' ? '3px solid #e74c3c' : 'none',
-                        }}
-                    >
-                        Contingency (N-1)
-                    </button>
-                )}
-                {selectedActionId && (
-                    <button
-                        onClick={() => onTabChange('action')}
-                        style={{
-                            flex: 1, borderRadius: 0, border: 'none', padding: '8px 15px', cursor: 'pointer', fontWeight: activeTab === 'action' ? 'bold' : 400,
-                            background: activeTab === 'action' ? 'white' : '#ecf0f1',
-                            color: activeTab === 'action' ? '#0056b3' : '#7f8c8d',
-                            borderBottom: activeTab === 'action' ? '3px solid #007bff' : 'none',
-                        }}
-                    >
-                        Action: {selectedActionId}
-                    </button>
-                )}
-                {result?.pdf_url && (
-                    <button
-                        onClick={() => onTabChange('overflow')}
-                        style={{
-                            flex: 1, borderRadius: 0, border: 'none', padding: '8px 15px', cursor: 'pointer', fontWeight: activeTab === 'overflow' ? 'bold' : 400,
-                            background: activeTab === 'overflow' ? 'white' : '#ecf0f1',
-                            color: activeTab === 'overflow' ? '#2c3e50' : '#7f8c8d',
-                            borderBottom: activeTab === 'overflow' ? '3px solid #27ae60' : 'none',
-                        }}
-                    >
-                        Overflow Analysis
-                    </button>
-                )}
-
+                {(
+                    [
+                        { id: 'n' as TabId, label: 'Network (N)', available: !!nDiagram?.svg, accentColor: '#3498db', dimColor: '#7f8c8d', placeholder: 'Configure a network path in Settings to load the base-case diagram.' },
+                        { id: 'n-1' as TabId, label: 'Contingency (N-1)', available: !!n1Diagram?.svg, accentColor: '#e74c3c', dimColor: '#aab', placeholder: 'Select a contingency element from the dropdown to view the N-1 state.' },
+                        { id: 'action' as TabId, label: selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action', available: !!actionDiagram?.svg, accentColor: '#ff4081', dimColor: '#aab', placeholder: 'Select an action card from the suggestions panel to view its effect on the network.' },
+                        { id: 'overflow' as TabId, label: 'Overflow Analysis', available: !!result?.pdf_url, accentColor: '#27ae60', dimColor: '#aab', placeholder: 'Run \u201cAnalyze & Suggest\u201d to see the overflow graph.' },
+                    ] as const
+                ).map(tab => {
+                    const isActive = activeTab === tab.id;
+                    return (
+                        <button
+                            key={tab.id}
+                            onClick={() => onTabChange(tab.id)}
+                            title={tab.available ? undefined : tab.placeholder}
+                            style={{
+                                flex: 1, borderRadius: 0, border: 'none', padding: '8px 6px',
+                                cursor: 'pointer',
+                                fontWeight: isActive && tab.available ? 'bold' : 400,
+                                fontStyle: !tab.available ? 'italic' : 'normal',
+                                background: isActive ? 'white' : '#ecf0f1',
+                                color: tab.available ? (isActive ? '#2c3e50' : tab.dimColor) : '#bbb',
+                                borderBottom: isActive && tab.available ? `3px solid ${tab.accentColor}` : 'none',
+                                fontSize: tab.id === 'action' && selectedActionId ? '0.75rem' : '0.85rem',
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}
+                        >
+                            {tab.label}
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Content area */}
@@ -976,7 +956,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                         <span style={{ fontSize: '24px' }}>⚙️</span>
                                         <span>Processing Analysis...</span>
                                     </>
-                                ) : 'Run analysis to see overflow graph'}
+                                ) : <span style={{ fontStyle: 'italic', color: '#999' }}>Run &ldquo;Analyze &amp; Suggest&rdquo; to see the overflow graph.</span>}
                             </div>
                         )}
                     </div>
@@ -1028,8 +1008,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                     ) : n1Diagram?.svg ? (
                         <MemoizedSvgContainer svg={n1Diagram.svg} containerRef={n1SvgContainerRef} display="block" tabId="n-1" />
                     ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
-                            Select a target contingency to view N-1
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999', fontStyle: 'italic', textAlign: 'center', padding: '40px' }}>
+                            Select a contingency element from the dropdown to view the N-1 state.
                         </div>
                     )}
                 </div>
@@ -1064,13 +1044,13 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             Failed to load diagram for action {selectedActionId}
                         </div>
                     ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
-                            Select an action card to view its network variant
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999', fontStyle: 'italic', textAlign: 'center', padding: '40px' }}>
+                            Select an action card from the suggestions panel to view its effect on the network.
                         </div>
                     )}
                 </div>
 
-                {/* Voltage Range Sidebar */}
+                {/* Voltage Range Sidebar — collapsed by default, toggle to expand */}
                 {uniqueVoltages.length > 1 && (() => {
                     const minV = uniqueVoltages[0];
                     const maxV = uniqueVoltages[uniqueVoltages.length - 1];
@@ -1079,8 +1059,28 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                     const logScale = (kv: number) => ((Math.log(kv) - logMin) / (logMax - logMin)) * 100;
                     const pctLow = logScale(voltageRange[0]);
                     const pctHigh = logScale(voltageRange[1]);
+                    if (!voltageFilterExpanded) {
+                        return (
+                            <button
+                                className="voltage-sidebar-toggle"
+                                onClick={() => setVoltageFilterExpanded(true)}
+                                title="Show voltage filter"
+                            >
+                                <span style={{ writingMode: 'vertical-rl', fontSize: '11px', letterSpacing: '1px' }}>kV ▸</span>
+                            </button>
+                        );
+                    }
                     return (
                         <div className="voltage-sidebar">
+                            <button
+                                onClick={() => setVoltageFilterExpanded(false)}
+                                title="Hide voltage filter"
+                                style={{
+                                    alignSelf: 'flex-end', background: 'none', border: 'none',
+                                    cursor: 'pointer', fontSize: '14px', color: '#666',
+                                    padding: '0 4px', lineHeight: 1,
+                                }}
+                            >✕</button>
                             <span className="vs-label">kV Filter</span>
                             <span className="vs-range-label">
                                 {voltageRange[1]}<br />{voltageRange[0]}

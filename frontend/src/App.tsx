@@ -408,21 +408,29 @@ function App() {
 
       if (actionDetail) {
         if (actionViewMode !== 'delta') {
-          const stillOverloaded: string[] = [];
-          if (overloadedLines.length > 0 && actionDetail.rho_after) {
-            overloadedLines.forEach((name, i) => {
-              if (actionDetail.rho_after![i] != null && actionDetail.rho_after![i] > 1.0) {
-                stillOverloaded.push(name);
+          let overloadsToHighlight: string[] = [];
+
+          if (actionDetail.lines_overloaded_after && actionDetail.lines_overloaded_after.length > 0) {
+            overloadsToHighlight = actionDetail.lines_overloaded_after;
+          } else {
+            // Fallback for legacy results or actions without full enrichment
+            if (overloadedLines.length > 0 && actionDetail.rho_after) {
+              overloadedLines.forEach((name, i) => {
+                const rho = actionDetail.rho_after![i];
+                if (rho != null && rho > monitoringFactor) {
+                  overloadsToHighlight.push(name);
+                }
+              });
+            }
+            if (actionDetail.max_rho != null && actionDetail.max_rho > monitoringFactor && actionDetail.max_rho_line) {
+              if (!overloadsToHighlight.includes(actionDetail.max_rho_line)) {
+                overloadsToHighlight.push(actionDetail.max_rho_line);
               }
-            });
-          }
-          if (actionDetail.max_rho != null && actionDetail.max_rho > 1.0 && actionDetail.max_rho_line) {
-            if (!stillOverloaded.includes(actionDetail.max_rho_line)) {
-              stillOverloaded.push(actionDetail.max_rho_line);
             }
           }
+
           if (diagrams.actionSvgContainerRef.current && diagrams.actionMetaIndex) {
-            applyOverloadedHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, stillOverloaded);
+            applyOverloadedHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, overloadsToHighlight);
           }
         }
 
@@ -430,7 +438,8 @@ function App() {
           applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, actionDetail, selectedActionId);
           applyContingencyHighlight(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, selectedBranch);
         }
-      } else {
+      }
+ else {
         if (diagrams.actionSvgContainerRef.current) {
           applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, null, null, null);
         }
@@ -816,24 +825,6 @@ function App() {
               <datalist id="contingencies">
                 {filteredBranches.map(b => <option key={b} value={b} />)}
               </datalist>
-              <button
-                onClick={wrappedRunAnalysis}
-                disabled={!selectedBranch || analysisLoading}
-                style={{
-                  marginTop: '8px',
-                  width: '100%',
-                  padding: '8px',
-                  background: analysisLoading ? '#f1c40f' : (!selectedBranch ? '#95a5a6' : '#27ae60'),
-                  color: analysisLoading ? '#856404' : 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer',
-                  fontWeight: 'bold',
-                  fontSize: '0.85rem'
-                }}
-              >
-                {analysisLoading ? '⚙️ Running...' : '🚀 Run Analysis'}
-              </button>
             </div>
           )}
 
@@ -867,6 +858,8 @@ function App() {
               combinedActions={result?.combined_actions ?? null}
               pendingAnalysisResult={pendingAnalysisResult}
               onDisplayPrioritizedActions={wrappedDisplayPrioritized}
+              onRunAnalysis={wrappedRunAnalysis}
+              canRunAnalysis={!!selectedBranch && !analysisLoading}
               onActionSelect={wrappedActionSelect}
               onActionFavorite={wrappedActionFavorite}
               onActionReject={actionsHook.handleActionReject}
