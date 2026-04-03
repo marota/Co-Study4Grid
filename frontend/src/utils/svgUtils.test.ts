@@ -643,29 +643,35 @@ describe('applyOverloadedHighlights', () => {
         edgesByNode: new Map(),
     });
 
-    it('adds nad-overloaded class to matching edges', () => {
+    it('adds nad-overloaded clone for matching edges', () => {
         const container = document.createElement('div');
         container.innerHTML = '<svg><g id="svg-line-a"><path/></g><g id="svg-line-b"><path/></g></svg>';
         const metaIndex = makeMetaIndex();
 
         applyOverloadedHighlights(container, metaIndex, ['LINE_A']);
 
-        const el = container.querySelector('#svg-line-a');
-        expect(el?.classList.contains('nad-overloaded')).toBe(true);
+        // Clone with nad-overloaded should exist
+        const clones = container.querySelectorAll('.nad-highlight-clone.nad-overloaded');
+        expect(clones.length).toBe(1);
 
+        // Original should NOT have the class
         const elB = container.querySelector('#svg-line-b');
         expect(elB?.classList.contains('nad-overloaded')).toBe(false);
     });
 
-    it('clears previous overloaded highlights before applying new ones', () => {
+    it('clears previous overloaded highlight clones before applying new ones', () => {
         const container = document.createElement('div');
-        container.innerHTML = '<svg><g id="svg-line-a" class="nad-overloaded"><path/></g><g id="svg-line-b"><path/></g></svg>';
+        container.innerHTML = '<svg><g id="svg-line-a"><path/></g><g id="svg-line-b"><path/></g></svg>';
         const metaIndex = makeMetaIndex();
 
-        applyOverloadedHighlights(container, metaIndex, ['LINE_B']);
+        // First apply on LINE_A
+        applyOverloadedHighlights(container, metaIndex, ['LINE_A']);
+        expect(container.querySelectorAll('.nad-highlight-clone.nad-overloaded').length).toBe(1);
 
-        expect(container.querySelector('#svg-line-a')?.classList.contains('nad-overloaded')).toBe(false);
-        expect(container.querySelector('#svg-line-b')?.classList.contains('nad-overloaded')).toBe(true);
+        // Now apply on LINE_B — should clear LINE_A clone
+        applyOverloadedHighlights(container, metaIndex, ['LINE_B']);
+        const clones = container.querySelectorAll('.nad-highlight-clone.nad-overloaded');
+        expect(clones.length).toBe(1);
     });
 
     it('does nothing with empty overloaded lines array', () => {
@@ -674,8 +680,8 @@ describe('applyOverloadedHighlights', () => {
         const metaIndex = makeMetaIndex();
 
         applyOverloadedHighlights(container, metaIndex, []);
-        // Should not throw and no classes added
-        expect(container.querySelector('#svg-line-a')?.classList.contains('nad-overloaded')).toBe(false);
+        // No clones should be added
+        expect(container.querySelectorAll('.nad-highlight-clone.nad-overloaded').length).toBe(0);
     });
 });
 
