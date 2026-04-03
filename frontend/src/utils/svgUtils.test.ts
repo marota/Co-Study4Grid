@@ -789,6 +789,24 @@ describe('Highlight Layering', () => {
         expect(clone.getAttribute('transform')).toMatch(/matrix/);
     });
 
+    it('verifies that the background layer is the first child of the SVG (z-order)', () => {
+        const container = document.createElement('div');
+        container.innerHTML = `
+            <svg><g id="svg-a"></g><g id="grid-layer"></g></svg>
+        `;
+        const metaIndex = {
+            edgesByEquipmentId: new Map([['LINE_A', { svgId: 'svg-a' }]]),
+            nodesByEquipmentId: new Map()
+        } as any;
+
+        // Trigger background layer creation by applying a highlight to a valid element
+        applyContingencyHighlight(container, metaIndex, 'LINE_A');
+
+        const svg = container.querySelector('svg')!;
+        expect(svg.firstElementChild).not.toBeNull();
+        expect(svg.firstElementChild!.id).toBe('nad-background-layer');
+    });
+
     it('exhaustive cleanup: removes existing contingency highlights before adding new ones', () => {
         const container = document.createElement('div');
         container.innerHTML = '<svg><g id="svg-a"></g><g id="svg-b"></g></svg>';
