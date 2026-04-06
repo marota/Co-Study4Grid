@@ -85,24 +85,24 @@ describe('Critical CSS: highlight styles', () => {
         expect(APP_CSS).toMatch(/\.nad-overloaded[\s\S]*?stroke:\s*#ff8c00/);
     });
 
-    it('App.css defines .nad-action-target highlight with yellow stroke', () => {
-        expect(APP_CSS).toMatch(/\.nad-action-target[\s\S]*?stroke:\s*#fffb00/);
+    it('App.css defines .nad-action-target highlight with pink stroke', () => {
+        expect(APP_CSS).toMatch(/\.nad-action-target[\s\S]*?stroke:\s*#ff4081/);
     });
 
-    it('App.css defines .nad-contingency-highlight with orange stroke', () => {
-        expect(APP_CSS).toMatch(/\.nad-contingency-highlight[\s\S]*?stroke:\s*#ff8c00/);
+    it('App.css defines .nad-contingency-highlight with yellow stroke', () => {
+        expect(APP_CSS).toMatch(/\.nad-contingency-highlight[\s\S]*?stroke:\s*#ffe033/);
     });
 
     it('standalone_interface.html defines .nad-overloaded highlight with orange stroke', () => {
         expect(STANDALONE_CSS).toMatch(/\.nad-overloaded[\s\S]*?stroke:\s*#ff8c00/);
     });
 
-    it('standalone_interface.html defines .nad-action-target highlight with yellow stroke', () => {
-        expect(STANDALONE_CSS).toMatch(/\.nad-action-target[\s\S]*?stroke:\s*#fffb00/);
+    it('standalone_interface.html defines .nad-action-target highlight with pink stroke', () => {
+        expect(STANDALONE_CSS).toMatch(/\.nad-action-target[\s\S]*?stroke:\s*#ff4081/);
     });
 
-    it('standalone_interface.html defines .nad-contingency-highlight with orange stroke', () => {
-        expect(STANDALONE_CSS).toMatch(/\.nad-contingency-highlight[\s\S]*?stroke:\s*#ff8c00/);
+    it('standalone_interface.html defines .nad-contingency-highlight with yellow stroke', () => {
+        expect(STANDALONE_CSS).toMatch(/\.nad-contingency-highlight[\s\S]*?stroke:\s*#ffe033/);
     });
 });
 

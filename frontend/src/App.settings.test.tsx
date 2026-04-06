@@ -50,15 +50,19 @@ vi.mock('./components/VisualizationPanel', () => {
   return { default: MockVisualizationPanel };
 });
 vi.mock('./components/ActionFeed', () => ({
-  default: (props: { linesOverloaded: string[]; pendingAnalysisResult: object | null; analysisLoading: boolean; onDisplayPrioritizedActions: () => void }) => (
+  default: (props: { linesOverloaded: string[]; pendingAnalysisResult: object | null; analysisLoading: boolean; onDisplayPrioritizedActions: () => void; onRunAnalysis: () => void; canRunAnalysis: boolean }) => (
     <div
       data-testid="action-feed"
       data-ol-count={props.linesOverloaded?.length || 0}
       data-pending={!!props.pendingAnalysisResult}
       data-loading={!!props.analysisLoading}
     >
-      {props.pendingAnalysisResult && (
+      {props.analysisLoading ? (
+        <button disabled style={{ background: '#fff3cd', color: '#856404' }}>⚙️ Analyzing…</button>
+      ) : props.pendingAnalysisResult ? (
         <button onClick={props.onDisplayPrioritizedActions}>Display prioritized actions</button>
+      ) : (
+        <button onClick={props.onRunAnalysis} disabled={!props.canRunAnalysis}>🔍 Analyze & Suggest</button>
       )}
     </div>
   ),
@@ -557,14 +561,12 @@ describe('Settings Modal Enhancements', () => {
         body: mockStream,
       });
 
-      const runBtn = screen.getByText('🚀 Run Analysis');
+      const runBtn = screen.getByText('🔍 Analyze & Suggest');
       await userEvent.click(runBtn);
 
-      // Button should change to "⚙️ Running..." and turn yellow
-      const runningBtn = await screen.findByText('⚙️ Running...');
+      // Button should change to "⚙️ Analyzing…"
+      const runningBtn = await screen.findByText('⚙️ Analyzing…');
       expect(runningBtn).toBeInTheDocument();
-      expect(runningBtn.style.background).toBe('rgb(241, 196, 15)'); // #f1c40f
-      expect(runningBtn.style.color).toBe('rgb(133, 100, 4)'); // #856404
     });
   });
 });

@@ -153,29 +153,45 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .nad-highlight {
             stroke: #e74c3c !important;
             stroke-width: 4px !important;
-            opacity: 0.9;
+            opacity: 1;
         }
 
         circle.nad-highlight {
             fill: #e74c3c !important;
         }
 
-        /* Highlight overloaded lines in orange */
+        /* Highlight overloaded lines in orange (clone-based halo) */
+        .nad-overloaded {
+            opacity: 1 !important;
+        }
+
         .nad-overloaded path,
         .nad-overloaded line,
-        .nad-overloaded polyline {
+        .nad-overloaded polyline,
+        .nad-overloaded rect,
+        .nad-overloaded polygon {
             stroke: #ff8c00 !important;
-            stroke-width: 3px !important;
+            stroke-width: 120px !important;
+            stroke-opacity: 1 !important;
+            stroke-dasharray: none !important;
+            fill: none !important;
+            stroke-linecap: round !important;
+            stroke-linejoin: round !important;
         }
 
-        /* Apply drop-shadow to the parent clone group to create a glowing halo effect */
+        .nad-overloaded text,
+        .nad-overloaded foreignObject {
+            display: none !important;
+        }
+
+        /* Remedial action targets: purple-pink */
         .nad-action-target {
-            filter: drop-shadow(0 0 8px #fffb00) drop-shadow(0 0 15px #fffb00) !important;
+            opacity: 1 !important;
         }
 
-        /* Contingency highlight in orange */
+        /* Contingency highlight: yellow */
         .nad-contingency-highlight {
-            filter: drop-shadow(0 0 8px #ff8c00) drop-shadow(0 0 15px #ff8c00) !important;
+            opacity: 1 !important;
         }
 
         /* For lines and paths, use grid units for stroke-width so the halo is always significantly wider than the actual element it highlights. Using non-scaling-stroke makes it stay a fixed pixel width on screen, which can be narrower than the line when heavily zoomed in. */
@@ -184,9 +200,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .nad-action-target polyline,
         .nad-action-target rect,
         .nad-action-target polygon {
-            stroke: #fffb00 !important;
+            stroke: #ff4081 !important;
             stroke-width: 150px !important;
-            stroke-opacity: 0.8 !important;
+            stroke-opacity: 1 !important;
+            stroke-dasharray: none !important;
             fill: none !important;
             stroke-linecap: round !important;
             stroke-linejoin: round !important;
@@ -197,9 +214,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .nad-contingency-highlight polyline,
         .nad-contingency-highlight rect,
         .nad-contingency-highlight polygon {
-            stroke: #ff8c00 !important;
+            stroke: #ffe033 !important;
             stroke-width: 150px !important;
-            stroke-opacity: 0.8 !important;
+            stroke-opacity: 1 !important;
+            stroke-dasharray: none !important;
             fill: none !important;
             stroke-linecap: round !important;
             stroke-linejoin: round !important;
@@ -208,22 +226,41 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         /* For nodes (circles and rects), add a screen-space stroke to create a glowing background halo that doesn't shrink into invisibility on large grids, avoiding obscuring the original node in the foreground. */
         .nad-action-target circle,
         .nad-action-target rect {
-            stroke: #ffe600 !important;
+            stroke: #ff4081 !important;
             stroke-width: 45px !important;
-            stroke-opacity: 0.6 !important;
-            fill: #ffe600 !important;
-            fill-opacity: 0.8 !important;
+            stroke-opacity: 1 !important;
+            fill: #ff4081 !important;
+            fill-opacity: 1 !important;
             vector-effect: non-scaling-stroke !important;
         }
 
         .nad-contingency-highlight circle,
         .nad-contingency-highlight rect {
-            stroke: #ff8c00 !important;
+            stroke: #ffe033 !important;
             stroke-width: 45px !important;
-            stroke-opacity: 0.6 !important;
-            fill: #ff8c00 !important;
-            fill-opacity: 0.8 !important;
+            stroke-opacity: 1 !important;
+            fill: #ffe033 !important;
+            fill-opacity: 1 !important;
             vector-effect: non-scaling-stroke !important;
+        }
+
+        .nad-highlight-clone {
+            opacity: 1 !important;
+        }
+
+        /* Force full opacity on original assets that are currently being highlighted
+           as action targets. This prevents them from being dimmed by Impacts mode
+           logic (which might consider them "grey" or non-impacted), which would
+           otherwise allow the background halo to show through and make them look
+           transparent. */
+        .nad-action-target-original,
+        .sld-highlight-action-original,
+        .sld-highlight-breaker-original,
+        .sld-highlight-contingency-original,
+        .sld-highlight-overloaded-original {
+            opacity: 1 !important;
+            stroke-opacity: 1 !important;
+            fill-opacity: 1 !important;
         }
 
         /* Hide text and foreignObjects in the background clone to avoid messy overlays */
@@ -300,26 +337,30 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             fill-opacity: 0.5 !important;
         }
 
-        /* ===== SLD impact highlights ===== */
-        /* Contingency element on N-1 SLD (orange glow) */
-        .sld-highlight-clone.sld-highlight-contingency {
-            filter: drop-shadow(0 0 4px #ff9800) drop-shadow(0 0 8px #ff9800);
+        /* ===== SLD Overlay Styles (Semi-transparent background + bold halos) ===== */
+
+        .sld-background-dimmer {
+            fill: #999 !important;
+            fill-opacity: 0.5 !important;
         }
 
+        /* Contingency element on N-1 SLD (yellow glow) */
         .sld-highlight-clone.sld-highlight-contingency path,
         .sld-highlight-clone.sld-highlight-contingency line,
         .sld-highlight-clone.sld-highlight-contingency polyline,
         .sld-highlight-clone.sld-highlight-contingency rect,
         .sld-highlight-clone.sld-highlight-contingency circle {
-            stroke: #ff9800 !important;
-            stroke-width: 6px !important;
-            stroke-opacity: 0.7 !important;
+            stroke: #ffe033 !important;
+            stroke-width: 150px !important;
+            stroke-opacity: 1 !important;
+            stroke-dasharray: none !important;
             fill: none !important;
+            opacity: 1 !important;
         }
 
-        /* Action target on action SLD (yellow halo behind) */
+        /* Action target on action SLD (purple-pink halo behind) */
         .sld-highlight-clone.sld-highlight-action {
-            filter: drop-shadow(0 0 4px #fffb00) drop-shadow(0 0 8px #fffb00);
+            opacity: 1 !important;
         }
 
         .sld-highlight-clone.sld-highlight-action path,
@@ -327,7 +368,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         .sld-highlight-clone.sld-highlight-action polyline,
         .sld-highlight-clone.sld-highlight-action rect,
         .sld-highlight-clone.sld-highlight-action circle {
-            stroke: #fffb00 !important;
+            stroke: #ff4081 !important;
             stroke-width: 6px !important;
             stroke-opacity: 0.7 !important;
             fill: none !important;
@@ -344,16 +385,16 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             fill: none !important;
         }
 
-        /* Affected breakers/switches on SLD (purple halo behind) */
+        /* Affected breakers/switches on SLD (light purple halo behind) */
         .sld-highlight-clone.sld-highlight-breaker {
-            filter: drop-shadow(0 0 3px #e040fb) drop-shadow(0 0 6px #e040fb);
+            filter: drop-shadow(0 0 3px #ce93d8) drop-shadow(0 0 6px #ce93d8);
         }
 
         .sld-highlight-clone.sld-highlight-breaker path,
         .sld-highlight-clone.sld-highlight-breaker line,
         .sld-highlight-clone.sld-highlight-breaker rect,
         .sld-highlight-clone.sld-highlight-breaker circle {
-            stroke: #e040fb !important;
+            stroke: #ce93d8 !important;
             stroke-width: 6px !important;
             stroke-opacity: 0.7 !important;
             fill: none !important;
@@ -482,6 +523,31 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             white-space: nowrap;
             transform: translateY(-50%);
             left: 2px;
+        }
+
+        /* Collapsed voltage filter toggle button */
+        .voltage-sidebar-toggle {
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 24px;
+            background: rgba(244, 244, 244, 0.85);
+            border: none;
+            border-left: 1px solid #ccc;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 15;
+            color: #666;
+            font-size: 11px;
+            padding: 0;
+        }
+
+        .voltage-sidebar-toggle:hover {
+            background: rgba(220, 220, 220, 0.95);
+            color: #333;
         }
 
         /* VL focused diagram overlay body — SVG scales to fit width */
@@ -972,19 +1038,60 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         };
 
         // Apply orange highlights to overloaded line edges on a given SVG container
+        // Uses clone-based halo approach (like action/contingency highlights) for large visible halos.
         const applyOverloadedHighlights = (container, metaIndex, overloadedLines) => {
-            if (!container || !metaIndex || !overloadedLines || overloadedLines.length === 0) return;
+            if (!container) return;
 
-            // Clear previous overloaded highlights
-            container.querySelectorAll('.nad-overloaded').forEach(el => el.classList.remove('nad-overloaded'));
+            // Clear previous overloaded highlight clones
+            container.querySelectorAll('.nad-highlight-clone.nad-overloaded').forEach(el => el.remove());
 
+            if (!metaIndex || !overloadedLines || overloadedLines.length === 0) return;
+
+            // Ensure background layer exists
+            let backgroundLayer = container.querySelector('#nad-background-layer');
+            if (!backgroundLayer) {
+                const svg = container.querySelector('svg');
+                if (svg) {
+                    backgroundLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                    backgroundLayer.setAttribute('id', 'nad-background-layer');
+                    if (svg.firstChild) {
+                        svg.insertBefore(backgroundLayer, svg.firstChild);
+                    } else {
+                        svg.appendChild(backgroundLayer);
+                    }
+                }
+            }
+            if (!backgroundLayer) return;
+
+            let cachedBgCTM = null;
             const { edgesByEquipmentId } = metaIndex;
             const idMap = getIdMap(container);
+
             overloadedLines.forEach(lineName => {
                 const edge = edgesByEquipmentId.get(lineName);
                 if (edge && edge.svgId) {
                     const el = idMap.get(edge.svgId);
-                    if (el) el.classList.add('nad-overloaded');
+                    if (!el) return;
+
+                    const clone = el.cloneNode(true);
+                    clone.removeAttribute('id');
+                    clone.style.display = 'block';
+                    clone.style.visibility = 'visible';
+                    clone.classList.add('nad-overloaded');
+                    clone.classList.add('nad-highlight-clone');
+
+                    try {
+                        const elCTM = el.getCTM();
+                        if (!cachedBgCTM) cachedBgCTM = backgroundLayer.getCTM();
+                        if (elCTM && cachedBgCTM) {
+                            const relativeCTM = cachedBgCTM.inverse().multiply(elCTM);
+                            const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
+                            clone.setAttribute('transform', matrixStr);
+                        }
+                    } catch (e) {
+                        console.warn('Failed to get CTM for overloaded highlight:', e);
+                    }
+                    backgroundLayer.appendChild(clone);
                 }
             });
         };
@@ -1108,8 +1215,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         // Apply yellow fluo halo to action targets: edges (line actions) or nodes (nodal actions)
         const applyActionTargetHighlights = (container, metaIndex, actionDetail, actionId) => {
             if (!container) return;
-            container.querySelectorAll('.nad-action-target').forEach(el => el.classList.remove('nad-action-target'));
-            container.querySelectorAll('.nad-highlight-clone').forEach(el => el.remove());
+            container.querySelectorAll('.nad-action-target, .nad-action-target-original').forEach(el => {
+                el.classList.remove('nad-action-target', 'nad-action-target-original');
+            });
+            container.querySelectorAll('.nad-highlight-clone.nad-action-target').forEach(el => el.remove());
             if (!metaIndex || !actionDetail) return;
 
             const { edgesByEquipmentId, nodesByEquipmentId } = metaIndex;
@@ -1143,12 +1252,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 if (backgroundLayer) {
                     const clone = el.cloneNode(true);
                     clone.removeAttribute('id');
+                    clone.style.display = 'block';
+                    clone.style.visibility = 'visible';
                     clone.classList.add('nad-action-target');
                     clone.classList.add('nad-highlight-clone');
 
                     try {
-                        const elCTM = el.getScreenCTM();
-                        if (!cachedBgCTM) cachedBgCTM = backgroundLayer.getScreenCTM();
+                        const elCTM = el.getCTM();
+                        if (!cachedBgCTM) cachedBgCTM = backgroundLayer.getCTM();
                         if (elCTM && cachedBgCTM) {
                             const relativeCTM = cachedBgCTM.inverse().multiply(elCTM);
                             const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
@@ -1158,6 +1269,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         console.warn('Failed to get CTM for highlight:', e);
                     }
                     backgroundLayer.appendChild(clone);
+                    el.classList.add('nad-action-target-original');
                 } else {
                     // Fallback if no background layer (shouldn't happen)
                     el.classList.add('nad-action-target');
@@ -1187,14 +1299,29 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             });
         };
 
-        // Apply orange halo to the disconnected branch in the N-1 state.
+        // Apply yellow halo to the disconnected branch in the N-1 / action state.
+        // Instead of placing clones in a separate background layer (which requires
+        // fragile CTM compensation that drifts on tab switch / pan), we insert the
+        // clone as an immediate previous sibling of the original element.  This way
+        // it inherits ALL parent transforms naturally and stays locked to the asset.
+        // The clone renders behind the original because SVG paints in document order.
         const applyContingencyHighlight = (container, metaIndex, disconnectedElement) => {
-            if (!container || !metaIndex || !disconnectedElement) return;
+            if (!container) return;
+
+            // Clear previous contingency highlight clones
+            container.querySelectorAll('.nad-highlight-clone.nad-contingency-highlight').forEach(el => el.remove());
+            container.querySelectorAll('.nad-contingency-highlight-original').forEach(el => el.classList.remove('nad-contingency-highlight-original'));
+
+            if (!metaIndex || !disconnectedElement) return;
 
             const { edgesByEquipmentId } = metaIndex;
             const edge = edgesByEquipmentId.get(disconnectedElement);
             if (!edge || !edge.svgId) return;
 
+            const el = getIdMap(container).get(edge.svgId);
+            if (!el) return;
+
+            // Ensure background layer exists
             let backgroundLayer = container.querySelector('#nad-background-layer');
             if (!backgroundLayer) {
                 const svg = container.querySelector('svg');
@@ -1208,19 +1335,19 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     }
                 }
             }
-
-            const el = getIdMap(container).get(edge.svgId);
-            if (!el || !backgroundLayer) return;
+            if (!backgroundLayer) return;
 
             const clone = el.cloneNode(true);
             clone.removeAttribute('id');
+            clone.style.display = 'block';
+            clone.style.visibility = 'visible';
             clone.classList.add('nad-contingency-highlight');
             clone.classList.add('nad-highlight-clone');
+            el.classList.add('nad-contingency-highlight-original');
 
             try {
-                const elCTM = el.getScreenCTM();
-                // Cache bgCTM — only one contingency highlight per call
-                const bgCTM = backgroundLayer._cachedScreenCTM || (backgroundLayer._cachedScreenCTM = backgroundLayer.getScreenCTM());
+                const elCTM = el.getCTM();
+                const bgCTM = backgroundLayer.getCTM();
                 if (elCTM && bgCTM) {
                     const relativeCTM = bgCTM.inverse().multiply(elCTM);
                     const matrixStr = `matrix(${relativeCTM.a}, ${relativeCTM.b}, ${relativeCTM.c}, ${relativeCTM.d}, ${relativeCTM.e}, ${relativeCTM.f})`;
@@ -1229,7 +1356,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             } catch (e) {
                 console.warn('Failed to get CTM for contingency highlight:', e);
             }
-            backgroundLayer.prepend(clone);
+
+            backgroundLayer.appendChild(clone);
         };
 
         function App() {
@@ -1244,7 +1372,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             useLayoutEffect(() => {
                 const hasStaticContent = window.isPrePopulatedStatic;
                 const hasSvg = !!document.querySelector('#root svg');
-                
+
                 if (hasStaticContent || hasSvg) {
                     isPrePopulated.current = true;
                     console.log("Standalone Interface: Pre-populated content detected (static=" + hasStaticContent + ", svg=" + hasSvg + "). Inhibiting auto-initialization.");
@@ -1265,6 +1393,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             const [nominalVoltageMap, setNominalVoltageMap] = useState({});  // {vl_id: kv}
             const [uniqueVoltages, setUniqueVoltages] = useState([]);       // sorted [kv1, kv2, ...]
             const [voltageRange, setVoltageRange] = useState([0, 400]);     // [minKv, maxKv] cursor positions
+            const [voltageFilterExpanded, setVoltageFilterExpanded] = useState(false);
             const [selectedBranch, setSelectedBranch] = useState('');
             const [configLoading, setConfigLoading] = useState(false);
 
@@ -1392,7 +1521,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         // Settings from the new file will be loaded into state by applyLoadedConfig
                         applyLoadedConfig(res.data.config);
                         console.log("Standalone Interface: Config file path changed and verified by backend:", res.data.config_file_path);
-                        
+
                         // CRITICAL: We must stop here and let the state updates settle 
                         // before proceeding with /api/config using the NEW values.
                         // However, handleApplySettings is called on a button click,
@@ -1551,7 +1680,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             // useLayoutEffect to ensure ref is updated before any layout effects (like svg-pan-zoom) run
             useLayoutEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
             const prevTabRef = useRef(activeTab);
-            
+
             // Auto-switch to overflow tab when PDF becomes available
             const lastAutoSwitchedPdfRef = useRef(null);
             useEffect(() => {
@@ -1665,7 +1794,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         console.log("Standalone Interface: Loaded config path from backend:", pathRes.data.config_file_path);
                         setConfigFilePath(pathRes.data.config_file_path);
                         lastConfigFilePathRef.current = pathRes.data.config_file_path;
-                        
+
                         if (!isPrePopulated.current) {
                             console.log("Standalone Interface: Fetching user config content...");
                             return axios.get(`${API_BASE}/api/user-config?t=${Date.now()}`);
@@ -1693,16 +1822,16 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     const res = await axios.post(`${API_BASE}/api/config-file-path`, { path: newPath });
                     setConfigFilePath(res.data.config_file_path);
                     lastConfigFilePathRef.current = res.data.config_file_path;
-                    
+
                     // Update state with new file content BUT prevent the persistence useEffect
                     // from immediate trigger by temporarily clearing configLoadedRef.
                     configLoadedRef.current = false;
                     applyLoadedConfig(res.data.config);
                     // Use a timeout to ensure state updates have been processed before re-enabling persistence
-                    setTimeout(() => { 
+                    setTimeout(() => {
                         if (!isPrePopulated.current) {
                             console.log("Standalone Interface: Re-enabling persistence after config switch.");
-                            configLoadedRef.current = true; 
+                            configLoadedRef.current = true;
                         }
                     }, 100);
                 } catch (err) {
@@ -3118,6 +3247,16 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 // Remove previous highlight clones
                 container.querySelectorAll('.sld-highlight-clone').forEach(el => el.remove());
 
+                // Remove previous "-original" classes from assets
+                const ORIGINAL_CLASSES = [
+                    'sld-highlight-contingency-original',
+                    'sld-highlight-action-original',
+                    'sld-highlight-breaker-original',
+                    'sld-highlight-overloaded-original'
+                ];
+                container.querySelectorAll(ORIGINAL_CLASSES.map(c => '.' + c).join(','))
+                    .forEach(el => el.classList.remove(...ORIGINAL_CLASSES));
+
                 // Build equipmentId → SVG element ID map from SLD metadata
                 const equipIdToSvgIds = new Map();
                 if (vlOverlay.sldMetadata) {
@@ -3173,8 +3312,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         ?? equipIdToSvgIds.get(equipId.replace(/\./g, '_'))
                         ?? equipIdToSvgIds.get(equipId.replace(/_/g, '.'))
                         ?? Array.from(equipIdToSvgIds.keys()).find(k => k.toLowerCase() === q || k.toLowerCase().includes(q) || q.includes(k.toLowerCase()))
-                            ? equipIdToSvgIds.get(Array.from(equipIdToSvgIds.keys()).find(k => k.toLowerCase() === q || k.toLowerCase().includes(q) || q.includes(k.toLowerCase())))
-                            : null;
+                        ? equipIdToSvgIds.get(Array.from(equipIdToSvgIds.keys()).find(k => k.toLowerCase() === q || k.toLowerCase().includes(q) || q.includes(k.toLowerCase())))
+                        : null;
 
                     if (svgIds) {
                         for (const svgId of svgIds) {
@@ -3182,7 +3321,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             if (el) return walkUpToCell(el);
                         }
                     }
-                    
+
                     // Fuzzy search in metadata keys (case-insensitive + partial match)
                     for (const [metaEquipId, metaSvgIds] of equipIdToSvgIds) {
                         const mq = metaEquipId.toLowerCase();
@@ -3197,7 +3336,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     // Multi-level fuzzy search
                     const qPrefix = q.substring(0, 5);
                     const sanitized = equipId.replace(/\./g, '_');
-                    
+
                     // Level 1: search SVG IDs directly for prefix match
                     for (const [eid, el] of elMap) {
                         const eq = eid.toLowerCase();
@@ -3231,7 +3370,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     clone.removeAttribute('id');
                     clone.querySelectorAll('[id]').forEach(child => child.removeAttribute('id'));
                     clone.classList.add('sld-highlight-clone', highlightClass);
-                    el.parentNode?.insertBefore(clone, el);
+                    el.parentNode.insertBefore(clone, el);
+                    el.classList.add(highlightClass + '-original');
                 };
 
                 const highlightedCells = new Set();
@@ -3274,20 +3414,20 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
                             for (const equipId of targetEquipIds) {
                                 let cell = findCellForEquipment(equipId);
-                                
+
                                 // Extreme fallback for RC/LS: direct text search in result.actions[...] details
                                 if (!cell && (isRenewableCurtailment || isLoadShedding)) {
-                                     const container = actionSvgContainerRef.current;
-                                     if (container) {
-                                         const texts = container.querySelectorAll('text');
-                                         const q = equipId.toLowerCase().substring(0, 5);
-                                         for (const txt of texts) {
-                                             if (txt.textContent.toLowerCase().includes(q)) {
-                                                 cell = walkUpToCell(txt);
-                                                 if (cell) break;
-                                             }
-                                         }
-                                     }
+                                    const container = actionSvgContainerRef.current;
+                                    if (container) {
+                                        const texts = container.querySelectorAll('text');
+                                        const q = equipId.toLowerCase().substring(0, 5);
+                                        for (const txt of texts) {
+                                            if (txt.textContent.toLowerCase().includes(q)) {
+                                                cell = walkUpToCell(txt);
+                                                if (cell) break;
+                                            }
+                                        }
+                                    }
                                 }
 
                                 if (cell && !highlightedCells.has(cell)) {
@@ -3488,6 +3628,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     description_unitaire: detail.description_unitaire || (isCombined ? `Combination action results` : ''),
                                     rho_before: detail.rho_before,
                                     rho_after: detail.rho_after,
+                                    lines_overloaded_after: detail.lines_overloaded_after,
                                     max_rho: detail.max_rho,
                                     max_rho_line: detail.max_rho_line,
                                     is_rho_reduction: detail.is_rho_reduction,
@@ -3500,7 +3641,6 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     curtailment_details: detail.curtailment_details,
                                     action_topology: detail.action_topology,
                                     non_convergence: detail.non_convergence,
-
                                     is_precomputed: isCombined ? true : (base.actions?.[actionId]?.is_precomputed || false)
 
                                 }
@@ -3552,7 +3692,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         return prev.filter(id => id !== actionId);
                     }
                     if (prev.length >= 2) return prev;
-                    
+
                     const detail = result?.actions?.[actionId];
                     const isLS = actionId.includes('load_shedding') || actionId.startsWith('load_shedding_') || !!detail?.load_shedding_details;
                     const isRC = actionId.includes('renewable_curtailment') || actionId.startsWith('curtail_') || !!detail?.curtailment_details;
@@ -3638,6 +3778,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     description_unitaire: detail.description_unitaire,
                                     rho_before: detail.rho_before,
                                     rho_after: detail.rho_after,
+                                    lines_overloaded_after: detail.lines_overloaded_after,
                                     max_rho: detail.max_rho,
                                     max_rho_line: detail.max_rho_line,
                                     is_rho_reduction: detail.is_rho_reduction,
@@ -3645,14 +3786,25 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     curtailment_details: detail.curtailment_details,
                                     action_topology: detail.action_topology,
                                     is_manual: true,
-
                                 }
-
                             }
                         };
                     });
                     // DO NOT close modal as per requirement
                     setInfoMessage(`Unitary action ${actionId} simulated successfully.`);
+
+                    // Fetch the action diagram AFTER simulation completes (ensures post-action state is ready)
+                    try {
+                        const diagRes = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: actionId });
+                        const { svg, viewBox } = processSvg(diagRes.data.svg, voltageLevels.length);
+                        const prefetched = { ...diagRes.data, svg, originalViewBox: viewBox };
+
+                        actionSyncSourceRef.current = 'modal';
+                        setActionDiagram(prefetched);
+                    } catch (diagErr) {
+                        console.error('Failed to fetch action diagram after unitary simulation:', diagErr);
+                    }
+
                     setTimeout(() => setInfoMessage(null), 3000);
                 } catch (err) {
                     setError('Failed to simulate unitary action: ' + (err.response?.data?.detail || err.message));
@@ -3708,6 +3860,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     description_unitaire: detail.description_unitaire,
                                     rho_before: detail.rho_before,
                                     rho_after: detail.rho_after,
+                                    lines_overloaded_after: detail.lines_overloaded_after,
                                     max_rho: detail.max_rho,
                                     max_rho_line: detail.max_rho_line,
                                     is_rho_reduction: detail.is_rho_reduction,
@@ -3720,12 +3873,22 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     curtailment_details: detail.curtailment_details,
                                     action_topology: detail.action_topology,
                                     non_convergence: detail.non_convergence,
-
-
                                 }
                             }
                         };
                     });
+
+                    // Fetch the action diagram AFTER simulation completes (ensures post-action state is ready)
+                    try {
+                        const diagRes = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: combinedId });
+                        const { svg, viewBox } = processSvg(diagRes.data.svg, voltageLevels.length);
+                        const prefetched = { ...diagRes.data, svg, originalViewBox: viewBox };
+
+                        actionSyncSourceRef.current = 'combined';
+                        setActionDiagram(prefetched);
+                    } catch (diagErr) {
+                        console.error('Failed to fetch action diagram after combined simulation:', diagErr);
+                    }
                 } catch (err) {
                     setError('Failed to simulate combined action: ' + (err.response?.data?.detail || err.message));
                 } finally {
@@ -4028,26 +4191,37 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         const actionDetail = result?.actions?.[selectedActionId];
 
                         if (actionDetail) {
-                            if (actionViewMode !== 'delta') {
-                                const stillOverloaded = [];
-                                if (overloadedLines.length > 0 && actionDetail.rho_after) {
-                                    overloadedLines.forEach((name, i) => {
-                                        if (actionDetail.rho_after[i] != null && actionDetail.rho_after[i] > 1.0) {
-                                            stillOverloaded.push(name);
-                                        }
-                                    });
-                                }
-                                if (actionDetail.max_rho != null && actionDetail.max_rho > 1.0 && actionDetail.max_rho_line) {
-                                    if (!stillOverloaded.includes(actionDetail.max_rho_line)) {
-                                        stillOverloaded.push(actionDetail.max_rho_line);
-                                    }
-                                }
-                                applyOverloadedHighlights(actionSvgContainerRef.current, actionMetaIndex, stillOverloaded);
-                            }
-
                             applyActionTargetHighlights(actionSvgContainerRef.current, actionMetaIndex, actionDetail, selectedActionId);
                             // Also highlight the contingency in the action view
                             applyContingencyHighlight(actionSvgContainerRef.current, actionMetaIndex, selectedBranch);
+
+                            if (actionViewMode !== 'delta') {
+                                let overloadsToHighlight = [];
+                                if (actionDetail.lines_overloaded_after && actionDetail.lines_overloaded_after.length > 0) {
+                                    overloadsToHighlight = actionDetail.lines_overloaded_after;
+                                } else {
+                                    // Fallback for legacy results or actions without full enrichment
+                                    if (overloadedLines.length > 0 && actionDetail.rho_after) {
+                                        overloadedLines.forEach((name, i) => {
+                                            // rho_after is raw rho; line is overloaded when rho > monitoringFactor
+                                            const rho = actionDetail.rho_after[i];
+                                            if (rho != null && rho > monitoringFactor) {
+                                                overloadsToHighlight.push(name);
+                                            }
+                                        });
+                                    }
+                                    if (actionDetail.max_rho != null && actionDetail.max_rho > monitoringFactor && actionDetail.max_rho_line) {
+                                        if (!overloadsToHighlight.includes(actionDetail.max_rho_line)) {
+                                            overloadsToHighlight.push(actionDetail.max_rho_line);
+                                        }
+                                    }
+                                }
+                                // Filter out user-deselected overloads
+                                if (selectedOverloads.size > 0) {
+                                    overloadsToHighlight = overloadsToHighlight.filter(name => selectedOverloads.has(name));
+                                }
+                                applyOverloadedHighlights(actionSvgContainerRef.current, actionMetaIndex, overloadsToHighlight);
+                            }
                         } else {
                             if (actionSvgContainerRef.current) {
                                 applyActionTargetHighlights(actionSvgContainerRef.current, null, null, null);
@@ -4066,7 +4240,9 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     }
 
                     if (tab === 'n-1' && n1Diagram && n1SvgContainerRef.current && n1MetaIndex) {
-                        const n1Overloaded = n1Diagram.lines_overloaded || [];
+                        const n1Overloaded = (n1Diagram.lines_overloaded || []).filter(
+                            name => selectedOverloads.size === 0 || selectedOverloads.has(name)
+                        );
                         if (actionViewMode !== 'delta' && n1Overloaded.length > 0) {
                             applyOverloadedHighlights(n1SvgContainerRef.current, n1MetaIndex, n1Overloaded);
                         }
@@ -4077,7 +4253,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     console.error('[HighlightEffect] crash:', err);
                     setError('Decoration error: ' + err.message);
                 }
-            }, [nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, result, selectedActionId, actionViewMode, selectedBranch, applyDeltaVisuals]);
+            }, [nDiagram, n1Diagram, actionDiagram, nMetaIndex, n1MetaIndex, actionMetaIndex, result, selectedActionId, actionViewMode, selectedBranch, applyDeltaVisuals, monitoringFactor, selectedOverloads]);
 
             // Apply highlights only for the active tab; mark others as stale.
             // When the trigger is a tab switch (not a data change), defer the
@@ -4351,7 +4527,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                 <span style={{ fontSize: '24px' }}>⚙️</span>
                                                 <span>Processing Analysis...</span>
                                             </>
-                                        ) : 'Run analysis to see overflow graph'}
+                                        ) : <span style={{ fontStyle: 'italic', color: '#999' }}>Run &ldquo;Analyze &amp; Suggest&rdquo; to see the overflow graph.</span>}
                                     </div>
                                 )}
                             </div>
@@ -4431,17 +4607,37 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 )
                             }
                         </div>
+                        {/* Voltage Range Sidebar — collapsed by default, toggle to expand */}
                         {uniqueVoltages.length > 1 && (() => {
                             const minV = uniqueVoltages[0];
                             const maxV = uniqueVoltages[uniqueVoltages.length - 1];
                             const logMin = Math.log(minV);
                             const logMax = Math.log(maxV);
                             const logScale = (kv) => ((Math.log(kv) - logMin) / (logMax - logMin)) * 100;
-                            // For the vertical slider: 0% = bottom (low kV), 100% = top (high kV)
                             const pctLow = logScale(voltageRange[0]);
                             const pctHigh = logScale(voltageRange[1]);
+                            if (!voltageFilterExpanded) {
+                                return (
+                                    <button
+                                        className="voltage-sidebar-toggle"
+                                        onClick={() => setVoltageFilterExpanded(true)}
+                                        title="Show voltage filter"
+                                    >
+                                        <span style={{ writingMode: 'vertical-rl', fontSize: '11px', letterSpacing: '1px' }}>kV ▸</span>
+                                    </button>
+                                );
+                            }
                             return (
                                 <div className="voltage-sidebar">
+                                    <button
+                                        onClick={() => setVoltageFilterExpanded(false)}
+                                        title="Hide voltage filter"
+                                        style={{
+                                            alignSelf: 'flex-end', background: 'none', border: 'none',
+                                            cursor: 'pointer', fontSize: '14px', color: '#666',
+                                            padding: '0 4px', lineHeight: 1,
+                                        }}
+                                    >✕</button>
                                     <span className="vs-label">kV Filter</span>
                                     <span className="vs-range-label">
                                         {voltageRange[1]}<br />{voltageRange[0]}
@@ -5180,20 +5376,6 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
                                     <input list="contingencies" value={selectedBranch} onChange={e => { const val = e.target.value; if (branches.includes(val)) interactionLogger.record('contingency_selected', { element: val }); setSelectedBranch(val); }} placeholder="Search line/bus..." style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }} />
                                     <datalist id="contingencies">{branches.map(b => <option key={b} value={b} />)}</datalist>
-                                    <button
-                                        onClick={handleRunAnalysis}
-                                        disabled={!selectedBranch || analysisLoading}
-                                        style={{
-                                            marginTop: '8px', width: '100%', padding: '8px',
-                                            background: analysisLoading ? '#f1c40f' : (!selectedBranch ? '#95a5a6' : '#27ae60'),
-                                            color: analysisLoading ? '#856404' : 'white',
-                                            border: 'none', borderRadius: '4px',
-                                            cursor: (!selectedBranch || analysisLoading) ? 'not-allowed' : 'pointer',
-                                            fontWeight: 'bold', fontSize: '0.85rem'
-                                        }}
-                                    >
-                                        {analysisLoading ? '⚙️ Running...' : '🚀 Run Analysis'}
-                                    </button>
                                 </div>
                             )}
 
@@ -5677,47 +5859,54 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     >Rejected Actions {rejectedEntries.length > 0 && <span style={{ background: suggestedTab === 'rejected' ? '#fdecea' : '#f8f9fa', color: suggestedTab === 'rejected' ? '#e74c3c' : '#6c757d', fontSize: '11px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>{rejectedEntries.length}</span>}</button>
                                 </div>
 
-                                {analysisLoading && (
-                                    <div style={{
-                                        padding: '12px',
-                                        background: '#fff3cd',
-                                        border: '1px solid #ffeeba',
-                                        borderRadius: '8px',
-                                        marginBottom: '15px',
-                                        textAlign: 'center',
-                                        color: '#856404',
-                                        fontWeight: 600,
-                                        fontSize: '14px',
-                                        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                                        animation: 'pulse 2s infinite ease-in-out'
-                                    }}>
-                                        ⚙️ Processing analysis...
+                                {/* Unified analysis action slot: Analyze & Suggest → Analyzing… → Display N prioritized actions */}
+                                {(analysisLoading || pendingAnalysisResult || !Object.values(result?.actions || {}).some(a => !a.is_manual)) && (
+                                    <div style={{ marginBottom: '10px' }}>
+                                        {analysisLoading ? (
+                                            <button disabled style={{
+                                                width: '100%', padding: '10px 16px',
+                                                background: '#fff3cd', color: '#856404',
+                                                border: '1px solid #ffeeba', borderRadius: '8px',
+                                                cursor: 'not-allowed', fontSize: '14px', fontWeight: 700,
+                                                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                                            }}>
+                                                ⚙️ Analyzing…
+                                            </button>
+                                        ) : pendingAnalysisResult ? (
+                                            <button
+                                                onClick={handleDisplayPrioritizedActions}
+                                                style={{
+                                                    width: '100%', padding: '10px 16px',
+                                                    background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
+                                                    color: 'white', border: 'none', borderRadius: '8px',
+                                                    cursor: 'pointer', fontSize: '14px', fontWeight: 700,
+                                                    boxShadow: '0 2px 8px rgba(39,174,96,0.3)', transition: 'transform 0.1s',
+                                                }}
+                                                onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                                                onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                                            >
+                                                📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={handleRunAnalysis}
+                                                disabled={!selectedBranch || analysisLoading}
+                                                style={{
+                                                    width: '100%', padding: '10px 16px',
+                                                    background: selectedBranch ? '#27ae60' : '#95a5a6',
+                                                    color: 'white', border: 'none', borderRadius: '8px',
+                                                    cursor: selectedBranch ? 'pointer' : 'not-allowed',
+                                                    fontSize: '14px', fontWeight: 700,
+                                                    boxShadow: selectedBranch ? '0 2px 8px rgba(39,174,96,0.3)' : 'none',
+                                                    transition: 'transform 0.1s',
+                                                }}
+                                                onMouseEnter={(e) => { if (selectedBranch) e.currentTarget.style.transform = 'scale(1.02)'; }}
+                                                onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                                            >
+                                                🔍 Analyze & Suggest
+                                            </button>
+                                        )}
                                     </div>
-                                )}
-
-                                {/* Display prioritized actions button inside Suggested Actions section */}
-                                {pendingAnalysisResult && !analysisLoading && (
-                                    <button
-                                        onClick={handleDisplayPrioritizedActions}
-                                        style={{
-                                            width: '100%',
-                                            padding: '10px 16px',
-                                            margin: '0 0 10px 0',
-                                            background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
-                                            color: 'white',
-                                            border: 'none',
-                                            borderRadius: '8px',
-                                            cursor: 'pointer',
-                                            fontSize: '14px',
-                                            fontWeight: 700,
-                                            boxShadow: '0 2px 8px rgba(39,174,96,0.3)',
-                                            transition: 'transform 0.1s',
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                                    >
-                                        📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
-                                    </button>
                                 )}
 
                                 {suggestedTab === 'prioritized' && (
@@ -5725,9 +5914,9 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                         !analysisLoading ? (
                                             <div style={{ textAlign: 'center' }}>
                                                 <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0' }}>
-                                                    {!pendingAnalysisResult ? 'Run analysis to get action suggestions.' : 'No suggested actions available.'}
+                                                    {!pendingAnalysisResult ? 'Click \u201cAnalyze & Suggest\u201d above to get action suggestions.' : 'No suggested actions available.'}
                                                 </p>
-                                                {!pendingAnalysisResult && (
+                                                {!pendingAnalysisResult && !dismissedRecommenderWarning && (
                                                     <div style={{
                                                         marginTop: '10px',
                                                         padding: '10px',
@@ -5828,38 +6017,36 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             )}
                         </div>
                         <div className="visualization" style={{ display: 'flex', flexDirection: 'column' }}>
+                            {/* Tab bar — all 4 tabs always visible; unavailable ones dimmed/italic with placeholder tooltips */}
                             <div style={{ display: 'flex', borderBottom: '1px solid #ccc' }}>
-                                <button
-                                    onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: 'n' }); setActiveTab('n'); }}
-                                    style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'n' ? 'white' : '#ecf0f1', color: activeTab === 'n' ? '#2c3e50' : '#7f8c8d', borderBottom: activeTab === 'n' ? '3px solid #3498db' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'n' ? 'bold' : 400 }}
-                                >
-                                    Network (N)
-                                </button>
-                                {selectedBranch && (
-                                    <button
-                                        onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: 'n-1' }); setActiveTab('n-1'); }}
-                                        style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'n-1' ? 'white' : '#ecf0f1', color: activeTab === 'n-1' ? '#2c3e50' : '#7f8c8d', borderBottom: activeTab === 'n-1' ? '3px solid #e74c3c' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'n-1' ? 'bold' : 400 }}
-                                    >
-                                        Contingency (N-1)
-                                    </button>
-                                )}
-                                {selectedActionId && (
-                                    <button
-                                        onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: 'action' }); setActiveTab('action'); }}
-                                        style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'action' ? 'white' : '#ecf0f1', color: activeTab === 'action' ? '#0056b3' : '#7f8c8d', borderBottom: activeTab === 'action' ? '3px solid #007bff' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'action' ? 'bold' : 400 }}
-                                    >
-                                        Action: {selectedActionId}
-                                    </button>
-                                )}
-                                {result?.pdf_url && (
-                                    <button
-                                        onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: 'overflow' }); setActiveTab('overflow'); }}
-                                        style={{ flex: 1, borderRadius: 0, border: 'none', background: activeTab === 'overflow' ? 'white' : '#ecf0f1', color: activeTab === 'overflow' ? '#2c3e50' : '#7f8c8d', borderBottom: activeTab === 'overflow' ? '3px solid #27ae60' : 'none', cursor: 'pointer', padding: '8px 15px', fontWeight: activeTab === 'overflow' ? 'bold' : 400 }}
-                                    >
-                                        Overflow Analysis
-                                    </button>
-                                )}
-
+                                {[
+                                    { id: 'n', label: 'Network (N)', available: !!nDiagram?.svg, accentColor: '#3498db', placeholder: 'Configure a network path to load the base-case diagram.' },
+                                    { id: 'n-1', label: 'Contingency (N-1)', available: !!n1Diagram?.svg, accentColor: '#e74c3c', placeholder: 'Select a contingency element from the dropdown to view the N-1 state.' },
+                                    { id: 'action', label: selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action', available: !!actionDiagram?.svg, accentColor: '#ff4081', placeholder: 'Select an action card from the suggestions panel to view its effect on the network.' },
+                                    { id: 'overflow', label: 'Overflow Analysis', available: !!result?.pdf_url, accentColor: '#27ae60', placeholder: 'Run \u201cAnalyze & Suggest\u201d to see the overflow graph.' },
+                                ].map(tab => {
+                                    const isActive = activeTab === tab.id;
+                                    return (
+                                        <button
+                                            key={tab.id}
+                                            onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: tab.id }); setActiveTab(tab.id); }}
+                                            title={tab.available ? undefined : tab.placeholder}
+                                            style={{
+                                                flex: 1, borderRadius: 0, border: 'none', padding: '8px 6px',
+                                                cursor: 'pointer',
+                                                fontWeight: isActive && tab.available ? 'bold' : 400,
+                                                fontStyle: !tab.available ? 'italic' : 'normal',
+                                                background: isActive ? 'white' : '#ecf0f1',
+                                                color: tab.available ? (isActive ? '#2c3e50' : '#7f8c8d') : '#bbb',
+                                                borderBottom: isActive && tab.available ? `3px solid ${tab.accentColor}` : 'none',
+                                                fontSize: tab.id === 'action' && selectedActionId ? '0.75rem' : '0.85rem',
+                                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                            }}
+                                        >
+                                            {tab.label}
+                                        </button>
+                                    );
+                                })}
                             </div>
                             <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                                 {/* Path Warning Banner */}
@@ -6332,8 +6519,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                             {(() => {
                                                 const hasRestricted = selectedCombineActionIds.some(id => {
                                                     const detail = result?.actions?.[id];
-                                                    return id.includes('load_shedding') || !!detail?.load_shedding_details || 
-                                                           id.includes('renewable_curtailment') || !!detail?.curtailment_details;
+                                                    return id.includes('load_shedding') || !!detail?.load_shedding_details ||
+                                                        id.includes('renewable_curtailment') || !!detail?.curtailment_details;
                                                 });
                                                 return (
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

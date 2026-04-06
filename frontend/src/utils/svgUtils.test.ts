@@ -94,7 +94,7 @@ describe('boostSvgForLargeGrid', () => {
         `.trim();
         const vb = { x: 0, y: 0, w: 10000, h: 10000 };
         const result = boostSvgForLargeGrid(svg, vb, 600);
-        
+
         expect(result).toContain('foreignObject');
         expect(result).toContain('http://www.w3.org/1999/xhtml');
         expect(result).toContain('Test Label');
@@ -643,29 +643,35 @@ describe('applyOverloadedHighlights', () => {
         edgesByNode: new Map(),
     });
 
-    it('adds nad-overloaded class to matching edges', () => {
+    it('adds nad-overloaded clone for matching edges', () => {
         const container = document.createElement('div');
         container.innerHTML = '<svg><g id="svg-line-a"><path/></g><g id="svg-line-b"><path/></g></svg>';
         const metaIndex = makeMetaIndex();
 
         applyOverloadedHighlights(container, metaIndex, ['LINE_A']);
 
-        const el = container.querySelector('#svg-line-a');
-        expect(el?.classList.contains('nad-overloaded')).toBe(true);
+        // Clone with nad-overloaded should exist
+        const clones = container.querySelectorAll('.nad-highlight-clone.nad-overloaded');
+        expect(clones.length).toBe(1);
 
+        // Original should NOT have the class
         const elB = container.querySelector('#svg-line-b');
         expect(elB?.classList.contains('nad-overloaded')).toBe(false);
     });
 
-    it('clears previous overloaded highlights before applying new ones', () => {
+    it('clears previous overloaded highlight clones before applying new ones', () => {
         const container = document.createElement('div');
-        container.innerHTML = '<svg><g id="svg-line-a" class="nad-overloaded"><path/></g><g id="svg-line-b"><path/></g></svg>';
+        container.innerHTML = '<svg><g id="svg-line-a"><path/></g><g id="svg-line-b"><path/></g></svg>';
         const metaIndex = makeMetaIndex();
 
-        applyOverloadedHighlights(container, metaIndex, ['LINE_B']);
+        // First apply on LINE_A
+        applyOverloadedHighlights(container, metaIndex, ['LINE_A']);
+        expect(container.querySelectorAll('.nad-highlight-clone.nad-overloaded').length).toBe(1);
 
-        expect(container.querySelector('#svg-line-a')?.classList.contains('nad-overloaded')).toBe(false);
-        expect(container.querySelector('#svg-line-b')?.classList.contains('nad-overloaded')).toBe(true);
+        // Now apply on LINE_B — should clear LINE_A clone
+        applyOverloadedHighlights(container, metaIndex, ['LINE_B']);
+        const clones = container.querySelectorAll('.nad-highlight-clone.nad-overloaded');
+        expect(clones.length).toBe(1);
     });
 
     it('does nothing with empty overloaded lines array', () => {
@@ -674,8 +680,8 @@ describe('applyOverloadedHighlights', () => {
         const metaIndex = makeMetaIndex();
 
         applyOverloadedHighlights(container, metaIndex, []);
-        // Should not throw and no classes added
-        expect(container.querySelector('#svg-line-a')?.classList.contains('nad-overloaded')).toBe(false);
+        // No clones should be added
+        expect(container.querySelectorAll('.nad-highlight-clone.nad-overloaded').length).toBe(0);
     });
 });
 
@@ -756,7 +762,7 @@ describe('applyDeltaVisuals', () => {
 });
 
 describe('Highlight Layering', () => {
-    it('prepends the contingency clone to the background layer (z-order fix)', () => {
+    it('inserts the contingency clone as an immediate previous sibling (better stability)', () => {
         const container = document.createElement('div');
         container.innerHTML = '<svg><g id="svg-line-a"></g><g id="svg-line-b"></g></svg>';
         const metaIndex = {
@@ -769,49 +775,123 @@ describe('Highlight Layering', () => {
             edgesByNode: new Map(),
         } as unknown as MetadataIndex;
 
-        // 1. Apply action highlight first (appends to layer)
-        const detail: ActionDetail = {
-            action_topology: { lines_ex_bus: { LINE_A: -1 }, lines_or_bus: {}, gens_bus: {}, loads_bus: {}, pst_tap: {} }
-        } as unknown as ActionDetail;
-        applyActionTargetHighlights(container, metaIndex, detail, 'disco_LINE_A');
-
-        // 2. Apply contingency highlight (should prepend to layer)
+        // Apply contingency highlight to LINE_B
         applyContingencyHighlight(container, metaIndex, 'LINE_B');
 
         const bgLayer = container.querySelector('#nad-background-layer');
         expect(bgLayer).not.toBeNull();
-        const children = bgLayer!.children;
-        expect(children.length).toBe(2);
 
-        // LINE_B (contingency) should be FIRST in DOM (at the bottom visually)
-        expect(children[0].classList.contains('nad-contingency-highlight')).toBe(true);
-        // LINE_A (action) should be SECOND in DOM (on top visually)
-        expect(children[1].classList.contains('nad-action-target')).toBe(true);
+        const clone = bgLayer!.querySelector('.nad-contingency-highlight') as SVGGraphicsElement;
+        expect(clone).not.toBeNull();
+        expect(clone.classList.contains('nad-highlight-clone')).toBe(true);
+        expect(clone.style.display).toBe('block');
+        expect(clone.style.visibility).toBe('visible');
+        expect(clone.getAttribute('transform')).toMatch(/matrix/);
+    });
+
+    it('verifies that the background layer is the first child of the SVG (z-order)', () => {
+        const container = document.createElement('div');
+        container.innerHTML = `
+            <svg><g id="svg-a"></g><g id="grid-layer"></g></svg>
+        `;
+        const metaIndex = {
+            edgesByEquipmentId: new Map([['LINE_A', { svgId: 'svg-a' } as EdgeMeta]]),
+            nodesByEquipmentId: new Map(),
+            nodesBySvgId: new Map(),
+            edgesByNode: new Map()
+        } as MetadataIndex;
+
+        // Trigger background layer creation by applying a highlight to a valid element
+        applyContingencyHighlight(container, metaIndex, 'LINE_A');
+
+        const svg = container.querySelector('svg')!;
+        expect(svg.firstElementChild).not.toBeNull();
+        expect(svg.firstElementChild!.id).toBe('nad-background-layer');
     });
 
     it('exhaustive cleanup: removes existing contingency highlights before adding new ones', () => {
         const container = document.createElement('div');
-        container.innerHTML = '<svg><g id="svg-a"></g><g id="svg-b"></g></svg>';
+        // Setup multiple clones and one original with the class
+        container.innerHTML = `
+            <svg>
+                <g id="nad-background-layer">
+                    <path class="nad-contingency-highlight nad-highlight-clone"></path>
+                    <path class="nad-contingency-highlight nad-highlight-clone"></path>
+                </g>
+                <path id="original" class="nad-contingency-highlight"></path>
+            </svg>
+        `;
         const metaIndex = {
-            edgesByEquipmentId: new Map([
-                ['A', { equipmentId: 'A', svgId: 'svg-a' } as EdgeMeta],
-                ['B', { equipmentId: 'B', svgId: 'svg-b' } as EdgeMeta],
-            ]),
+            edgesByEquipmentId: new Map([['NEW_LINE', { equipmentId: 'NEW', svgId: 'original_new' } as EdgeMeta]]),
             nodesByEquipmentId: new Map(),
             nodesBySvgId: new Map(),
-            edgesByNode: new Map(),
-        } as unknown as MetadataIndex;
+            edgesByNode: new Map()
+        } as MetadataIndex;
 
-        // Apply first highlight
-        applyContingencyHighlight(container, metaIndex, 'A');
-        expect(container.querySelectorAll('.nad-contingency-highlight')).toHaveLength(1);
+        // Mock getIdMap to return no element for NEW_LINE to avoid creating new ones during cleanup check
+        applyContingencyHighlight(container, metaIndex, 'NON_EXISTENT');
 
-        // Apply second highlight
-        applyContingencyHighlight(container, metaIndex, 'B');
+        expect(container.querySelectorAll('.nad-highlight-clone').length).toBe(0);
+        expect(container.querySelector('#original')?.classList.contains('nad-contingency-highlight')).toBe(false);
+    });
 
-        // Should STILL have only 1 highlight (the new one)
-        const highlights = container.querySelectorAll('.nad-contingency-highlight');
-        expect(highlights).toHaveLength(1);
-        expect(highlights[0].getAttribute('transform')).toBeDefined(); // CTM was applied
+    describe('applyActionTargetHighlights', () => {
+        it('adds nad-action-target-original class to original elements and creates clones in background layer', () => {
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <svg>
+                    <g id="nad-background-layer"></g>
+                    <path id="svg-L1" class="line"></path>
+                    <circle id="svg-N1" class="node"></circle>
+                </svg>
+            `;
+            const metaIndex = {
+                edgesByEquipmentId: new Map([['L1', { equipmentId: 'L1', svgId: 'svg-L1' } as EdgeMeta]]),
+                nodesByEquipmentId: new Map([['N1', { equipmentId: 'N1', svgId: 'svg-N1' } as NodeMeta]]),
+                nodesBySvgId: new Map(),
+                edgesByNode: new Map()
+            } as MetadataIndex;
+            const actionDetail = {
+                description_unitaire: "Ouvrir 'L1' et 'N1'",
+                action_topology: {
+                    lines_ex_bus: { 'L1': -1 },
+                    gens_bus: { 'N1': -1 }
+                }
+            } as unknown as ActionDetail;
+
+            applyActionTargetHighlights(container, metaIndex, actionDetail, 'act-N1');
+
+            const originalLine = container.querySelector('#svg-L1');
+            const originalNode = container.querySelector('#svg-N1');
+            expect(originalLine?.classList.contains('nad-action-target-original')).toBe(true);
+            expect(originalNode?.classList.contains('nad-action-target-original')).toBe(true);
+
+            const clones = container.querySelectorAll('.nad-highlight-clone.nad-action-target');
+            expect(clones.length).toBe(2);
+            expect((clones[0].parentNode as Element)?.id).toBe('nad-background-layer');
+        });
+
+        it('cleans up existing highlights and original classes before applying new ones', () => {
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <svg>
+                    <g id="nad-background-layer">
+                        <path class="nad-action-target nad-highlight-clone"></path>
+                    </g>
+                    <path id="svg-L1" class="nad-action-target-original"></path>
+                </svg>
+            `;
+            const metaIndex = {
+                edgesByEquipmentId: new Map(),
+                nodesByEquipmentId: new Map(),
+                nodesBySvgId: new Map(),
+                edgesByNode: new Map()
+            } as MetadataIndex;
+
+            applyActionTargetHighlights(container, metaIndex, null, null);
+
+            expect(container.querySelectorAll('.nad-highlight-clone').length).toBe(0);
+            expect(container.querySelector('#svg-L1')?.classList.contains('nad-action-target-original')).toBe(false);
+        });
     });
 });

@@ -51,6 +51,8 @@ describe('ActionFeed', () => {
         onActionReject: vi.fn(),
         onAssetClick: vi.fn(),
         onDisplayPrioritizedActions: vi.fn(),
+        onRunAnalysis: vi.fn(),
+        canRunAnalysis: false,
         nodesByEquipmentId: new Map(),
         edgesByEquipmentId: new Map(),
         disconnectedElement: 'LINE_1',
@@ -113,7 +115,7 @@ describe('ActionFeed', () => {
 
         expect(screen.queryByText('Suggested Action')).not.toBeInTheDocument();
         // Processing indicator is now visible during analysis
-        expect(screen.getByText('⚙️ Processing analysis...')).toBeInTheDocument();
+        expect(screen.getByText('⚙️ Analyzing…')).toBeInTheDocument();
     });
 
     it('shows manual actions while analysis is loading', () => {
@@ -139,7 +141,7 @@ describe('ActionFeed', () => {
 
         expect(screen.getByText('Manual Action')).toBeInTheDocument();
         // Processing indicator is visible even when viewing selected actions
-        expect(screen.getByText('⚙️ Processing analysis...')).toBeInTheDocument();
+        expect(screen.getByText('⚙️ Analyzing…')).toBeInTheDocument();
     });
 
     it('shows display prioritized actions button when pending results exist and loading is false', () => {
@@ -494,7 +496,9 @@ describe('ActionFeed', () => {
         render(<ActionFeed {...props} />);
 
         expect(screen.getByText(/Action dictionary/)).toBeInTheDocument();
-        fireEvent.click(screen.getByTitle('Dismiss'));
+        // Multiple dismiss buttons exist; action dict one renders first
+        const dismissBtns = screen.getAllByTitle('Dismiss');
+        fireEvent.click(dismissBtns[0]);
         expect(screen.queryByText(/Action dictionary/)).not.toBeInTheDocument();
     });
 
@@ -518,18 +522,17 @@ describe('ActionFeed', () => {
         }
     });
 
-    it('shows yellow pulsing processing banner during analysisLoading', () => {
+    it('shows yellow processing button during analysisLoading', () => {
         const props = {
             ...defaultProps,
             analysisLoading: true,
         };
         render(<ActionFeed {...props} />);
 
-        const banner = screen.getByText('⚙️ Processing analysis...');
+        const banner = screen.getByText('⚙️ Analyzing…');
         expect(banner).toBeInTheDocument();
         expect(banner.style.background).toContain('rgb(255, 243, 205)'); // #fff3cd
         expect(banner.style.color).toContain('rgb(133, 100, 4)'); // #856404
-        expect(banner.style.animation).toContain('pulse');
     });
 
     it('includes minPst in the recommender settings warning', () => {

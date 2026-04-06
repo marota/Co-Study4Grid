@@ -65,6 +65,7 @@ export interface ActionDetail {
     disconnected_mw?: number;
     non_convergence?: string | null;
     action_topology?: ActionTopology;
+    lines_overloaded_after?: string[];
     load_shedding_details?: LoadSheddingDetail[];
     curtailment_details?: CurtailmentDetail[];
 }
@@ -250,6 +251,7 @@ export interface SavedActionEntry {
     disconnected_mw?: number;
     non_convergence?: string | null;
     action_topology?: ActionTopology;
+    lines_overloaded_after?: string[];
     load_shedding_details?: LoadSheddingDetail[];
     curtailment_details?: CurtailmentDetail[];
     status: SavedActionStatus;
