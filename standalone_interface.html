@@ -244,6 +244,25 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             vector-effect: non-scaling-stroke !important;
         }
 
+        .nad-highlight-clone {
+            opacity: 1 !important;
+        }
+
+        /* Force full opacity on original assets that are currently being highlighted
+           as action targets. This prevents them from being dimmed by Impacts mode
+           logic (which might consider them "grey" or non-impacted), which would
+           otherwise allow the background halo to show through and make them look
+           transparent. */
+        .nad-action-target-original,
+        .sld-highlight-action-original,
+        .sld-highlight-breaker-original,
+        .sld-highlight-contingency-original,
+        .sld-highlight-overloaded-original {
+            opacity: 1 !important;
+            stroke-opacity: 1 !important;
+            fill-opacity: 1 !important;
+        }
+
         /* Hide text and foreignObjects in the background clone to avoid messy overlays */
         .nad-action-target text,
         .nad-action-target foreignObject {
@@ -1196,7 +1215,9 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         // Apply yellow fluo halo to action targets: edges (line actions) or nodes (nodal actions)
         const applyActionTargetHighlights = (container, metaIndex, actionDetail, actionId) => {
             if (!container) return;
-            container.querySelectorAll('.nad-action-target').forEach(el => el.classList.remove('nad-action-target'));
+            container.querySelectorAll('.nad-action-target, .nad-action-target-original').forEach(el => {
+                el.classList.remove('nad-action-target', 'nad-action-target-original');
+            });
             container.querySelectorAll('.nad-highlight-clone.nad-action-target').forEach(el => el.remove());
             if (!metaIndex || !actionDetail) return;
 
@@ -1248,6 +1269,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         console.warn('Failed to get CTM for highlight:', e);
                     }
                     backgroundLayer.appendChild(clone);
+                    el.classList.add('nad-action-target-original');
                 } else {
                     // Fallback if no background layer (shouldn't happen)
                     el.classList.add('nad-action-target');
@@ -1288,6 +1310,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
             // Clear previous contingency highlight clones
             container.querySelectorAll('.nad-highlight-clone.nad-contingency-highlight').forEach(el => el.remove());
+            container.querySelectorAll('.nad-contingency-highlight-original').forEach(el => el.classList.remove('nad-contingency-highlight-original'));
 
             if (!metaIndex || !disconnectedElement) return;
 
@@ -1320,6 +1343,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             clone.style.visibility = 'visible';
             clone.classList.add('nad-contingency-highlight');
             clone.classList.add('nad-highlight-clone');
+            el.classList.add('nad-contingency-highlight-original');
 
             try {
                 const elCTM = el.getCTM();
@@ -3223,6 +3247,16 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 // Remove previous highlight clones
                 container.querySelectorAll('.sld-highlight-clone').forEach(el => el.remove());
 
+                // Remove previous "-original" classes from assets
+                const ORIGINAL_CLASSES = [
+                    'sld-highlight-contingency-original',
+                    'sld-highlight-action-original',
+                    'sld-highlight-breaker-original',
+                    'sld-highlight-overloaded-original'
+                ];
+                container.querySelectorAll(ORIGINAL_CLASSES.map(c => '.' + c).join(','))
+                    .forEach(el => el.classList.remove(...ORIGINAL_CLASSES));
+
                 // Build equipmentId → SVG element ID map from SLD metadata
                 const equipIdToSvgIds = new Map();
                 if (vlOverlay.sldMetadata) {
@@ -3336,7 +3370,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     clone.removeAttribute('id');
                     clone.querySelectorAll('[id]').forEach(child => child.removeAttribute('id'));
                     clone.classList.add('sld-highlight-clone', highlightClass);
-                    el.parentNode?.insertBefore(clone, el);
+                    el.parentNode.insertBefore(clone, el);
+                    el.classList.add(highlightClass + '-original');
                 };
 
                 const highlightedCells = new Set();
