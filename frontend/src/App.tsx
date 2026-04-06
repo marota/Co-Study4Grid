@@ -439,13 +439,13 @@ function App() {
           applyContingencyHighlight(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, selectedBranch);
         }
       }
- else {
+      else {
         if (diagrams.actionSvgContainerRef.current) {
           applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, null, null, null);
         }
       }
     }
-  }, [n1Diagram, actionDiagram, result, selectedActionId, actionViewMode, selectedBranch, diagrams]);
+  }, [n1Diagram, actionDiagram, result, selectedActionId, actionViewMode, selectedBranch, diagrams, monitoringFactor]);
 
   useEffect(() => {
     const isTabSwitch = prevHighlightTabRef.current !== activeTab;

@@ -795,9 +795,11 @@ describe('Highlight Layering', () => {
             <svg><g id="svg-a"></g><g id="grid-layer"></g></svg>
         `;
         const metaIndex = {
-            edgesByEquipmentId: new Map([['LINE_A', { svgId: 'svg-a' }]]),
-            nodesByEquipmentId: new Map()
-        } as any;
+            edgesByEquipmentId: new Map([['LINE_A', { svgId: 'svg-a' } as EdgeMeta]]),
+            nodesByEquipmentId: new Map(),
+            nodesBySvgId: new Map(),
+            edgesByNode: new Map()
+        } as MetadataIndex;
 
         // Trigger background layer creation by applying a highlight to a valid element
         applyContingencyHighlight(container, metaIndex, 'LINE_A');
@@ -821,8 +823,10 @@ describe('Highlight Layering', () => {
         `;
         const metaIndex = {
             edgesByEquipmentId: new Map([['NEW_LINE', { equipmentId: 'NEW', svgId: 'original_new' } as EdgeMeta]]),
-            nodesByEquipmentId: new Map()
-        } as any;
+            nodesByEquipmentId: new Map(),
+            nodesBySvgId: new Map(),
+            edgesByNode: new Map()
+        } as MetadataIndex;
 
         // Mock getIdMap to return no element for NEW_LINE to avoid creating new ones during cleanup check
         applyContingencyHighlight(container, metaIndex, 'NON_EXISTENT');
@@ -843,8 +847,10 @@ describe('Highlight Layering', () => {
             `;
             const metaIndex = {
                 edgesByEquipmentId: new Map([['L1', { equipmentId: 'L1', svgId: 'svg-L1' } as EdgeMeta]]),
-                nodesByEquipmentId: new Map([['N1', { equipmentId: 'N1', svgId: 'svg-N1' } as NodeMeta]])
-            } as any;
+                nodesByEquipmentId: new Map([['N1', { equipmentId: 'N1', svgId: 'svg-N1' } as NodeMeta]]),
+                nodesBySvgId: new Map(),
+                edgesByNode: new Map()
+            } as MetadataIndex;
             const actionDetail = {
                 description_unitaire: "Ouvrir 'L1' et 'N1'",
                 action_topology: {
@@ -853,7 +859,7 @@ describe('Highlight Layering', () => {
                 }
             } as unknown as ActionDetail;
 
-            applyActionTargetHighlights(container as any, metaIndex, actionDetail, 'act-N1');
+            applyActionTargetHighlights(container, metaIndex, actionDetail, 'act-N1');
 
             const originalLine = container.querySelector('#svg-L1');
             const originalNode = container.querySelector('#svg-N1');
@@ -877,8 +883,10 @@ describe('Highlight Layering', () => {
             `;
             const metaIndex = {
                 edgesByEquipmentId: new Map(),
-                nodesByEquipmentId: new Map()
-            } as any;
+                nodesByEquipmentId: new Map(),
+                nodesBySvgId: new Map(),
+                edgesByNode: new Map()
+            } as MetadataIndex;
 
             applyActionTargetHighlights(container, metaIndex, null, null);
 
