@@ -428,6 +428,16 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         // Remove previous highlight clones
         container.querySelectorAll('.sld-highlight-clone').forEach(el => el.remove());
 
+        // Remove previous "-original" classes from assets
+        const ORIGINAL_CLASSES = [
+            'sld-highlight-contingency-original',
+            'sld-highlight-action-original',
+            'sld-highlight-breaker-original',
+            'sld-highlight-overloaded-original'
+        ];
+        container.querySelectorAll(ORIGINAL_CLASSES.map(c => '.' + c).join(','))
+            .forEach(el => el.classList.remove(...ORIGINAL_CLASSES));
+
         // Build equipmentId → SVG element ID map from SLD metadata
         const equipIdToSvgIds = new Map<string, string[]>();
         if (vlOverlay.sldMetadata) {
@@ -519,6 +529,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             clone.querySelectorAll('[id]').forEach(child => child.removeAttribute('id'));
             clone.classList.add('sld-highlight-clone', highlightClass);
             el.parentNode?.insertBefore(clone, el);
+            el.classList.add(highlightClass + '-original');
         };
 
         const highlightedCells = new Set<Element>();
@@ -623,7 +634,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         }
 
     }, [vlOverlay.svg, vlOverlay.sldMetadata, vlOverlay.tab, vlOverlay.actionId,
-        vlOverlay.changed_switches, selectedBranch, result]);
+    vlOverlay.changed_switches, selectedBranch, result]);
 
     // Non-passive wheel zoom on overlay body
     useEffect(() => {

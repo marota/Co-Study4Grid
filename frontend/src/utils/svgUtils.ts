@@ -425,13 +425,15 @@ export const getActionTargetVoltageLevels = (
  * Apply yellow fluo halo to action targets: edges (line actions) or nodes (nodal actions).
  */
 export const applyActionTargetHighlights = (
-    container: HTMLElement,
+    container: HTMLElement | null,
     metaIndex: MetadataIndex | null,
     actionDetail: ActionDetail | null,
     actionId: string | null,
 ) => {
     if (!container) return;
-    container.querySelectorAll('.nad-action-target').forEach(el => el.classList.remove('nad-action-target'));
+    container.querySelectorAll('.nad-action-target, .nad-action-target-original').forEach(el => {
+        el.classList.remove('nad-action-target', 'nad-action-target-original');
+    });
     container.querySelectorAll('.nad-highlight-clone').forEach(el => el.remove());
     if (!metaIndex || !actionDetail) return;
 
@@ -464,6 +466,7 @@ export const applyActionTargetHighlights = (
                 console.warn('Failed to get CTM for highlight:', e);
             }
             backgroundLayer.appendChild(clone);
+            el.classList.add('nad-action-target-original');
         } else {
             el.classList.add('nad-action-target');
         }

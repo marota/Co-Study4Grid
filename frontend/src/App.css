@@ -145,6 +145,21 @@ circle.nad-highlight {
     opacity: 1 !important;
 }
 
+/* Force full opacity on original assets that are currently being highlighted
+   as action targets. This prevents them from being dimmed by Impacts mode
+   logic (which might consider them "grey" or non-impacted), which would
+   otherwise allow the background halo to show through and make them look
+   transparent. */
+.nad-action-target-original,
+.sld-highlight-action-original,
+.sld-highlight-breaker-original,
+.sld-highlight-contingency-original,
+.sld-highlight-overloaded-original {
+    opacity: 1 !important;
+    stroke-opacity: 1 !important;
+    fill-opacity: 1 !important;
+}
+
 /* Hide text and foreignObjects in the background clone to avoid messy overlays */
 .nad-action-target text,
 .nad-action-target foreignObject {
