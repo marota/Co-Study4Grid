@@ -53,9 +53,9 @@ circle.nad-highlight {
     fill: #e74c3c !important;
 }
 
-/* Highlight overloaded lines in orange with glow (clone-based halo) */
+/* Highlight overloaded lines in orange (clone-based halo) */
 .nad-overloaded {
-    filter: drop-shadow(0 0 8px #ff8c00) drop-shadow(0 0 15px #ff8c00) !important;
+    opacity: 1 !important;
 }
 
 .nad-overloaded path,
@@ -66,6 +66,7 @@ circle.nad-highlight {
     stroke: #ff8c00 !important;
     stroke-width: 120px !important;
     stroke-opacity: 1 !important;
+    stroke-dasharray: none !important;
     fill: none !important;
     stroke-linecap: round !important;
     stroke-linejoin: round !important;
@@ -76,10 +77,9 @@ circle.nad-highlight {
     display: none !important;
 }
 
-/* Apply drop-shadow to the parent clone group to create a glowing halo effect */
 /* Remedial action targets: purple-pink */
 .nad-action-target {
-    filter: drop-shadow(0 0 8px #ff4081) drop-shadow(0 0 15px #ff4081) !important;
+    opacity: 1 !important;
 }
 
 /* Contingency highlight: yellow */
@@ -97,6 +97,7 @@ circle.nad-highlight {
     stroke: #ff4081 !important;
     stroke-width: 150px !important;
     stroke-opacity: 1 !important;
+    stroke-dasharray: none !important;
     fill: none !important;
     stroke-linecap: round !important;
     stroke-linejoin: round !important;
