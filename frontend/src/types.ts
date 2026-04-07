@@ -36,6 +36,8 @@ export interface ActionTopology {
     pst_tap?: Record<string, unknown>;
     substations?: Record<string, unknown>;
     switches?: Record<string, unknown>;
+    loads_p?: Record<string, number>;
+    gens_p?: Record<string, number>;
 }
 
 export interface LoadSheddingDetail {

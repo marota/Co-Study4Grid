@@ -287,8 +287,11 @@ export const getActionTargetLines = (
             ]);
             const genKeys = Object.keys(topo.gens_bus || {});
             const loadKeys = Object.keys(topo.loads_bus || {});
+            const loadsPKeys = Object.keys(topo.loads_p || {});
+            const gensPKeys = Object.keys(topo.gens_p || {});
 
-            if (lineKeys.size > 0 && genKeys.length === 0 && loadKeys.length === 0) {
+            if (lineKeys.size > 0 && genKeys.length === 0 && loadKeys.length === 0
+                && loadsPKeys.length === 0 && gensPKeys.length === 0) {
                 lineKeys.forEach(l => targets.add(l));
             } else {
                 const allValues = [
@@ -382,7 +385,8 @@ export const getActionTargetVoltageLevels = (
     const topo = actionDetail?.action_topology;
     const isCoupling = isCouplingAction(actionId, actionDetail?.description_unitaire);
     const isLineReconnection = !isCoupling && !!topo
-        && (Object.keys(topo.gens_bus || {}).length === 0 && Object.keys(topo.loads_bus || {}).length === 0)
+        && (Object.keys(topo.gens_bus || {}).length === 0 && Object.keys(topo.loads_bus || {}).length === 0
+            && Object.keys(topo.loads_p || {}).length === 0 && Object.keys(topo.gens_p || {}).length === 0)
         && ([...Object.values(topo.lines_ex_bus || {}), ...Object.values(topo.lines_or_bus || {})] as number[]).some(v => v >= 0);
 
     if (actionId && !isLineReconnection) {

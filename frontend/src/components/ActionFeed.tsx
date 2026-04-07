@@ -564,6 +564,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                     const equipNames = Array.from(new Set([
                                         ...Object.keys(topo?.gens_bus || {}),
                                         ...Object.keys(topo?.loads_bus || {}),
+                                        ...Object.keys(topo?.loads_p || {}),
+                                        ...Object.keys(topo?.gens_p || {}),
                                     ]));
                                     equipNames.forEach(name => {
                                         badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));

@@ -562,6 +562,8 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                     for (const id of Object.keys(topo.gens_bus || {})) targetEquipIds.add(id);
                     for (const id of Object.keys(topo.loads_bus || {})) targetEquipIds.add(id);
                     for (const id of Object.keys(topo.pst_tap || {})) targetEquipIds.add(id);
+                    for (const id of Object.keys(topo.loads_p || {})) targetEquipIds.add(id);
+                    for (const id of Object.keys(topo.gens_p || {})) targetEquipIds.add(id);
 
                     for (const equipId of targetEquipIds) {
                         const cell = findCellForEquipment(equipId);
