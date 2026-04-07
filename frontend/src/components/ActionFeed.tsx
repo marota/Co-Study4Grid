@@ -485,87 +485,63 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                             {details.load_shedding_details && details.load_shedding_details.length > 0 && (
                                 <div style={{ fontSize: '12px', background: '#fef3c7', color: '#92400e', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #fcd34d', fontWeight: 500 }}>
                                     {details.load_shedding_details.map((ls, i) => (
-                                        <div key={ls.load_name}>
-                                            {i > 0 && <br />}
-                                            Load shedding of <strong>{ls.shedded_mw} MW</strong> on load <strong>{ls.load_name}</strong>
-                                            {ls.voltage_level_id && (
-                                                <> at voltage level <button
-                                                    style={{ ...clickableLinkStyle, fontSize: '12px', color: '#92400e', fontWeight: 700 }}
-                                                    title={`Double-click to open SLD for ${ls.voltage_level_id}`}
-                                                    onClick={(e) => { e.stopPropagation(); onAssetClick(id, ls.voltage_level_id!, 'action'); }}
-                                                    onDoubleClick={(e) => { e.stopPropagation(); onVlDoubleClick?.(id, ls.voltage_level_id!); }}
-                                                >{ls.voltage_level_id}</button></>
-                                            )}
+                                        <div key={ls.load_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
+                                            <span>Load shedding on <strong>{ls.load_name}</strong> in MW:</span>
+                                            <input
+                                                data-testid={`edit-mw-${id}`}
+                                                type="number"
+                                                min={0}
+                                                step={0.1}
+                                                value={cardEditMw[id] ?? ls.shedded_mw.toFixed(1)}
+                                                onChange={(e) => { e.stopPropagation(); setCardEditMw(prev => ({ ...prev, [id]: e.target.value })); }}
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={{ width: '65px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #d97706', borderRadius: '3px', textAlign: 'right' }}
+                                            />
+                                            <button
+                                                data-testid={`resimulate-${id}`}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const mwVal = parseFloat(cardEditMw[id] ?? String(ls.shedded_mw));
+                                                    if (!isNaN(mwVal) && mwVal >= 0) handleResimulate(id, mwVal);
+                                                }}
+                                                disabled={resimulating === id}
+                                                style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #d97706', background: '#fbbf24', color: '#78350f', cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                            >
+                                                {resimulating === id ? 'Simulating...' : 'Re-simulate'}
+                                            </button>
                                         </div>
                                     ))}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', borderTop: '1px solid #fcd34d', paddingTop: '5px' }}>
-                                        <label style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>Reduction MW:</label>
-                                        <input
-                                            data-testid={`edit-mw-${id}`}
-                                            type="number"
-                                            min={0}
-                                            step={0.1}
-                                            value={cardEditMw[id] ?? details.load_shedding_details.reduce((s, ls) => s + ls.shedded_mw, 0).toFixed(1)}
-                                            onChange={(e) => { e.stopPropagation(); setCardEditMw(prev => ({ ...prev, [id]: e.target.value })); }}
-                                            onClick={(e) => e.stopPropagation()}
-                                            style={{ width: '70px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #d97706', borderRadius: '3px', textAlign: 'right' }}
-                                        />
-                                        <button
-                                            data-testid={`resimulate-${id}`}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                const mwVal = parseFloat(cardEditMw[id] ?? String(details.load_shedding_details!.reduce((s, ls) => s + ls.shedded_mw, 0)));
-                                                if (!isNaN(mwVal) && mwVal >= 0) handleResimulate(id, mwVal);
-                                            }}
-                                            disabled={resimulating === id}
-                                            style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #d97706', background: '#fbbf24', color: '#78350f', cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
-                                        >
-                                            {resimulating === id ? 'Simulating...' : 'Re-simulate'}
-                                        </button>
-                                    </div>
                                 </div>
                             )}
                             {details.curtailment_details && details.curtailment_details.length > 0 && (
                                 <div style={{ fontSize: '12px', background: '#e0f2fe', color: '#075985', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #7dd3fc', fontWeight: 500 }}>
                                     {details.curtailment_details.map((rc, i) => (
-                                        <div key={rc.gen_name}>
-                                            {i > 0 && <br />}
-                                            Renewable curtailment of <strong>{rc.curtailed_mw.toFixed(1)} MW</strong> on generator <strong>{rc.gen_name}</strong>
-                                            {rc.voltage_level_id && (
-                                                <> at voltage level <button
-                                                    style={{ ...clickableLinkStyle, fontSize: '12px', color: '#075985', fontWeight: 700 }}
-                                                    title={`Double-click to open SLD for ${rc.voltage_level_id}`}
-                                                    onClick={(e) => { e.stopPropagation(); onAssetClick(id, rc.voltage_level_id!, 'action'); }}
-                                                    onDoubleClick={(e) => { e.stopPropagation(); onVlDoubleClick?.(id, rc.voltage_level_id!); }}
-                                                >{rc.voltage_level_id}</button></>
-                                            )}
+                                        <div key={rc.gen_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
+                                            <span>Renewable curtailment on <strong>{rc.gen_name}</strong> in MW:</span>
+                                            <input
+                                                data-testid={`edit-mw-${id}`}
+                                                type="number"
+                                                min={0}
+                                                step={0.1}
+                                                value={cardEditMw[id] ?? rc.curtailed_mw.toFixed(1)}
+                                                onChange={(e) => { e.stopPropagation(); setCardEditMw(prev => ({ ...prev, [id]: e.target.value })); }}
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={{ width: '65px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #0284c7', borderRadius: '3px', textAlign: 'right' }}
+                                            />
+                                            <button
+                                                data-testid={`resimulate-${id}`}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const mwVal = parseFloat(cardEditMw[id] ?? String(rc.curtailed_mw));
+                                                    if (!isNaN(mwVal) && mwVal >= 0) handleResimulate(id, mwVal);
+                                                }}
+                                                disabled={resimulating === id}
+                                                style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #0284c7', background: '#38bdf8', color: '#0c4a6e', cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                            >
+                                                {resimulating === id ? 'Simulating...' : 'Re-simulate'}
+                                            </button>
                                         </div>
                                     ))}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', borderTop: '1px solid #7dd3fc', paddingTop: '5px' }}>
-                                        <label style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>Reduction MW:</label>
-                                        <input
-                                            data-testid={`edit-mw-${id}`}
-                                            type="number"
-                                            min={0}
-                                            step={0.1}
-                                            value={cardEditMw[id] ?? details.curtailment_details.reduce((s, rc) => s + rc.curtailed_mw, 0).toFixed(1)}
-                                            onChange={(e) => { e.stopPropagation(); setCardEditMw(prev => ({ ...prev, [id]: e.target.value })); }}
-                                            onClick={(e) => e.stopPropagation()}
-                                            style={{ width: '70px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #0284c7', borderRadius: '3px', textAlign: 'right' }}
-                                        />
-                                        <button
-                                            data-testid={`resimulate-${id}`}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                const mwVal = parseFloat(cardEditMw[id] ?? String(details.curtailment_details!.reduce((s, rc) => s + rc.curtailed_mw, 0)));
-                                                if (!isNaN(mwVal) && mwVal >= 0) handleResimulate(id, mwVal);
-                                            }}
-                                            disabled={resimulating === id}
-                                            style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #0284c7', background: '#38bdf8', color: '#0c4a6e', cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
-                                        >
-                                            {resimulating === id ? 'Simulating...' : 'Re-simulate'}
-                                        </button>
-                                    </div>
                                 </div>
                             )}
                             {details.non_convergence && (

@@ -786,11 +786,11 @@ describe('ActionFeed', () => {
         };
         render(<ActionFeed {...props} />);
 
-        // Should show load shedding description
-        expect(screen.getByText(/42\.5 MW/)).toBeInTheDocument();
+        // Should show load shedding description with asset name
+        expect(screen.getByText(/Load shedding on/)).toBeInTheDocument();
         expect(screen.getByText('LOAD_1')).toBeInTheDocument();
 
-        // VL should be rendered as clickable buttons (one in description, one as badge)
+        // VL should be rendered as clickable badge button
         const vlButtons = screen.getAllByText('VL_ALPHA');
         expect(vlButtons.length).toBeGreaterThanOrEqual(1);
         expect(vlButtons.every(el => el.tagName === 'BUTTON')).toBe(true);
@@ -848,10 +848,12 @@ describe('ActionFeed', () => {
         };
         render(<ActionFeed {...props} />);
 
-        expect(screen.getByText(/20 MW/)).toBeInTheDocument();
-        expect(screen.getByText(/15\.3 MW/)).toBeInTheDocument();
+        // Both load names should be shown in the simplified format
         expect(screen.getByText('LOAD_A')).toBeInTheDocument();
         expect(screen.getByText('LOAD_B')).toBeInTheDocument();
+        // Both entries should have "Load shedding on" text
+        const lsTexts = screen.getAllByText(/Load shedding on/);
+        expect(lsTexts.length).toBe(2);
     });
 
     it('clicking VL button in load shedding description triggers onAssetClick', () => {
@@ -992,8 +994,10 @@ describe('ActionFeed', () => {
         };
         render(<ActionFeed {...props} />);
 
-        expect(screen.getByText(/55\.3 MW/)).toBeInTheDocument();
+        // Simplified format: "Load shedding on LOAD_PR in MW: [input]"
+        expect(screen.getByText(/Load shedding on/)).toBeInTheDocument();
         expect(screen.getByText('LOAD_PR')).toBeInTheDocument();
+        // VL badge should still be rendered
         const vlButtons = screen.getAllByText('VL_PR');
         expect(vlButtons.length).toBeGreaterThanOrEqual(1);
     });
@@ -1020,8 +1024,10 @@ describe('ActionFeed', () => {
         };
         render(<ActionFeed {...props} />);
 
-        expect(screen.getByText(/80\.0 MW/)).toBeInTheDocument();
+        // Simplified format: "Renewable curtailment on WIND_1 in MW: [input]"
+        expect(screen.getByText(/Renewable curtailment on/)).toBeInTheDocument();
         expect(screen.getByText('WIND_1')).toBeInTheDocument();
+        // VL badge should still be rendered
         const vlButtons = screen.getAllByText('VL_WIND');
         expect(vlButtons.length).toBeGreaterThanOrEqual(1);
     });
@@ -1062,11 +1068,11 @@ describe('ActionFeed', () => {
         render(<ActionFeed {...props} />);
 
         // Load shedding details with new format
-        expect(screen.getByText(/33 MW/)).toBeInTheDocument();
+        expect(screen.getByText(/Load shedding on/)).toBeInTheDocument();
         expect(screen.getByText('LOAD_NEW')).toBeInTheDocument();
 
         // Curtailment details with new format
-        expect(screen.getByText(/66\.0 MW/)).toBeInTheDocument();
+        expect(screen.getByText(/Renewable curtailment on/)).toBeInTheDocument();
         expect(screen.getByText('GEN_NEW')).toBeInTheDocument();
     });
 
