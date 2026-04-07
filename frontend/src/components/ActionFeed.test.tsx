@@ -787,7 +787,7 @@ describe('ActionFeed', () => {
         render(<ActionFeed {...props} />);
 
         // Should show load shedding description with asset name
-        expect(screen.getByText(/Load shedding on/)).toBeInTheDocument();
+        expect(screen.getByText(/Shedding on/)).toBeInTheDocument();
         expect(screen.getByText('LOAD_1')).toBeInTheDocument();
 
         // VL should be rendered as clickable badge button
@@ -852,7 +852,7 @@ describe('ActionFeed', () => {
         expect(screen.getByText('LOAD_A')).toBeInTheDocument();
         expect(screen.getByText('LOAD_B')).toBeInTheDocument();
         // Both entries should have "Load shedding on" text
-        const lsTexts = screen.getAllByText(/Load shedding on/);
+        const lsTexts = screen.getAllByText(/Shedding on/);
         expect(lsTexts.length).toBe(2);
     });
 
@@ -994,8 +994,8 @@ describe('ActionFeed', () => {
         };
         render(<ActionFeed {...props} />);
 
-        // Simplified format: "Load shedding on LOAD_PR in MW: [input]"
-        expect(screen.getByText(/Load shedding on/)).toBeInTheDocument();
+        // Simplified format: "Shedding on LOAD_PR in MW: [input]"
+        expect(screen.getByText(/Shedding on/)).toBeInTheDocument();
         expect(screen.getByText('LOAD_PR')).toBeInTheDocument();
         // VL badge should still be rendered
         const vlButtons = screen.getAllByText('VL_PR');
@@ -1024,8 +1024,8 @@ describe('ActionFeed', () => {
         };
         render(<ActionFeed {...props} />);
 
-        // Simplified format: "Renewable curtailment on WIND_1 in MW: [input]"
-        expect(screen.getByText(/Renewable curtailment on/)).toBeInTheDocument();
+        // Simplified format: "Curtailment on WIND_1 in MW: [input]"
+        expect(screen.getByText(/Curtailment on/)).toBeInTheDocument();
         expect(screen.getByText('WIND_1')).toBeInTheDocument();
         // VL badge should still be rendered
         const vlButtons = screen.getAllByText('VL_WIND');
@@ -1068,11 +1068,11 @@ describe('ActionFeed', () => {
         render(<ActionFeed {...props} />);
 
         // Load shedding details with new format
-        expect(screen.getByText(/Load shedding on/)).toBeInTheDocument();
+        expect(screen.getByText(/Shedding on/)).toBeInTheDocument();
         expect(screen.getByText('LOAD_NEW')).toBeInTheDocument();
 
         // Curtailment details with new format
-        expect(screen.getByText(/Renewable curtailment on/)).toBeInTheDocument();
+        expect(screen.getByText(/Curtailment on/)).toBeInTheDocument();
         expect(screen.getByText('GEN_NEW')).toBeInTheDocument();
     });
 

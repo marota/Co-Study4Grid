@@ -486,7 +486,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                 <div style={{ fontSize: '12px', background: '#fef3c7', color: '#92400e', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #fcd34d', fontWeight: 500 }}>
                                     {details.load_shedding_details.map((ls, i) => (
                                         <div key={ls.load_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
-                                            <span>Load shedding on <strong>{ls.load_name}</strong> in MW:</span>
+                                            <span>Shedding on <strong>{ls.load_name}</strong> in MW:</span>
                                             <input
                                                 data-testid={`edit-mw-${id}`}
                                                 type="number"
@@ -517,7 +517,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                 <div style={{ fontSize: '12px', background: '#e0f2fe', color: '#075985', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #7dd3fc', fontWeight: 500 }}>
                                     {details.curtailment_details.map((rc, i) => (
                                         <div key={rc.gen_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
-                                            <span>Renewable curtailment on <strong>{rc.gen_name}</strong> in MW:</span>
+                                            <span>Curtailment on <strong>{rc.gen_name}</strong> in MW:</span>
                                             <input
                                                 data-testid={`edit-mw-${id}`}
                                                 type="number"
@@ -837,19 +837,25 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                                     const targetVal = scoreTargetMw[item.actionId];
                                                                     const parsedTarget = targetVal !== undefined ? parseFloat(targetVal) : null;
                                                                     const isValidTarget = parsedTarget !== null && !isNaN(parsedTarget) && parsedTarget >= 0 && (item.mwStart == null || parsedTarget <= item.mwStart);
+                                                                    const canResimulate = isLsOrRcType && isComputed && isValidTarget;
                                                                     return (
                                                                         <tr key={item.actionId}
                                                                             onClick={() => {
-                                                                                if (isComputed || simulating) return;
+                                                                                if (simulating || resimulating) return;
+                                                                                if (canResimulate) {
+                                                                                    handleResimulate(item.actionId, parsedTarget!);
+                                                                                    return;
+                                                                                }
+                                                                                if (isComputed) return;
                                                                                 const mw = isLsOrRcType && isValidTarget ? parsedTarget! : undefined;
                                                                                 handleAddAction(item.actionId, mw);
                                                                             }}
                                                                             style={{
                                                                                 borderBottom: '1px solid #eee',
-                                                                                cursor: (isComputed || simulating) ? 'not-allowed' : 'pointer',
-                                                                                color: isComputed ? '#888' : 'inherit',
-                                                                                opacity: simulating === item.actionId ? 0.7 : 1,
-                                                                                background: simulating === item.actionId ? '#e7f1ff' : 'transparent',
+                                                                                cursor: (simulating || resimulating) ? 'wait' : (isComputed && !canResimulate) ? 'not-allowed' : 'pointer',
+                                                                                color: (isComputed && !canResimulate) ? '#888' : 'inherit',
+                                                                                opacity: (simulating === item.actionId || resimulating === item.actionId) ? 0.7 : 1,
+                                                                                background: (simulating === item.actionId || resimulating === item.actionId) ? '#e7f1ff' : 'transparent',
                                                                             }}>
                                                                             <td style={{ padding: '4px 6px', fontWeight: 600, display: 'flex', alignItems: 'center' }}>
                                                                                 {item.actionId}
