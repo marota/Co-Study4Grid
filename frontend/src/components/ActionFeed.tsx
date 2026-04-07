@@ -334,6 +334,12 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 curtailment_details: result.curtailment_details,
             };
             onManualActionAdded(actionId, newDetail, result.lines_overloaded || []);
+            // Clear the edit input so it picks up the new shedded/curtailed MW from results
+            setCardEditMw(prev => {
+                const next = { ...prev };
+                delete next[actionId];
+                return next;
+            });
         } catch (e: unknown) {
             console.error('Re-simulation failed:', e);
         } finally {
@@ -483,7 +489,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         <div style={{ flex: 1 }}>
                             <p style={{ fontSize: '13px', margin: 0 }}>{details.description_unitaire}</p>
                             {details.load_shedding_details && details.load_shedding_details.length > 0 && (
-                                <div style={{ fontSize: '12px', background: '#fef3c7', color: '#92400e', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #fcd34d', fontWeight: 500 }}>
+                                <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: '#fef3c7', color: '#92400e', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #fcd34d', fontWeight: 500 }}>
                                     {details.load_shedding_details.map((ls, i) => (
                                         <div key={ls.load_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
                                             <span>Shedding on <strong>{ls.load_name}</strong> in MW:</span>
@@ -493,14 +499,12 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                 min={0}
                                                 step={0.1}
                                                 value={cardEditMw[id] ?? ls.shedded_mw.toFixed(1)}
-                                                onChange={(e) => { e.stopPropagation(); setCardEditMw(prev => ({ ...prev, [id]: e.target.value })); }}
-                                                onClick={(e) => e.stopPropagation()}
+                                                onChange={(e) => setCardEditMw(prev => ({ ...prev, [id]: e.target.value }))}
                                                 style={{ width: '65px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #d97706', borderRadius: '3px', textAlign: 'right' }}
                                             />
                                             <button
                                                 data-testid={`resimulate-${id}`}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
+                                                onClick={() => {
                                                     const mwVal = parseFloat(cardEditMw[id] ?? String(ls.shedded_mw));
                                                     if (!isNaN(mwVal) && mwVal >= 0) handleResimulate(id, mwVal);
                                                 }}
@@ -514,7 +518,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                 </div>
                             )}
                             {details.curtailment_details && details.curtailment_details.length > 0 && (
-                                <div style={{ fontSize: '12px', background: '#e0f2fe', color: '#075985', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #7dd3fc', fontWeight: 500 }}>
+                                <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: '#e0f2fe', color: '#075985', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #7dd3fc', fontWeight: 500 }}>
                                     {details.curtailment_details.map((rc, i) => (
                                         <div key={rc.gen_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
                                             <span>Curtailment on <strong>{rc.gen_name}</strong> in MW:</span>
@@ -524,14 +528,12 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                 min={0}
                                                 step={0.1}
                                                 value={cardEditMw[id] ?? rc.curtailed_mw.toFixed(1)}
-                                                onChange={(e) => { e.stopPropagation(); setCardEditMw(prev => ({ ...prev, [id]: e.target.value })); }}
-                                                onClick={(e) => e.stopPropagation()}
+                                                onChange={(e) => setCardEditMw(prev => ({ ...prev, [id]: e.target.value }))}
                                                 style={{ width: '65px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #0284c7', borderRadius: '3px', textAlign: 'right' }}
                                             />
                                             <button
                                                 data-testid={`resimulate-${id}`}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
+                                                onClick={() => {
                                                     const mwVal = parseFloat(cardEditMw[id] ?? String(rc.curtailed_mw));
                                                     if (!isNaN(mwVal) && mwVal >= 0) handleResimulate(id, mwVal);
                                                 }}
