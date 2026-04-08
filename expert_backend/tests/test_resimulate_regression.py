@@ -67,11 +67,10 @@ def _setup_env_mock(name_load=None, load_p=None, name_gen=None, gen_p=None):
 
     obs_n1.simulate.return_value = (sim_obs, 0.5, False, {"exception": None})
     
-    # env.get_obs() is called three times: 
-    # 1. N-1 state (for setpoint)
-    # 2. N state (base)
-    # 3. N-1 state (base for simulation)
-    env.get_obs.side_effect = [obs_n1, obs_n, obs_n1]
+    # env.get_obs() is called twice: 
+    # 1. Base N state
+    # 2. Contingency N-1 state (base for simulation)
+    env.get_obs.side_effect = [obs_n, obs_n1]
     env.action_space.side_effect = lambda c: MockAction(c)
 
     return patcher, env

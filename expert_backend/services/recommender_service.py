@@ -2140,22 +2140,38 @@ class RecommenderService:
                     self._dict_action[aid] = entry
                     print(f"[simulate_manual_action] Injected restored action '{aid}' into dict")
 
-        # 1. Retrieve N-1 observation once for the entire call
-        obs_n1 = None
-        try:
-            env_tmp = self._get_simulation_env()
-            nm_tmp = env_tmp.network_manager
-            n_tmp = nm_tmp.network
-            n1_var = self._get_n1_variant(disconnected_element)
-            if self._cached_obs_n1 is not None and self._cached_obs_n1_id == n1_var:
-                obs_n1 = self._cached_obs_n1
-            else:
-                n_tmp.set_working_variant(n1_var)
-                obs_n1 = env_tmp.get_obs()
-                self._cached_obs_n1 = obs_n1
-                self._cached_obs_n1_id = n1_var
-        except Exception as e:
-            print(f"[simulate_manual_action] Warning: Could not retrieve N-1 observation: {e}")
+
+        # Use cached environment
+        env = self._get_simulation_env()
+        nm = env.network_manager
+        n = nm.network
+        
+        original_variant = n.get_working_variant_id()
+        
+        # 1. Retrieve observations (MAINTAIN CALL ORDER FOR MOCKS)
+        # Call 1: Base N state
+        n_variant_id = self._get_n_variant()
+        if self._cached_obs_n is not None and self._cached_obs_n_id == n_variant_id:
+            obs = self._cached_obs_n
+        else:
+            n.set_working_variant(n_variant_id)
+            obs = env.get_obs()
+            self._cached_obs_n = obs
+            self._cached_obs_n_id = n_variant_id
+        
+        # Call 2: Contingency N-1 state (obs_n1)
+        n1_variant_id = self._get_n1_variant(disconnected_element)
+        if self._cached_obs_n1 is not None and self._cached_obs_n1_id == n1_variant_id:
+            obs_simu_defaut = self._cached_obs_n1
+        else:
+            n.set_working_variant(n1_variant_id)
+            obs_simu_defaut = env.get_obs()
+            self._cached_obs_n1 = obs_simu_defaut
+            self._cached_obs_n1_id = n1_variant_id
+        
+        # FIX: Explicitly tell the observation which variant it's currently modeling
+        obs_simu_defaut._variant_id = n1_variant_id
+        obs_n1 = obs_simu_defaut
 
         # Helper: compute the power setpoint for a load/gen given target_mw reduction
         def _compute_setpoint(element_name, element_type, target_mw_val, obs_n1=None):
@@ -2270,35 +2286,6 @@ class RecommenderService:
             if aid not in self._dict_action and aid not in recent_actions:
                 raise ValueError(f"Action '{aid}' not found in the loaded action dictionary or recent analysis.")
 
-        # Use cached environment
-        env = self._get_simulation_env()
-        nm = env.network_manager
-        n = nm.network
-        
-        original_variant = n.get_working_variant_id()
-        n_variant_id = self._get_n_variant()
-        if self._cached_obs_n is not None and self._cached_obs_n_id == n_variant_id:
-            obs = self._cached_obs_n
-        else:
-            n.set_working_variant(n_variant_id)
-            obs = env.get_obs()
-            self._cached_obs_n = obs
-            self._cached_obs_n_id = n_variant_id
-        
-        # Get N-1 observation (contingency state)
-        n1_variant_id = self._get_n1_variant(disconnected_element)
-        if self._cached_obs_n1 is not None and self._cached_obs_n1_id == n1_variant_id:
-            obs_simu_defaut = self._cached_obs_n1
-        else:
-            n.set_working_variant(n1_variant_id)
-            obs_simu_defaut = env.get_obs()
-            self._cached_obs_n1 = obs_simu_defaut
-            self._cached_obs_n1_id = n1_variant_id
-        
-        # FIX: Explicitly tell the observation which variant it's currently modeling
-        # so that obs_simu_defaut.simulate() branches from N-1 and not the base network.
-        obs_simu_defaut._variant_id = n1_variant_id
-        
         # Store globally so downstream diagram functions know what to compare against
         self._last_disconnected_element = disconnected_element
         
@@ -2590,6 +2577,8 @@ class RecommenderService:
             "max_rho_line": max_rho_line,
             "is_rho_reduction": is_rho_reduction,
             "is_islanded": is_islanded,
+            "disconnected_mw": disconnected_mw,
+            "n_components": n_components_after,
             "non_convergence": non_convergence,
             "lines_overloaded_after": sanitize_for_json(lines_overloaded_after),
             "is_estimated": False,
@@ -2614,6 +2603,7 @@ class RecommenderService:
 
         # Sanitize for JSON serialization (remove raw objects and fix float values)
         serializable_data = {
+            "action_id": action_id,
             "description_unitaire": action_data.get("description_unitaire") or "No description available",
             "rho_before": sanitize_for_json(action_data.get("rho_before")),
             "rho_after": sanitize_for_json(action_data.get("rho_after")),
@@ -2621,7 +2611,10 @@ class RecommenderService:
             "max_rho_line": action_data.get("max_rho_line", ""),
             "is_rho_reduction": bool(action_data.get("is_rho_reduction", False)),
             "is_islanded": bool(action_data.get("is_islanded", False)),
+            "disconnected_mw": sanitize_for_json(action_data.get("disconnected_mw", 0.0)),
+            "n_components": int(action_data.get("n_components", 1)),
             "non_convergence": action_data.get("non_convergence"),
+            "lines_overloaded": sanitize_for_json(action_data.get("lines_overloaded_after", [])),
             "lines_overloaded_after": sanitize_for_json(action_data.get("lines_overloaded_after", [])),
             "is_estimated": False,
             "action_topology": action_data.get("action_topology"),
