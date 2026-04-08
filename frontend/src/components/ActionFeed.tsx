@@ -336,6 +336,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             onManualActionAdded(actionId, newDetail, result.lines_overloaded || []);
             // Clear the edit input so it picks up the new shedded/curtailed MW from results
             setCardEditMw(prev => {
+                if (!prev[actionId]) return prev;
                 const next = { ...prev };
                 delete next[actionId];
                 return next;

@@ -62,7 +62,7 @@ def _setup_env_mock(name_load=None, load_p=None, name_gen=None, gen_p=None):
 
     obs.simulate.return_value = (sim_obs, 0.5, False, {"exception": None})
     env.get_obs.return_value = obs
-    env.action_space.side_effect = lambda c: MockAction(c)
+    env.action_space.side_effect = lambda c: MockAction(c) if getattr(env, "_use_mock_action", True) else MagicMock(spec=[])
 
     return patcher, env
 
@@ -196,13 +196,17 @@ class TestExistingActionResimulationWithTargetMw:
         try:
             with patch.object(svc, "_get_monitoring_parameters", return_value=(set(), set())), \
                  patch.object(svc, "_compute_deltas", return_value={}):
-                svc.simulate_manual_action(
+                result = svc.simulate_manual_action(
                     "load_shedding_LOAD_A", "LINE_X", target_mw=40.0
                 )
-
-            # Content should be updated in-place
             content = svc._dict_action["load_shedding_LOAD_A"]["content"]
             assert content["set_load_p"]["LOAD_A"] == 60.0
+
+            # Verify response shape
+            assert "load_shedding_details" in result
+            assert len(result["load_shedding_details"]) == 1
+            # Mock behavior: full reduction
+            assert result["load_shedding_details"][0]["shedded_mw"] == 100.0
         finally:
             patcher.stop()
 
@@ -223,12 +227,18 @@ class TestExistingActionResimulationWithTargetMw:
         try:
             with patch.object(svc, "_get_monitoring_parameters", return_value=(set(), set())), \
                  patch.object(svc, "_compute_deltas", return_value={}):
-                svc.simulate_manual_action(
+                result = svc.simulate_manual_action(
                     "curtail_GEN_WIND", "LINE_X", target_mw=25.0
                 )
 
             content = svc._dict_action["curtail_GEN_WIND"]["content"]
             assert content["set_gen_p"]["GEN_WIND"] == 55.0
+
+            # Verify response shape
+            assert "curtailment_details" in result
+            assert len(result["curtailment_details"]) == 1
+            # Mock behavior: full reduction
+            assert result["curtailment_details"][0]["curtailed_mw"] == 80.0
         finally:
             patcher.stop()
 
@@ -256,5 +266,42 @@ class TestExistingActionResimulationWithTargetMw:
             # Content should be unchanged since target_mw was not provided
             content = svc._dict_action["load_shedding_LOAD_A"]["content"]
             assert content["set_load_p"]["LOAD_A"] == 30.0
+        finally:
+            patcher.stop()
+
+
+class TestActionTopologyPersistence:
+    """Verify that action_topology reflects the correct setpoints after simulation."""
+
+    def test_resimulate_topology_persistence(self):
+        """action_topology should contain the calculated setpoint, not hardcoded 0.0."""
+        svc = RecommenderService()
+        svc._dict_action = {
+            "curtail_GEN_WIND": {
+                "content": {"set_gen_p": {"GEN_WIND": 0.0}},
+                "description": "Curtailment on GEN_WIND",
+                "description_unitaire": "Effacement 'GEN_WIND'",
+            }
+        }
+
+        patcher, env = _setup_env_mock(
+            name_gen=["GEN_WIND"], gen_p=[80.0]
+        )
+        # Simulate a Grid2Op-like action that DOES NOT have a public .gens_p attribute
+        env._use_mock_action = False 
+        
+        try:
+            with patch.object(svc, "_get_monitoring_parameters", return_value=(set(), set())), \
+                 patch.object(svc, "_compute_deltas", return_value={}):
+                # Simulate a 20 MW reduction (so setpoint should be 60.0)
+                result = svc.simulate_manual_action(
+                    "curtail_GEN_WIND", "LINE_X", target_mw=20.0
+                )
+
+            # The returned action_topology should have gens_p: {GEN_WIND: 60.0}
+            assert "action_topology" in result
+            topo = result["action_topology"]
+            assert "gens_p" in topo
+            assert topo["gens_p"]["GEN_WIND"] == 60.0
         finally:
             patcher.stop()

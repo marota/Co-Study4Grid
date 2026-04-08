@@ -3722,6 +3722,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     });
                     // Clear the edit input so it picks up the new value from results
                     setCardEditMw(prev => {
+                        if (!prev[actionId]) return prev;
                         const next = { ...prev };
                         delete next[actionId];
                         return next;
