@@ -17,7 +17,7 @@ import ConfirmationDialog from './components/modals/ConfirmationDialog';
 import type { ConfirmDialogState } from './components/modals/ConfirmationDialog';
 import { api } from './api';
 import { applyOverloadedHighlights, applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight, processSvg } from './utils/svgUtils';
-import type { ActionDetail, TabId } from './types';
+import type { ActionDetail, TabId, RecommenderDisplayConfig } from './types';
 import { useSettings } from './hooks/useSettings';
 import { useActions } from './hooks/useActions';
 import { useAnalysis } from './hooks/useAnalysis';
@@ -93,20 +93,22 @@ function App() {
     return branches.filter(b => b.toUpperCase().includes(q)).slice(0, 50);
   }, [branches, selectedBranch]);
 
+  const recommenderConfig = useMemo<RecommenderDisplayConfig>(() => ({
+    minLineReconnections, minCloseCoupling, minOpenCoupling,
+    minLineDisconnections, minPst, minLoadShedding,
+    minRenewableCurtailmentActions, nPrioritizedActions, ignoreReconnections,
+  }), [
+    minLineReconnections, minCloseCoupling, minOpenCoupling,
+    minLineDisconnections, minPst, minLoadShedding,
+    minRenewableCurtailmentActions, nPrioritizedActions, ignoreReconnections,
+  ]);
+
   const session = useSession();
   const {
     showReloadModal, setShowReloadModal, sessionList, sessionListLoading, sessionRestoring
   } = session;
 
-  // ===== Cross-Hook Wiring wrappers =====
-  const wrappedActionSelect = (actionId: string | null) =>
-    diagrams.handleActionSelect(actionId, result, selectedBranch, voltageLevels.length, setResult, setError);
-
-  const wrappedActionFavorite = (actionId: string) =>
-    actionsHook.handleActionFavorite(actionId, setResult);
-
-  const wrappedManualActionAdded = (actionId: string, detail: ActionDetail, linesOverloaded: string[]) =>
-    actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedActionSelect);
+  // ===== Cross-Hook Wiring wrappers (all memoized) =====
 
   // Clear all contingency-related analysis state (preserves network/config)
   const clearContingencyState = useCallback(() => {
@@ -125,54 +127,132 @@ function App() {
     diagrams.lastZoomState.current = { query: '', branch: '' };
   }, [setError, actionsHook, analysis, diagrams]);
 
-  const wrappedRunAnalysis = () =>
-    analysis.handleRunAnalysis(selectedBranch, clearContingencyState, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab);
+  // Full reset: contingency state + network/diagram state
+  const resetAllState = useCallback(() => {
+    clearContingencyState();
+    diagrams.setNDiagram(null);
+    diagrams.setN1Diagram(null);
+    diagrams.setOriginalViewBox(null);
+    diagrams.setActionViewMode('network');
+    diagrams.setN1Loading(false);
+    diagrams.setActionDiagramLoading(false);
+    diagrams.committedBranchRef.current = '';
+    diagrams.actionSyncSourceRef.current = null;
+    diagrams.lastZoomState.current = { query: '', branch: '' };
+    setSelectedBranch('');
+    setShowMonitoringWarning(false);
+  }, [clearContingencyState, diagrams, setShowMonitoringWarning]);
 
-  const wrappedDisplayPrioritized = () =>
-    analysis.handleDisplayPrioritizedActions(selectedActionIds);
+  const wrappedActionSelect = useCallback(
+    (actionId: string | null) =>
+      diagrams.handleActionSelect(actionId, result, selectedBranch, voltageLevels.length, setResult, setError),
+    [diagrams, result, selectedBranch, voltageLevels.length, setResult, setError]
+  );
 
-  const wrappedAssetClick = (actionId: string, assetName: string, tab: 'action' | 'n' | 'n-1' = 'action') =>
-    diagrams.handleAssetClick(actionId, assetName, tab, diagrams.selectedActionId, wrappedActionSelect);
+  const wrappedActionFavorite = useCallback(
+    (actionId: string) => actionsHook.handleActionFavorite(actionId, setResult),
+    [actionsHook, setResult]
+  );
 
-  const wrappedSaveResults = () => {
-    session.handleSaveResults({
-      networkPath, actionPath, layoutPath, outputFolderPath,
-      minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst, minLoadShedding, minRenewableCurtailmentActions,
-      nPrioritizedActions, linesMonitoringPath, monitoringFactor,
-      preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
-      selectedBranch, selectedOverloads, monitorDeselected,
-      nOverloads: nDiagram?.lines_overloaded ?? [],
-      n1Overloads: n1Diagram?.lines_overloaded ?? [],
-      result, selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds,
-      setError, setInfoMessage: analysis.setInfoMessage
-    });
-  };
+  const wrappedManualActionAdded = useCallback(
+    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) =>
+      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedActionSelect),
+    [actionsHook, setResult, wrappedActionSelect]
+  );
 
-  const wrappedOpenReloadModal = () => session.handleOpenReloadModal(outputFolderPath, setError);
+  const wrappedRunAnalysis = useCallback(
+    () => analysis.handleRunAnalysis(selectedBranch, clearContingencyState, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab),
+    [analysis, selectedBranch, clearContingencyState, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab]
+  );
 
-  const wrappedRestoreSession = (sessionName: string) => {
-    session.handleRestoreSession(sessionName, {
-      outputFolderPath,
-      setNetworkPath, setActionPath, setLayoutPath,
-      setMinLineReconnections, setMinCloseCoupling, setMinOpenCoupling, setMinLineDisconnections, setMinPst, setMinLoadShedding, setMinRenewableCurtailmentActions,
-      setNPrioritizedActions, setLinesMonitoringPath, setMonitoringFactor, setPreExistingOverloadThreshold,
-      setIgnoreReconnections, setPypowsyblFastMode,
-      setMonitorDeselected: analysis.setMonitorDeselected,
-      setSelectedOverloads: analysis.setSelectedOverloads,
-      setResult,
-      setSelectedActionIds: actionsHook.setSelectedActionIds,
-      setRejectedActionIds: actionsHook.setRejectedActionIds,
-      setManuallyAddedIds: actionsHook.setManuallyAddedIds,
-      setSuggestedByRecommenderIds: actionsHook.setSuggestedByRecommenderIds,
-      setSelectedBranch,
-      restoringSessionRef: diagrams.restoringSessionRef,
-      committedBranchRef: diagrams.committedBranchRef,
-      setError, setInfoMessage: analysis.setInfoMessage,
-      applyConfigResponse, setBranches, setVoltageLevels, setNominalVoltageMap: diagrams.setNominalVoltageMap,
-      setUniqueVoltages: diagrams.setUniqueVoltages, fetchBaseDiagram: diagrams.fetchBaseDiagram,
-      setVoltageRange: diagrams.setVoltageRange
-    });
-  };
+  const wrappedDisplayPrioritized = useCallback(
+    () => analysis.handleDisplayPrioritizedActions(selectedActionIds),
+    [analysis, selectedActionIds]
+  );
+
+  const wrappedAssetClick = useCallback(
+    (actionId: string, assetName: string, tab: 'action' | 'n' | 'n-1' = 'action') =>
+      diagrams.handleAssetClick(actionId, assetName, tab, diagrams.selectedActionId, wrappedActionSelect),
+    [diagrams, wrappedActionSelect]
+  );
+
+  const saveParams = useMemo(() => ({
+    networkPath, actionPath, layoutPath, outputFolderPath,
+    minLineReconnections, minCloseCoupling, minOpenCoupling,
+    minLineDisconnections, minPst, minLoadShedding,
+    minRenewableCurtailmentActions, nPrioritizedActions,
+    linesMonitoringPath, monitoringFactor,
+    preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
+    selectedBranch, selectedOverloads, monitorDeselected,
+    nOverloads: nDiagram?.lines_overloaded ?? [],
+    n1Overloads: n1Diagram?.lines_overloaded ?? [],
+    result, selectedActionIds, rejectedActionIds,
+    manuallyAddedIds, suggestedByRecommenderIds,
+    setError, setInfoMessage: analysis.setInfoMessage,
+  }), [
+    networkPath, actionPath, layoutPath, outputFolderPath,
+    minLineReconnections, minCloseCoupling, minOpenCoupling,
+    minLineDisconnections, minPst, minLoadShedding,
+    minRenewableCurtailmentActions, nPrioritizedActions,
+    linesMonitoringPath, monitoringFactor,
+    preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
+    selectedBranch, selectedOverloads, monitorDeselected,
+    nDiagram, n1Diagram,
+    result, selectedActionIds, rejectedActionIds,
+    manuallyAddedIds, suggestedByRecommenderIds,
+    setError, analysis.setInfoMessage,
+  ]);
+
+  const wrappedSaveResults = useCallback(
+    () => session.handleSaveResults(saveParams),
+    [session, saveParams]
+  );
+
+  const wrappedOpenReloadModal = useCallback(
+    () => session.handleOpenReloadModal(outputFolderPath, setError),
+    [session, outputFolderPath, setError]
+  );
+
+  const restoreContext = useMemo(() => ({
+    outputFolderPath,
+    setNetworkPath, setActionPath, setLayoutPath,
+    setMinLineReconnections, setMinCloseCoupling, setMinOpenCoupling,
+    setMinLineDisconnections, setMinPst, setMinLoadShedding,
+    setMinRenewableCurtailmentActions, setNPrioritizedActions,
+    setLinesMonitoringPath, setMonitoringFactor, setPreExistingOverloadThreshold,
+    setIgnoreReconnections, setPypowsyblFastMode,
+    setMonitorDeselected: analysis.setMonitorDeselected,
+    setSelectedOverloads: analysis.setSelectedOverloads,
+    setResult,
+    setSelectedActionIds: actionsHook.setSelectedActionIds,
+    setRejectedActionIds: actionsHook.setRejectedActionIds,
+    setManuallyAddedIds: actionsHook.setManuallyAddedIds,
+    setSuggestedByRecommenderIds: actionsHook.setSuggestedByRecommenderIds,
+    setSelectedBranch,
+    restoringSessionRef: diagrams.restoringSessionRef,
+    committedBranchRef: diagrams.committedBranchRef,
+    setError, setInfoMessage: analysis.setInfoMessage,
+    applyConfigResponse, setBranches, setVoltageLevels,
+    setNominalVoltageMap: diagrams.setNominalVoltageMap,
+    setUniqueVoltages: diagrams.setUniqueVoltages,
+    fetchBaseDiagram: diagrams.fetchBaseDiagram,
+    setVoltageRange: diagrams.setVoltageRange,
+  }), [
+    outputFolderPath,
+    setNetworkPath, setActionPath, setLayoutPath,
+    setMinLineReconnections, setMinCloseCoupling, setMinOpenCoupling,
+    setMinLineDisconnections, setMinPst, setMinLoadShedding,
+    setMinRenewableCurtailmentActions, setNPrioritizedActions,
+    setLinesMonitoringPath, setMonitoringFactor, setPreExistingOverloadThreshold,
+    setIgnoreReconnections, setPypowsyblFastMode,
+    analysis, actionsHook, setResult, setSelectedBranch,
+    diagrams, setError, applyConfigResponse, setBranches, setVoltageLevels,
+  ]);
+
+  const wrappedRestoreSession = useCallback(
+    (sessionName: string) => session.handleRestoreSession(sessionName, restoreContext),
+    [session, restoreContext]
+  );
 
   // Check if there is any analysis state that would be lost on contingency change
   const hasAnalysisState = useCallback(() => {
@@ -183,29 +263,7 @@ function App() {
   const handleApplySettings = useCallback(async () => {
     interactionLogger.record('settings_applied');
     try {
-      setError('');
-      analysis.setInfoMessage('');
-      diagrams.setNDiagram(null);
-      diagrams.setN1Diagram(null);
-      diagrams.setActionDiagram(null);
-      diagrams.setOriginalViewBox(null);
-      setResult(null);
-      analysis.setPendingAnalysisResult(null);
-      diagrams.setSelectedActionId(null);
-      actionsHook.clearActionState();
-      analysis.setSelectedOverloads(new Set());
-      analysis.setMonitorDeselected(false);
-      diagrams.setActiveTab('n');
-      diagrams.setActionViewMode('network');
-      diagrams.setVlOverlay(null);
-      diagrams.setN1Loading(false);
-      diagrams.setActionDiagramLoading(false);
-      setSelectedBranch('');
-      diagrams.committedBranchRef.current = '';
-      diagrams.setInspectQuery('');
-      diagrams.lastZoomState.current = { query: '', branch: '' };
-      diagrams.actionSyncSourceRef.current = null;
-      setShowMonitoringWarning(false);
+      resetAllState();
 
       if (!networkPath || !actionPath) {
         setSettingsBackup(createCurrentBackup());
@@ -245,35 +303,13 @@ function App() {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
       setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
     }
-  }, [networkPath, actionPath, buildConfigRequest, applyConfigResponse, createCurrentBackup, setResult, setError, setShowMonitoringWarning, setSettingsBackup, setIsSettingsOpen, actionsHook, analysis, diagrams, configFilePath, lastActiveConfigFilePath, changeConfigFilePath]);
+  }, [networkPath, actionPath, buildConfigRequest, applyConfigResponse, createCurrentBackup, setResult, setError, setSettingsBackup, setIsSettingsOpen, diagrams, configFilePath, lastActiveConfigFilePath, changeConfigFilePath, resetAllState]);
 
 
 
   const handleLoadConfig = useCallback(async () => {
     setConfigLoading(true);
-    setError('');
-    analysis.setInfoMessage('');
-    diagrams.setNDiagram(null);
-    diagrams.setN1Diagram(null);
-    diagrams.setActionDiagram(null);
-    diagrams.setOriginalViewBox(null);
-    setResult(null);
-    analysis.setPendingAnalysisResult(null);
-    diagrams.setSelectedActionId(null);
-    actionsHook.clearActionState();
-    analysis.setSelectedOverloads(new Set());
-    analysis.setMonitorDeselected(false);
-    diagrams.setActiveTab('n');
-    diagrams.setActionViewMode('network');
-    diagrams.setVlOverlay(null);
-    diagrams.setN1Loading(false);
-    diagrams.setActionDiagramLoading(false);
-    setSelectedBranch('');
-    diagrams.committedBranchRef.current = '';
-    diagrams.setInspectQuery('');
-    diagrams.lastZoomState.current = { query: '', branch: '' };
-    diagrams.actionSyncSourceRef.current = null;
-    setShowMonitoringWarning(false);
+    resetAllState();
 
     try {
       if (configFilePath && configFilePath !== lastActiveConfigFilePath) {
@@ -306,7 +342,7 @@ function App() {
     } finally {
       setConfigLoading(false);
     }
-  }, [buildConfigRequest, applyConfigResponse, setResult, setError, setShowMonitoringWarning, actionsHook, analysis, diagrams, networkPath, actionPath, configFilePath, lastActiveConfigFilePath, changeConfigFilePath]);
+  }, [buildConfigRequest, applyConfigResponse, setResult, setError, diagrams, networkPath, actionPath, configFilePath, lastActiveConfigFilePath, changeConfigFilePath, resetAllState]);
 
 
   const handleLoadStudyClick = useCallback(() => {
@@ -473,6 +509,49 @@ function App() {
     }
   }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, activeTab, selectedBranch, applyHighlightsForTab]);
 
+  // ===== Extracted JSX callbacks (stable references for React.memo) =====
+
+  const handleContingencyChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    interactionLogger.record('contingency_selected', { element: e.target.value });
+    setSelectedBranch(e.target.value);
+  }, []);
+
+  const handleDismissWarning = useCallback(() => {
+    setShowMonitoringWarning(false);
+  }, [setShowMonitoringWarning]);
+
+  const handleOpenConfigSettings = useCallback(() => {
+    setIsSettingsOpen(true);
+    setSettingsTab('configurations');
+  }, [setIsSettingsOpen, setSettingsTab]);
+
+  const handleToggleMonitorDeselected = useCallback(() => {
+    analysis.setMonitorDeselected(!analysis.monitorDeselected);
+  }, [analysis]);
+
+  const handleTabChange = useCallback((tab: TabId) => {
+    interactionLogger.record('diagram_tab_changed', { tab });
+    diagrams.setActiveTab(tab);
+  }, [diagrams]);
+
+  const handleVoltageRangeChange = useCallback((range: [number, number]) => {
+    interactionLogger.record('voltage_range_changed', { min: range[0], max: range[1] });
+    diagrams.setVoltageRange(range);
+  }, [diagrams]);
+
+  const handleInspectQueryChange = useCallback((q: string) => {
+    interactionLogger.record('inspect_query_changed', { query: q });
+    diagrams.setInspectQuery(q);
+  }, [diagrams]);
+
+  const handleVlOpen = useCallback((vlName: string) => {
+    handleVlDoubleClick(activeTab === 'action' ? selectedActionId || '' : '', vlName);
+  }, [handleVlDoubleClick, activeTab, selectedActionId]);
+
+  const handleCancelDialog = useCallback(() => {
+    setConfirmDialog(null);
+  }, []);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <Header
@@ -512,7 +591,7 @@ function App() {
               <input
                 list="contingencies"
                 value={selectedBranch}
-                onChange={e => { interactionLogger.record('contingency_selected', { element: e.target.value }); setSelectedBranch(e.target.value); }}
+                onChange={handleContingencyChange}
                 placeholder="Search line/bus..."
                 style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }}
               />
@@ -532,12 +611,12 @@ function App() {
               totalLinesCount={totalLinesCount}
               monitoringFactor={monitoringFactor}
               preExistingOverloadThreshold={preExistingOverloadThreshold}
-              onDismissWarning={() => setShowMonitoringWarning(false)}
-              onOpenSettings={() => { setIsSettingsOpen(true); setSettingsTab('configurations'); }}
+              onDismissWarning={handleDismissWarning}
+              onOpenSettings={handleOpenConfigSettings}
               selectedOverloads={selectedOverloads}
               onToggleOverload={analysis.handleToggleOverload}
               monitorDeselected={monitorDeselected}
-              onToggleMonitorDeselected={() => analysis.setMonitorDeselected(!analysis.monitorDeselected)}
+              onToggleMonitorDeselected={handleToggleMonitorDeselected}
             />
           </div>
           <div style={{ flexShrink: 0 }}>
@@ -565,15 +644,7 @@ function App() {
               analysisLoading={analysisLoading}
               monitoringFactor={monitoringFactor}
               onVlDoubleClick={handleVlDoubleClick}
-              minLineReconnections={minLineReconnections}
-              minCloseCoupling={minCloseCoupling}
-              minOpenCoupling={minOpenCoupling}
-              minLineDisconnections={minLineDisconnections}
-              minPst={minPst}
-              minLoadShedding={minLoadShedding}
-              minRenewableCurtailmentActions={minRenewableCurtailmentActions}
-              nPrioritizedActions={nPrioritizedActions}
-              ignoreReconnections={ignoreReconnections}
+              recommenderConfig={recommenderConfig}
               actionDictFileName={actionDictFileName}
               actionDictStats={actionDictStats}
               onOpenSettings={handleOpenSettings}
@@ -584,7 +655,7 @@ function App() {
           <VisualizationPanel
             activeTab={activeTab}
             configLoading={configLoading}
-            onTabChange={(tab: TabId) => { interactionLogger.record('diagram_tab_changed', { tab }); setActiveTab(tab); }}
+            onTabChange={handleTabChange}
             nDiagram={nDiagram}
             n1Diagram={n1Diagram}
             n1Loading={n1Loading}
@@ -598,11 +669,11 @@ function App() {
             actionSvgContainerRef={actionSvgContainerRef}
             uniqueVoltages={uniqueVoltages}
             voltageRange={voltageRange}
-            onVoltageRangeChange={(range: [number, number]) => { interactionLogger.record('voltage_range_changed', { min: range[0], max: range[1] }); setVoltageRange(range); }}
+            onVoltageRangeChange={handleVoltageRangeChange}
             actionViewMode={actionViewMode}
             onViewModeChange={handleViewModeChange}
             inspectQuery={inspectQuery}
-            onInspectQueryChange={(q: string) => { interactionLogger.record('inspect_query_changed', { query: q }); setInspectQuery(q); }}
+            onInspectQueryChange={handleInspectQueryChange}
             inspectableItems={inspectableItems}
             onResetView={handleManualReset}
             onZoomIn={handleManualZoomIn}
@@ -613,7 +684,7 @@ function App() {
             onOverlayClose={handleOverlayClose}
             onOverlaySldTabChange={handleOverlaySldTabChange}
             voltageLevels={voltageLevels}
-            onVlOpen={(vlName) => handleVlDoubleClick(activeTab === 'action' ? selectedActionId || '' : '', vlName)}
+            onVlOpen={handleVlOpen}
             networkPath={networkPath}
             layoutPath={layoutPath}
             onOpenSettings={handleOpenSettings}
@@ -623,7 +694,7 @@ function App() {
       {/* Confirmation Dialog for contingency change / load study */}
       <ConfirmationDialog
         confirmDialog={confirmDialog}
-        onCancel={() => setConfirmDialog(null)}
+        onCancel={handleCancelDialog}
         onConfirm={handleConfirmDialog}
       />
       {error && (

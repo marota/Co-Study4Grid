@@ -1263,4 +1263,4 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     );
 };
 
-export default VisualizationPanel;
+export default React.memo(VisualizationPanel);

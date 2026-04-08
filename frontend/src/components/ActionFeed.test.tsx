@@ -60,15 +60,17 @@ describe('ActionFeed', () => {
         analysisLoading: false,
         monitoringFactor: 0.95,
         manuallyAddedIds: new Set<string>(),
-        minLineReconnections: 2,
-        minCloseCoupling: 3,
-        minOpenCoupling: 2,
-        minLineDisconnections: 3,
-        minPst: 1,
-        minLoadShedding: 0,
-        minRenewableCurtailmentActions: 0,
-        nPrioritizedActions: 10,
-        ignoreReconnections: false,
+        recommenderConfig: {
+            minLineReconnections: 2,
+            minCloseCoupling: 3,
+            minOpenCoupling: 2,
+            minLineDisconnections: 3,
+            minPst: 1,
+            minLoadShedding: 0,
+            minRenewableCurtailmentActions: 0,
+            nPrioritizedActions: 10,
+            ignoreReconnections: false,
+        },
         pendingAnalysisResult: null as AnalysisResult | null,
         onOpenSettings: vi.fn(),
         actionDictFileName: null as string | null,
@@ -540,9 +542,12 @@ describe('ActionFeed', () => {
     it('includes minPst in the recommender settings warning', () => {
         const props = {
             ...defaultProps,
-            minPst: 2,
-            minLineReconnections: 3,
-            minLineDisconnections: 4,
+            recommenderConfig: {
+                ...defaultProps.recommenderConfig,
+                minPst: 2,
+                minLineReconnections: 3,
+                minLineDisconnections: 4,
+            },
         };
         render(<ActionFeed {...props} />);
         // The recommender settings warning appears when no analysis has been run

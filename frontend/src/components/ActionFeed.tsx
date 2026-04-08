@@ -6,7 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction } from '../types';
+import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig } from '../types';
 import { api } from '../api';
 import { getActionTargetVoltageLevels, getActionTargetLines, isCouplingAction } from '../utils/svgUtils';
 import CombinedActionsModal from './CombinedActionsModal';
@@ -34,15 +34,7 @@ interface ActionFeedProps {
     monitoringFactor: number;
     manuallyAddedIds: Set<string>;
     onVlDoubleClick?: (actionId: string, vlName: string) => void;
-    minLineReconnections: number;
-    minCloseCoupling: number;
-    minOpenCoupling: number;
-    minLineDisconnections: number;
-    nPrioritizedActions: number;
-    minPst: number;
-    minLoadShedding: number;
-    minRenewableCurtailmentActions: number;
-    ignoreReconnections: boolean;
+    recommenderConfig: RecommenderDisplayConfig;
     onOpenSettings?: (tab?: 'recommender' | 'configurations' | 'paths') => void;
     actionDictFileName?: string | null;
     actionDictStats?: { reco: number; disco: number; pst: number; open_coupling: number; close_coupling: number; total: number } | null;
@@ -72,15 +64,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     monitoringFactor,
     manuallyAddedIds,
     onVlDoubleClick,
-    minLineReconnections,
-    minCloseCoupling,
-    minOpenCoupling,
-    minLineDisconnections,
-    minPst,
-    minLoadShedding,
-    minRenewableCurtailmentActions,
-    nPrioritizedActions,
-    ignoreReconnections,
+    recommenderConfig,
     onOpenSettings,
     actionDictFileName,
     actionDictStats,
@@ -1154,9 +1138,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                 >&times;</button>
                                             </div>
                                         </div>
-                                        <div>• Minimum actions: {minLineReconnections} reco, {minCloseCoupling} close, {minOpenCoupling} open, {minLineDisconnections} disco, {minPst} PST, {minLoadShedding} load shedding, {minRenewableCurtailmentActions} RC</div>
-                                        <div>• Maximum suggestions: {nPrioritizedActions}</div>
-                                        <div>• Ignore reconnections: {ignoreReconnections ? 'Yes' : 'No'}</div>
+                                        <div>• Minimum actions: {recommenderConfig.minLineReconnections} reco, {recommenderConfig.minCloseCoupling} close, {recommenderConfig.minOpenCoupling} open, {recommenderConfig.minLineDisconnections} disco, {recommenderConfig.minPst} PST, {recommenderConfig.minLoadShedding} load shedding, {recommenderConfig.minRenewableCurtailmentActions} RC</div>
+                                        <div>• Maximum suggestions: {recommenderConfig.nPrioritizedActions}</div>
+                                        <div>• Ignore reconnections: {recommenderConfig.ignoreReconnections ? 'Yes' : 'No'}</div>
                                     </div>
                                 )}
                             </div>
@@ -1222,4 +1206,4 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     );
 };
 
-export default ActionFeed;
+export default React.memo(ActionFeed);

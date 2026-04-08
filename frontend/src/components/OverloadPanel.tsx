@@ -208,4 +208,4 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
     );
 };
 
-export default OverloadPanel;
+export default React.memo(OverloadPanel);

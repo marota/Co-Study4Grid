@@ -198,6 +198,18 @@ export interface SettingsBackup {
     layoutPath?: string;
 }
 
+export interface RecommenderDisplayConfig {
+    minLineReconnections: number;
+    minCloseCoupling: number;
+    minOpenCoupling: number;
+    minLineDisconnections: number;
+    minPst: number;
+    minLoadShedding: number;
+    minRenewableCurtailmentActions: number;
+    nPrioritizedActions: number;
+    ignoreReconnections: boolean;
+}
+
 export interface AvailableAction {
     id: string;
     description: string;
