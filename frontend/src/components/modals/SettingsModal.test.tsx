@@ -1,0 +1,123 @@
+// Copyright (c) 2025-2026, RTE (https://www.rte-france.com)
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import SettingsModal from './SettingsModal';
+import { SettingsState } from '../../hooks/useSettings';
+
+describe('SettingsModal', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    const mockSettings = {
+        isSettingsOpen: true,
+        settingsTab: 'paths',
+        setSettingsTab: vi.fn(),
+        networkPath: '/net.xiidm',
+        setNetworkPath: vi.fn(),
+        actionPath: '/act.json',
+        setActionPath: vi.fn(),
+        layoutPath: '/lay.json',
+        setLayoutPath: vi.fn(),
+        outputFolderPath: '/out',
+        setOutputFolderPath: vi.fn(),
+        configFilePath: '/conf.json',
+        setConfigFilePath: vi.fn(),
+        changeConfigFilePath: vi.fn().mockResolvedValue(undefined),
+        minLineReconnections: 1.0,
+        setMinLineReconnections: vi.fn(),
+        minCloseCoupling: 1.0,
+        setMinCloseCoupling: vi.fn(),
+        minOpenCoupling: 1.0,
+        setMinOpenCoupling: vi.fn(),
+        minLineDisconnections: 1.0,
+        setMinLineDisconnections: vi.fn(),
+        nPrioritizedActions: 5,
+        setNPrioritizedActions: vi.fn(),
+        minPst: 1.0,
+        setMinPst: vi.fn(),
+        minLoadShedding: 0.0,
+        setMinLoadShedding: vi.fn(),
+        minRenewableCurtailmentActions: 0.0,
+        setMinRenewableCurtailmentActions: vi.fn(),
+        ignoreReconnections: false,
+        setIgnoreReconnections: vi.fn(),
+        monitoringFactor: 0.95,
+        setMonitoringFactor: vi.fn(),
+        linesMonitoringPath: '',
+        setLinesMonitoringPath: vi.fn(),
+        preExistingOverloadThreshold: 0.02,
+        setPreExistingOverloadThreshold: vi.fn(),
+        pypowsyblFastMode: true,
+        setPypowsyblFastMode: vi.fn(),
+        pickSettingsPath: vi.fn(),
+        handleCloseSettings: vi.fn(),
+    } as unknown as SettingsState;
+
+    const defaultProps = {
+        settings: mockSettings,
+        onApply: vi.fn(),
+    };
+
+    it('returns null when isSettingsOpen is false', () => {
+        const { container } = render(<SettingsModal {...defaultProps} settings={{ ...mockSettings, isSettingsOpen: false } as unknown as SettingsState} />);
+        expect(container.firstChild).toBeNull();
+    });
+
+    it('renders Paths tab by default', () => {
+        render(<SettingsModal {...defaultProps} />);
+        expect(screen.getByLabelText('Network File Path (.xiidm)')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('/net.xiidm')).toBeInTheDocument();
+    });
+
+    it('switches tabs correctly', () => {
+        render(<SettingsModal {...defaultProps} />);
+        
+        fireEvent.click(screen.getByText('Recommender'));
+        expect(mockSettings.setSettingsTab).toHaveBeenCalledWith('recommender');
+
+        fireEvent.click(screen.getByText('Configurations'));
+        expect(mockSettings.setSettingsTab).toHaveBeenCalledWith('configurations');
+    });
+
+    it('calls setters on input change', () => {
+        // Paths tab input
+        render(<SettingsModal {...defaultProps} />);
+        fireEvent.change(screen.getByLabelText('Network File Path (.xiidm)'), { target: { value: '/new.xiidm' } });
+        expect(mockSettings.setNetworkPath).toHaveBeenCalledWith('/new.xiidm');
+
+        // Recommender tab input (requires tab switch in real app, but here we can mock render with that tab)
+        const { unmount } = render(<SettingsModal {...defaultProps} settings={{ ...mockSettings, settingsTab: 'recommender' } as unknown as SettingsState} />);
+        fireEvent.change(screen.getByLabelText('Min Line Reconnections'), { target: { value: '2.5' } });
+        expect(mockSettings.setMinLineReconnections).toHaveBeenCalledWith(2.5);
+        unmount();
+
+        // Checkbox input
+        render(<SettingsModal {...defaultProps} settings={{ ...mockSettings, settingsTab: 'recommender' } as unknown as SettingsState} />);
+        fireEvent.click(screen.getByLabelText('Ignore Reconnections'));
+        expect(mockSettings.setIgnoreReconnections).toHaveBeenCalledWith(true);
+    });
+
+    it('calls apply and close callbacks', () => {
+        render(<SettingsModal {...defaultProps} />);
+        
+        fireEvent.click(screen.getByText('Apply'));
+        expect(defaultProps.onApply).toHaveBeenCalled();
+
+        fireEvent.click(screen.getByText('Close'));
+        expect(mockSettings.handleCloseSettings).toHaveBeenCalled();
+    });
+
+    it('calls pickSettingsPath on file icon click', () => {
+        render(<SettingsModal {...defaultProps} />);
+        const pickButtons = screen.getAllByText('📄');
+        fireEvent.click(pickButtons[0]);
+        expect(mockSettings.pickSettingsPath).toHaveBeenCalled();
+    });
+});

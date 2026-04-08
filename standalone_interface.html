@@ -5305,38 +5305,21 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
                                     {settingsTab === 'recommender' && (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Line Reconnections</label>
-                                                <input type="number" step="0.1" value={minLineReconnections} onChange={e => setMinLineReconnections(parseFloat(e.target.value) || 0)} style={{ width: '80px', padding: '5px' }} />
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Close Coupling</label>
-                                                <input type="number" step="0.1" value={minCloseCoupling} onChange={e => setMinCloseCoupling(parseFloat(e.target.value) || 0)} style={{ width: '80px', padding: '5px' }} />
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Open Coupling</label>
-                                                <input type="number" step="0.1" value={minOpenCoupling} onChange={e => setMinOpenCoupling(parseFloat(e.target.value) || 0)} style={{ width: '80px', padding: '5px' }} />
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Line Disconnections</label>
-                                                <input type="number" step="0.1" value={minLineDisconnections} onChange={e => setMinLineDisconnections(parseFloat(e.target.value) || 0)} style={{ width: '80px', padding: '5px' }} />
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min PST Actions</label>
-                                                <input type="number" step="0.1" value={minPst} onChange={e => setMinPst(parseFloat(e.target.value) || 0)} style={{ width: '80px', padding: '5px' }} />
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Load Shedding</label>
-                                                <input type="number" step="0.1" value={minLoadShedding} onChange={e => setMinLoadShedding(parseFloat(e.target.value) || 0 || 0)} style={{ width: '80px', padding: '5px' }} />
-                                            </div>
-                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                                <label style={{ fontWeight: "bold", fontSize: "0.9rem" }}>Min Renewable Curtailment</label>
-                                                <input type="number" step="0.1" value={minRenewableCurtailmentActions} onChange={e => setMinRenewableCurtailmentActions(parseFloat(e.target.value) || 0 || 0)} style={{ width: "80px", padding: "5px" }} />
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>N Prioritized Actions</label>
-                                                <input type="number" step="1" value={nPrioritizedActions} onChange={e => setNPrioritizedActions(parseInt(e.target.value, 10))} style={{ width: '80px', padding: '5px' }} />
-                                            </div>
+                                            {[
+                                              { label: 'Min Line Reconnections', id: 'sa-minLineReconnections', value: minLineReconnections, setter: setMinLineReconnections },
+                                              { label: 'Min Close Coupling', id: 'sa-minCloseCoupling', value: minCloseCoupling, setter: setMinCloseCoupling },
+                                              { label: 'Min Open Coupling', id: 'sa-minOpenCoupling', value: minOpenCoupling, setter: setMinOpenCoupling },
+                                              { label: 'Min Line Disconnections', id: 'sa-minLineDisconnections', value: minLineDisconnections, setter: setMinLineDisconnections },
+                                              { label: 'Min PST Actions', id: 'sa-minPst', value: minPst, setter: setMinPst },
+                                              { label: 'Min Load Shedding', id: 'sa-minLoadShedding', value: minLoadShedding, setter: setMinLoadShedding },
+                                              { label: 'Min Renewable Curtailment', id: 'sa-minRenewableCurtailment', value: minRenewableCurtailmentActions, setter: setMinRenewableCurtailmentActions },
+                                              { label: 'N Prioritized Actions', id: 'sa-nPrioritizedActions', value: nPrioritizedActions, setter: (v) => setNPrioritizedActions(parseInt(v, 10)), step: '1' },
+                                            ].map(({ label, id, value, setter, step = '0.1' }) => (
+                                              <div key={id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <label htmlFor={id} style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{label}</label>
+                                                <input id={id} type="number" step={step} value={value} onChange={e => setter(e.target.value)} style={{ width: '80px', padding: '5px' }} />
+                                              </div>
+                                            ))}
 
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '5px', padding: '8px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #eee' }}>
                                                 <label htmlFor="ignoreRecStandalone" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Ignore Reconnections</label>
