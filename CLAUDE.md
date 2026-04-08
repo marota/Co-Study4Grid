@@ -30,22 +30,32 @@ Co-Study4Grid/
 │   ├── tsconfig.node.json   # Node/config TypeScript config
 │   └── src/
 │       ├── main.tsx          # React entry point (StrictMode)
-│       ├── App.tsx           # Root component (layout: header, config, action feed, viz)
+│       ├── App.tsx           # Root component: state orchestration + hook wiring only (~650 lines)
 │       ├── App.css           # App-specific styles
 │       ├── index.css         # Global styles
 │       ├── api.ts            # Axios HTTP client (base URL: localhost:8000)
 │       ├── types.ts          # TypeScript interfaces
+│       ├── hooks/
+│       │   └── useSettings.ts        # Settings state hook (SettingsState interface + all setters)
 │       ├── utils/
 │       │   ├── sessionUtils.ts       # Session snapshot building (buildSessionResult)
 │       │   ├── sessionUtils.test.ts  # Unit tests for session serialization
 │       │   ├── interactionLogger.ts  # Singleton interaction event logger (replay-ready)
 │       │   └── interactionLogger.test.ts # Unit tests for interaction logger
 │       └── components/
-│           ├── ConfigurationPanel.tsx  # Settings modal (paths, recommender, config tabs)
+│           ├── Header.tsx              # Top bar: logo, network path input, Load/Save/Reload/Settings buttons
+│           ├── Header.test.tsx         # Unit tests for Header
 │           ├── ActionFeed.tsx          # Prioritized action results display with search/filter
 │           ├── VisualizationPanel.tsx  # SVG diagram rendering (NAD + SLD overlay)
 │           ├── OverloadPanel.tsx       # Two-step analysis: detect → select → resolve
-│           └── CombinedActionsModal.tsx # Superposition pair computation modal
+│           ├── CombinedActionsModal.tsx # Superposition pair computation modal
+│           └── modals/
+│               ├── SettingsModal.tsx           # 3-tab settings dialog (paths, recommender, config)
+│               ├── SettingsModal.test.tsx      # Unit tests for SettingsModal
+│               ├── ReloadSessionModal.tsx      # Session reload list dialog
+│               ├── ReloadSessionModal.test.tsx # Unit tests for ReloadSessionModal
+│               ├── ConfirmationDialog.tsx      # Shared confirmation dialog (contingency/reload)
+│               └── ConfirmationDialog.test.tsx # Unit tests for ConfirmationDialog
 ├── Overflow_Graph/          # Generated PDFs (created at runtime)
 ├── overrides.txt            # Additional Python dependency version pins
 ├── standalone_interface.html # Self-contained HTML version of the UI with SVG visualization
@@ -171,8 +181,13 @@ npm run test         # Run Vitest test suite
 - **Strict TypeScript**: `strict: true`, `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`
 - **Functional components** with React hooks; no external state management library
 - **Inline styles**: Components use inline `style` objects rather than CSS modules or utility classes
+- **Component architecture (Phase 1 refactored)**:
+  - `App.tsx` (~650 lines) is the **state orchestration hub** — it wires all hooks together and handles cross-hook logic (e.g., `handleApplySettings`). It should NOT contain large JSX blocks.
+  - **Presentational components** live in `components/` and `components/modals/`. They receive data and callbacks via typed props; all business logic stays in `App.tsx`.
+  - `useSettings.ts` exposes `SettingsState` (all settings values + setters), which is passed wholesale to `SettingsModal` to avoid 30+ prop-drilling.
 - **Props-based data flow**: State lifted to `App.tsx`, passed down via props
 - **ESLint**: Flat config (v9+) with `typescript-eslint`, `react-hooks`, and `react-refresh` plugins
+- **Unit tests** use Vitest + React Testing Library. Isolated component tests (no backend mocking needed) live alongside their components as `*.test.tsx` files.
 
 ### Data Flow
 1. User sets network path + action file path -> `POST /api/config` loads the network
@@ -225,12 +240,13 @@ The standalone interface includes advanced SVG rendering for pypowsybl network-a
 
 - The backend API base URL is hardcoded to `http://localhost:8000` in `frontend/src/api.ts`
 - CORS is configured to allow all origins (`allow_origins=["*"]`)
-- The `ConfigurationPanel` has hardcoded default paths specific to a developer workstation; these are not portable
+- **Frontend architecture (Phase 1 refactored)**: `App.tsx` is the state orchestration hub; it must NOT contain large inline JSX blocks. Extracted presentational components live in `components/` and `components/modals/`. When adding new UI sections, create a new component file and wire it in `App.tsx`.
+- **`useSettings` hook**: Exposes a `SettingsState` object with all settings fields + setters. This is passed wholesale to `SettingsModal` to avoid excessive prop drilling. Adding a new setting means: (1) add to `useSettings.ts`, (2) add to `SettingsModal.tsx`, (3) mirror in `standalone_interface.html`.
+- **`standalone_interface.html`**: A self-contained single-file version of the full UI. It does **not** import React components — it has its own inline JSX for all UI sections. When making UI changes, **always mirror them manually** in the standalone interface.
 - There is no CI/CD pipeline, Dockerfile, or containerization configured
 - Root `.gitignore` excludes `__pycache__/`, `*.pyc`, `*.pyo`; `frontend/.gitignore` handles frontend build artifacts
 - Root-level Python scripts (`test_*.py`, `reproduce_error.py`, `repro_stuck.py`, `fix_zoom.py`, `inspect_metadata.py`) are ad-hoc development/debugging utilities, not part of the main application
-- The `standalone_interface.html` is a self-contained version of the full UI in a single HTML file with embedded SVG scaling/zoom logic for large grid diagrams
 - `overrides.txt` contains pinned versions for transitive Python dependencies that need to be forced to specific versions
-- Frontend unit tests (`sessionUtils.test.ts`, `App.test.tsx`) use Vitest and can be run with `cd frontend && npm run test`
+- **Frontend unit tests** use Vitest + React Testing Library. Isolated component tests live as `*.test.tsx` files next to their component. Run with `cd frontend && npm run test`. No backend mocking is needed for component tests since they only use mocked props.
 - The two-step analysis flow (step1: detect overloads, step2: resolve) is the primary user workflow; the single-step `/api/run-analysis` is a legacy alternative
 - Session save/load is documented in `docs/save-results.md`
