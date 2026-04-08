@@ -10,6 +10,11 @@ import './App.css';
 import VisualizationPanel from './components/VisualizationPanel';
 import ActionFeed from './components/ActionFeed';
 import OverloadPanel from './components/OverloadPanel';
+import Header from './components/Header';
+import SettingsModal from './components/modals/SettingsModal';
+import ReloadSessionModal from './components/modals/ReloadSessionModal';
+import ConfirmationDialog from './components/modals/ConfirmationDialog';
+import type { ConfirmDialogState } from './components/modals/ConfirmationDialog';
 import { api } from './api';
 import { applyOverloadedHighlights, applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight, processSvg } from './utils/svgUtils';
 import type { ActionDetail, TabId } from './types';
@@ -24,9 +29,10 @@ function App() {
   // ===== Settings Hook =====
   const settings = useSettings();
   const {
-    configFilePath, setConfigFilePath, changeConfigFilePath, lastActiveConfigFilePath,
+    // Paths and values used in App-level logic (handleApplySettings, handleLoadConfig, wrappedSaveResults/RestoreSession)
+    configFilePath, changeConfigFilePath, lastActiveConfigFilePath,
     networkPath, setNetworkPath, actionPath, setActionPath,
-    layoutPath, setLayoutPath, outputFolderPath, setOutputFolderPath,
+    layoutPath, setLayoutPath, outputFolderPath,
     minLineReconnections, setMinLineReconnections,
     minCloseCoupling, setMinCloseCoupling,
     minOpenCoupling, setMinOpenCoupling,
@@ -43,10 +49,9 @@ function App() {
     preExistingOverloadThreshold, setPreExistingOverloadThreshold,
     pypowsyblFastMode, setPypowsyblFastMode,
     actionDictFileName, actionDictStats,
-    isSettingsOpen, setIsSettingsOpen,
-    settingsTab, setSettingsTab,
+    setIsSettingsOpen, setSettingsTab,
     pickSettingsPath,
-    handleOpenSettings, handleCloseSettings,
+    handleOpenSettings,
     buildConfigRequest, applyConfigResponse, createCurrentBackup, setSettingsBackup
   } = settings;
 
@@ -58,7 +63,7 @@ function App() {
   const [error, setError] = useState('');
 
   // Confirmation dialog state for contingency change / load study
-  const [confirmDialog, setConfirmDialog] = useState<{ type: 'contingency' | 'loadStudy'; pendingBranch?: string } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>(null);
 
   // ===== Hook integrations =====
   const actionsHook = useActions();
@@ -470,344 +475,33 @@ function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <header style={{
-        background: '#2c3e50', color: 'white', padding: '8px 20px',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        gap: '15px', flexWrap: 'wrap'
-      }}>
-        <h2 style={{ margin: 0, fontSize: '1.1rem', whiteSpace: 'nowrap' }}>⚡ Co-Study4Grid</h2>
-
-        <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <label style={{ fontSize: '0.7rem', opacity: 0.8, whiteSpace: 'nowrap' }}>Network Path</label>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <input
-              type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)}
-              placeholder="load your grid xiidm file path"
-              style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '0.8rem' }}
-            />
-            <button
-              onClick={() => pickSettingsPath('file', setNetworkPath)}
-              style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '0.8rem' }}
-            >
-              📄
-            </button>
-          </div>
-        </div>
-
-        <button
-          onClick={handleLoadStudyClick} disabled={configLoading}
-          style={{ padding: '6px 14px', background: configLoading ? '#95a5a6' : '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: configLoading ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
-        >
-          {configLoading ? '⏳ Loading...' : '🔄 Load Study'}
-        </button>
-
-        <button
-          onClick={wrappedSaveResults}
-          disabled={!result && !selectedBranch}
-          style={{
-            padding: '6px 14px',
-            background: (!result && !selectedBranch) ? '#95a5a6' : '#8e44ad',
-            color: 'white', border: 'none', borderRadius: '4px',
-            cursor: (!result && !selectedBranch) ? 'not-allowed' : 'pointer',
-            fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap'
-          }}
-          title="Save session results to JSON"
-        >
-          💾 Save Results
-        </button>
-
-        <button
-          onClick={wrappedOpenReloadModal}
-          disabled={sessionRestoring}
-          style={{
-            padding: '6px 14px',
-            background: sessionRestoring ? '#95a5a6' : '#2980b9',
-            color: 'white', border: 'none', borderRadius: '4px',
-            cursor: sessionRestoring ? 'not-allowed' : 'pointer',
-            fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap'
-          }}
-          title="Reload a previously saved session"
-        >
-          {sessionRestoring ? 'Restoring...' : 'Reload Session'}
-        </button>
-
-        <button
-          onClick={() => handleOpenSettings('paths')}
-          style={{ background: '#7f8c8d', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 8px', fontSize: '1rem', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-          title="Settings"
-        >
-          &#9881;
-        </button>
-      </header>
+      <Header
+        networkPath={networkPath}
+        setNetworkPath={setNetworkPath}
+        configLoading={configLoading}
+        result={result}
+        selectedBranch={selectedBranch}
+        sessionRestoring={sessionRestoring}
+        onPickSettingsPath={pickSettingsPath}
+        onLoadStudy={handleLoadStudyClick}
+        onSaveResults={wrappedSaveResults}
+        onOpenReloadModal={wrappedOpenReloadModal}
+        onOpenSettings={handleOpenSettings}
+      />
 
       {/* Settings Modal */}
-      {isSettingsOpen && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000,
-          display: 'flex', justifyContent: 'center', alignItems: 'center'
-        }}>
-          <div
-            role="dialog"
-            style={{
-              background: 'white', padding: '25px', borderRadius: '8px',
-              width: '450px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
-              display: 'flex', flexDirection: 'column', gap: '15px', color: 'black'
-            }}
-          >
-            <div style={{ display: 'flex', borderBottom: '1px solid #eee', marginBottom: '15px' }}>
-              <button
-                onClick={() => { interactionLogger.record('settings_tab_changed', { tab: 'paths' }); setSettingsTab('paths'); }}
-                style={{
-                  flex: 1, padding: '10px', cursor: 'pointer', background: 'none',
-                  border: 'none', borderBottom: settingsTab === 'paths' ? '2px solid #3498db' : 'none',
-                  fontWeight: settingsTab === 'paths' ? 'bold' : 'normal',
-                  color: settingsTab === 'paths' ? '#3498db' : '#555'
-                }}
-              >
-                Paths
-              </button>
-              <button
-                onClick={() => { interactionLogger.record('settings_tab_changed', { tab: 'recommender' }); setSettingsTab('recommender'); }}
-                style={{
-                  flex: 1, padding: '10px', cursor: 'pointer', background: 'none',
-                  border: 'none', borderBottom: settingsTab === 'recommender' ? '2px solid #3498db' : 'none',
-                  fontWeight: settingsTab === 'recommender' ? 'bold' : 'normal',
-                  color: settingsTab === 'recommender' ? '#3498db' : '#555'
-                }}
-              >
-                Recommender
-              </button>
-              <button
-                onClick={() => { interactionLogger.record('settings_tab_changed', { tab: 'configurations' }); setSettingsTab('configurations'); }}
-                style={{
-                  flex: 1, padding: '10px', cursor: 'pointer', background: 'none',
-                  border: 'none', borderBottom: settingsTab === 'configurations' ? '2px solid #3498db' : 'none',
-                  fontWeight: settingsTab === 'configurations' ? 'bold' : 'normal',
-                  color: settingsTab === 'configurations' ? '#3498db' : '#555'
-                }}
-              >
-                Configurations
-              </button>
-            </div>
+      <SettingsModal settings={settings} onApply={handleApplySettings} />
 
-            {settingsTab === 'paths' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label htmlFor="networkPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Network File Path (.xiidm)</label>
-                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Synchronized with the banner field</div>
-                  <div style={{ display: 'flex', gap: '5px' }}>
-                    <input id="networkPathInput" type="text" value={networkPath} onChange={e => setNetworkPath(e.target.value)} placeholder="load your grid xiidm file path" style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                    <button onClick={() => pickSettingsPath('file', setNetworkPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📄</button>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label htmlFor="actionPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Action Dictionary File Path</label>
-                  <div style={{ display: 'flex', gap: '5px' }}>
-                    <input id="actionPathInput" type="text" value={actionPath} onChange={e => setActionPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                    <button onClick={() => pickSettingsPath('file', setActionPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📄</button>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label htmlFor="layoutPathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Layout File Path (.json)</label>
-                  <div style={{ display: 'flex', gap: '5px' }}>
-                    <input id="layoutPathInput" type="text" value={layoutPath} onChange={e => setLayoutPath(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                    <button onClick={() => pickSettingsPath('file', setLayoutPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📄</button>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Output Folder Path</label>
-                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>Session folders (JSON + PDF) are saved here. Leave empty to download JSON to browser.</div>
-                  <div style={{ display: 'flex', gap: '5px' }}>
-                    <input type="text" value={outputFolderPath} onChange={e => setOutputFolderPath(e.target.value)} placeholder="e.g. /home/user/sessions" style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                    <button onClick={() => pickSettingsPath('dir', setOutputFolderPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📂</button>
-                  </div>
-                </div>
-                <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '5px 0' }} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label htmlFor="configFilePathInput" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Config File Path</label>
-                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-3px' }}>
-                    Path to the <code>config.json</code> settings file. Change this to use a config stored outside the repository.
-                    The file will be created from defaults if it does not exist.
-                  </div>
-                  <div style={{ display: 'flex', gap: '5px' }}>
-                    <input
-                      id="configFilePathInput"
-                      type="text"
-                      value={configFilePath}
-                      onChange={e => setConfigFilePath(e.target.value)}
-                      onBlur={e => changeConfigFilePath(e.target.value).catch(() => { })}
-                      placeholder="e.g. /home/user/my_costudy4grid_config.json"
-                      style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-                    />
-                    <button
-                      onClick={() => pickSettingsPath('file', (p) => changeConfigFilePath(p).catch(() => { }))}
-                      style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}
-                    >📄</button>
-                  </div>
-                </div>
-              </div>
-            )}
 
-            {settingsTab === 'recommender' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Line Reconnections</label>
-                  <input type="number" step="0.1" value={minLineReconnections} onChange={e => setMinLineReconnections(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Close Coupling</label>
-                  <input type="number" step="0.1" value={minCloseCoupling} onChange={e => setMinCloseCoupling(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Open Coupling</label>
-                  <input type="number" step="0.1" value={minOpenCoupling} onChange={e => setMinOpenCoupling(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Line Disconnections</label>
-                  <input type="number" step="0.1" value={minLineDisconnections} onChange={e => setMinLineDisconnections(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min PST Actions</label>
-                  <input type="number" step="0.1" value={minPst} onChange={e => setMinPst(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Load Shedding</label>
-                  <input type="number" step="0.1" value={minLoadShedding} onChange={e => setMinLoadShedding(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Min Renewable Curtailment</label>
-                  <input type="number" step="0.1" value={minRenewableCurtailmentActions} onChange={e => setMinRenewableCurtailmentActions(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>N Prioritized Actions</label>
-                  <input type="number" step="1" value={nPrioritizedActions} onChange={e => setNPrioritizedActions(parseInt(e.target.value, 10))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #eee' }}>
-                  <input type="checkbox" id="ignoreRec" checked={ignoreReconnections} onChange={e => setIgnoreReconnections(e.target.checked)} style={{ width: '16px', height: '16px' }} />
-                  <label htmlFor="ignoreRec" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Ignore Reconnections</label>
-                </div>
-              </div>
-            )}
-
-            {settingsTab === 'configurations' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label htmlFor="monitoringFactor" style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Monitoring Factor Thermal Limits</label>
-                  <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                    <input id="monitoringFactor" type="number" step="0.01" min="0" max="2" value={monitoringFactor} onChange={e => setMonitoringFactor(parseFloat(e.target.value))} style={{ padding: '6px', width: '80px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                    <span style={{ fontSize: '0.85rem', color: '#666' }}>Multiplier applied to standard limits (e.g., 0.95)</span>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Lines Monitoring File (Optional)</label>
-                  <div style={{ display: 'flex', gap: '5px' }}>
-                    <input type="text" value={linesMonitoringPath} onChange={e => setLinesMonitoringPath(e.target.value)} placeholder="Leave empty for IGNORE_LINES_MONITORING=True" style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                    <button onClick={() => pickSettingsPath('file', setLinesMonitoringPath)} style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}>📁</button>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Pre-existing Overload Threshold</label>
-                  <input type="number" step="0.01" min="0" max="1" value={preExistingOverloadThreshold} onChange={e => setPreExistingOverloadThreshold(parseFloat(e.target.value))} style={{ width: '80px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }} />
-                </div>
-                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '-10px' }}>
-                  Pre-existing overloads excluded from N-1 & max loading unless worsened by this fraction (default 2%)
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #eee' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <input type="checkbox" id="fastMode" checked={pypowsyblFastMode} onChange={e => setPypowsyblFastMode(e.target.checked)} style={{ width: '16px', height: '16px' }} />
-                      <label htmlFor="fastMode" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Pypowsybl Fast Mode</label>
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: '#666', fontStyle: 'italic', marginLeft: '26px' }}>
-                      Disable voltage control in pypowsybl for faster simulations (may affect convergence)
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px', gap: '10px' }}>
-              <button
-                onClick={handleCloseSettings}
-                style={{
-                  padding: '8px 20px', background: '#e74c3c', color: 'white',
-                  border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold'
-                }}
-              >
-                Close
-              </button>
-              <button
-                onClick={handleApplySettings}
-                style={{
-                  padding: '8px 20px', background: '#3498db', color: 'white',
-                  border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold'
-                }}
-              >
-                Apply
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reload Session Modal */}
-      {showReloadModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3500,
-          display: 'flex', justifyContent: 'center', alignItems: 'center'
-        }}>
-          <div style={{
-            background: 'white', borderRadius: '10px',
-            width: '500px', maxWidth: '95vw', maxHeight: '70vh',
-            display: 'flex', flexDirection: 'column',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.3)', color: 'black'
-          }}>
-            <div style={{ padding: '15px 20px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Reload Session</h3>
-              <button onClick={() => setShowReloadModal(false)} style={{ border: 'none', background: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>&times;</button>
-            </div>
-            <div style={{ padding: '15px 20px', fontSize: '0.8rem', color: '#666', borderBottom: '1px solid #f0f0f0' }}>
-              From: {outputFolderPath}
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '10px 20px' }}>
-              {sessionListLoading ? (
-                <div style={{ padding: '30px', textAlign: 'center', color: '#999' }}>Loading sessions...</div>
-              ) : sessionList.length === 0 ? (
-                <div style={{ padding: '30px', textAlign: 'center', color: '#999' }}>No saved sessions found in this folder.</div>
-              ) : (
-                sessionList.map(name => (
-                  <div
-                    key={name}
-                    onClick={() => !sessionRestoring && wrappedRestoreSession(name)}
-                    style={{
-                      padding: '10px 12px', margin: '4px 0',
-                      border: '1px solid #eee', borderRadius: '6px',
-                      cursor: sessionRestoring ? 'not-allowed' : 'pointer',
-                      fontSize: '0.85rem', fontFamily: 'monospace',
-                      transition: 'background 0.15s',
-                      opacity: sessionRestoring ? 0.5 : 1,
-                    }}
-                    onMouseOver={e => { if (!sessionRestoring) (e.currentTarget as HTMLElement).style.background = '#e7f1ff'; }}
-                    onMouseOut={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                  >
-                    {name}
-                  </div>
-                ))
-              )}
-            </div>
-            <div style={{ padding: '12px 20px', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setShowReloadModal(false)}
-                style={{ padding: '8px 20px', background: '#95a5a6', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ReloadSessionModal
+        showReloadModal={showReloadModal}
+        setShowReloadModal={setShowReloadModal}
+        outputFolderPath={outputFolderPath}
+        sessionListLoading={sessionListLoading}
+        sessionList={sessionList}
+        sessionRestoring={sessionRestoring}
+        onRestoreSession={wrappedRestoreSession}
+      />
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <div data-testid="sidebar" style={{ width: '25%', background: '#eee', borderRight: '1px solid #ccc', display: 'flex', flexDirection: 'column', padding: '15px', gap: '15px', overflowY: 'auto' }}>
@@ -927,52 +621,11 @@ function App() {
         </div>
       </div>
       {/* Confirmation Dialog for contingency change / load study */}
-      {confirmDialog && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 4000,
-          display: 'flex', justifyContent: 'center', alignItems: 'center'
-        }}>
-          <div style={{
-            background: 'white', padding: '25px', borderRadius: '10px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-            maxWidth: '450px', width: '90%', textAlign: 'center'
-          }}>
-            <div style={{ fontSize: '2rem', marginBottom: '12px' }}>&#9888;</div>
-            <h3 style={{ margin: '0 0 12px', color: '#2c3e50', fontSize: '1.1rem' }}>
-              {confirmDialog.type === 'contingency' ? 'Change Contingency?' : 'Reload Study?'}
-            </h3>
-            <p style={{ margin: '0 0 20px', color: '#555', fontSize: '0.9rem', lineHeight: '1.5' }}>
-              All previous analysis results, manual simulations, action selections, and diagrams will be cleared.
-              {confirmDialog.type === 'contingency'
-                ? ' The network state will be preserved.'
-                : ' The network will be reloaded from scratch.'}
-            </p>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-              <button
-                onClick={() => setConfirmDialog(null)}
-                style={{
-                  padding: '8px 20px', background: '#95a5a6', color: 'white',
-                  border: 'none', borderRadius: '5px', cursor: 'pointer',
-                  fontWeight: 'bold', fontSize: '0.85rem'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmDialog}
-                style={{
-                  padding: '8px 20px', background: '#e67e22', color: 'white',
-                  border: 'none', borderRadius: '5px', cursor: 'pointer',
-                  fontWeight: 'bold', fontSize: '0.85rem'
-                }}
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmationDialog
+        confirmDialog={confirmDialog}
+        onCancel={() => setConfirmDialog(null)}
+        onConfirm={handleConfirmDialog}
+      />
       {error && (
         <div style={{
           position: 'fixed', bottom: 20, right: 20,
