@@ -66,7 +66,7 @@ describe('SettingsModal', () => {
     };
 
     it('returns null when isSettingsOpen is false', () => {
-        const { container } = render(<SettingsModal {...defaultProps} settings={{ ...mockSettings, isSettingsOpen: false } as any} />);
+        const { container } = render(<SettingsModal {...defaultProps} settings={{ ...mockSettings, isSettingsOpen: false } as unknown as SettingsState} />);
         expect(container.firstChild).toBeNull();
     });
 
@@ -93,13 +93,13 @@ describe('SettingsModal', () => {
         expect(mockSettings.setNetworkPath).toHaveBeenCalledWith('/new.xiidm');
 
         // Recommender tab input (requires tab switch in real app, but here we can mock render with that tab)
-        const { unmount } = render(<SettingsModal {...defaultProps} settings={{ ...mockSettings, settingsTab: 'recommender' } as any} />);
+        const { unmount } = render(<SettingsModal {...defaultProps} settings={{ ...mockSettings, settingsTab: 'recommender' } as unknown as SettingsState} />);
         fireEvent.change(screen.getByLabelText('Min Line Reconnections'), { target: { value: '2.5' } });
         expect(mockSettings.setMinLineReconnections).toHaveBeenCalledWith(2.5);
         unmount();
 
         // Checkbox input
-        render(<SettingsModal {...defaultProps} settings={{ ...mockSettings, settingsTab: 'recommender' } as any} />);
+        render(<SettingsModal {...defaultProps} settings={{ ...mockSettings, settingsTab: 'recommender' } as unknown as SettingsState} />);
         fireEvent.click(screen.getByLabelText('Ignore Reconnections'));
         expect(mockSettings.setIgnoreReconnections).toHaveBeenCalledWith(true);
     });

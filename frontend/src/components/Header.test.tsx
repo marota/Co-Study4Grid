@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import Header from './Header';
+import type { AnalysisResult } from '../types';
 
 describe('Header', () => {
     beforeEach(() => {
@@ -47,7 +48,7 @@ describe('Header', () => {
     });
 
     it('enables Save Results when result is present', () => {
-        render(<Header {...defaultProps} result={{} as any} />); // result present
+        render(<Header {...defaultProps} result={{} as unknown as AnalysisResult} />); // result present
         expect(screen.getByText('💾 Save Results')).not.toBeDisabled();
     });
 
