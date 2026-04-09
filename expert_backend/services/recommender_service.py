@@ -548,7 +548,7 @@ class RecommenderService:
         return action_scores
 
     def _get_pst_tap_start(self, action_id):
-        """Return {tap, low_tap, high_tap} for a PST action, or None."""
+        """Return {pst_name, tap, low_tap, high_tap} for a PST action from the base N-state network, or None."""
         action_entry = self._dict_action.get(action_id) if self._dict_action else None
         if action_entry is None:
             return None
@@ -565,9 +565,8 @@ class RecommenderService:
 
         # Get the first PST entry (most actions target a single PST)
         pst_name = next(iter(pst_tap))
-        target_tap = int(pst_tap[pst_name])
 
-        # Query network for tap bounds
+        # Query network for current tap position (N-state) and bounds
         try:
             env = self._get_simulation_env()
             nm = env.network_manager
@@ -575,14 +574,14 @@ class RecommenderService:
             if pst_info:
                 return {
                     "pst_name": pst_name,
-                    "tap": target_tap,
+                    "tap": pst_info.get("tap"),
                     "low_tap": pst_info.get("low_tap"),
                     "high_tap": pst_info.get("high_tap"),
                 }
         except Exception:
             pass
 
-        return {"pst_name": pst_name, "tap": target_tap, "low_tap": None, "high_tap": None}
+        return None
 
     def _get_action_mw_start(self, action_id, action_type, obs_n1, line_idx_map, load_idx_map, gen_idx_map):
         """Return MW at start for a single action, or None if not computable."""

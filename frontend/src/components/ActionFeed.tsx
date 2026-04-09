@@ -907,12 +907,16 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                                     const isValidTarget = parsedTarget !== null && !isNaN(parsedTarget) && parsedTarget >= 0 && (item.mwStart == null || parsedTarget <= item.mwStart);
                                                                     const canResimulate = isLsOrRcType && isComputed && isValidTarget;
                                                                     // PST tap: read from cardEditTap (synchronized with action card)
-                                                                    // Tap info: prefer pst_details from computed action, fall back to tap_start from scores
+                                                                    // Tap Start = base N-state network tap from tapStartMap (scores)
+                                                                    // Bounds from tapStartMap, with computedPst as fallback
+                                                                    const tapStartEntry = isPstType ? tapStartMap?.[item.actionId] ?? null : undefined;
                                                                     const computedPst = isPstType ? actions[item.actionId]?.pst_details?.[0] : undefined;
                                                                     const tapInfo = isPstType
-                                                                        ? (computedPst
-                                                                            ? { pst_name: computedPst.pst_name, tap: computedPst.tap_position, low_tap: computedPst.low_tap, high_tap: computedPst.high_tap }
-                                                                            : tapStartMap?.[item.actionId] ?? null)
+                                                                        ? (tapStartEntry
+                                                                            ? tapStartEntry
+                                                                            : computedPst
+                                                                                ? { pst_name: computedPst.pst_name, tap: computedPst.tap_position, low_tap: computedPst.low_tap, high_tap: computedPst.high_tap }
+                                                                                : null)
                                                                         : undefined;
                                                                     const tapEditVal = cardEditTap[item.actionId];
                                                                     const effectiveTap = tapEditVal ?? (tapInfo ? String(tapInfo.tap) : undefined);
