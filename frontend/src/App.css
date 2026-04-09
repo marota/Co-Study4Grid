@@ -276,7 +276,10 @@ circle.nad-highlight {
 /* These classes are applied to CLONED elements placed in a background layer,
    so they don't affect the original SLD rendering (flows/impacts modes). */
 
-/* Contingency element on N-1 SLD (yellow halo behind) */
+/* Contingency element on N-1 SLD (yellow glow behind) */
+.sld-highlight-clone.sld-highlight-contingency {
+    filter: drop-shadow(0 0 4px #ffe033) drop-shadow(0 0 8px #ffe033);
+}
 
 .sld-highlight-clone.sld-highlight-contingency path,
 .sld-highlight-clone.sld-highlight-contingency line,

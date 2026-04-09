@@ -368,18 +368,21 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             fill-opacity: 0.5 !important;
         }
 
-        /* Contingency element on N-1 SLD (yellow glow) */
+        /* Contingency element on N-1 SLD (yellow glow behind) */
+        .sld-highlight-clone.sld-highlight-contingency {
+            filter: drop-shadow(0 0 4px #ffe033) drop-shadow(0 0 8px #ffe033);
+        }
+
         .sld-highlight-clone.sld-highlight-contingency path,
         .sld-highlight-clone.sld-highlight-contingency line,
         .sld-highlight-clone.sld-highlight-contingency polyline,
         .sld-highlight-clone.sld-highlight-contingency rect,
         .sld-highlight-clone.sld-highlight-contingency circle {
             stroke: #ffe033 !important;
-            stroke-width: 150px !important;
+            stroke-width: 6px !important;
             stroke-opacity: 1 !important;
             stroke-dasharray: none !important;
             fill: none !important;
-            opacity: 1 !important;
         }
 
         /* Action target on action SLD (purple-pink halo behind) */
