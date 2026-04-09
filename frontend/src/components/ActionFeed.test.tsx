@@ -441,6 +441,7 @@ describe('ActionFeed', () => {
             null,
             ['LINE_1'],
             undefined,
+            undefined,
         );
     });
 
@@ -1228,6 +1229,386 @@ describe('ActionFeed', () => {
                 ['LINE_1'],
                 25,
             );
+        });
+    });
+
+    // =========================================================================
+    // PST Tap Start / Target Tap — score table tests
+    // =========================================================================
+    describe('PST score table - Tap Start and Target Tap', () => {
+        const pstActionId = 'pst_tap_ARKA_TD_661_inc2';
+        const pstActionId2 = 'pst_tap_PRAGNY661_inc2';
+
+        /** Helper: build actionScores for a PST type with params + tap_start */
+        function makePstScores(overrides?: {
+            params?: Record<string, Record<string, unknown>>;
+            tap_start?: Record<string, { pst_name: string; tap: number; low_tap: number | null; high_tap: number | null } | null>;
+            scores?: Record<string, number>;
+        }) {
+            return {
+                pst_tap_change: {
+                    scores: overrides?.scores ?? { [pstActionId]: -9.23, [pstActionId2]: -0.07 },
+                    params: overrides?.params ?? {
+                        [pstActionId]: { 'pst_tap': 'ARKA TD 661', 'selected_pst_tap': 29, 'previous tap': 27 },
+                        [pstActionId2]: { 'pst_tap': 'PRAGNY661', 'selected_pst_tap': 10, 'previous tap': 8 },
+                    },
+                    tap_start: overrides?.tap_start ?? {
+                        [pstActionId]: { pst_name: 'ARKA TD 661', tap: 29, low_tap: 8, high_tap: 31 },
+                        [pstActionId2]: { pst_name: 'PRAGNY661', tap: 10, low_tap: 0, high_tap: 16 },
+                    },
+                },
+            };
+        }
+
+        /** Helper: build a computed PST ActionDetail */
+        function makePstAction(tapPosition: number, pstName = 'ARKA TD 661'): ActionDetail {
+            return {
+                description_unitaire: `Variation PST ${pstName}`,
+                rho_before: [1.1],
+                rho_after: [0.95],
+                max_rho: 0.95,
+                max_rho_line: 'LINE_A',
+                is_rho_reduction: true,
+                action_topology: { ...emptyTopo, pst_tap: { [pstName]: tapPosition } },
+                pst_details: [{ pst_name: pstName, tap_position: tapPosition, low_tap: 8, high_tap: 31 }],
+            } as ActionDetail;
+        }
+
+        it('renders "Tap Start" and "Target Tap" headers for PST type in score table', async () => {
+            const props = {
+                ...defaultProps,
+                actionScores: makePstScores(),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+
+            expect(await screen.findByText('Tap Start')).toBeInTheDocument();
+            expect(screen.getByText('Target Tap')).toBeInTheDocument();
+        });
+
+        it('shows "previous tap" from params as Tap Start, NOT the action target tap', async () => {
+            // The key test: params has "previous tap": 27, but tap_start has tap: 29 (action target).
+            // Tap Start must display 27 (the N-state value from params), NOT 29.
+            const props = {
+                ...defaultProps,
+                actionScores: makePstScores(),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            // Find the table rows for PST actions
+            const rows = screen.getAllByRole('row');
+            // Find the row containing our PST action
+            const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
+            expect(actionRow).toBeDefined();
+
+            // Tap Start cell should show 27 (from params "previous tap"), not 29 (from tap_start.tap)
+            expect(actionRow!.textContent).toContain('27');
+            // It should NOT show 29 as the Tap Start display value
+            // (29 may appear in Target Tap input, but the start text should be 27)
+        });
+
+        it('shows "previous tap" from params for second PST action too', async () => {
+            const props = {
+                ...defaultProps,
+                actionScores: makePstScores(),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const rows = screen.getAllByRole('row');
+            const actionRow2 = rows.find(r => r.textContent?.includes(pstActionId2));
+            expect(actionRow2).toBeDefined();
+            // Should show 8 (previous tap), not 10 (selected_pst_tap / tap_start)
+            expect(actionRow2!.textContent).toContain('8');
+        });
+
+        it('does NOT show N/A when params has "previous tap" even if action is not yet simulated', async () => {
+            // Actions not yet computed (not in actions dict) should still show Tap Start
+            // from params "previous tap" — should never be N/A when params exist
+            const props = {
+                ...defaultProps,
+                actions: {}, // No computed actions
+                actionScores: makePstScores(),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const rows = screen.getAllByRole('row');
+            const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
+            expect(actionRow).toBeDefined();
+            // Must show 27, NOT N/A
+            expect(actionRow!.textContent).toContain('27');
+            expect(actionRow!.textContent).not.toContain('N/A');
+        });
+
+        it('does NOT show N/A for second PST action when params exist but action is not simulated', async () => {
+            const props = {
+                ...defaultProps,
+                actions: {},
+                actionScores: makePstScores(),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const rows = screen.getAllByRole('row');
+            const actionRow2 = rows.find(r => r.textContent?.includes(pstActionId2));
+            expect(actionRow2).toBeDefined();
+            expect(actionRow2!.textContent).toContain('8');
+            expect(actionRow2!.textContent).not.toContain('N/A');
+        });
+
+        it('Tap Start remains stable at "previous tap" after simulation with different target', async () => {
+            // After simulation, pst_details has tap_position: 29, but Tap Start must stay 27
+            const props = {
+                ...defaultProps,
+                actions: {
+                    [pstActionId]: makePstAction(29), // simulated with target tap 29
+                },
+                actionScores: makePstScores(),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const rows = screen.getAllByRole('row');
+            const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
+            expect(actionRow).toBeDefined();
+
+            // The Tap Start cell should contain "27", not "29"
+            // Get all td cells in the row
+            const cells = actionRow!.querySelectorAll('td');
+            // Second cell is Tap Start (first is Action name)
+            const tapStartCell = cells[1];
+            expect(tapStartCell).toBeDefined();
+            // The textContent of the Tap Start cell should start with 27
+            expect(tapStartCell.textContent).toMatch(/^27/);
+        });
+
+        it('Tap Start stays at "previous tap" even after re-simulation with a new tap', async () => {
+            // User re-simulated with tap 31. pst_details.tap_position is now 31.
+            // But Tap Start must still show 27 from params.
+            const props = {
+                ...defaultProps,
+                actions: {
+                    [pstActionId]: makePstAction(31), // re-simulated with target tap 31
+                },
+                actionScores: makePstScores(),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const rows = screen.getAllByRole('row');
+            const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
+            const cells = actionRow!.querySelectorAll('td');
+            const tapStartCell = cells[1];
+            expect(tapStartCell.textContent).toMatch(/^27/);
+        });
+
+        it('Target Tap input defaults to "previous tap" value when no user edit', async () => {
+            // Default target tap should be the start tap (previous tap) for user convenience
+            const props = {
+                ...defaultProps,
+                actionScores: makePstScores(),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const targetInput = screen.getByTestId(`target-tap-${pstActionId}`) as HTMLInputElement;
+            // Should default to 27 (the previous tap / start tap)
+            expect(targetInput.value).toBe('27');
+        });
+
+        it('shows tap range [low..high] next to Tap Start', async () => {
+            const props = {
+                ...defaultProps,
+                actionScores: makePstScores(),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const rows = screen.getAllByRole('row');
+            const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
+            expect(actionRow).toBeDefined();
+            // Should show range from tap_start bounds
+            expect(actionRow!.textContent).toContain('[8..31]');
+        });
+
+        it('falls back to tap_start when params has no "previous tap"', async () => {
+            const props = {
+                ...defaultProps,
+                actionScores: makePstScores({
+                    params: {
+                        [pstActionId]: { 'pst_tap': 'ARKA TD 661', 'selected_pst_tap': 29 },
+                        // No 'previous tap' key
+                    },
+                    scores: { [pstActionId]: -9.23 },
+                }),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const rows = screen.getAllByRole('row');
+            const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
+            expect(actionRow).toBeDefined();
+            // Falls back to tap_start which has tap: 29
+            expect(actionRow!.textContent).toContain('29');
+            expect(actionRow!.textContent).not.toContain('N/A');
+        });
+
+        it('falls back to computedPst when neither params nor tap_start available', async () => {
+            const props = {
+                ...defaultProps,
+                actions: {
+                    [pstActionId]: makePstAction(29),
+                },
+                actionScores: makePstScores({
+                    params: {}, // No params
+                    tap_start: {}, // No tap_start
+                    scores: { [pstActionId]: -9.23 },
+                }),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const rows = screen.getAllByRole('row');
+            const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
+            expect(actionRow).toBeDefined();
+            // Falls back to pst_details[0].tap_position which is 29
+            expect(actionRow!.textContent).toContain('29');
+        });
+
+        it('shows N/A only when no params, no tap_start, and no pst_details', async () => {
+            const props = {
+                ...defaultProps,
+                actions: {}, // Not computed
+                actionScores: makePstScores({
+                    params: {},
+                    tap_start: {},
+                    scores: { [pstActionId]: -9.23 },
+                }),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const rows = screen.getAllByRole('row');
+            const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
+            expect(actionRow).toBeDefined();
+            expect(actionRow!.textContent).toContain('N/A');
+        });
+
+        it('syncs Target Tap input change to cardEditTap state', async () => {
+            const props = {
+                ...defaultProps,
+                actionScores: makePstScores(),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const targetInput = screen.getByTestId(`target-tap-${pstActionId}`) as HTMLInputElement;
+            fireEvent.change(targetInput, { target: { value: '30' } });
+            expect(targetInput.value).toBe('30');
+        });
+
+        it('reads "previous_tap" (underscore variant) from params as Tap Start', async () => {
+            const props = {
+                ...defaultProps,
+                actionScores: makePstScores({
+                    params: {
+                        [pstActionId]: { 'pst_tap': 'ARKA TD 661', 'selected_pst_tap': 29, 'previous_tap': 27 },
+                    },
+                    scores: { [pstActionId]: -9.23 },
+                }),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const rows = screen.getAllByRole('row');
+            const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
+            expect(actionRow).toBeDefined();
+            const cells = actionRow!.querySelectorAll('td');
+            const tapStartCell = cells[1];
+            expect(tapStartCell.textContent).toMatch(/^27/);
+        });
+
+        it('reads "previousTap" (camelCase variant) from params as Tap Start', async () => {
+            const props = {
+                ...defaultProps,
+                actionScores: makePstScores({
+                    params: {
+                        [pstActionId]: { 'pst_tap': 'ARKA TD 661', 'selected_pst_tap': 29, 'previousTap': 27 },
+                    },
+                    scores: { [pstActionId]: -9.23 },
+                }),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            const rows = screen.getAllByRole('row');
+            const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
+            expect(actionRow).toBeDefined();
+            const cells = actionRow!.querySelectorAll('td');
+            const tapStartCell = cells[1];
+            expect(tapStartCell.textContent).toMatch(/^27/);
+        });
+
+        it('re-simulate button in score table calls simulateManualAction with target_tap', async () => {
+            (api.simulateManualAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+                action_id: pstActionId,
+                description_unitaire: 'Variation PST ARKA TD 661',
+                rho_before: [1.1],
+                rho_after: [0.9],
+                max_rho: 0.9,
+                max_rho_line: 'LINE_A',
+                is_rho_reduction: true,
+                non_convergence: null,
+                lines_overloaded: ['LINE_1'],
+                pst_details: [{ pst_name: 'ARKA TD 661', tap_position: 30, low_tap: 8, high_tap: 31 }],
+            });
+
+            const props = {
+                ...defaultProps,
+                actions: {
+                    [pstActionId]: makePstAction(29),
+                },
+                actionScores: makePstScores(),
+            };
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            await screen.findByText('Tap Start');
+
+            // Change target tap to 30
+            const targetInput = screen.getByTestId(`target-tap-${pstActionId}`) as HTMLInputElement;
+            fireEvent.change(targetInput, { target: { value: '30' } });
+
+            // Click the row to trigger re-simulation
+            const rows = screen.getAllByRole('row');
+            const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
+            fireEvent.click(actionRow!);
+
+            await waitFor(() => {
+                expect(api.simulateManualAction).toHaveBeenCalledWith(
+                    pstActionId,
+                    'LINE_1',
+                    expect.anything(),
+                    ['LINE_1'],
+                    null,
+                    30,
+                );
+            });
         });
     });
 });

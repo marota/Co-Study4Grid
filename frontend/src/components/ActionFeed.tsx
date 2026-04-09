@@ -909,7 +909,16 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                                     // PST tap: read from cardEditTap (synchronized with action card)
                                                                     // Tap Start: "previous tap" from action params (N-state), then tapStartMap, then computedPst
                                                                     const actionParams = isPstType ? typeData.params?.[item.actionId] : undefined;
-                                                                    const previousTap = actionParams?.['previous tap'] as number | undefined;
+                                                                    if (isPstType && actionParams) {
+                                                                        console.log(`[PST tapInfo debug] actionId=${item.actionId} params keys:`, Object.keys(actionParams), 'values:', actionParams);
+                                                                    }
+                                                                    // Try multiple key variants for the previous tap value
+                                                                    const previousTap = actionParams
+                                                                        ? (actionParams['previous tap'] ?? actionParams['previous_tap'] ?? actionParams['previousTap'] ??
+                                                                           // Fallback: find any key containing "previous" and "tap"
+                                                                           Object.entries(actionParams).find(([k]) => k.toLowerCase().includes('previous') && k.toLowerCase().includes('tap'))?.[1]
+                                                                          ) as number | undefined
+                                                                        : undefined;
                                                                     const tapStartEntry = isPstType ? tapStartMap?.[item.actionId] ?? null : undefined;
                                                                     const computedPst = isPstType ? actions[item.actionId]?.pst_details?.[0] : undefined;
                                                                     const tapInfo = isPstType
@@ -926,6 +935,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                                                     ? { pst_name: computedPst.pst_name, tap: computedPst.tap_position, low_tap: computedPst.low_tap, high_tap: computedPst.high_tap }
                                                                                     : null)
                                                                         : undefined;
+                                                                    if (isPstType) {
+                                                                        console.log(`[PST tapInfo debug] actionId=${item.actionId} previousTap=${previousTap} tapStartEntry=`, tapStartEntry, 'computedPst=', computedPst, '=> tapInfo=', tapInfo);
+                                                                    }
                                                                     const tapEditVal = cardEditTap[item.actionId];
                                                                     const effectiveTap = tapEditVal ?? (tapInfo ? String(tapInfo.tap) : undefined);
                                                                     const parsedTap = effectiveTap !== undefined ? parseInt(effectiveTap, 10) : null;

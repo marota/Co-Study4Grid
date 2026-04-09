@@ -6026,7 +6026,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                                                     // PST tap: read from cardEditTap (synchronized with action card)
                                                                                     // Tap Start: "previous tap" from action params (N-state), then tapStartMap, then computedPst
                                                                                     const actionParams = isPstType ? (typeData.params || {})[item.actionId] : undefined;
-                                                                                    const previousTap = actionParams ? actionParams['previous tap'] : undefined;
+                                                                                    // Try multiple key variants for the previous tap value
+                                                                                    const previousTap = actionParams
+                                                                                        ? (actionParams['previous tap'] != null ? actionParams['previous tap']
+                                                                                           : actionParams['previous_tap'] != null ? actionParams['previous_tap']
+                                                                                           : actionParams['previousTap'] != null ? actionParams['previousTap']
+                                                                                           : (() => { const found = Object.entries(actionParams).find(([k]) => k.toLowerCase().includes('previous') && k.toLowerCase().includes('tap')); return found ? found[1] : undefined; })()
+                                                                                          )
+                                                                                        : undefined;
                                                                                     const tapStartEntry = isPstType ? (tapStartMap || {})[item.actionId] || null : undefined;
                                                                                     const computedPst = isPstType && isComputed ? result?.actions?.[item.actionId]?.pst_details?.[0] : undefined;
                                                                                     const tapInfo = isPstType
