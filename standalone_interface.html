@@ -3677,7 +3677,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
                 // --- Overloaded lines (N-1 and action tabs) ---
                 if (vlOverlay.tab === 'n-1' || vlOverlay.tab === 'action') {
-                    const overloadedLines = result?.lines_overloaded;
+                    // Fallback to n1Diagram overloads if no simulation result is available yet
+                    const overloadedLines = result?.lines_overloaded || (vlOverlay.tab === 'n-1' ? n1Diagram?.lines_overloaded : []);
                     if (overloadedLines && overloadedLines.length > 0) {
                         for (const lineId of overloadedLines) {
                             const cell = findCellForEquipment(lineId);
@@ -3690,7 +3691,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 }
 
             }, [vlOverlay?.svg, vlOverlay?.sldMetadata, vlOverlay?.tab, vlOverlay?.actionId,
-            vlOverlay?.changed_switches, selectedBranch, result]);
+            vlOverlay?.changed_switches, selectedBranch, result, n1Diagram]);
 
             // Mouse pan inside overlay body
             const startOverlayPan = (e) => {
