@@ -74,6 +74,8 @@ class RecommenderService:
         self._cached_obs_n1_id = None
         # Pre-built SimulationEnvironment reused across contingency analyses
         self._cached_env_context = None
+        # N-state PST tap positions captured at network load time
+        self._initial_pst_taps = None  # dict: pst_name -> {tap, low_tap, high_tap}
 
     def reset(self):
         """Clear all cached analysis state. Called when loading a new study."""
@@ -92,6 +94,7 @@ class RecommenderService:
         self._cached_obs_n1 = None
         self._cached_obs_n1_id = None
         self._cached_env_context = None
+        self._initial_pst_taps = None
 
     def restore_analysis_context(self, lines_we_care_about, disconnected_element=None, lines_overloaded=None, computed_pairs=None):
         """Restore analysis context from a saved session.
@@ -548,11 +551,12 @@ class RecommenderService:
         return action_scores
 
     def _get_pst_tap_start(self, action_id):
-        """Return {pst_name, tap, low_tap, high_tap} for a PST action from the base N-state network, or None.
+        """Return {pst_name, tap, low_tap, high_tap} for a PST action's N-state tap, or None.
 
-        Reads tap position directly from the pypowsybl base network's initial variant
-        to guarantee the original N-state value, regardless of any simulation that may
-        have modified the working variant.
+        Priority for the N-state (start) tap value:
+        1. Action's 'parameters' -> 'previous tap' (stored in the action JSON file)
+        2. Stable cache captured at network load time (_initial_pst_taps)
+        3. Simulation environment fallback (get_pst_tap_info)
         """
         action_entry = self._dict_action.get(action_id) if self._dict_action else None
         if action_entry is None:
@@ -571,31 +575,43 @@ class RecommenderService:
         # Get the first PST entry (most actions target a single PST)
         pst_name = next(iter(pst_tap))
 
-        # Read tap position from the base pypowsybl network's initial variant (N-state)
-        try:
-            network = self._get_base_network()
-            original_variant = network.get_working_variant_id()
-            try:
-                # Switch to the N-state variant (or initial variant) to read unmodified taps
-                n_variant = self._get_n_variant()
-                network.set_working_variant(n_variant)
+        # Priority 1: read "previous tap" from action parameters (original N-state tap)
+        params = action_entry.get("parameters", {})
+        if params:
+            prev_tap = params.get("previous tap")
+            if prev_tap is not None:
+                # Get bounds from cache or simulation env
+                low_tap, high_tap = None, None
+                if self._initial_pst_taps and pst_name in self._initial_pst_taps:
+                    low_tap = self._initial_pst_taps[pst_name].get("low_tap")
+                    high_tap = self._initial_pst_taps[pst_name].get("high_tap")
+                elif hasattr(self, '_simulation_env') and self._simulation_env:
+                    try:
+                        nm = self._simulation_env.network_manager
+                        pst_info = nm.get_pst_tap_info(pst_name)
+                        if pst_info:
+                            low_tap = pst_info.get("low_tap")
+                            high_tap = pst_info.get("high_tap")
+                    except Exception:
+                        pass
+                return {
+                    "pst_name": pst_name,
+                    "tap": int(prev_tap),
+                    "low_tap": low_tap,
+                    "high_tap": high_tap,
+                }
 
-                import pandas as pd
-                ptc = network.get_phase_tap_changers()
-                if ptc is not None and not ptc.empty and pst_name in ptc.index:
-                    row = ptc.loc[pst_name]
-                    return {
-                        "pst_name": pst_name,
-                        "tap": int(row.get("tap_position", 0)) if pd.notna(row.get("tap_position")) else 0,
-                        "low_tap": int(row.get("low_tap_position", 0)) if pd.notna(row.get("low_tap_position")) else None,
-                        "high_tap": int(row.get("high_tap_position", 0)) if pd.notna(row.get("high_tap_position")) else None,
-                    }
-            finally:
-                network.set_working_variant(original_variant)
-        except Exception as e:
-            print(f"[_get_pst_tap_start] Error reading N-state tap for {pst_name}: {e}")
+        # Priority 2: stable cache captured at network load time
+        if self._initial_pst_taps and pst_name in self._initial_pst_taps:
+            info = self._initial_pst_taps[pst_name]
+            return {
+                "pst_name": pst_name,
+                "tap": info["tap"],
+                "low_tap": info["low_tap"],
+                "high_tap": info["high_tap"],
+            }
 
-        # Fallback: try via simulation environment (may not be N-state)
+        # Priority 3: simulation environment fallback
         try:
             env = self._get_simulation_env()
             nm = env.network_manager
@@ -1272,7 +1288,32 @@ class RecommenderService:
         # Convenience method not in pypowsybl API: return line IDs as a list
         n.get_line_ids = lambda: n.get_lines().index.tolist()
         self._base_network = n
+
+        # Capture N-state PST tap positions immediately after loading (before any simulation)
+        self._capture_initial_pst_taps(n)
+
         return self._base_network
+
+    def _capture_initial_pst_taps(self, network):
+        """Snapshot all PST tap positions from the freshly-loaded network.
+
+        Called once at network load time so the values are guaranteed to be
+        the original N-state taps, unaffected by any subsequent simulation.
+        """
+        import pandas as pd
+        self._initial_pst_taps = {}
+        try:
+            ptc = network.get_phase_tap_changers()
+            if ptc is not None and not ptc.empty:
+                for pst_name, row in ptc.iterrows():
+                    self._initial_pst_taps[pst_name] = {
+                        "tap": int(row["tap_position"]) if pd.notna(row.get("tap_position")) else 0,
+                        "low_tap": int(row["low_tap_position"]) if pd.notna(row.get("low_tap_position")) else None,
+                        "high_tap": int(row["high_tap_position"]) if pd.notna(row.get("high_tap_position")) else None,
+                    }
+                print(f"[_capture_initial_pst_taps] Captured {len(self._initial_pst_taps)} PST tap positions")
+        except Exception as e:
+            print(f"[_capture_initial_pst_taps] Warning: could not read phase tap changers: {e}")
 
     def _get_n_variant(self):
         """Return the variant ID for the N state, creating and simulating it if necessary."""
