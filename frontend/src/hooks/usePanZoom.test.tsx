@@ -195,4 +195,142 @@ describe('usePanZoom', () => {
             expect(result.current.viewBox).toEqual(zoomedVB);
         });
     });
+
+    describe('zoom tier (data-zoom-tier attribute)', () => {
+        it('sets "overview" tier on initial load (full extent viewBox)', () => {
+            const { container } = createMockSvgContainer('0 0 500 500');
+            const ref = { current: container };
+
+            renderHook(() => usePanZoom(ref, initialVB, true));
+
+            // ratio = 1000/1000 = 1.0 > 0.5 → overview
+            expect(container.getAttribute('data-zoom-tier')).toBe('overview');
+        });
+
+        it('sets "region" tier when zoomed to 50% of original width', () => {
+            const { container } = createMockSvgContainer('0 0 500 500');
+            const ref = { current: container };
+
+            const { result } = renderHook(() => usePanZoom(ref, initialVB, true));
+
+            // ratio = 400/1000 = 0.4 → region (0.15 < 0.4 ≤ 0.5)
+            act(() => {
+                result.current.setViewBox({ x: 200, y: 200, w: 400, h: 300 });
+            });
+
+            expect(container.getAttribute('data-zoom-tier')).toBe('region');
+        });
+
+        it('sets "detail" tier when zoomed to <15% of original width', () => {
+            const { container } = createMockSvgContainer('0 0 500 500');
+            const ref = { current: container };
+
+            const { result } = renderHook(() => usePanZoom(ref, initialVB, true));
+
+            // ratio = 100/1000 = 0.1 → detail (≤ 0.15)
+            act(() => {
+                result.current.setViewBox({ x: 400, y: 400, w: 100, h: 80 });
+            });
+
+            expect(container.getAttribute('data-zoom-tier')).toBe('detail');
+        });
+
+        it('transitions between tiers as zoom changes', () => {
+            const { container } = createMockSvgContainer('0 0 500 500');
+            const ref = { current: container };
+
+            const { result } = renderHook(() => usePanZoom(ref, initialVB, true));
+            expect(container.getAttribute('data-zoom-tier')).toBe('overview');
+
+            // Zoom to region
+            act(() => {
+                result.current.setViewBox({ x: 0, y: 0, w: 300, h: 240 });
+            });
+            expect(container.getAttribute('data-zoom-tier')).toBe('region');
+
+            // Zoom to detail
+            act(() => {
+                result.current.setViewBox({ x: 0, y: 0, w: 100, h: 80 });
+            });
+            expect(container.getAttribute('data-zoom-tier')).toBe('detail');
+
+            // Zoom back out to overview
+            act(() => {
+                result.current.setViewBox({ x: 0, y: 0, w: 900, h: 720 });
+            });
+            expect(container.getAttribute('data-zoom-tier')).toBe('overview');
+        });
+
+        it('resets tier when a new diagram loads (initialViewBox changes)', () => {
+            const { container } = createMockSvgContainer('0 0 500 500');
+            const ref = { current: container };
+
+            const { result, rerender } = renderHook(
+                ({ ivb }) => usePanZoom(ref, ivb, true),
+                { initialProps: { ivb: initialVB as ViewBox | null } }
+            );
+
+            // Zoom into detail
+            act(() => {
+                result.current.setViewBox({ x: 400, y: 400, w: 100, h: 80 });
+            });
+            expect(container.getAttribute('data-zoom-tier')).toBe('detail');
+
+            // New diagram loads with different dimensions
+            const newIVB: ViewBox = { x: 0, y: 0, w: 5000, h: 4000 };
+            rerender({ ivb: newIVB });
+
+            // Should reset to overview (ratio = 5000/5000 = 1.0)
+            expect(container.getAttribute('data-zoom-tier')).toBe('overview');
+        });
+
+        it('preserves tier across active/inactive transitions', () => {
+            const { container } = createMockSvgContainer('0 0 500 500');
+            const ref = { current: container };
+
+            const { result, rerender } = renderHook(
+                ({ active }) => usePanZoom(ref, initialVB, active),
+                { initialProps: { active: true } }
+            );
+
+            // Zoom to detail
+            act(() => {
+                result.current.setViewBox({ x: 0, y: 0, w: 100, h: 80 });
+            });
+            expect(container.getAttribute('data-zoom-tier')).toBe('detail');
+
+            // Deactivate and reactivate
+            rerender({ active: false });
+            rerender({ active: true });
+
+            expect(container.getAttribute('data-zoom-tier')).toBe('detail');
+        });
+
+        it('does not set tier when container ref is null', () => {
+            const ref = { current: null };
+
+            renderHook(() => usePanZoom(ref, initialVB, true));
+
+            // No container → no attribute to check (should not crash)
+        });
+
+        it('handles exact boundary values correctly', () => {
+            const { container } = createMockSvgContainer('0 0 500 500');
+            const ref = { current: container };
+
+            const { result } = renderHook(() => usePanZoom(ref, initialVB, true));
+
+            // ratio = 500/1000 = 0.5 → exactly at boundary → region (not overview)
+            act(() => {
+                result.current.setViewBox({ x: 0, y: 0, w: 500, h: 400 });
+            });
+            expect(container.getAttribute('data-zoom-tier')).toBe('region');
+
+            // ratio = 150/1000 = 0.15 → exactly at boundary → detail (not region)
+            act(() => {
+                result.current.setViewBox({ x: 0, y: 0, w: 150, h: 120 });
+            });
+            expect(container.getAttribute('data-zoom-tier')).toBe('detail');
+        });
+    });
 });

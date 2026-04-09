@@ -142,3 +142,61 @@ describe('standalone_interface.html extraction logic', () => {
         expect(result).toContain('SAUCAP7');
     });
 });
+
+describe('standalone_interface.html SVG utilities', () => {
+    const filePath = path.resolve(__dirname, '../../../standalone_interface.html');
+    
+    // Helper to extract processSldSvg function Body
+    const extractProcessSldSvg = () => {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const match = content.match(/const\s+processSldSvg\s*=\s*\(rawSvg\)\s*=>\s*({[\s\S]*?return\s*{\s*svg\s*,\s*viewBox\s*:\s*vb\s*};\s*})/);
+        if (!match) return null;
+        return new Function('rawSvg', match[1]);
+    };
+
+    const processSldSvg = extractProcessSldSvg();
+
+    if (!processSldSvg) {
+        it.skip('Could not extract processSldSvg from standalone_interface.html', () => {});
+    } else {
+        it('extracts viewBox correctly', () => {
+            const raw = '<svg viewBox="0 0 100 200"><rect/></svg>';
+            const { viewBox } = processSldSvg(raw);
+            expect(viewBox).toEqual({ x: 0, y: 0, w: 100, h: 200 });
+        });
+
+        it('extracts viewBox with commas', () => {
+            const raw = '<svg viewBox="10,20,300,400"><rect/></svg>';
+            const { viewBox } = processSldSvg(raw);
+            expect(viewBox).toEqual({ x: 10, y: 20, w: 300, h: 400 });
+        });
+
+        it('falls back to width and height attributes', () => {
+            const raw = '<svg width="500" height="600"><rect/></svg>';
+            const { viewBox } = processSldSvg(raw);
+            expect(viewBox).toEqual({ x: 0, y: 0, w: 500, h: 600 });
+        });
+
+        it('strips elements with NaN attributes from the SVG content', () => {
+            const raw = '<svg><rect x="NaN" y="10" /><text x="NaN">Broken Label</text><text>NaN Value</text><circle cx="NaN" r="5"/><line x1="NaN"/></svg>';
+            const { svg } = processSldSvg(raw);
+            expect(svg).not.toContain('<rect');
+            expect(svg).not.toContain('Broken Label');
+            expect(svg).not.toContain('<circle');
+            expect(svg).not.toContain('<line');
+            // Valid text containing "NaN" but NOT having a NaN attribute should stay
+            expect(svg).toContain('<text>NaN Value</text>');
+            expect(svg).toContain('<svg>');
+            expect(svg).toContain('</svg>');
+        });
+    }
+
+    it('findCellForEquipment uses qLower instead of undefined q', () => {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        // Regression check: Ensure 'const qPrefix = q.substring' does NOT exist
+        // and 'const qPrefix = qLower.substring' DOES exist.
+        expect(content).not.toContain('const qPrefix = q.substring');
+        expect(content).toContain('const qPrefix = qLower.substring');
+        expect(content).toContain('if (eq.includes(qLower)');
+    });
+});

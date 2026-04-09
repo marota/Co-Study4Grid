@@ -41,6 +41,30 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
     pointer-events: none !important;
 }
 
+/* ===== Zoom-tier Level-of-Detail =====
+   data-zoom-tier is set by usePanZoom based on the ratio of the current
+   viewBox width to the original (full-extent) viewBox width.
+   - "overview" (ratio > 0.5): hide text-heavy elements to reduce paint cost
+   - "region"  (0.15 < ratio ≤ 0.5): show edge info, keep minor labels hidden
+   - "detail"  (ratio ≤ 0.15): everything visible (default rendering)
+   Elements are hidden via display:none, which removes them from the render
+   tree without removing them from the DOM — preserving metadata, ID maps,
+   and highlight state. */
+
+/* Overview: hide edge-info flow values and node label boxes */
+[data-zoom-tier="overview"] .nad-edge-infos {
+    display: none;
+}
+
+[data-zoom-tier="overview"] .nad-vl-nodes foreignObject {
+    display: none;
+}
+
+/* Region: edge-info visible, but node label boxes still hidden */
+[data-zoom-tier="region"] .nad-vl-nodes foreignObject {
+    display: none;
+}
+
 /* ===== Highlight styles ===== */
 
 .nad-highlight {
@@ -252,7 +276,10 @@ circle.nad-highlight {
 /* These classes are applied to CLONED elements placed in a background layer,
    so they don't affect the original SLD rendering (flows/impacts modes). */
 
-/* Contingency element on N-1 SLD (yellow halo behind) */
+/* Contingency element on N-1 SLD (yellow glow behind) */
+.sld-highlight-clone.sld-highlight-contingency {
+    filter: drop-shadow(0 0 4px #ffe033) drop-shadow(0 0 8px #ffe033);
+}
 
 .sld-highlight-clone.sld-highlight-contingency path,
 .sld-highlight-clone.sld-highlight-contingency line,

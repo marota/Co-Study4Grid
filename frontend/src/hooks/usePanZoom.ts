@@ -22,6 +22,15 @@ import type { ViewBox } from '../types';
  * - Pointer-events disabled on SVG children during interaction
  *   (eliminates expensive hit-testing on thousands of elements)
  */
+export type ZoomTier = 'overview' | 'region' | 'detail';
+
+const computeZoomTier = (current: ViewBox, original: ViewBox): ZoomTier => {
+    const ratio = current.w / original.w;
+    if (ratio > 0.5) return 'overview';
+    if (ratio > 0.15) return 'region';
+    return 'detail';
+};
+
 export const usePanZoom = (
     svgRef: RefObject<HTMLDivElement | null>,
     initialViewBox: ViewBox | null | undefined,
@@ -48,6 +57,10 @@ export const usePanZoom = (
     const pendingWheelScale = useRef(1);
     const pendingWheelCursor = useRef({ x: 0, y: 0 });
 
+    // Zoom tier: tracked in ref to avoid DOM writes when tier hasn't changed
+    const currentTierRef = useRef<ZoomTier | null>(null);
+    const originalVbRef = useRef<ViewBox | null>(null);
+
 
     // Toggle interaction class on container to disable pointer-events on SVG children
     const setInteracting = (interacting: boolean) => {
@@ -66,7 +79,17 @@ export const usePanZoom = (
         // Invalidate CTM cache after viewBox change
         ctmCacheRef.current = null;
 
-    }, []);
+        // Update zoom tier attribute (only writes DOM when tier changes)
+        const container = svgRef.current;
+        const orig = originalVbRef.current;
+        if (container && vb && orig) {
+            const tier = computeZoomTier(vb, orig);
+            if (tier !== currentTierRef.current) {
+                currentTierRef.current = tier;
+                container.setAttribute('data-zoom-tier', tier);
+            }
+        }
+    }, [svgRef]);
 
     // Flush ref -> React state for downstream consumers
     const commitViewBox = () => {
@@ -92,6 +115,11 @@ export const usePanZoom = (
     // Sync from initialViewBox (diagram load or programmatic reset)
     useEffect(() => {
         if (initialViewBox) {
+            // Store the full-extent viewBox for zoom tier calculation.
+            // Only update on diagram load (when initialViewBox object identity changes),
+            // not on programmatic zoom which uses setViewBoxPublic instead.
+            originalVbRef.current = initialViewBox;
+            currentTierRef.current = null; // force re-evaluation
             viewBoxRef.current = initialViewBox;
             applyViewBox(initialViewBox);
             setViewBox(initialViewBox);

@@ -143,6 +143,30 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             vector-effect: non-scaling-stroke;
         }
 
+        /* ===== Zoom-tier Level-of-Detail =====
+           data-zoom-tier is set by usePanZoom based on the ratio of the current
+           viewBox width to the original (full-extent) viewBox width.
+           - "overview" (ratio > 0.5): hide text-heavy elements to reduce paint cost
+           - "region"  (0.15 < ratio <= 0.5): show edge info, keep minor labels hidden
+           - "detail"  (ratio <= 0.15): everything visible (default rendering)
+           Elements are hidden via display:none, which removes them from the render
+           tree without removing them from the DOM — preserving metadata, ID maps,
+           and highlight state. */
+
+        /* Overview: hide edge-info flow values and node label boxes */
+        [data-zoom-tier="overview"] .nad-edge-infos {
+            display: none;
+        }
+
+        [data-zoom-tier="overview"] .nad-vl-nodes foreignObject {
+            display: none;
+        }
+
+        /* Region: edge-info visible, but node label boxes still hidden */
+        [data-zoom-tier="region"] .nad-vl-nodes foreignObject {
+            display: none;
+        }
+
         .error {
             color: red;
             margin-top: 5px;
@@ -344,18 +368,21 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             fill-opacity: 0.5 !important;
         }
 
-        /* Contingency element on N-1 SLD (yellow glow) */
+        /* Contingency element on N-1 SLD (yellow glow behind) */
+        .sld-highlight-clone.sld-highlight-contingency {
+            filter: drop-shadow(0 0 4px #ffe033) drop-shadow(0 0 8px #ffe033);
+        }
+
         .sld-highlight-clone.sld-highlight-contingency path,
         .sld-highlight-clone.sld-highlight-contingency line,
         .sld-highlight-clone.sld-highlight-contingency polyline,
         .sld-highlight-clone.sld-highlight-contingency rect,
         .sld-highlight-clone.sld-highlight-contingency circle {
             stroke: #ffe033 !important;
-            stroke-width: 150px !important;
+            stroke-width: 6px !important;
             stroke-opacity: 1 !important;
             stroke-dasharray: none !important;
             fill: none !important;
-            opacity: 1 !important;
         }
 
         /* Action target on action SLD (purple-pink halo behind) */
@@ -550,10 +577,9 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             color: #333;
         }
 
-        /* VL focused diagram overlay body — SVG scales to fit width */
+        /* VL focused diagram overlay body — SVG uses its natural pypowsybl size to allow transform-based zoom/pan */
         .vl-overlay-body svg {
-            width: 100%;
-            height: auto;
+            overflow: visible;
             display: block;
         }
 
@@ -751,11 +777,32 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             const activeRef = useRef(active);
             activeRef.current = active;
 
+            // Zoom tier: tracked in ref to avoid DOM writes when tier hasn't changed
+            const currentTierRef = useRef(null);
+            const originalVbRef = useRef(null);
+
+            const computeZoomTier = (current, original) => {
+                const ratio = current.w / original.w;
+                if (ratio > 0.5) return 'overview';
+                if (ratio > 0.15) return 'region';
+                return 'detail';
+            };
+
             // Direct DOM update — no React involved
             const applyViewBox = (vb) => {
                 const svg = svgElRef.current;
                 if (svg && vb) {
                     svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+                }
+                // Update zoom tier attribute (only writes DOM when tier changes)
+                const container = svgRef.current;
+                const orig = originalVbRef.current;
+                if (container && vb && orig) {
+                    const tier = computeZoomTier(vb, orig);
+                    if (tier !== currentTierRef.current) {
+                        currentTierRef.current = tier;
+                        container.setAttribute('data-zoom-tier', tier);
+                    }
                 }
             };
 
@@ -783,6 +830,9 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             // Sync from initialViewBox (diagram load or programmatic reset)
             useEffect(() => {
                 if (initialViewBox) {
+                    // Store the full-extent viewBox for zoom tier calculation
+                    originalVbRef.current = initialViewBox;
+                    currentTierRef.current = null; // force re-evaluation
                     viewBoxRef.current = initialViewBox;
                     applyViewBox(initialViewBox);
                     setViewBox(initialViewBox);
@@ -1377,6 +1427,38 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             }
 
             backgroundLayer.appendChild(clone);
+        };
+
+        /**
+         * Extract viewBox from raw SVG string for initial auto-centering.
+         * Also strips common NaNs that can cause rendering failures.
+         */
+        const processSldSvg = (rawSvg) => {
+            if (!rawSvg) return { svg: '', viewBox: null };
+            
+            // Extract viewBox or use explicit width/height
+            const match = rawSvg.match(/viewBox=["']([^"']+)["']/);
+            let vb = null;
+            if (match) {
+                const parts = match[1].split(/\s+|,/).map(parseFloat);
+                if (parts.length === 4) vb = { x: parts[0], y: parts[1], w: parts[2], h: parts[3] };
+            } else {
+                const wm = rawSvg.match(/width=["']([\d.]+)(?:pt|px|)?["']/);
+                const hm = rawSvg.match(/height=["']([\d.]+)(?:pt|px|)?["']/);
+                if (wm && hm) {
+                    vb = { x: 0, y: 0, w: parseFloat(wm[1]), h: parseFloat(hm[1]) };
+                }
+            }
+
+            // Simple NaN cleanup for SLD fragments
+            let svg = rawSvg;
+            if (svg.includes('NaN')) {
+                // Remove paired tags (like text) that contain NaN attributes
+                svg = svg.replace(/<text\b[^>]*\b\w+=["']NaN["'][^>]*>[\s\S]*?<\/text>/g, '');
+                // Remove self-closing or simple tags with NaN attributes
+                svg = svg.replace(/<(rect|line|circle|path)\b[^>]*\b\w+=["']NaN["'][^>]*\/?>/g, '');
+            }
+            return { svg, viewBox: vb };
         };
 
         const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId, style = {} }) => {
@@ -2935,19 +3017,68 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     initialTab = 'n';
                 } else if (activeTab === 'n-1') {
                     initialTab = 'n-1';
-                } else if (activeTab === 'action' && actionViewMode === 'delta') {
-                    // Impacts mode: show Action state (the variant being compared)
-                    initialTab = 'action';
+                } else if (activeTab === 'action') {
+                    // Only use action variant if an action is actually selected
+                    initialTab = actionId ? 'action' : (selectedBranch ? 'n-1' : 'n');
                 } else {
-                    // Flows mode (action or overflow fallback): show action state
-                    initialTab = 'action';
+                    initialTab = 'n';
                 }
                 interactionLogger.record('sld_overlay_opened', {
                     vl_name: vlName, action_id: actionId || null, initial_tab: initialTab,
                 });
-                setVlOverlay({ vlName, actionId, svg: null, sldMetadata: null, loading: true, error: null, tab: initialTab });
+                setVlOverlay({ vlName, actionId, svg: null, viewBox: null, sldMetadata: null, loading: true, error: null, tab: initialTab });
                 fetchSldVariant(vlName, actionId, initialTab);
             };
+
+            // Effect to auto-center SLD overlay when new diagram content is loaded
+            useEffect(() => {
+                const svg = vlOverlay?.svg;
+                const container = overlayBodyRef.current;
+                if (!svg || !container) return;
+
+                const vb = vlOverlay.viewBox;
+                if (vb && vb.w > 0 && vb.h > 0) {
+                    const screenW = container.clientWidth;
+                    const screenH = container.clientHeight;
+                    if (screenW === 0 || screenH === 0) return; // Not yet rendered
+
+                    const padding = 20;
+                    const targetW = screenW - padding * 2;
+                    const targetH = screenH - padding * 2;
+                    
+                    const scale = Math.min(targetW / vb.w, targetH / vb.h);
+                    const tx = (screenW - vb.w * scale) / 2 - vb.x * scale;
+                    const ty = (screenH - vb.h * scale) / 2 - vb.y * scale;
+                    
+                    setOverlayTransform({ scale, tx, ty });
+                } else {
+                    // Fallback to bounding box measurement after browser has rendered the content
+                    const timer = setTimeout(() => {
+                        const svgEl = vlSvgContainerRef.current?.querySelector('svg');
+                        if (svgEl) {
+                            try {
+                                const bbox = svgEl.getBBox();
+                                if (bbox.width > 0 && bbox.height > 0) {
+                                    const screenW = container.clientWidth;
+                                    const screenH = container.clientHeight;
+                                    const padding = 20;
+                                    const targetW = screenW - padding * 2;
+                                    const targetH = screenH - padding * 2;
+                                    
+                                    const scale = Math.min(targetW / bbox.width, targetH / bbox.height);
+                                    const tx = (screenW - bbox.width * scale) / 2 - bbox.x * scale;
+                                    const ty = (screenH - bbox.height * scale) / 2 - bbox.y * scale;
+                                    
+                                    setOverlayTransform({ scale, tx, ty });
+                                }
+                            } catch (e) {
+                                console.warn('Failed to get SLD BBox for auto-centering:', e);
+                            }
+                        }
+                    }, 50);
+                    return () => clearTimeout(timer);
+                }
+            }, [vlOverlay?.svg, vlOverlay?.tab]); // Re-center on content or tab switch
 
             const fetchSldVariant = async (vlName, actionId, sldTab) => {
                 setVlOverlay(prev => prev ? { ...prev, loading: true, error: null, tab: sldTab } : null);
@@ -2965,10 +3096,19 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         payload = { action_id: actionId, voltage_level_id: vlName };
                     }
                     const res = await axios.post(API_BASE + endpoint, payload);
+                    if (!res.data.svg) {
+                        setVlOverlay(prev => prev && prev.tab === sldTab
+                            ? { ...prev, loading: false, error: 'No diagram available for this variant' }
+                            : prev
+                        );
+                        return;
+                    }
+
+                    const { svg: processedSvg, viewBox: sldVb } = processSldSvg(res.data.svg);
                     setVlOverlay(prev =>
                         prev && prev.vlName === vlName && prev.actionId === actionId && prev.tab === sldTab
                             ? {
-                                ...prev, svg: res.data.svg, sldMetadata: res.data.sld_metadata ?? null, loading: false,
+                                ...prev, svg: processedSvg, viewBox: sldVb, sldMetadata: res.data.sld_metadata ?? null, loading: false,
                                 flow_deltas: res.data.flow_deltas, reactive_flow_deltas: res.data.reactive_flow_deltas, asset_deltas: res.data.asset_deltas,
                                 changed_switches: res.data.changed_switches
                             }
@@ -3363,14 +3503,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 };
 
                 const findCellForEquipment = (equipId) => {
-                    const q = equipId.toLowerCase();
-                    const svgIds = equipIdToSvgIds.get(equipId)
+                    // 1. Direct match with ID and dot/underscore swapping
+                    let svgIds = equipIdToSvgIds.get(equipId)
                         ?? equipIdToSvgIds.get(equipId.replace(/\./g, '_'))
-                        ?? equipIdToSvgIds.get(equipId.replace(/_/g, '.'))
-                        ?? Array.from(equipIdToSvgIds.keys()).find(k => k.toLowerCase() === q || k.toLowerCase().includes(q) || q.includes(k.toLowerCase()))
-                        ? equipIdToSvgIds.get(Array.from(equipIdToSvgIds.keys()).find(k => k.toLowerCase() === q || k.toLowerCase().includes(q) || q.includes(k.toLowerCase())))
-                        : null;
-
+                        ?? equipIdToSvgIds.get(equipId.replace(/_/g, '.'));
+                    
                     if (svgIds) {
                         for (const svgId of svgIds) {
                             const el = lookupById(svgId);
@@ -3378,10 +3515,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         }
                     }
 
-                    // Fuzzy search in metadata keys (case-insensitive + partial match)
+                    // 2. Partial equipment ID match in metadata (search keys)
+                    const qLower = equipId.toLowerCase();
                     for (const [metaEquipId, metaSvgIds] of equipIdToSvgIds) {
-                        const mq = metaEquipId.toLowerCase();
-                        if (mq === q || mq.includes(q) || q.includes(mq)) {
+                        const mLower = metaEquipId.toLowerCase();
+                        if (mLower.includes(qLower) || qLower.includes(mLower)) {
                             for (const svgId of metaSvgIds) {
                                 const el = lookupById(svgId);
                                 if (el) return walkUpToCell(el);
@@ -3390,13 +3528,12 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     }
 
                     // Multi-level fuzzy search
-                    const qPrefix = q.substring(0, 5);
-                    const sanitized = equipId.replace(/\./g, '_');
+                    const qPrefix = qLower.substring(0, 5);
 
                     // Level 1: search SVG IDs directly for prefix match
                     for (const [eid, el] of elMap) {
                         const eq = eid.toLowerCase();
-                        if (eq.includes(q) || (eq.length > 5 && eq.includes(qPrefix))) {
+                        if (eq.includes(qLower) || (eq.length > 5 && eq.includes(qPrefix))) {
                             return walkUpToCell(el);
                         }
                     }
@@ -3453,6 +3590,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 if (vlOverlay.tab === 'action' && actionDetail) {
                     const topo = actionDetail.action_topology;
                     const isCoupling = checkCoupling(actionId, actionDetail.description_unitaire);
+                    const isLoadShedding = actionDetail.load_shedding_details && actionDetail.load_shedding_details.length > 0;
+                    const isRenewableCurtailment = actionDetail.curtailment_details && actionDetail.curtailment_details.length > 0;
 
                     if (topo) {
                         // For coupling actions: only highlight breaker, not branches
@@ -3471,17 +3610,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             for (const equipId of targetEquipIds) {
                                 let cell = findCellForEquipment(equipId);
 
-                                // Extreme fallback for RC/LS: direct text search in result.actions[...] details
+                                // Extreme fallback for RC/LS: direct text search in the SVG
                                 if (!cell && (isRenewableCurtailment || isLoadShedding)) {
-                                    const container = actionSvgContainerRef.current;
-                                    if (container) {
-                                        const texts = container.querySelectorAll('text');
-                                        const q = equipId.toLowerCase().substring(0, 5);
-                                        for (const txt of texts) {
-                                            if (txt.textContent.toLowerCase().includes(q)) {
-                                                cell = walkUpToCell(txt);
-                                                if (cell) break;
-                                            }
+                                    const texts = container.querySelectorAll('text');
+                                    const q = equipId.toLowerCase().substring(0, 5);
+                                    for (const txt of texts) {
+                                        if (txt.textContent.toLowerCase().includes(q)) {
+                                            cell = walkUpToCell(txt);
+                                            if (cell) break;
                                         }
                                     }
                                 }
@@ -3539,9 +3675,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     }
                 }
 
-                // --- Overloaded lines (N-1 tab only) ---
-                if (vlOverlay.tab === 'n-1') {
-                    const overloadedLines = result?.lines_overloaded;
+                // --- Overloaded lines (N-1 and action tabs) ---
+                if (vlOverlay.tab === 'n-1' || vlOverlay.tab === 'action') {
+                    // Fallback to n1Diagram overloads if no simulation result is available yet
+                    const overloadedLines = result?.lines_overloaded || (vlOverlay.tab === 'n-1' ? n1Diagram?.lines_overloaded : []);
                     if (overloadedLines && overloadedLines.length > 0) {
                         for (const lineId of overloadedLines) {
                             const cell = findCellForEquipment(lineId);
@@ -3554,7 +3691,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 }
 
             }, [vlOverlay?.svg, vlOverlay?.sldMetadata, vlOverlay?.tab, vlOverlay?.actionId,
-            vlOverlay?.changed_switches, selectedBranch, result]);
+            vlOverlay?.changed_switches, selectedBranch, result, n1Diagram]);
 
             // Mouse pan inside overlay body
             const startOverlayPan = (e) => {
@@ -4878,17 +5015,17 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     {vlOverlay.error && (
                                         <div style={{ padding: '12px', color: '#dc3545', fontSize: '12px' }}>{vlOverlay.error}</div>
                                     )}
-                                    <MemoizedSvgContainer
-                                        svg={vlOverlay.svg}
-                                        containerRef={vlSvgContainerRef}
-                                        display="block"
-                                        tabId="overlay"
-                                        style={{
-                                            transformOrigin: '0 0',
-                                            transform: `translate(${overlayTransform.tx}px,${overlayTransform.ty}px) scale(${overlayTransform.scale})`,
-                                            padding: '4px',
-                                        }}
-                                    />
+                                    {vlOverlay.svg && (
+                                        <div
+                                            ref={vlSvgContainerRef}
+                                            style={{
+                                                transformOrigin: '0 0',
+                                                transform: `translate(${overlayTransform.tx}px,${overlayTransform.ty}px) scale(${overlayTransform.scale})`,
+                                                padding: '4px',
+                                            }}
+                                            dangerouslySetInnerHTML={{ __html: vlOverlay.svg }}
+                                        />
+                                    )}
                                 </div>
                             </div>
                         )}

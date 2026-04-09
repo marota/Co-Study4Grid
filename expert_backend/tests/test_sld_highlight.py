@@ -432,3 +432,7 @@ class TestEnrichActionsTopologyFields:
         assert topo["lines_or_bus"] == {"L2": 2}
         assert topo["gens_bus"] == {"G1": 1}
         assert topo["switches"] == {"SW_X": True}
+        assert topo["substations"] == {}
+
+
+        assert topo["substations"] == {}
