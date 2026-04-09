@@ -201,6 +201,11 @@ class RecommenderService:
             if curtailment:
                 enriched_actions[action_id]["curtailment_details"] = curtailment
 
+            # Detect PST actions and compute tap details with bounds
+            pst_details = self._compute_pst_details(action_data)
+            if pst_details:
+                enriched_actions[action_id]["pst_details"] = pst_details
+
         return enriched_actions
 
     def _compute_load_shedding_details(self, action_data, obs_n1=None):
@@ -382,6 +387,74 @@ class RecommenderService:
                 "gen_name": gen_name,
                 "voltage_level_id": vl_id,
                 "curtailed_mw": round(curtailed_mw, 1),
+            })
+
+        return details if details else None
+
+    def _compute_pst_details(self, action_data):
+        """Compute per-PST tap change details.
+
+        Returns a list of {pst_name, tap_position, low_tap, high_tap} or None.
+        Reads tap bounds from the network via get_pst_tap_info.
+        """
+        action_obj = action_data.get("action")
+        content = action_data.get("content")
+        if action_obj is None and content is None:
+            return None
+
+        # Collect affected PST names and their target tap positions
+        pst_entries = {}
+
+        # From action object attributes
+        pst_tap_attr = getattr(action_obj, "pst_tap", None)
+        if pst_tap_attr is None and isinstance(action_obj, dict):
+            pst_tap_attr = action_obj.get("pst_tap")
+        if pst_tap_attr and isinstance(pst_tap_attr, dict):
+            for name, tap in pst_tap_attr.items():
+                pst_entries[name] = int(tap)
+
+        # From content dict (pst_tap key)
+        if not pst_entries and isinstance(content, dict):
+            pst_tap_content = content.get("pst_tap", {})
+            if pst_tap_content and isinstance(pst_tap_content, dict):
+                for name, tap in pst_tap_content.items():
+                    pst_entries[name] = int(tap)
+
+        # From action_topology
+        action_topo = action_data.get("action_topology", {})
+        if not pst_entries and action_topo:
+            pst_tap_topo = action_topo.get("pst_tap", {})
+            if pst_tap_topo and isinstance(pst_tap_topo, dict):
+                for name, tap in pst_tap_topo.items():
+                    pst_entries[name] = int(tap)
+
+        if not pst_entries:
+            return None
+
+        details = []
+        try:
+            env = self._get_simulation_env()
+            nm = env.network_manager
+        except Exception:
+            nm = None
+
+        for pst_name, tap_position in pst_entries.items():
+            low_tap = None
+            high_tap = None
+            if nm is not None:
+                try:
+                    pst_info = nm.get_pst_tap_info(pst_name)
+                    if pst_info:
+                        low_tap = pst_info.get('low_tap')
+                        high_tap = pst_info.get('high_tap')
+                except Exception:
+                    pass
+
+            details.append({
+                "pst_name": pst_name,
+                "tap_position": tap_position,
+                "low_tap": low_tap,
+                "high_tap": high_tap,
             })
 
         return details if details else None
@@ -2093,7 +2166,7 @@ class RecommenderService:
         entry["content"] = content if content else {}
         return entry
 
-    def simulate_manual_action(self, raw_action_id: str, disconnected_element: str, action_content=None, lines_overloaded=None, target_mw=None):
+    def simulate_manual_action(self, raw_action_id: str, disconnected_element: str, action_content=None, lines_overloaded=None, target_mw=None, target_tap=None):
         """Simulate a single or combined action and return its impact.
 
         raw_action_id can be a single ID or multiple IDs combined with '+' (e.g. 'act1+act2').
@@ -2105,6 +2178,9 @@ class RecommenderService:
         target_mw: optional MW reduction amount for load shedding / curtailment actions.
                    When provided, the action reduces power by this amount instead of fully
                    shedding/curtailing. The resulting setpoint is (current_mw - target_mw).
+        target_tap: optional integer tap position for PST actions.
+                    When provided, updates the pst_tap content to the given tap value
+                    (clamped to [low_tap, high_tap] from the network).
         """
         if not self._dict_action:
             raise ValueError("No action dictionary loaded. Load a config first.")
@@ -2378,6 +2454,23 @@ class RecommenderService:
                             content["set_gen_p"][gen_name] = sp
                             print(f"[simulate_manual_action] Updated set_gen_p[{gen_name}] = {sp} MW")
 
+        # If target_tap is provided for a PST action, update the pst_tap content
+        if target_tap is not None:
+            for aid in action_ids:
+                if aid in self._dict_action:
+                    content = self._dict_action[aid].get("content", {})
+                    if "pst_tap" in content:
+                        for pst_id in content["pst_tap"]:
+                            # Clamp to valid range from network
+                            pst_info = nm.get_pst_tap_info(pst_id)
+                            if pst_info:
+                                clamped = max(pst_info['low_tap'], min(pst_info['high_tap'], int(target_tap)))
+                                content["pst_tap"][pst_id] = clamped
+                                print(f"[simulate_manual_action] Updated pst_tap[{pst_id}] = {clamped}")
+                            else:
+                                content["pst_tap"][pst_id] = int(target_tap)
+                                print(f"[simulate_manual_action] Updated pst_tap[{pst_id}] = {target_tap} (no bounds info)")
+
         # Build the action object
         try:
             action = None
@@ -2588,6 +2681,7 @@ class RecommenderService:
         # Capture curtailment/load-shedding details for heuristic actions
         action_data["curtailment_details"] = self._compute_curtailment_details(action_data, obs_n1=obs_n1)
         action_data["load_shedding_details"] = self._compute_load_shedding_details(action_data, obs_n1=obs_n1)
+        action_data["pst_details"] = self._compute_pst_details(action_data)
 
         if not info_action["exception"] and obs_simu_action is not None:
             if self._last_result is None:
@@ -2620,6 +2714,7 @@ class RecommenderService:
             "action_topology": action_data.get("action_topology"),
             "curtailment_details": action_data.get("curtailment_details"),
             "load_shedding_details": action_data.get("load_shedding_details"),
+            "pst_details": action_data.get("pst_details"),
             "content": action_data.get("content"),
         }
 

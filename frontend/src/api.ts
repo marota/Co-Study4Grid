@@ -90,7 +90,7 @@ export const api = {
         );
         return response.data.actions;
     },
-    simulateManualAction: async (actionId: string, disconnectedElement: string, actionContent?: Record<string, unknown> | null, linesOverloaded?: string[] | null, targetMw?: number | null): Promise<{
+    simulateManualAction: async (actionId: string, disconnectedElement: string, actionContent?: Record<string, unknown> | null, linesOverloaded?: string[] | null, targetMw?: number | null, targetTap?: number | null): Promise<{
         action_id: string;
         description_unitaire: string;
         rho_before: number[] | null;
@@ -106,11 +106,12 @@ export const api = {
         action_topology?: import('./types').ActionTopology;
         load_shedding_details?: import('./types').LoadSheddingDetail[];
         curtailment_details?: import('./types').CurtailmentDetail[];
+        pst_details?: import('./types').PstDetail[];
     }> => {
 
         const response = await axios.post(
             `${API_BASE_URL}/api/simulate-manual-action`,
-            { action_id: actionId, disconnected_element: disconnectedElement, action_content: actionContent ?? null, lines_overloaded: linesOverloaded ?? null, target_mw: targetMw ?? null }
+            { action_id: actionId, disconnected_element: disconnectedElement, action_content: actionContent ?? null, lines_overloaded: linesOverloaded ?? null, target_mw: targetMw ?? null, target_tap: targetTap ?? null }
         );
         return response.data;
     },

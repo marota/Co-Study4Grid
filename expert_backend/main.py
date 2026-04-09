@@ -184,6 +184,7 @@ class ManualActionRequest(BaseModel):
     action_content: dict | None = None  # Optional switches dict for actions not in the dictionary
     lines_overloaded: list[str] | None = None  # Optional overloaded line names from saved session
     target_mw: float | None = None  # Optional MW reduction amount for load shedding / curtailment
+    target_tap: int | None = None  # Optional tap position for PST actions (clamped to [low_tap, high_tap])
 
 class SaveSessionRequest(BaseModel):
     session_name: str
@@ -664,6 +665,7 @@ def simulate_manual_action(request: ManualActionRequest):
             action_content=request.action_content,
             lines_overloaded=request.lines_overloaded,
             target_mw=request.target_mw,
+            target_tap=request.target_tap,
         )
         return result
     except Exception as e:

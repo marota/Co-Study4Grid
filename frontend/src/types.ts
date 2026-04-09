@@ -50,6 +50,12 @@ export interface CurtailmentDetail {
     voltage_level_id: string | null;
     curtailed_mw: number;
 }
+export interface PstDetail {
+    pst_name: string;
+    tap_position: number;
+    low_tap: number | null;
+    high_tap: number | null;
+}
 
 export interface ActionDetail {
     description_unitaire: string;
@@ -70,6 +76,7 @@ export interface ActionDetail {
     lines_overloaded_after?: string[];
     load_shedding_details?: LoadSheddingDetail[];
     curtailment_details?: CurtailmentDetail[];
+    pst_details?: PstDetail[];
 }
 
 export interface CombinedAction {
@@ -268,6 +275,7 @@ export interface SavedActionEntry {
     lines_overloaded_after?: string[];
     load_shedding_details?: LoadSheddingDetail[];
     curtailment_details?: CurtailmentDetail[];
+    pst_details?: PstDetail[];
     status: SavedActionStatus;
 }
 

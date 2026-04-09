@@ -130,6 +130,7 @@ export function buildSessionResult(input: SessionInput): SessionResult {
                         disconnected_mw: detail.disconnected_mw,
                         load_shedding_details: detail.load_shedding_details,
                         curtailment_details: detail.curtailment_details,
+                        pst_details: detail.pst_details,
                         status: {
                             is_selected: selectedActionIds.has(id),
                             // An action is "suggested" if the recommender ever returned it —

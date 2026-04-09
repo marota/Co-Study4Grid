@@ -87,6 +87,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     const [scoreTargetMw, setScoreTargetMw] = useState<Record<string, string>>({});
     // Per-action editable MW for action card re-simulation (keyed by actionId)
     const [cardEditMw, setCardEditMw] = useState<Record<string, string>>({});
+    // Per-action editable tap position for PST action re-simulation (keyed by actionId)
+    const [cardEditTap, setCardEditTap] = useState<Record<string, string>>({});
     const [resimulating, setResimulating] = useState<string | null>(null);
     const [dismissedRejectedWarning, setDismissedRejectedWarning] = useState(false);
     const [showActionDictWarning, setShowActionDictWarning] = useState(true);
@@ -281,6 +283,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 non_convergence: result.non_convergence,
                 load_shedding_details: result.load_shedding_details,
                 curtailment_details: result.curtailment_details,
+                pst_details: result.pst_details,
 
             };
             onManualActionAdded(trimmedId, detail, result.lines_overloaded || []);
@@ -316,6 +319,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 non_convergence: result.non_convergence,
                 load_shedding_details: result.load_shedding_details,
                 curtailment_details: result.curtailment_details,
+                pst_details: result.pst_details,
             };
             onManualActionAdded(actionId, newDetail, result.lines_overloaded || []);
             // Clear the edit input so it picks up the new shedded/curtailed MW from results
@@ -327,6 +331,44 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             });
         } catch (e: unknown) {
             console.error('Re-simulation failed:', e);
+        } finally {
+            setResimulating(null);
+        }
+    };
+
+    // Re-simulate an existing PST action with a new tap position
+    const handleResimulateTap = async (actionId: string, newTap: number) => {
+        if (!disconnectedElement) return;
+        setResimulating(actionId);
+        try {
+            const detail = actions[actionId];
+            const actionContent = detail?.action_topology ? detail.action_topology as unknown as Record<string, unknown> : null;
+            const result = await api.simulateManualAction(actionId, disconnectedElement, actionContent, linesOverloaded, null, newTap);
+            const newDetail: ActionDetail = {
+                description_unitaire: result.description_unitaire,
+                rho_before: result.rho_before,
+                rho_after: result.rho_after,
+                max_rho: result.max_rho,
+                max_rho_line: result.max_rho_line,
+                is_rho_reduction: result.is_rho_reduction,
+                is_islanded: result.is_islanded,
+                n_components: result.n_components,
+                disconnected_mw: result.disconnected_mw,
+                non_convergence: result.non_convergence,
+                load_shedding_details: result.load_shedding_details,
+                curtailment_details: result.curtailment_details,
+                pst_details: result.pst_details,
+            };
+            onManualActionAdded(actionId, newDetail, result.lines_overloaded || []);
+            // Clear the edit input so it picks up the new tap from results
+            setCardEditTap(prev => {
+                if (!prev[actionId]) return prev;
+                const next = { ...prev };
+                delete next[actionId];
+                return next;
+            });
+        } catch (e: unknown) {
+            console.error('PST re-simulation failed:', e);
         } finally {
             setResimulating(null);
         }
@@ -524,6 +566,41 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                 }}
                                                 disabled={resimulating === id}
                                                 style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #0284c7', background: '#38bdf8', color: '#0c4a6e', cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                            >
+                                                {resimulating === id ? 'Simulating...' : 'Re-simulate'}
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {details.pst_details && details.pst_details.length > 0 && (
+                                <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: '#f3e8ff', color: '#6b21a8', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #c084fc', fontWeight: 500 }}>
+                                    {details.pst_details.map((pst, i) => (
+                                        <div key={pst.pst_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
+                                            <span>PST <strong>{pst.pst_name}</strong> tap:</span>
+                                            <input
+                                                data-testid={`edit-tap-${id}`}
+                                                type="number"
+                                                min={pst.low_tap ?? undefined}
+                                                max={pst.high_tap ?? undefined}
+                                                step={1}
+                                                value={cardEditTap[id] ?? pst.tap_position}
+                                                onChange={(e) => setCardEditTap(prev => ({ ...prev, [id]: e.target.value }))}
+                                                style={{ width: '55px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #9333ea', borderRadius: '3px', textAlign: 'right' }}
+                                            />
+                                            {pst.low_tap != null && pst.high_tap != null && (
+                                                <span style={{ fontSize: '10px', color: '#7c3aed' }}>
+                                                    [{pst.low_tap}..{pst.high_tap}]
+                                                </span>
+                                            )}
+                                            <button
+                                                data-testid={`resimulate-tap-${id}`}
+                                                onClick={() => {
+                                                    const tapVal = parseInt(cardEditTap[id] ?? String(pst.tap_position), 10);
+                                                    if (!isNaN(tapVal)) handleResimulateTap(id, tapVal);
+                                                }}
+                                                disabled={resimulating === id}
+                                                style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #9333ea', background: '#c084fc', color: '#3b0764', cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
                                             >
                                                 {resimulating === id ? 'Simulating...' : 'Re-simulate'}
                                             </button>

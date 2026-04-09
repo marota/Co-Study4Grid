@@ -1851,6 +1851,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             const [scoreTargetMw, setScoreTargetMw] = useState({});
             // Per-action editable MW for action card re-simulation (keyed by actionId)
             const [cardEditMw, setCardEditMw] = useState({});
+            // Per-action editable tap position for PST action re-simulation (keyed by actionId)
+            const [cardEditTap, setCardEditTap] = useState({});
             const [resimulatingId, setResimulatingId] = useState(null);
             const searchDropdownRef = useRef(null);
             const searchInputRef = useRef(null);
@@ -2352,6 +2354,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                         disconnected_mw: detail.disconnected_mw,
                                         load_shedding_details: detail.load_shedding_details,
                                         curtailment_details: detail.curtailment_details,
+                                        pst_details: detail.pst_details,
                                         status: {
                                             is_selected: manualActionIds.has(id),
                                             is_suggested: suggestedByRecommenderIds.has(id),
@@ -2576,6 +2579,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 n_components: entry.n_components,
                                 disconnected_mw: entry.disconnected_mw,
                                 load_shedding_details: entry.load_shedding_details,
+                                curtailment_details: entry.curtailment_details,
+                                pst_details: entry.pst_details,
                                 is_manual: entry.status.is_manually_simulated,
                             };
                             if (entry.status.is_selected) restoredSelected.add(id);
@@ -3833,6 +3838,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     disconnected_mw: detail.disconnected_mw,
                                     load_shedding_details: detail.load_shedding_details,
                                     curtailment_details: detail.curtailment_details,
+                                    pst_details: detail.pst_details,
                                     action_topology: detail.action_topology,
                                     non_convergence: detail.non_convergence,
                                     is_precomputed: isCombined ? true : (base.actions?.[actionId]?.is_precomputed || false)
@@ -3902,6 +3908,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     disconnected_mw: detail.disconnected_mw,
                                     load_shedding_details: detail.load_shedding_details,
                                     curtailment_details: detail.curtailment_details,
+                                    pst_details: detail.pst_details,
                                     action_topology: detail.action_topology,
                                     non_convergence: detail.non_convergence,
                                 }
@@ -3917,6 +3924,61 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     });
                 } catch (err) {
                     console.error('Re-simulation failed:', err);
+                } finally {
+                    setResimulatingId(null);
+                }
+            };
+
+            // Re-simulate an existing PST action with a new tap position
+            const handleResimulateTap = async (actionId, newTap) => {
+                if (!selectedBranch) return;
+                setResimulatingId(actionId);
+                try {
+                    const actionDetail = result?.actions?.[actionId];
+                    const actionContent = actionDetail?.action_topology || null;
+                    const res = await axios.post(API_BASE + '/api/simulate-manual-action', {
+                        action_id: actionId,
+                        disconnected_element: selectedBranch,
+                        action_content: actionContent,
+                        lines_overloaded: result?.lines_overloaded?.length > 0 ? result.lines_overloaded : null,
+                        target_tap: newTap,
+                    });
+                    const detail = res.data;
+                    setResult(prev => {
+                        const base = prev || { actions: {}, lines_overloaded: [] };
+                        return {
+                            ...base,
+                            actions: {
+                                ...(base.actions || {}),
+                                [actionId]: {
+                                    ...(base.actions?.[actionId] || {}),
+                                    description_unitaire: detail.description_unitaire,
+                                    rho_before: detail.rho_before,
+                                    rho_after: detail.rho_after,
+                                    max_rho: detail.max_rho,
+                                    max_rho_line: detail.max_rho_line,
+                                    is_rho_reduction: detail.is_rho_reduction,
+                                    is_islanded: detail.is_islanded,
+                                    n_components: detail.n_components,
+                                    disconnected_mw: detail.disconnected_mw,
+                                    load_shedding_details: detail.load_shedding_details,
+                                    curtailment_details: detail.curtailment_details,
+                                    pst_details: detail.pst_details,
+                                    action_topology: detail.action_topology,
+                                    non_convergence: detail.non_convergence,
+                                }
+                            }
+                        };
+                    });
+                    // Clear the edit input so it picks up the new tap from results
+                    setCardEditTap(prev => {
+                        if (!prev[actionId]) return prev;
+                        const next = { ...prev };
+                        delete next[actionId];
+                        return next;
+                    });
+                } catch (err) {
+                    console.error('PST re-simulation failed:', err);
                 } finally {
                     setResimulatingId(null);
                 }
@@ -4032,6 +4094,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     is_rho_reduction: detail.is_rho_reduction,
                                     load_shedding_details: detail.load_shedding_details,
                                     curtailment_details: detail.curtailment_details,
+                                    pst_details: detail.pst_details,
                                     action_topology: detail.action_topology,
                                     is_manual: true,
                                 }
@@ -4119,6 +4182,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     disconnected_mw: detail.disconnected_mw,
                                     load_shedding_details: detail.load_shedding_details,
                                     curtailment_details: detail.curtailment_details,
+                                    pst_details: detail.pst_details,
                                     action_topology: detail.action_topology,
                                     non_convergence: detail.non_convergence,
                                 }
@@ -5293,6 +5357,41 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                         }}
                                                         disabled={resimulatingId === id}
                                                         style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #0284c7', background: '#38bdf8', color: '#0c4a6e', cursor: resimulatingId === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                                    >
+                                                        {resimulatingId === id ? 'Simulating...' : 'Re-simulate'}
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )
+                                }
+                                {
+                                    details.pst_details && details.pst_details.length > 0 && (
+                                        <div onClick={(e) => { e.stopPropagation(); e.preventDefault(); }} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: '#f3e8ff', color: '#6b21a8', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #c084fc', fontWeight: 500 }}>
+                                            {details.pst_details.map((pst, i) => (
+                                                <div key={pst.pst_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
+                                                    <span>PST <strong>{pst.pst_name}</strong> tap:</span>
+                                                    <input
+                                                        type="number"
+                                                        min={pst.low_tap != null ? pst.low_tap : undefined}
+                                                        max={pst.high_tap != null ? pst.high_tap : undefined}
+                                                        step={1}
+                                                        value={cardEditTap[id] != null ? cardEditTap[id] : pst.tap_position}
+                                                        onChange={(e) => setCardEditTap(prev => ({ ...prev, [id]: e.target.value }))}
+                                                        style={{ width: '55px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #9333ea', borderRadius: '3px', textAlign: 'right' }}
+                                                    />
+                                                    {pst.low_tap != null && pst.high_tap != null && (
+                                                        <span style={{ fontSize: '10px', color: '#7c3aed' }}>
+                                                            [{pst.low_tap}..{pst.high_tap}]
+                                                        </span>
+                                                    )}
+                                                    <button
+                                                        onClick={() => {
+                                                            const tapVal = parseInt(cardEditTap[id] != null ? cardEditTap[id] : String(pst.tap_position), 10);
+                                                            if (!isNaN(tapVal)) handleResimulateTap(id, tapVal);
+                                                        }}
+                                                        disabled={resimulatingId === id}
+                                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #9333ea', background: '#c084fc', color: '#3b0764', cursor: resimulatingId === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
                                                     >
                                                         {resimulatingId === id ? 'Simulating...' : 'Re-simulate'}
                                                     </button>
