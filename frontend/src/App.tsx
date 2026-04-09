@@ -87,10 +87,20 @@ function App() {
     nSvgContainerRef, n1SvgContainerRef, actionSvgContainerRef
   } = diagrams;
 
-  const filteredBranches = useMemo(() => {
+  const contingencyOptions = useMemo(() => {
     const q = selectedBranch.toUpperCase();
-    if (!q) return branches.slice(0, 50);
-    return branches.filter(b => b.toUpperCase().includes(q)).slice(0, 50);
+    const opts: string[] = [];
+    if (!q) {
+      opts.push(...branches.slice(0, 50));
+    } else {
+      for (const b of branches) {
+        if (b.toUpperCase().includes(q)) {
+          opts.push(b);
+          if (opts.length >= 50) break;
+        }
+      }
+    }
+    return opts.map(b => <option key={b} value={b} />);
   }, [branches, selectedBranch]);
 
   const recommenderConfig = useMemo<RecommenderDisplayConfig>(() => ({
@@ -596,7 +606,7 @@ function App() {
                 style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }}
               />
               <datalist id="contingencies">
-                {filteredBranches.map(b => <option key={b} value={b} />)}
+                {contingencyOptions}
               </datalist>
             </div>
           )}

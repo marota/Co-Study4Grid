@@ -686,6 +686,30 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
     </script>
 
     <script type="text/babel">
+        // Global profiling for Standalone
+        axios.interceptors.request.use(config => {
+            config._startTime = performance.now();
+            return config;
+        });
+        axios.interceptors.response.use(
+            response => {
+                const startTime = response.config._startTime;
+                if (startTime) {
+                    const duration = performance.now() - startTime;
+                    console.log(`[API] ${response.config.method.toUpperCase()} ${response.config.url} - ${duration.toFixed(2)}ms`);
+                }
+                return response;
+            },
+            error => {
+                const startTime = error.config?._startTime;
+                if (startTime) {
+                    const duration = performance.now() - startTime;
+                    console.log(`[API] ${error.config.method.toUpperCase()} ${error.config.url} - FAILED - ${duration.toFixed(2)}ms`);
+                }
+                return Promise.reject(error);
+            }
+        );
+
         const { useState, useEffect, useLayoutEffect, useMemo, Fragment, useRef, useCallback } = React;
         const API_BASE = 'http://localhost:8000';
 
@@ -902,88 +926,76 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         // Uses DOMParser for in-place DOM manipulation instead of regex on
         // multi-MB strings, avoiding large temporary string copies.
         const boostSvgForLargeGrid = (svgString, viewBox, vlCount) => {
-            if (!viewBox) return svgString;
-
-            // Skip boost entirely for grids with < 500 voltage levels —
-            // smaller grids render well at native pypowsybl sizes.
-            if (!vlCount || vlCount < 500) return svgString;
-
-            // Cache key: length + first 200 chars is enough to distinguish N vs N-1 vs Action SVGs
-            const cacheKey = `${svgString.length}:${vlCount}:${svgString.substring(0, 200)}`;
-            if (_boostCache.has(cacheKey)) return _boostCache.get(cacheKey);
-
-            const diagramSize = Math.max(viewBox.w, viewBox.h);
-            const REFERENCE_SIZE = 1250; // small grid where everything is readable
-            const BOOST_THRESHOLD = 3;   // ratio above which we start boosting
-            const ratio = diagramSize / REFERENCE_SIZE;
-            if (ratio <= BOOST_THRESHOLD) return svgString; // viewBox too small for boost
-
-            // Normalized boost: starts at 1.0 at threshold, increases gradually.
-            // ratio=4 → 1.15, ratio=6 → 1.41, ratio=9 → 1.73, ratio=12 → 2.0
-            const boost = Math.sqrt(ratio / BOOST_THRESHOLD);
-            console.log(`[SVG] vlCount=${vlCount}, viewBox ${diagramSize.toFixed(0)}, ratio ${ratio.toFixed(2)}, boost ${boost.toFixed(2)}`);
-
             const parser = new DOMParser();
             const doc = parser.parseFromString(svgString, 'image/svg+xml');
             const svgEl = doc.documentElement;
 
+            if (!viewBox || !vlCount || vlCount < 500) return svgEl;
 
-            // === 1. Scale CSS values in <style> blocks ===
-            const styles = svgEl.querySelectorAll('style');
-            styles.forEach(style => {
-                let css = style.textContent;
-                // Node label font
-                css = css.replace(/font:\s*25px\s+serif/, `font: ${Math.round(25 * boost)}px serif`);
-                // Label box padding and border-radius
-                css = css.replace(
-                    'padding: 10px; border-radius: 10px;',
-                    `padding: ${Math.round(10 * boost)}px; border-radius: ${Math.round(10 * boost)}px;`
-                );
-                // Legend square sizes
-                css = css.replace(
-                    'margin-right: 10px; width: 20px; height: 20px;',
-                    `margin-right: ${Math.round(10 * boost)}px; width: ${Math.round(20 * boost)}px; height: ${Math.round(20 * boost)}px;`
-                );
-                style.textContent = css;
-            });
+            // Cache key: length + first 200 chars is enough to distinguish N vs N-1 vs Action SVGs
+            const cacheKey = `${svgString.length}:${vlCount}:${svgString.substring(0, 200)}`;
+            if (_boostCache.has(cacheKey)) return _boostCache.get(cacheKey).cloneNode(true);
 
-            // === 2. Scale node groups (circles + inner bus sectors/paths) ===
-            // Scale the entire parent <g> so both the outer circle AND inner
-            // path sectors (multi-bus VLs like PYMONP3) scale uniformly.
-            const scaledGroups = new Set();
-            svgEl.querySelectorAll('circle').forEach(circle => {
-                const g = circle.parentElement;
-                if (!g || g.tagName !== 'g' || scaledGroups.has(g)) return;
-                // Skip groups containing labels — those scale via CSS
-                if (g.querySelector('foreignObject')) return;
-                scaledGroups.add(g);
-                const cx = parseFloat(circle.getAttribute('cx')) || 0;
-                const cy = parseFloat(circle.getAttribute('cy')) || 0;
-                const t = g.getAttribute('transform') || '';
-                g.setAttribute('transform',
-                    `${t} translate(${cx},${cy}) scale(${boost.toFixed(2)}) translate(${-cx},${-cy})`);
-            });
+            const diagramSize = Math.max(viewBox.w, viewBox.h);
+            const REFERENCE_SIZE = 1250;
+            const BOOST_THRESHOLD = 3;
+            const ratio = diagramSize / REFERENCE_SIZE;
+            if (ratio <= BOOST_THRESHOLD) return svgEl;
 
-            // === 3. Scale edge-info group transforms (flow arrows + values) ===
-            // DON'T scale the edge-info CSS font separately — the transform handles it.
-            const edgeInfoGroup = svgEl.querySelector('.nad-edge-infos');
-            if (edgeInfoGroup) {
-                edgeInfoGroup.querySelectorAll(':scope > g[transform]').forEach(g => {
-                    const t = g.getAttribute('transform');
-                    if (t && t.includes('translate(') && !t.includes('scale(')) {
-                        g.setAttribute('transform', t + ` scale(${boost.toFixed(2)})`);
-                    }
+            const boost = Math.sqrt(ratio / BOOST_THRESHOLD);
+            const boostStr = boost.toFixed(2);
+            const boostNum = parseFloat(boostStr);
+
+            try {
+                const styles = svgEl.querySelectorAll('style');
+                styles.forEach(style => {
+                    let css = style.textContent;
+                    css = css.replace(/font:\s*25px\s+serif/, `font: ${Math.round(25 * boostNum)}px serif`);
+                    css = css.replace(
+                        'padding: 10px; border-radius: 10px;',
+                        `padding: ${Math.round(10 * boostNum)}px; border-radius: ${Math.round(10 * boostNum)}px;`
+                    );
+                    css = css.replace(
+                        'margin-right: 10px; width: 20px; height: 20px;',
+                        `margin-right: ${Math.round(10 * boostNum)}px; width: ${Math.round(20 * boostNum)}px; height: ${Math.round(20 * boostNum)}px;`
+                    );
+                    style.textContent = css;
                 });
-            }
 
-            const result = new XMLSerializer().serializeToString(svgEl);
-            // Evict oldest entries if cache grows too large
-            if (_boostCache.size >= BOOST_CACHE_MAX) {
-                const firstKey = _boostCache.keys().next().value;
-                _boostCache.delete(firstKey);
+                const scaledGroups = new Set();
+                const startBoost = Date.now();
+                svgEl.querySelectorAll('circle').forEach(circle => {
+                    const g = circle.parentElement;
+                    if (!g || g.tagName !== 'g' || scaledGroups.has(g)) return;
+                    if (g.querySelector('foreignObject')) return;
+                    scaledGroups.add(g);
+                    const cx = parseFloat(circle.getAttribute('cx')) || 0;
+                    const cy = parseFloat(circle.getAttribute('cy')) || 0;
+                    const t = g.getAttribute('transform') || '';
+                    g.setAttribute('transform',
+                        `${t} translate(${cx},${cy}) scale(${boostStr}) translate(${-cx},${-cy})`);
+                });
+
+                const edgeInfoGroup = svgEl.querySelector('.nad-edge-infos');
+                if (edgeInfoGroup) {
+                    edgeInfoGroup.querySelectorAll(':scope > g[transform]').forEach(g => {
+                        const t = g.getAttribute('transform');
+                        if (t && t.includes('translate(') && !t.includes('scale(')) {
+                            g.setAttribute('transform', t + ` scale(${boostStr})`);
+                        }
+                    });
+                }
+
+                if (_boostCache.size >= BOOST_CACHE_MAX) {
+                    const firstKey = _boostCache.keys().next().value;
+                    _boostCache.delete(firstKey);
+                }
+                _boostCache.set(cacheKey, svgEl.cloneNode(true));
+                return svgEl;
+            } catch (err) {
+                console.error('[SVG] Failed to boost SVG:', err);
+                return svgEl;
             }
-            _boostCache.set(cacheKey, result);
-            return result;
         };
 
         // ===== Cached DOM ID Map =====
@@ -1006,8 +1018,12 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
         // Build Map indices from metadata for O(1) lookups in zoomToElement
         const buildMetadataIndex = (metadata) => {
+            console.time('perf:buildMetadataIndex');
             try {
-                if (!metadata) return null;
+                if (!metadata) {
+                    console.timeEnd('perf:buildMetadataIndex');
+                    return null;
+                }
                 const meta = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
                 const nodes = meta.nodes || [];
                 const edges = meta.edges || [];
@@ -1030,8 +1046,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     edgesByNode.get(e.node2).push(e);
                 });
 
-                return { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId, edgesByNode };
+                const result = { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId, edgesByNode };
+                console.timeEnd('perf:buildMetadataIndex');
+                return result;
             } catch (err) {
+                console.timeEnd('perf:buildMetadataIndex');
                 console.error('[buildMetadataIndex] error:', err);
                 return null;
             }
@@ -1360,6 +1379,31 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             backgroundLayer.appendChild(clone);
         };
 
+        const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId, style = {} }) => {
+            if (!svg) return null;
+            React.useLayoutEffect(() => {
+                const container = containerRef.current;
+                if (!container || !svg) return;
+
+                const start = performance.now();
+                if (svg instanceof SVGSVGElement) {
+                    container.replaceChildren(svg);
+                } else {
+                    container.innerHTML = svg;
+                }
+                console.log(`[SVG] DOM injection for ${tabId} took ${(performance.now() - start).toFixed(2)}ms`);
+            }, [svg, containerRef, tabId]);
+
+            return (
+                <div
+                    ref={containerRef}
+                    className="svg-container"
+                    id={`${tabId}-svg-container`}
+                    style={{ ...style, display, width: '100%', height: '100%', overflow: 'hidden' }}
+                />
+            );
+        });
+
         function App() {
             const [branches, setBranches] = useState([]);
             const [voltageLevels, setVoltageLevels] = useState([]);
@@ -1396,6 +1440,22 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             const [voltageFilterExpanded, setVoltageFilterExpanded] = useState(false);
             const [selectedBranch, setSelectedBranch] = useState('');
             const [configLoading, setConfigLoading] = useState(false);
+
+            const contingencyOptions = useMemo(() => {
+                const q = selectedBranch?.toUpperCase() || '';
+                const opts = [];
+                if (!q) {
+                    opts.push(...branches.slice(0, 50));
+                } else {
+                    for (let i = 0; i < branches.length; i++) {
+                        if (branches[i].toUpperCase().includes(q)) {
+                            opts.push(branches[i]);
+                            if (opts.length >= 50) break;
+                        }
+                    }
+                }
+                return opts.map(b => <option key={b} value={b} />);
+            }, [branches, selectedBranch]);
 
             // Recommender Settings
             const [minLineReconnections, setMinLineReconnections] = useState(2.0);
@@ -1746,6 +1806,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             const nSvgContainerRef = useRef(null);
             const n1SvgContainerRef = useRef(null);
             const actionSvgContainerRef = useRef(null);
+            const vlSvgContainerRef = useRef(null);
 
             // Native Pan/Zoom Instances
             const nPZ = usePanZoom(nSvgContainerRef, nDiagram?.originalViewBox, activeTab === 'n');
@@ -1954,20 +2015,19 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
             const processSvg = (rawSvg, vlCount) => {
                 try {
+                    console.time('perf:processSvg:viewBox');
                     const match = rawSvg.match(/viewBox=["']([^"']+)["']/);
                     let vb = null;
                     if (match) {
                         const parts = match[1].split(/\s+|,/).map(parseFloat);
                         if (parts.length === 4) vb = { x: parts[0], y: parts[1], w: parts[2], h: parts[3] };
                     }
+                    console.timeEnd('perf:processSvg:viewBox');
 
-                    const svgTag = rawSvg.match(/<svg[^>]*>/)?.[0] || '';
-                    const widthMatch = svgTag.match(/\bwidth=["']([^"']+)["']/);
-                    const heightMatch = svgTag.match(/\bheight=["']([^"']+)["']/);
-                    console.log(`[SVG processSvg] vlCount=${vlCount}, viewBox=${vb ? `${vb.w.toFixed(0)}x${vb.h.toFixed(0)}` : 'none'} @ ${widthMatch?.[1] || 'none'}x${heightMatch?.[1] || 'none'}`);
-
-                    const svg = boostSvgForLargeGrid(rawSvg, vb, vlCount);
-                    return { svg, viewBox: vb };
+                    console.time('perf:processSvg:boost');
+                    const svgElement = boostSvgForLargeGrid(rawSvg, vb, vlCount);
+                    console.timeEnd('perf:processSvg:boost');
+                    return { svg: svgElement, viewBox: vb };
                 } catch (err) {
                     console.error('[processSvg] error:', err);
                     return { svg: rawSvg, viewBox: null };
@@ -4595,7 +4655,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             {configLoading ?
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Loading configuration...</div>
                                 : (nDiagram?.svg ?
-                                    <div className="svg-container" ref={nSvgContainerRef} dangerouslySetInnerHTML={{ __html: nDiagram.svg }} />
+                                    <MemoizedSvgContainer svg={nDiagram.svg} containerRef={nSvgContainerRef} display="block" tabId="n" />
                                     : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Load configuration to see diagram</div>
                                 )}
                         </div>
@@ -4622,7 +4682,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             {n1Loading ?
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Generating N-1 Diagram...</div>
                                 : (n1Diagram?.svg ?
-                                    <div className="svg-container" ref={n1SvgContainerRef} dangerouslySetInnerHTML={{ __html: n1Diagram.svg }} />
+                                    <MemoizedSvgContainer svg={n1Diagram.svg} containerRef={n1SvgContainerRef} display="block" tabId="n1" />
                                     : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Select a target contingency to view N-1</div>
                                 )
                             }
@@ -4650,7 +4710,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             {actionDiagramLoading ?
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Generating Action Variant Diagram...</div>
                                 : (actionDiagram?.svg ?
-                                    <div className="svg-container" ref={actionSvgContainerRef} dangerouslySetInnerHTML={{ __html: actionDiagram.svg }} />
+                                    <MemoizedSvgContainer svg={actionDiagram.svg} containerRef={actionSvgContainerRef} display="block" tabId="action" />
                                     : (selectedActionId ?
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Failed to load diagram for action {selectedActionId}</div>
                                         : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Select an action card to view its network variant</div>
@@ -4818,13 +4878,17 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     {vlOverlay.error && (
                                         <div style={{ padding: '12px', color: '#dc3545', fontSize: '12px' }}>{vlOverlay.error}</div>
                                     )}
-                                    {vlOverlay.svg && (
-                                        <div style={{
+                                    <MemoizedSvgContainer
+                                        svg={vlOverlay.svg}
+                                        containerRef={vlSvgContainerRef}
+                                        display="block"
+                                        tabId="overlay"
+                                        style={{
                                             transformOrigin: '0 0',
                                             transform: `translate(${overlayTransform.tx}px,${overlayTransform.ty}px) scale(${overlayTransform.scale})`,
                                             padding: '4px',
-                                        }} dangerouslySetInnerHTML={{ __html: vlOverlay.svg }} />
-                                    )}
+                                        }}
+                                    />
                                 </div>
                             </div>
                         )}
@@ -5297,19 +5361,19 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     {settingsTab === 'recommender' && (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                                             {[
-                                              { label: 'Min Line Reconnections', id: 'sa-minLineReconnections', value: minLineReconnections, setter: setMinLineReconnections },
-                                              { label: 'Min Close Coupling', id: 'sa-minCloseCoupling', value: minCloseCoupling, setter: setMinCloseCoupling },
-                                              { label: 'Min Open Coupling', id: 'sa-minOpenCoupling', value: minOpenCoupling, setter: setMinOpenCoupling },
-                                              { label: 'Min Line Disconnections', id: 'sa-minLineDisconnections', value: minLineDisconnections, setter: setMinLineDisconnections },
-                                              { label: 'Min PST Actions', id: 'sa-minPst', value: minPst, setter: setMinPst },
-                                              { label: 'Min Load Shedding', id: 'sa-minLoadShedding', value: minLoadShedding, setter: setMinLoadShedding },
-                                              { label: 'Min Renewable Curtailment', id: 'sa-minRenewableCurtailment', value: minRenewableCurtailmentActions, setter: setMinRenewableCurtailmentActions },
-                                              { label: 'N Prioritized Actions', id: 'sa-nPrioritizedActions', value: nPrioritizedActions, setter: (v) => setNPrioritizedActions(parseInt(v, 10)), step: '1' },
+                                                { label: 'Min Line Reconnections', id: 'sa-minLineReconnections', value: minLineReconnections, setter: setMinLineReconnections },
+                                                { label: 'Min Close Coupling', id: 'sa-minCloseCoupling', value: minCloseCoupling, setter: setMinCloseCoupling },
+                                                { label: 'Min Open Coupling', id: 'sa-minOpenCoupling', value: minOpenCoupling, setter: setMinOpenCoupling },
+                                                { label: 'Min Line Disconnections', id: 'sa-minLineDisconnections', value: minLineDisconnections, setter: setMinLineDisconnections },
+                                                { label: 'Min PST Actions', id: 'sa-minPst', value: minPst, setter: setMinPst },
+                                                { label: 'Min Load Shedding', id: 'sa-minLoadShedding', value: minLoadShedding, setter: setMinLoadShedding },
+                                                { label: 'Min Renewable Curtailment', id: 'sa-minRenewableCurtailment', value: minRenewableCurtailmentActions, setter: setMinRenewableCurtailmentActions },
+                                                { label: 'N Prioritized Actions', id: 'sa-nPrioritizedActions', value: nPrioritizedActions, setter: (v) => setNPrioritizedActions(parseInt(v, 10)), step: '1' },
                                             ].map(({ label, id, value, setter, step = '0.1' }) => (
-                                              <div key={id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <label htmlFor={id} style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{label}</label>
-                                                <input id={id} type="number" step={step} value={value} onChange={e => setter(e.target.value)} style={{ width: '80px', padding: '5px' }} />
-                                              </div>
+                                                <div key={id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <label htmlFor={id} style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{label}</label>
+                                                    <input id={id} type="number" step={step} value={value} onChange={e => setter(e.target.value)} style={{ width: '80px', padding: '5px' }} />
+                                                </div>
                                             ))}
 
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '5px', padding: '8px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #eee' }}>
@@ -5429,7 +5493,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 <div style={{ marginBottom: '10px', padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
                                     <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
                                     <input list="contingencies" value={selectedBranch} onChange={e => { const val = e.target.value; if (branches.includes(val)) interactionLogger.record('contingency_selected', { element: val }); setSelectedBranch(val); }} placeholder="Search line/bus..." style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }} />
-                                    <datalist id="contingencies">{branches.map(b => <option key={b} value={b} />)}</datalist>
+                                    <datalist id="contingencies">{contingencyOptions}</datalist>
                                 </div>
                             )}
 
@@ -6277,7 +6341,23 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                         background: 'white',
                                                     }}
                                                 />
-                                                <datalist id="inspectables">{inspectableItems.map(b => <option key={b} value={b} />)}</datalist>
+                                                <datalist id="inspectables">
+                                                    {(() => {
+                                                        const q = inspectQuery.toUpperCase();
+                                                        const opts = [];
+                                                        if (!q) {
+                                                            opts.push(...inspectableItems.slice(0, 50));
+                                                        } else {
+                                                            for (let i = 0; i < inspectableItems.length; i++) {
+                                                                if (inspectableItems[i].toUpperCase().includes(q)) {
+                                                                    opts.push(inspectableItems[i]);
+                                                                    if (opts.length >= 50) break;
+                                                                }
+                                                            }
+                                                        }
+                                                        return opts.map(b => <option key={b} value={b} />);
+                                                    })()}
+                                                </datalist>
                                                 {inspectQuery && voltageLevels.includes(inspectQuery) && (
                                                     <button
                                                         onClick={() => handleVlDoubleClick(activeTab === 'action' ? selectedActionId || '' : '', inspectQuery)}

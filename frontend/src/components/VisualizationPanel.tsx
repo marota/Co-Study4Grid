@@ -62,22 +62,41 @@ interface SldOverlayProps {
 }
 
 // ===== Memoized SVG Container =====
-// Prevents React from diffing massive SVG strings on every parent render
+// Prevents React from diffing massive SVG DOM trees on every parent render.
+// Uses replaceChildren(svgElement) instead of innerHTML to avoid the double-parse:
+//   OLD: string → XMLSerializer → string → browser parse (twice)
+//   NEW: DOMParser (in processSvg) → SVGSVGElement → replaceChildren (zero extra parse)
 interface SvgContainerProps {
-    svg: string;
+    svg: SVGSVGElement | string;
     containerRef: RefObject<HTMLDivElement | null>;
     display: string;
     tabId: TabId;
 }
-const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId }: SvgContainerProps) => (
-    <div
-        ref={containerRef}
-        className="svg-container"
-        id={`${tabId}-svg-container`}
-        style={{ display, width: '100%', height: '100%', overflow: 'hidden' }}
-        dangerouslySetInnerHTML={{ __html: svg }}
-    />
-));
+const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId }: SvgContainerProps) => {
+    React.useLayoutEffect(() => {
+        const container = containerRef.current;
+        if (!container || !svg) return;
+
+        const start = performance.now();
+        if (svg instanceof SVGSVGElement) {
+            // DOM-reuse path: move the already-parsed element directly — no second parse
+            container.replaceChildren(svg);
+        } else {
+            // Fallback for plain string SVGs (e.g. SLD overlays not going through processSvg)
+            container.innerHTML = svg;
+        }
+        console.log(`[SVG] DOM injection for ${tabId} took ${(performance.now() - start).toFixed(2)}ms`);
+    }, [svg, containerRef, tabId]);
+
+    return (
+        <div
+            ref={containerRef}
+            className="svg-container"
+            id={`${tabId}-svg-container`}
+            style={{ display, width: '100%', height: '100%', overflow: 'hidden' }}
+        />
+    );
+});
 
 const SldOverlay: React.FC<SldOverlayProps> = ({
     vlOverlay, actionViewMode,

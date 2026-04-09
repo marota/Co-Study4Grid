@@ -77,6 +77,21 @@ describe('standalone_interface.html Phase 2 optimizations', () => {
         expect(content).toContain('recommenderConfig.nPrioritizedActions');
         expect(content).toContain('recommenderConfig.ignoreReconnections');
     });
+
+    it('clamps datalists rendering bounds to 50 options to prevent Chromium layout crashes', () => {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        // Both branches and inspectableItems rendering loops should invoke slice(0, 50) directly or conditionally 
+        // to strictly cap the DOM nodes.
+        const branchSliceMatch = content.match(/branches\.slice\(\s*0\s*,\s*50\s*\)/g);
+        const inspectablesSliceMatch = content.match(/inspectableItems\.slice\(\s*0\s*,\s*50\s*\)/g);
+
+        expect(branchSliceMatch).toBeTruthy();
+        expect(inspectablesSliceMatch).toBeTruthy();
+        
+        // Ensure map logic inside datalists has actually been safely memoized or contained in IIFEs
+        // Look for the "const contingencyOptions = useMemo(" block which was moved appropriately
+        expect(content).toContain('const contingencyOptions = useMemo');
+    });
 });
 
 describe('standalone_interface.html extraction logic', () => {
