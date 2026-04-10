@@ -2946,7 +2946,17 @@ class RecommenderService:
             act2_sub_idxs=sub_idxs2,
             obs_combined=all_actions.get(f"{action1_id}+{action2_id}", {}).get("observation")
         )
-        
+
+        # Fallback for PST actions: the library detects "No-op" because PST tap
+        # changes don't produce topology changes. Use additive superposition
+        # (betas=[1,1]) with the stored observations instead.
+        if "error" in result and "No-op" in str(result.get("error", "")):
+            has_pst = (action1_id.startswith("pst_tap_") or action1_id.startswith("pst_") or
+                       action2_id.startswith("pst_tap_") or action2_id.startswith("pst_"))
+            if has_pst:
+                print(f"[compute_superposition] Library returned No-op for PST pair, using additive superposition fallback")
+                result = {"betas": [1.0, 1.0]}
+
         if "error" not in result:
              # Logic to compute max_rho and other details, similar to compute_all_pairs_superposition
              name_line = list(env.name_line)
