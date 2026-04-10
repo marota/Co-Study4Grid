@@ -172,7 +172,11 @@ function App() {
 
   const handleUpdateCombinedEstimation = useCallback(
     (pairId: string, estimation: { estimated_max_rho: number; estimated_max_rho_line: string }) => {
+      console.log('[handleUpdateCombinedEstimation] called with pairId:', pairId, 'estimation:', estimation);
       setResult(prev => {
+        console.log('[handleUpdateCombinedEstimation] prev combined_actions keys:',
+          prev?.combined_actions ? Object.keys(prev.combined_actions) : 'null',
+          'pairId exists:', !!prev?.combined_actions?.[pairId]);
         if (!prev?.combined_actions?.[pairId]) return prev;
         return {
           ...prev,

@@ -302,19 +302,32 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
 
     // Refresh combined estimations for all pairs that include the given action
     const refreshCombinedEstimations = async (actionId: string) => {
+        console.log('[refreshCombinedEstimations] called for:', actionId,
+            'combinedActions:', combinedActions ? Object.keys(combinedActions).length : null,
+            'disconnectedElement:', disconnectedElement,
+            'hasCallback:', !!onUpdateCombinedEstimation);
         if (!combinedActions || !disconnectedElement || !onUpdateCombinedEstimation) return;
         const relatedPairs = Object.entries(combinedActions).filter(([pairId]) => {
             const parts = pairId.split('+').map(p => p.trim());
             return parts.includes(actionId);
         });
+        console.log('[refreshCombinedEstimations] found', relatedPairs.length, 'related pairs:',
+            relatedPairs.map(([id]) => id));
         for (const [pairId] of relatedPairs) {
             const parts = pairId.split('+').map(p => p.trim());
             const [id1, id2] = parts;
             try {
                 const result = await api.computeSuperposition(id1, id2, disconnectedElement);
+                console.log('[refreshCombinedEstimations] superposition result for', pairId, ':', {
+                    error: result.error,
+                    estimated_max_rho: result.estimated_max_rho,
+                    max_rho: result.max_rho,
+                    max_rho_line: result.max_rho_line,
+                });
                 if (!result.error) {
                     const estRho = result.estimated_max_rho ?? result.max_rho;
                     const estLine = result.estimated_max_rho_line ?? result.max_rho_line;
+                    console.log('[refreshCombinedEstimations] updating pair', pairId, 'with estRho:', estRho, 'estLine:', estLine);
                     onUpdateCombinedEstimation(pairId, { estimated_max_rho: estRho, estimated_max_rho_line: estLine });
                 }
             } catch (e) {
