@@ -1,7 +1,7 @@
 # Code Quality & Maintainability Analysis
 
 **Date:** 2026-04-11
-**Last updated:** 2026-04-12
+**Last updated:** 2026-04-13
 **Scope:** Full repository diagnostic — backend, frontend, repo structure, security, testing
 
 ---
@@ -11,7 +11,7 @@
 | Dimension | Grade | Status | Notes |
 |-----------|-------|--------|-------|
 | **TypeScript correctness** | **A** | — | Zero compiler errors, zero lint warnings, strict mode |
-| **Test suite** | **A** | Improved | 454 tests passing (was 435), 30 test files (was 28) |
+| **Test suite** | **A+** | **Improved** | 560 tests passing (was 454), 35 test files (was 30) |
 | **Documentation** | **A** | — | Excellent CLAUDE.md, 17 docs/, proper README |
 | **Frontend architecture** | **B+** | **Improved** | Oversized components split into focused subcomponents |
 | **Backend architecture** | **B+** | **Fixed** | Split into 5 focused modules (was one 3,151-line monolith) |
@@ -27,7 +27,7 @@
 
 - `tsc --noEmit` passes with **zero errors** under `strict: true`
 - ESLint passes with **zero warnings**
-- All **454 unit tests pass** across 30 test files (Vitest + React Testing Library)
+- All **560 unit tests pass** across 35 test files (Vitest + React Testing Library)
 - No `any` types in source code, no `@ts-ignore`
 - Well-structured custom hooks: `useSettings`, `useAnalysis`, `useDiagrams`, `useSldOverlay`, `useSession`, `usePanZoom`
 
@@ -105,6 +105,18 @@ Split the four worst offenders into focused subcomponents:
 **CombinedActionsModal.tsx** (−49%): Computed pairs table and explore pairs tab (with selection chips, filter buttons, grouped table, and comparison card) each extracted to dedicated components.
 
 **useDiagrams.ts** (−10%): SLD overlay state management (`fetchSldVariant`, `handleVlDoubleClick`, `handleOverlaySldTabChange`, `handleOverlayClose`) extracted to `useSldOverlay` hook.
+
+**Test coverage for all extracted components:** 7 new test files added (106 tests), covering every extracted component and hook:
+
+| Test File | Tests | Coverage |
+|-----------|-------|---------|
+| `ActionCard.test.tsx` | 25 | Severity badges, VIEWING state, star/reject, LS/RC/PST re-simulation, MW/tap inputs |
+| `ActionSearchDropdown.test.tsx` | 14 | Type filters, search input, scored actions table, manual ID, loading/error states |
+| `ComputedPairsTable.test.tsx` | 13 | Pair rendering, simulate/re-simulate, empty state, islanding, color coding |
+| `ExplorePairsTab.test.tsx` | 21 | Selection chips, filter buttons, estimate/simulate workflow, comparison card, errors |
+| `MemoizedSvgContainer.test.tsx` | 6 | String + SVGSVGElement injection, tab-specific IDs, display prop, perf logging |
+| `SldOverlay.test.tsx` | 14 | Header, close/tab callbacks, mode indicator, loading/error, conditional tabs |
+| `useSldOverlay.test.ts` | 13 | Hook init, vlOverlay state, fetchSldVariant success/error, interaction logging |
 
 ### 3.2 Missing React Error Boundary
 
@@ -233,8 +245,8 @@ Frontend (frontend/src/)
   Source files (non-test):  28 (was 21 — split oversized components)
   Total lines:              ~10,200
   Largest component:        ActionFeed.tsx (796 lines, was 1,406)
-  Test files:               30 (was 28)
-  Tests passing:            454/454 (was 435)
+  Test files:               35 (was 30 — added tests for all extracted components)
+  Tests passing:            560/560 (was 454)
   TypeScript errors:        0
   Lint warnings:            0
   `any` types in source:    0
