@@ -2805,10 +2805,21 @@ class RecommenderService:
                 self._last_result["prioritized_actions"] = {}
             self._last_result["prioritized_actions"][action_id] = action_data
 
-        # CRITICAL: Also update the global action registry used by the SLD generator
+        # Update the global action registry: merge into the existing entry
+        # rather than replacing it, so the library's _identify_action_elements
+        # can still find the original structure it expects.
         if self._dict_action is None:
             self._dict_action = {}
-        self._dict_action[action_id] = action_data
+        if action_id in self._dict_action:
+            existing = self._dict_action[action_id]
+            existing["observation"] = action_data.get("observation")
+            existing["action"] = action_data.get("action")
+            existing["action_topology"] = action_data.get("action_topology")
+            # Update content with the latest (tap/MW may have changed)
+            if action_data.get("content"):
+                existing["content"] = action_data["content"]
+        else:
+            self._dict_action[action_id] = action_data
 
         # Sanitize for JSON serialization (remove raw objects and fix float values)
         serializable_data = {
@@ -2946,16 +2957,6 @@ class RecommenderService:
             act2_sub_idxs=sub_idxs2,
             obs_combined=all_actions.get(f"{action1_id}+{action2_id}", {}).get("observation")
         )
-
-        # Fallback for PST actions: the library detects "No-op" because PST tap
-        # changes don't produce topology changes. Use additive superposition
-        # (betas=[1,1]) with the stored observations instead.
-        if "error" in result and "No-op" in str(result.get("error", "")):
-            has_pst = (action1_id.startswith("pst_tap_") or action1_id.startswith("pst_") or
-                       action2_id.startswith("pst_tap_") or action2_id.startswith("pst_"))
-            if has_pst:
-                print(f"[compute_superposition] Library returned No-op for PST pair, using additive superposition fallback")
-                result = {"betas": [1.0, 1.0]}
 
         if "error" not in result:
              # Logic to compute max_rho and other details, similar to compute_all_pairs_superposition
