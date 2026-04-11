@@ -1,7 +1,7 @@
 # Code Quality & Maintainability Analysis
 
 **Date:** 2026-04-11
-**Last updated:** 2026-04-11
+**Last updated:** 2026-04-13
 **Scope:** Full repository diagnostic — backend, frontend, repo structure, security, testing
 
 ---
@@ -11,9 +11,9 @@
 | Dimension | Grade | Status | Notes |
 |-----------|-------|--------|-------|
 | **TypeScript correctness** | **A** | — | Zero compiler errors, zero lint warnings, strict mode |
-| **Test suite** | **A** | Improved | 454 tests passing (was 435), 30 test files (was 28) |
+| **Test suite** | **A+** | **Improved** | 560 tests passing (was 454), 35 test files (was 30) |
 | **Documentation** | **A** | — | Excellent CLAUDE.md, 17 docs/, proper README |
-| **Frontend architecture** | **B-** | — | Good hooks, but oversized components |
+| **Frontend architecture** | **B+** | **Improved** | Oversized components split into focused subcomponents |
 | **Backend architecture** | **B+** | **Fixed** | Split into 5 focused modules (was one 3,151-line monolith) |
 | **Security posture** | **B+** | **Fixed** | Path traversal patched, CORS configurable |
 | **Type safety (Python)** | **C-** | — | 98 functions still missing type hints |
@@ -27,9 +27,9 @@
 
 - `tsc --noEmit` passes with **zero errors** under `strict: true`
 - ESLint passes with **zero warnings**
-- All **454 unit tests pass** across 30 test files (Vitest + React Testing Library)
+- All **560 unit tests pass** across 35 test files (Vitest + React Testing Library)
 - No `any` types in source code, no `@ts-ignore`
-- Well-structured custom hooks: `useSettings`, `useAnalysis`, `useDiagrams`, `useSession`, `usePanZoom`
+- Well-structured custom hooks: `useSettings`, `useAnalysis`, `useDiagrams`, `useSldOverlay`, `useSession`, `usePanZoom`
 
 ### Documentation
 
@@ -86,19 +86,37 @@ Replaced **80+ bare `print()` calls** with Python `logging` module calls at appr
 
 ## 3. High-Priority Issues
 
-### 3.1 Frontend: Oversized Components
+### 3.1 ~~Frontend: Oversized Components~~ ✅ FIXED
 
-| File | Lines | Issue |
-|------|-------|-------|
-| `ActionFeed.tsx` | **1,406** | 15+ useState hooks, 43-prop interface, mixed filtering/rendering |
-| `VisualizationPanel.tsx` | **1,285** | Embeds `SldOverlay` + `MemoizedSvgContainer` inline |
-| `CombinedActionsModal.tsx` | **777** | Could be split into subcomponents |
-| `App.tsx` | **758** | Orchestration hub — acceptable but at the boundary |
-| `useDiagrams.ts` | **767** | Large hook with many handlers |
+Split the four worst offenders into focused subcomponents:
 
-`ActionFeed.tsx` is the worst offender — it receives **43 props**, manages 15+ pieces of local state, and contains filtering, simulation, and rendering logic all inline.
+| Original File | Before | After | Extracted Components |
+|------|-------|-------|-------|
+| `ActionFeed.tsx` | **1,406** | **796** | `ActionCard.tsx` (370), `ActionSearchDropdown.tsx` (486) |
+| `VisualizationPanel.tsx` | **1,285** | **554** | `SldOverlay.tsx` (705), `MemoizedSvgContainer.tsx` (48) |
+| `CombinedActionsModal.tsx` | **777** | **397** | `ComputedPairsTable.tsx` (145), `ExplorePairsTab.tsx` (380) |
+| `useDiagrams.ts` | **767** | **693** | `useSldOverlay.ts` (107) |
+| `App.tsx` | **758** | **758** | Orchestration hub — acceptable at boundary |
 
-**Recommendation:** Extract into `ActionCard`, `ActionSearch`, `ActionFilters` subcomponents. Consider Context API for metadata distribution to reduce prop drilling.
+**ActionFeed.tsx** (−43%): `renderActionList` (280 lines of per-card rendering) extracted to `ActionCard`. The search dropdown with its score table, type filters, and search results (350+ lines) extracted to `ActionSearchDropdown`.
+
+**VisualizationPanel.tsx** (−57%): The 680-line inline `SldOverlay` component (SLD delta coloring, highlight clones, pan/zoom) moved to its own file. `MemoizedSvgContainer` (SVG DOM injection wrapper) also extracted.
+
+**CombinedActionsModal.tsx** (−49%): Computed pairs table and explore pairs tab (with selection chips, filter buttons, grouped table, and comparison card) each extracted to dedicated components.
+
+**useDiagrams.ts** (−10%): SLD overlay state management (`fetchSldVariant`, `handleVlDoubleClick`, `handleOverlaySldTabChange`, `handleOverlayClose`) extracted to `useSldOverlay` hook.
+
+**Test coverage for all extracted components:** 7 new test files added (106 tests), covering every extracted component and hook:
+
+| Test File | Tests | Coverage |
+|-----------|-------|---------|
+| `ActionCard.test.tsx` | 25 | Severity badges, VIEWING state, star/reject, LS/RC/PST re-simulation, MW/tap inputs |
+| `ActionSearchDropdown.test.tsx` | 14 | Type filters, search input, scored actions table, manual ID, loading/error states |
+| `ComputedPairsTable.test.tsx` | 13 | Pair rendering, simulate/re-simulate, empty state, islanding, color coding |
+| `ExplorePairsTab.test.tsx` | 21 | Selection chips, filter buttons, estimate/simulate workflow, comparison card, errors |
+| `MemoizedSvgContainer.test.tsx` | 6 | String + SVGSVGElement injection, tab-specific IDs, display prop, perf logging |
+| `SldOverlay.test.tsx` | 14 | Header, close/tab callbacks, mode indicator, loading/error, conditional tabs |
+| `useSldOverlay.test.ts` | 13 | Hook init, vlOverlay state, fetchSldVariant success/error, interaction logging |
 
 ### 3.2 Missing React Error Boundary
 
@@ -224,10 +242,11 @@ Backend (expert_backend/)
   Test files:               39 (was 37)
 
 Frontend (frontend/src/)
-  Source files (non-test):  21
+  Source files (non-test):  28 (was 21 — split oversized components)
   Total lines:              ~10,200
-  Test files:               30 (was 28)
-  Tests passing:            454/454 (was 435)
+  Largest component:        ActionFeed.tsx (796 lines, was 1,406)
+  Test files:               35 (was 30 — added tests for all extracted components)
+  Tests passing:            560/560 (was 454)
   TypeScript errors:        0
   Lint warnings:            0
   `any` types in source:    0
@@ -252,7 +271,7 @@ Repository
 
 ### Short-Term (High Value)
 
-5. **Split `ActionFeed.tsx`** into subcomponents (ActionCard, ActionSearch, ActionFilters)
+5. ~~**Split `ActionFeed.tsx`** into subcomponents~~ ✅ Extracted `ActionCard`, `ActionSearchDropdown`; also split `VisualizationPanel` (→ `SldOverlay`, `MemoizedSvgContainer`), `CombinedActionsModal` (→ `ComputedPairsTable`, `ExplorePairsTab`), and `useDiagrams` (→ `useSldOverlay`)
 6. **Add return type annotations** to all FastAPI route handlers
 7. **Define typed API response interfaces** in `types.ts` to eliminate `Record<string, unknown>` casts
 8. ~~**Remove unused deps**~~ Partially done: `GZipMiddleware` import removed; `framer-motion`/`lucide-react` still in package.json

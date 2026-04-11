@@ -13,8 +13,9 @@ import {
   getIdMap, invalidateIdMapCache,
 } from '../utils/svgUtils';
 import { processSvg } from '../utils/svgUtils';
-import type { DiagramData, ViewBox, MetadataIndex, TabId, VlOverlay, SldTab, FlowDelta, AssetDelta, AnalysisResult, ActionDetail } from '../types';
+import type { DiagramData, ViewBox, MetadataIndex, TabId, VlOverlay, SldTab, AnalysisResult, ActionDetail } from '../types';
 import { interactionLogger } from '../utils/interactionLogger';
+import { useSldOverlay } from './useSldOverlay';
 
 export interface DiagramsState {
   // Tab
@@ -168,8 +169,9 @@ export function useDiagrams(
   const [uniqueVoltages, setUniqueVoltages] = useState<number[]>([]);
   const [voltageRange, setVoltageRange] = useState<[number, number]>([0, 400]);
 
-  // SLD overlay
-  const [vlOverlay, setVlOverlay] = useState<VlOverlay | null>(null);
+  // SLD overlay (extracted to useSldOverlay hook)
+  const sldOverlay = useSldOverlay(activeTab);
+  const { vlOverlay, setVlOverlay, selectedBranchForSld, handleVlDoubleClick, handleOverlaySldTabChange, handleOverlayClose } = sldOverlay;
 
   // Metadata
   const nMetaIndex = useMemo(() => buildMetadataIndex(nDiagram?.metadata), [nDiagram?.metadata]);
@@ -368,83 +370,6 @@ export function useDiagrams(
       actionSyncSourceRef.current = null;
     }
   }, [actionDiagram, activeTab, actionPZ]);
-
-  // ===== SLD Overlay =====
-  const fetchSldVariant = useCallback(async (vlName: string, actionId: string | null, sldTab: SldTab, selectedBranch: string) => {
-    setVlOverlay(prev => prev ? { ...prev, loading: true, error: null, tab: sldTab } : null);
-    try {
-      let svgData: string;
-      let metaData: string | null = null;
-      let flowDeltas: Record<string, FlowDelta> | undefined;
-      let reactiveFlowDeltas: Record<string, FlowDelta> | undefined;
-      let assetDeltas: Record<string, AssetDelta> | undefined;
-      let changedSwitches: Record<string, { from_open: boolean; to_open: boolean }> | undefined;
-
-      if (sldTab === 'n') {
-        const res = await api.getNSld(vlName);
-        svgData = res.svg;
-        metaData = res.sld_metadata ?? null;
-      } else if (sldTab === 'n-1') {
-        const res = await api.getN1Sld(selectedBranch, vlName);
-        svgData = res.svg;
-        metaData = res.sld_metadata ?? null;
-        flowDeltas = res.flow_deltas;
-        reactiveFlowDeltas = res.reactive_flow_deltas;
-        assetDeltas = res.asset_deltas;
-      } else {
-        const res = await api.getActionVariantSld(actionId!, vlName);
-        svgData = res.svg;
-        metaData = res.sld_metadata ?? null;
-        flowDeltas = res.flow_deltas;
-        reactiveFlowDeltas = res.reactive_flow_deltas;
-        assetDeltas = res.asset_deltas;
-        changedSwitches = res.changed_switches;
-      }
-      setVlOverlay(prev =>
-        prev && prev.vlName === vlName && prev.tab === sldTab
-          ? {
-            ...prev, svg: svgData, sldMetadata: metaData, loading: false,
-            flow_deltas: flowDeltas, reactive_flow_deltas: reactiveFlowDeltas, asset_deltas: assetDeltas,
-            changed_switches: changedSwitches,
-          }
-          : prev
-      );
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string } }; message?: string };
-      setVlOverlay(prev => prev && prev.tab === sldTab
-        ? { ...prev, loading: false, error: e.response?.data?.detail || 'Failed to load SLD' }
-        : prev
-      );
-    }
-  }, []);
-
-  // Store selectedBranch ref for SLD callbacks
-  const selectedBranchForSld = useRef('');
-
-  const handleVlDoubleClick = useCallback((actionId: string, vlName: string) => {
-    interactionLogger.record('sld_overlay_opened', { vl_name: vlName, action_id: actionId });
-    let initialTab: SldTab;
-    if (activeTab === 'n') {
-      initialTab = 'n';
-    } else if (activeTab === 'n-1') {
-      initialTab = 'n-1';
-    } else {
-      initialTab = 'action';
-    }
-    setVlOverlay({ vlName, actionId, svg: null, sldMetadata: null, loading: true, error: null, tab: initialTab });
-    fetchSldVariant(vlName, actionId, initialTab, selectedBranchForSld.current);
-  }, [activeTab, fetchSldVariant]);
-
-  const handleOverlaySldTabChange = useCallback((sldTab: SldTab) => {
-    if (!vlOverlay) return;
-    interactionLogger.record('sld_overlay_tab_changed', { tab: sldTab, vl_name: vlOverlay.vlName });
-    fetchSldVariant(vlOverlay.vlName, vlOverlay.actionId, sldTab, selectedBranchForSld.current);
-  }, [vlOverlay, fetchSldVariant]);
-
-  const handleOverlayClose = useCallback(() => {
-    interactionLogger.record('sld_overlay_closed');
-    setVlOverlay(null);
-  }, []);
 
   // ===== Asset Click =====
   const handleAssetClick = useCallback((
@@ -762,6 +687,7 @@ export function useDiagrams(
     vlOverlay, fetchBaseDiagram, handleActionSelect,
     handleManualZoomIn, handleManualZoomOut, handleManualReset,
     handleVlDoubleClick, handleOverlaySldTabChange, handleOverlayClose,
-    handleAssetClick, zoomToElement, inspectableItems
+    handleAssetClick, zoomToElement, inspectableItems,
+    selectedBranchForSld, setVlOverlay,
   ]);
 }

@@ -8,8 +8,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig } from '../types';
 import { api } from '../api';
-import { getActionTargetVoltageLevels, getActionTargetLines, isCouplingAction } from '../utils/svgUtils';
 import CombinedActionsModal from './CombinedActionsModal';
+import ActionCard from './ActionCard';
+import ActionSearchDropdown from './ActionSearchDropdown';
 
 interface ActionFeedProps {
     actions: Record<string, ActionDetail>;
@@ -416,35 +417,6 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         }
     };
 
-    const clickableLinkStyle: React.CSSProperties = {
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        padding: 0,
-        fontSize: 'inherit',
-        color: '#1e40af',
-        fontWeight: 600,
-        textDecoration: 'underline dotted',
-    };
-
-    const renderRho = (arr: number[] | null, actionId: string, tab: 'action' | 'n-1' = 'action'): React.ReactNode => {
-        if (!arr || arr.length === 0) return '\u2014';
-        return arr.map((v, i) => {
-            const lineName = linesOverloaded[i] || `line ${i}`;
-            return (
-                <React.Fragment key={i}>
-                    {i > 0 && ', '}
-                    <button
-                        style={clickableLinkStyle}
-                        title={`Zoom to ${lineName}`}
-                        onClick={(e) => { e.stopPropagation(); onAssetClick(actionId, lineName, tab); }}
-                    >{lineName}</button>
-                    {`: ${(v * 100).toFixed(1)}%`}
-                </React.Fragment>
-            );
-        });
-    };
-
     // Sort actions by max_rho ascending (matching standalone)
     // Filter out combined actions that are only estimations (they will have '+' in ID but no rho_after yet)
     const sortedActionEntries = useMemo(() => {
@@ -503,285 +475,32 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     const renderActionList = (entries: [string, ActionDetail][]) => {
         return entries.map(([id, details], index) => {
             if (!details) return null;
-            const maxRhoPct = details.max_rho != null ? (details.max_rho * 100).toFixed(1) : null;
-            const severity = details.max_rho != null
-                ? (details.max_rho > monitoringFactor ? 'red' as const : details.max_rho > (monitoringFactor - 0.05) ? 'orange' as const : 'green' as const)
-                : (details.is_rho_reduction ? 'green' as const : 'red' as const);
-            const severityColors = {
-                green: { border: '#28a745', badgeBg: '#d4edda', badgeText: '#155724', label: 'Solves overload' },
-                orange: { border: '#f0ad4e', badgeBg: '#fff3cd', badgeText: '#856404', label: 'Solved \u2014 low margin' },
-                red: { border: '#dc3545', badgeBg: '#f8d7da', badgeText: '#721c24', label: details.is_rho_reduction ? 'Still overloaded' : 'No reduction' },
-            };
-            const sc = details.non_convergence
-                ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'divergent' }
-                : details.is_islanded
-                    ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'islanded' }
-                    : severityColors[severity];
-            const isSelected = selectedActionId === id;
             return (
-                <div key={id}
-                    data-testid={`action-card-${id}`}
-                    style={{
-                        background: (details.non_convergence || details.is_islanded) ? '#fff5f5' : (isSelected ? '#e7f1ff' : 'white'),
-                        border: (details.non_convergence || details.is_islanded) ? '1px solid #dc3545' : '1px solid #ddd',
-                        borderRadius: '8px',
-                        padding: '10px',
-                        marginBottom: '10px',
-                        boxShadow: isSelected ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
-                        borderLeft: `5px solid ${isSelected ? '#007bff' : sc.border}`,
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                    }} onClick={() => onActionSelect(id)}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h4 style={{
-                            margin: 0,
-                            fontSize: '14px',
-                            color: isSelected ? '#0056b3' : undefined,
-                            flex: 1,
-                            minWidth: 0,
-                            overflowWrap: 'anywhere'
-                        }}>
-                            #{index + 1} {'\u2014'} {id}
-                        </h4>
-                        <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                            {isSelected && (
-                                <span style={{ fontSize: '10px', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', background: '#007bff', color: 'white' }}>
-                                    VIEWING
-                                </span>
-                            )}
-                            <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '12px', background: sc.badgeBg, color: sc.badgeText }}>
-                                {sc.label}
-                            </span>
-                        </div>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', margin: '4px 0 5px' }}>
-                        <div style={{ flex: 1 }}>
-                            <p style={{ fontSize: '13px', margin: 0 }}>{details.description_unitaire}</p>
-                            {details.load_shedding_details && details.load_shedding_details.length > 0 && (
-                                <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: '#fef3c7', color: '#92400e', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #fcd34d', fontWeight: 500 }}>
-                                    {details.load_shedding_details.map((ls, i) => (
-                                        <div key={ls.load_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
-                                            <span>Shedding on <strong>{ls.load_name}</strong> in MW:</span>
-                                            <input
-                                                data-testid={`edit-mw-${id}`}
-                                                type="number"
-                                                min={0}
-                                                step={0.1}
-                                                value={cardEditMw[id] ?? ls.shedded_mw.toFixed(1)}
-                                                onChange={(e) => setCardEditMw(prev => ({ ...prev, [id]: e.target.value }))}
-                                                style={{ width: '65px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #d97706', borderRadius: '3px', textAlign: 'right' }}
-                                            />
-                                            <button
-                                                data-testid={`resimulate-${id}`}
-                                                onClick={() => {
-                                                    const mwVal = parseFloat(cardEditMw[id] ?? String(ls.shedded_mw));
-                                                    if (!isNaN(mwVal) && mwVal >= 0) handleResimulate(id, mwVal);
-                                                }}
-                                                disabled={resimulating === id}
-                                                style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #d97706', background: '#fbbf24', color: '#78350f', cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
-                                            >
-                                                {resimulating === id ? 'Simulating...' : 'Re-simulate'}
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            {details.curtailment_details && details.curtailment_details.length > 0 && (
-                                <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: '#e0f2fe', color: '#075985', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #7dd3fc', fontWeight: 500 }}>
-                                    {details.curtailment_details.map((rc, i) => (
-                                        <div key={rc.gen_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
-                                            <span>Curtailment on <strong>{rc.gen_name}</strong> in MW:</span>
-                                            <input
-                                                data-testid={`edit-mw-${id}`}
-                                                type="number"
-                                                min={0}
-                                                step={0.1}
-                                                value={cardEditMw[id] ?? rc.curtailed_mw.toFixed(1)}
-                                                onChange={(e) => setCardEditMw(prev => ({ ...prev, [id]: e.target.value }))}
-                                                style={{ width: '65px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #0284c7', borderRadius: '3px', textAlign: 'right' }}
-                                            />
-                                            <button
-                                                data-testid={`resimulate-${id}`}
-                                                onClick={() => {
-                                                    const mwVal = parseFloat(cardEditMw[id] ?? String(rc.curtailed_mw));
-                                                    if (!isNaN(mwVal) && mwVal >= 0) handleResimulate(id, mwVal);
-                                                }}
-                                                disabled={resimulating === id}
-                                                style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #0284c7', background: '#38bdf8', color: '#0c4a6e', cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
-                                            >
-                                                {resimulating === id ? 'Simulating...' : 'Re-simulate'}
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            {details.pst_details && details.pst_details.length > 0 && (
-                                <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: '#f3e8ff', color: '#6b21a8', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #c084fc', fontWeight: 500 }}>
-                                    {details.pst_details.map((pst, i) => (
-                                        <div key={pst.pst_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
-                                            <span>PST <strong>{pst.pst_name}</strong> tap:</span>
-                                            <input
-                                                data-testid={`edit-tap-${id}`}
-                                                type="number"
-                                                min={pst.low_tap ?? undefined}
-                                                max={pst.high_tap ?? undefined}
-                                                step={1}
-                                                value={cardEditTap[id] ?? pst.tap_position}
-                                                onChange={(e) => setCardEditTap(prev => ({ ...prev, [id]: e.target.value }))}
-                                                style={{ width: '55px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #9333ea', borderRadius: '3px', textAlign: 'right' }}
-                                            />
-                                            {pst.low_tap != null && pst.high_tap != null && (
-                                                <span style={{ fontSize: '10px', color: '#7c3aed' }}>
-                                                    [{pst.low_tap}..{pst.high_tap}]
-                                                </span>
-                                            )}
-                                            <button
-                                                data-testid={`resimulate-tap-${id}`}
-                                                onClick={() => {
-                                                    const tapVal = parseInt(cardEditTap[id] ?? String(pst.tap_position), 10);
-                                                    if (!isNaN(tapVal)) handleResimulateTap(id, tapVal);
-                                                }}
-                                                disabled={resimulating === id}
-                                                style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #9333ea', background: '#c084fc', color: '#3b0764', cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
-                                            >
-                                                {resimulating === id ? 'Simulating...' : 'Re-simulate'}
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            {details.non_convergence && (
-                                <div style={{ fontSize: '11px', color: '#9a3412', backgroundColor: '#fff8f1', padding: '2px 6px', borderRadius: '4px', marginTop: '4px', border: '1px solid #ffedd5', display: 'inline-block' }}>
-                                    ⚠️ LoadFlow failure: {details.non_convergence}
-                                </div>
-                            )}
-                            {details.is_islanded && (
-                                <div style={{ fontSize: '12px', background: '#fff5f5', color: '#dc3545', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #dc3545', fontWeight: 500 }}>
-                                    🏝️ Islanding detected ({details.disconnected_mw?.toFixed(1)} MW disconnected)
-                                </div>
-                            )}
-                        </div>
-                        {(() => {
-                            const badges: React.ReactNode[] = [];
-                            const isLoadShedding = details.load_shedding_details && details.load_shedding_details.length > 0;
-                            const isRenewableCurtailment = details.curtailment_details && details.curtailment_details.length > 0;
-                            const badgeBtn = (name: string, bg: string, color: string, title: string, onDoubleClick?: (e: React.MouseEvent) => void) => (
-                                <button key={name}
-                                    style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, textDecoration: 'underline dotted', flexShrink: 0, backgroundColor: bg, color }}
-                                    title={title}
-                                    onClick={(e) => { e.stopPropagation(); onAssetClick(id, name, 'action'); }}
-                                    onDoubleClick={onDoubleClick}>
-                                    {name}
-                                </button>
-                            );
-
-                            // For load shedding actions, show VL badges from load_shedding_details
-                            if (isLoadShedding) {
-                                const vlSet = new Set<string>();
-                                details.load_shedding_details!.forEach(ls => {
-                                    if (ls.voltage_level_id && !vlSet.has(ls.voltage_level_id)) {
-                                        vlSet.add(ls.voltage_level_id);
-                                        badges.push(badgeBtn(ls.voltage_level_id, '#d1fae5', '#065f46', `Click: zoom to ${ls.voltage_level_id} | Double-click: open SLD`, (e) => {
-                                            e.stopPropagation();
-                                            onVlDoubleClick?.(id, ls.voltage_level_id!);
-                                        }));
-                                    }
-                                });
-                            } else if (isRenewableCurtailment) {
-                                const vlSet = new Set<string>();
-                                details.curtailment_details!.forEach(rc => {
-                                    if (rc.voltage_level_id && !vlSet.has(rc.voltage_level_id)) {
-                                        vlSet.add(rc.voltage_level_id);
-                                        badges.push(badgeBtn(rc.voltage_level_id, '#d1fae5', '#065f46', `Click: zoom to ${rc.voltage_level_id} | Double-click: open SLD`, (e) => {
-                                            e.stopPropagation();
-                                            onVlDoubleClick?.(id, rc.voltage_level_id!);
-                                        }));
-                                    }
-                                });
-                            } else {
-                                // 1. Substations (VLs)
-                                if (nodesByEquipmentId) {
-                                    const vlNames = getActionTargetVoltageLevels(details, id, nodesByEquipmentId);
-                                    vlNames.forEach(vlName => {
-                                        badges.push(badgeBtn(vlName, '#d1fae5', '#065f46', `Click: zoom to ${vlName} | Double-click: open SLD`, (e) => {
-                                            e.stopPropagation();
-                                            onVlDoubleClick?.(id, vlName);
-                                        }));
-                                    });
-                                }
-
-                                // 2. Lines / Equipments
-                                const isCoupling = isCouplingAction(id, details.description_unitaire);
-                                const lineNames = edgesByEquipmentId
-                                    ? getActionTargetLines(details, id, edgesByEquipmentId)
-                                    : Array.from(new Set([
-                                        ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_ex_bus || {})),
-                                        ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_or_bus || {})),
-                                        ...Object.keys(details.action_topology?.pst_tap || {}),
-                                    ]));
-
-                                lineNames.forEach(name => {
-                                    if (badges.some(b => React.isValidElement(b) && b.key === name)) return;
-                                    badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
-                                });
-
-                                // 3. Fallback: gen/load equipment names from topology
-                                if (badges.length === 0) {
-                                    const topo = details.action_topology;
-                                    const equipNames = Array.from(new Set([
-                                        ...Object.keys(topo?.gens_bus || {}),
-                                        ...Object.keys(topo?.loads_bus || {}),
-                                        ...Object.keys(topo?.loads_p || {}),
-                                        ...Object.keys(topo?.gens_p || {}),
-                                    ]));
-                                    equipNames.forEach(name => {
-                                        badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
-                                    });
-                                }
-                            }
-
-                            return (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0, maxWidth: '180px', justifyContent: 'flex-end' }}>
-                                    {badges}
-                                </div>
-                            );
-                        })()}
-                    </div>
-                    <div style={{ fontSize: '12px', background: isSelected ? '#dce8f7' : '#f8f9fa', padding: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                        <div>
-                            <div>Loading before: {renderRho(details.rho_before, id, 'n-1')}</div>
-                            <div>Loading after: {renderRho(details.rho_after, id, 'action')}</div>
-                            {maxRhoPct != null && (
-                                <div style={{ marginTop: '3px' }}>
-                                    Max loading: <strong style={{ color: sc.border }}>{maxRhoPct}%</strong>
-                                    {details.max_rho_line && (
-                                        <span style={{ color: '#888' }}> on <button
-                                            style={{ ...clickableLinkStyle, color: '#888' }}
-                                            title={`Zoom to ${details.max_rho_line}`}
-                                            onClick={(e) => { e.stopPropagation(); onAssetClick(id, details.max_rho_line, 'action'); }}
-                                        >{details.max_rho_line}</button></span>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0, paddingBottom: '2px' }}>
-                            {!selectedActionIds.has(id) && (
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); onActionFavorite(id); }}
-                                    style={{ background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                    title="Select this action"
-                                ><span style={{ fontSize: '14px' }}>⭐</span></button>
-                            )}
-                            {!rejectedActionIds.has(id) && (
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); onActionReject(id); }}
-                                    style={{ background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                    title={selectedActionIds.has(id) ? "Remove from selected" : "Reject this action"}
-                                ><span style={{ fontSize: '14px' }}>❌</span></button>
-                            )}
-                        </div>
-                    </div>
-                </div >
+                <ActionCard
+                    key={id}
+                    id={id}
+                    details={details}
+                    index={index}
+                    isViewing={selectedActionId === id}
+                    isSelected={selectedActionIds.has(id)}
+                    isRejected={rejectedActionIds.has(id)}
+                    linesOverloaded={linesOverloaded}
+                    monitoringFactor={monitoringFactor}
+                    nodesByEquipmentId={nodesByEquipmentId}
+                    edgesByEquipmentId={edgesByEquipmentId}
+                    cardEditMw={cardEditMw}
+                    cardEditTap={cardEditTap}
+                    resimulating={resimulating}
+                    onActionSelect={onActionSelect}
+                    onActionFavorite={onActionFavorite}
+                    onActionReject={onActionReject}
+                    onAssetClick={onAssetClick}
+                    onVlDoubleClick={onVlDoubleClick}
+                    onCardEditMwChange={(actionId, value) => setCardEditMw(prev => ({ ...prev, [actionId]: value }))}
+                    onCardEditTapChange={(actionId, value) => setCardEditTap(prev => ({ ...prev, [actionId]: value }))}
+                    onResimulate={handleResimulate}
+                    onResimulateTap={handleResimulateTap}
+                />
             );
         });
     };
@@ -825,360 +544,31 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
 
                 {/* Search dropdown */}
                 {searchOpen && (
-                    <div
-                        ref={dropdownRef}
-                        style={{
-                            position: 'absolute',
-                            top: '100%',
-                            right: 0,
-                            left: 0,
-                            zIndex: 100,
-                            backgroundColor: 'white',
-                            border: '1px solid #ccc',
-                            borderRadius: '8px',
-                            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-                            marginTop: '4px',
-                            overflow: 'hidden',
-                        }}
-                    >
-                        <div style={{ padding: '8px' }}>
-                            <input
-                                ref={searchInputRef}
-                                type="text"
-                                placeholder="Search action by ID or description..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                style={{
-                                    width: '100%',
-                                    padding: '6px 10px',
-                                    border: '1px solid #ccc',
-                                    borderRadius: '4px',
-                                    fontSize: '13px',
-                                    boxSizing: 'border-box',
-                                }}
-                            />
-                        </div>
-                        {/* Action type filter checkboxes */}
-                        <div style={{ padding: '4px 8px', display: 'flex', flexWrap: 'wrap', gap: '6px', borderTop: '1px solid #eee', fontSize: '11px' }}>
-                            {([['disco', 'Disconnections'], ['reco', 'Reconnections'], ['ls', 'Load Shedding'], ['rc', 'Renewable Curtailment'], ['pst', 'PST'], ['open', 'Open coupling'], ['close', 'Close coupling']] as const).map(([key, label]) => (
-                                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', color: '#555' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={typeFilters[key]}
-                                        onChange={() => setTypeFilters(prev => ({ ...prev, [key]: !prev[key] }))}
-                                        style={{ margin: 0, cursor: 'pointer' }}
-                                    />
-                                    {label}
-                                </label>
-                            ))}
-                        </div>
-                        {error && (
-                            <div style={{
-                                padding: '6px 8px',
-                                fontSize: '12px',
-                                color: '#dc3545',
-                                borderTop: '1px solid #eee',
-                            }}>
-                                {error}
-                            </div>
-                        )}
-                        <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                            {loadingActions ? (
-                                <div style={{ padding: '10px', textAlign: 'center', color: '#888', fontSize: '13px' }}>
-                                    Loading actions...
-                                </div>
-                            ) : (
-                                <>
-                                    {/* Action Scores Table */}
-                                    {scoredActionsList.length > 0 && !searchQuery && (
-                                        <div style={{ padding: '0 8px', marginBottom: '8px' }}>
-                                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#555', marginBottom: '4px' }}>
-                                                Scored Actions
-                                            </div>
-                                            {Array.from(new Set(scoredActionsList.map(item => item.type))).map(type => {
-                                                const typeData = (actionScores?.[type] || {}) as {
-                                                    scores?: Record<string, number>;
-                                                    params?: Record<string, Record<string, unknown>>;
-                                                    non_convergence?: Record<string, string | null>;
-                                                };
-                                                const scoresKeys = Object.keys(typeData.scores || {});
-                                                const paramsKeys = Object.keys(typeData.params || {});
-                                                const isPerActionParams = paramsKeys.length > 0 && paramsKeys.some((k: string) => scoresKeys.includes(k));
-                                                const globalParams = isPerActionParams ? null : (paramsKeys.length > 0 ? typeData.params : null);
-
-                                                const isLsOrRcType = type === 'load_shedding' || type.includes('load_shedding') || type === 'renewable_curtailment' || type.includes('renewable_curtailment');
-                                                const isPstType = type === 'pst_tap_change' || type.includes('pst');
-                                                const hasEditableColumn = isLsOrRcType || isPstType;
-                                                const tapStartMap = isPstType ? (typeData as { tap_start?: Record<string, { pst_name: string; tap: number; low_tap: number | null; high_tap: number | null } | null> }).tap_start : undefined;
-                                                return (
-                                                    <div key={type} style={{ marginBottom: '8px' }}>
-                                                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#0056b3', backgroundColor: '#e9ecef', padding: '2px 6px', borderRadius: '4px 4px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                            <span>{type.replace('_', ' ').toUpperCase()}</span>
-                                                            {globalParams && (
-                                                                <span
-                                                                    style={{ color: '#6c757d', fontSize: '12px', cursor: 'help', marginLeft: '6px' }}
-                                                                    onMouseEnter={(e) => showTooltip(e, (
-                                                                        <>
-                                                                            <div style={{ fontWeight: 700, marginBottom: '2px', borderBottom: '1px solid #555', paddingBottom: '2px' }}>Scoring Parameters</div>
-                                                                            {Object.entries(globalParams).map(([k, v]) => (
-                                                                                <div key={k}>
-                                                                                    <span style={{ color: '#adb5bd' }}>{k}:</span> {typeof v === 'object' ? JSON.stringify(v) : String(v)}
-                                                                                </div>
-                                                                            ))}
-                                                                        </>
-                                                                    ))}
-                                                                    onMouseLeave={hideTooltip}
-                                                                >i</span>
-                                                            )}
-                                                        </div>
-                                                        <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', border: '1px solid #e9ecef', borderTop: 'none' }}>
-                                                            <thead>
-                                                                <tr style={{ background: '#f8f9fa', borderBottom: '1px solid #ddd' }}>
-                                                                    <th style={{ textAlign: 'left', padding: '4px 6px', width: hasEditableColumn ? '40%' : '55%' }}>Action</th>
-                                                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: '15%' }}>{isPstType ? 'Tap Start' : 'MW Start'}</th>
-                                                                    {isLsOrRcType && <th style={{ textAlign: 'right', padding: '4px 6px', width: '20%' }}>Target MW</th>}
-                                                                    {isPstType && <th style={{ textAlign: 'right', padding: '4px 6px', width: '20%' }}>Target Tap</th>}
-                                                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: hasEditableColumn ? '15%' : '25%' }}>Score</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                {scoredActionsList.filter(item => item.type === type).map(item => {
-                                                                    const isComputed = !!actions[item.actionId];
-                                                                    const targetVal = scoreTargetMw[item.actionId];
-                                                                    const parsedTarget = targetVal !== undefined ? parseFloat(targetVal) : null;
-                                                                    const isValidTarget = parsedTarget !== null && !isNaN(parsedTarget) && parsedTarget >= 0 && (item.mwStart == null || parsedTarget <= item.mwStart);
-                                                                    const canResimulate = isLsOrRcType && isComputed && isValidTarget;
-                                                                    // PST tap: read from cardEditTap (synchronized with action card)
-                                                                    // Tap Start: "previous tap" from action params (N-state), then tapStartMap, then computedPst
-                                                                    const actionParams = isPstType ? typeData.params?.[item.actionId] : undefined;
-                                                                    // Try multiple key variants for the previous tap value
-                                                                    const previousTap = actionParams
-                                                                        ? (actionParams['previous tap'] ?? actionParams['previous_tap'] ?? actionParams['previousTap'] ??
-                                                                           // Fallback: find any key containing "previous" and "tap"
-                                                                           Object.entries(actionParams).find(([k]) => k.toLowerCase().includes('previous') && k.toLowerCase().includes('tap'))?.[1]
-                                                                          ) as number | undefined
-                                                                        : undefined;
-                                                                    const tapStartEntry = isPstType ? tapStartMap?.[item.actionId] ?? null : undefined;
-                                                                    const computedPst = isPstType ? actions[item.actionId]?.pst_details?.[0] : undefined;
-                                                                    const tapInfo = isPstType
-                                                                        ? (previousTap !== undefined
-                                                                            ? {
-                                                                                pst_name: tapStartEntry?.pst_name ?? computedPst?.pst_name ?? '',
-                                                                                tap: previousTap,
-                                                                                low_tap: tapStartEntry?.low_tap ?? computedPst?.low_tap ?? null,
-                                                                                high_tap: tapStartEntry?.high_tap ?? computedPst?.high_tap ?? null,
-                                                                            }
-                                                                            : tapStartEntry
-                                                                                ? tapStartEntry
-                                                                                : computedPst
-                                                                                    ? { pst_name: computedPst.pst_name, tap: computedPst.tap_position, low_tap: computedPst.low_tap, high_tap: computedPst.high_tap }
-                                                                                    : null)
-                                                                        : undefined;
-                                                                    const tapEditVal = cardEditTap[item.actionId];
-                                                                    // Target Tap default: user edit > simulated tap (from pst_details) > start tap
-                                                                    const simulatedTap = computedPst ? String(computedPst.tap_position) : undefined;
-                                                                    const defaultTap = simulatedTap ?? (tapInfo ? String(tapInfo.tap) : undefined);
-                                                                    const effectiveTap = tapEditVal ?? defaultTap;
-                                                                    const parsedTap = effectiveTap !== undefined ? parseInt(effectiveTap, 10) : null;
-                                                                    const isValidTap = parsedTap !== null && !isNaN(parsedTap) && (tapInfo?.low_tap == null || parsedTap >= tapInfo.low_tap) && (tapInfo?.high_tap == null || parsedTap <= tapInfo.high_tap);
-                                                                    const canResimTap = isPstType && isComputed && isValidTap;
-                                                                    return (
-                                                                        <tr key={item.actionId}
-                                                                            onClick={() => {
-                                                                                if (simulating || resimulating) return;
-                                                                                if (canResimulate) {
-                                                                                    handleResimulate(item.actionId, parsedTarget!);
-                                                                                    return;
-                                                                                }
-                                                                                if (canResimTap) {
-                                                                                    handleResimulateTap(item.actionId, parsedTap!);
-                                                                                    return;
-                                                                                }
-                                                                                if (isComputed) return;
-                                                                                const mw = isLsOrRcType && isValidTarget ? parsedTarget! : undefined;
-                                                                                const tap = isPstType && isValidTap ? parsedTap! : undefined;
-                                                                                handleAddAction(item.actionId, mw, tap);
-                                                                            }}
-                                                                            style={{
-                                                                                borderBottom: '1px solid #eee',
-                                                                                cursor: (simulating || resimulating) ? 'wait' : (isComputed && !canResimulate && !canResimTap) ? 'not-allowed' : 'pointer',
-                                                                                color: (isComputed && !canResimulate && !canResimTap) ? '#888' : 'inherit',
-                                                                                opacity: (simulating === item.actionId || resimulating === item.actionId) ? 0.7 : 1,
-                                                                                background: (simulating === item.actionId || resimulating === item.actionId) ? '#e7f1ff' : 'transparent',
-                                                                            }}>
-                                                                            <td style={{ padding: '4px 6px', fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-                                                                                {item.actionId}
-                                                                                {isComputed && (
-                                                                                    actions[item.actionId]?.non_convergence ? (
-                                                                                        <span data-testid={`badge-divergent-${item.actionId}`} style={{ marginLeft: '4px', background: '#dc3545', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }} title={actions[item.actionId].non_convergence || undefined}>divergent</span>
-                                                                                    ) : actions[item.actionId]?.is_islanded ? (
-                                                                                        <span data-testid={`badge-islanded-${item.actionId}`} style={{ marginLeft: '4px', background: '#dc3545', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }} title={`Islanding detected: ${actions[item.actionId].disconnected_mw?.toFixed(1)} MW disconnected`}>islanded</span>
-                                                                                    ) : (
-                                                                                        <span data-testid={`badge-computed-${item.actionId}`} style={{ marginLeft: '4px', background: '#28a745', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', opacity: 0.8 }}>computed</span>
-                                                                                    )
-                                                                                )}
-                                                                                {isPerActionParams && typeData.params?.[item.actionId] && (
-                                                                                    <span
-                                                                                        style={{ color: '#6c757d', fontSize: '12px', cursor: 'help', marginLeft: '6px' }}
-                                                                                        onClick={(e) => e.stopPropagation()}
-                                                                                        onMouseEnter={(e) => showTooltip(e, (
-                                                                                            <>
-                                                                                                <div style={{ fontWeight: 700, marginBottom: '2px', borderBottom: '1px solid #555', paddingBottom: '2px' }}>Parameters</div>
-                                                                                                {typeData.non_convergence?.[item.actionId] && (
-                                                                                                    <div style={{ fontSize: '10px', color: '#dc3545' }}>
-                                                                                                        Non-convergence: {typeData.non_convergence[item.actionId]}
-                                                                                                    </div>
-                                                                                                )}
-                                                                                                {(actions[item.actionId]?.is_islanded) && (
-                                                                                                    <div style={{ fontSize: '10px', color: '#c2410c' }}>
-                                                                                                        Islanding: {actions[item.actionId].n_components} components
-                                                                                                    </div>
-                                                                                                )}
-                                                                                                {Object.entries(typeData.params![item.actionId]).map(([k, v]) => {
-                                                                                                    // For PST: overlay current target tap on selected_pst_tap / target_tap fields
-                                                                                                    const isTargetTapKey = isPstType && (k === 'selected_pst_tap' || k.toLowerCase().includes('target') && k.toLowerCase().includes('tap'));
-                                                                                                    const displayVal = isTargetTapKey && effectiveTap !== undefined ? effectiveTap : (typeof v === 'object' ? JSON.stringify(v) : String(v));
-                                                                                                    return (
-                                                                                                        <div key={k}>
-                                                                                                            <span style={{ color: '#adb5bd' }}>{k}:</span> {displayVal}
-                                                                                                        </div>
-                                                                                                    );
-                                                                                                })}
-                                                                                            </>
-                                                                                        ))}
-                                                                                        onMouseLeave={hideTooltip}
-                                                                                    >i</span>
-                                                                                )}
-                                                                            </td>
-                                                                            <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: (isPstType ? tapInfo == null : item.mwStart == null) ? '#aaa' : '#333' }}>
-                                                                                {isPstType
-                                                                                    ? (tapInfo != null ? `${tapInfo.tap}` : 'N/A')
-                                                                                    : (item.mwStart != null ? item.mwStart.toFixed(1) : 'N/A')
-                                                                                }
-                                                                                {isPstType && tapInfo?.low_tap != null && tapInfo?.high_tap != null && (
-                                                                                    <span style={{ fontSize: '9px', color: '#7c3aed', marginLeft: '2px' }}>
-                                                                                        [{tapInfo.low_tap}..{tapInfo.high_tap}]
-                                                                                    </span>
-                                                                                )}
-                                                                            </td>
-                                                                            {isLsOrRcType && (
-                                                                                <td style={{ padding: '2px 4px', textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                                                                                    <input
-                                                                                        data-testid={`target-mw-${item.actionId}`}
-                                                                                        type="number"
-                                                                                        min={0}
-                                                                                        max={item.mwStart ?? undefined}
-                                                                                        step={0.1}
-                                                                                        placeholder={item.mwStart != null ? item.mwStart.toFixed(1) : '0'}
-                                                                                        value={scoreTargetMw[item.actionId] ?? ''}
-                                                                                        onChange={(e) => setScoreTargetMw(prev => ({ ...prev, [item.actionId]: e.target.value }))}
-                                                                                        style={{
-                                                                                            width: '60px',
-                                                                                            fontSize: '11px',
-                                                                                            fontFamily: 'monospace',
-                                                                                            padding: '2px 4px',
-                                                                                            border: '1px solid #ccc',
-                                                                                            borderRadius: '3px',
-                                                                                            textAlign: 'right',
-                                                                                        }}
-                                                                                    />
-                                                                                </td>
-                                                                            )}
-                                                                            {isPstType && (
-                                                                                <td style={{ padding: '2px 4px', textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                                                                                    <input
-                                                                                        data-testid={`target-tap-${item.actionId}`}
-                                                                                        type="number"
-                                                                                        min={tapInfo?.low_tap ?? undefined}
-                                                                                        max={tapInfo?.high_tap ?? undefined}
-                                                                                        step={1}
-                                                                                        value={cardEditTap[item.actionId] ?? (simulatedTap ?? (tapInfo ? String(tapInfo.tap) : ''))}
-                                                                                        onChange={(e) => setCardEditTap(prev => ({ ...prev, [item.actionId]: e.target.value }))}
-                                                                                        style={{
-                                                                                            width: '50px',
-                                                                                            fontSize: '11px',
-                                                                                            fontFamily: 'monospace',
-                                                                                            padding: '2px 4px',
-                                                                                            border: '1px solid #9333ea',
-                                                                                            borderRadius: '3px',
-                                                                                            textAlign: 'right',
-                                                                                        }}
-                                                                                    />
-                                                                                </td>
-                                                                            )}
-                                                                            <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace' }}>
-                                                                                {item.score.toFixed(2)}
-                                                                            </td>
-                                                                        </tr>
-                                                                    );
-                                                                })}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-
-                                    {/* Search Results */}
-                                    {(!searchQuery && scoredActionsList.length === 0 && filteredActions.length === 0) && (
-                                        <div style={{ padding: '10px', textAlign: 'center', color: '#888', fontSize: '13px' }}>
-                                            All actions already added
-                                        </div>
-                                    )}
-                                    {searchQuery && !filteredActions.some(a => a.id === searchQuery) && (
-                                        <div
-                                            data-testid={`manual-id-option-${searchQuery}`}
-                                            onClick={() => handleAddAction(searchQuery)}
-                                            style={{
-                                                padding: '8px 10px',
-                                                cursor: simulating ? 'wait' : 'pointer',
-                                                borderTop: '1px solid #eee',
-                                                backgroundColor: '#f8f9fa',
-                                                color: '#007bff',
-                                                fontSize: '12px',
-                                                fontWeight: 600,
-                                            }}
-                                            onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = '#eef6ff'}
-                                            onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = '#f8f9fa'}
-                                        >
-                                            ✨ Simulate manual ID: <strong>{searchQuery}</strong>
-                                        </div>
-                                    )}
-                                    {(searchQuery && filteredActions.length === 0 && searchQuery !== (filteredActions[0]?.id)) && (
-                                        <div style={{ padding: '10px', textAlign: 'center', color: '#888', fontSize: '13px' }}>
-                                            No other matching actions
-                                        </div>
-                                    )}
-                                    {((!searchQuery && scoredActionsList.length === 0) || searchQuery) && filteredActions.map(a => (
-                                        <div
-                                            key={a.id}
-                                            data-testid={`action-card-${a.id}`}
-                                            onClick={() => handleAddAction(a.id)}
-                                            style={{
-                                                padding: '6px 10px',
-                                                cursor: simulating ? 'wait' : 'pointer',
-                                                borderTop: '1px solid #eee',
-                                                backgroundColor: simulating === a.id ? '#e7f1ff' : 'transparent',
-                                                opacity: simulating && simulating !== a.id ? 0.5 : 1,
-                                            }}
-                                            onMouseEnter={(e) => { if (!simulating) (e.currentTarget as HTMLDivElement).style.backgroundColor = '#f0f0f0'; }}
-                                            onMouseLeave={(e) => { if (simulating !== a.id) (e.currentTarget as HTMLDivElement).style.backgroundColor = 'transparent'; }}
-                                        >
-                                            <div style={{ fontWeight: 600, fontSize: '12px', color: '#333' }}>
-                                                {simulating === a.id ? 'Simulating...' : a.id}
-                                            </div>
-                                            {a.description && (
-                                                <div style={{ fontSize: '11px', color: '#777', marginTop: '2px' }}>
-                                                    {a.description}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </>
-                            )}
-                        </div>
-                    </div>
+                    <ActionSearchDropdown
+                        dropdownRef={dropdownRef}
+                        searchInputRef={searchInputRef}
+                        searchQuery={searchQuery}
+                        onSearchQueryChange={setSearchQuery}
+                        typeFilters={typeFilters}
+                        onTypeFilterChange={(key) => setTypeFilters(prev => ({ ...prev, [key]: !prev[key] }))}
+                        error={error}
+                        loadingActions={loadingActions}
+                        scoredActionsList={scoredActionsList}
+                        filteredActions={filteredActions}
+                        actionScores={actionScores}
+                        actions={actions}
+                        scoreTargetMw={scoreTargetMw}
+                        onScoreTargetMwChange={(actionId, value) => setScoreTargetMw(prev => ({ ...prev, [actionId]: value }))}
+                        cardEditTap={cardEditTap}
+                        onCardEditTapChange={(actionId, value) => setCardEditTap(prev => ({ ...prev, [actionId]: value }))}
+                        simulating={simulating}
+                        resimulating={resimulating}
+                        onAddAction={handleAddAction}
+                        onResimulate={handleResimulate}
+                        onResimulateTap={handleResimulateTap}
+                        onShowTooltip={showTooltip}
+                        onHideTooltip={hideTooltip}
+                    />
                 )}
             </div>
             {/* Action Dict Info Warning */}
