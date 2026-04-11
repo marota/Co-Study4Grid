@@ -2812,13 +2812,19 @@ class RecommenderService:
             self._dict_action = {}
         if action_id in self._dict_action:
             existing = self._dict_action[action_id]
+            print(f"[simulate_manual_action] Merging into existing _dict_action['{action_id}']")
+            print(f"  existing keys: {list(existing.keys())}")
+            print(f"  action_data keys: {list(action_data.keys())}")
             existing["observation"] = action_data.get("observation")
             existing["action"] = action_data.get("action")
             existing["action_topology"] = action_data.get("action_topology")
             # Update content with the latest (tap/MW may have changed)
             if action_data.get("content"):
                 existing["content"] = action_data["content"]
+            print(f"  merged keys: {list(existing.keys())}")
         else:
+            print(f"[simulate_manual_action] NEW _dict_action['{action_id}'] (no existing entry)")
+            print(f"  action_data keys: {list(action_data.keys())}")
             self._dict_action[action_id] = action_data
 
         # Sanitize for JSON serialization (remove raw objects and fix float values)
@@ -2876,11 +2882,28 @@ class RecommenderService:
 
         env = self._get_simulation_env()
         classifier = ActionClassifier()
-        
+
         # Identify elements for both actions
         # First check if they have action topology enriched
         act1_obj = all_actions[action1_id]["action"]
         act2_obj = all_actions[action2_id]["action"]
+
+        # --- DEBUG: log _dict_action entry keys for the actions ---
+        for _aid in (action1_id, action2_id):
+            _de = self._dict_action.get(_aid) if self._dict_action else None
+            if _de:
+                print(f"[compute_superposition] _dict_action['{_aid}'] keys: {list(_de.keys())}")
+                if "content" in _de:
+                    print(f"[compute_superposition]   content keys: {list(_de['content'].keys()) if isinstance(_de['content'], dict) else type(_de['content'])}")
+                    if isinstance(_de.get("content"), dict) and "pst_tap" in _de["content"]:
+                        print(f"[compute_superposition]   pst_tap: {_de['content']['pst_tap']}")
+            else:
+                print(f"[compute_superposition] _dict_action['{_aid}'] = NOT FOUND")
+            _ae = all_actions.get(_aid)
+            if _ae:
+                print(f"[compute_superposition] all_actions['{_aid}'] keys: {list(_ae.keys())}")
+            else:
+                print(f"[compute_superposition] all_actions['{_aid}'] = NOT FOUND")
 
         line_idxs1, sub_idxs1 = _identify_action_elements(
             act1_obj, action1_id, self._dict_action, classifier, env
@@ -2888,6 +2911,8 @@ class RecommenderService:
         line_idxs2, sub_idxs2 = _identify_action_elements(
             act2_obj, action2_id, self._dict_action, classifier, env
         )
+        print(f"[compute_superposition] _identify_action_elements: act1 line_idxs={line_idxs1}, sub_idxs={sub_idxs1}")
+        print(f"[compute_superposition] _identify_action_elements: act2 line_idxs={line_idxs2}, sub_idxs={sub_idxs2}")
 
         # Fallback for PST actions: _identify_action_elements may return empty
         # because PST tap changes are not topology changes (no line/bus switches).
@@ -2930,6 +2955,19 @@ class RecommenderService:
         n1_variant_id = self._get_n1_variant(disconnected_element)
         n.set_working_variant(n1_variant_id)
         obs_start = env.get_obs()
+
+        # --- DEBUG: log rho at identified line indexes for obs_start vs obs_act ---
+        name_line = list(env.name_line)
+        for _aid, _lidxs in [(action1_id, line_idxs1), (action2_id, line_idxs2)]:
+            obs_act = all_actions[_aid]["observation"]
+            for _li in _lidxs:
+                _ln = name_line[_li] if _li < len(name_line) else f"idx_{_li}"
+                print(f"[compute_superposition] rho at {_ln}(idx={_li}): obs_start={obs_start.rho[_li]:.6f}, obs_act({_aid})={obs_act.rho[_li]:.6f}, delta={obs_act.rho[_li] - obs_start.rho[_li]:.6f}")
+            # Also check p_or (active power) if available
+            if hasattr(obs_start, 'p_or') and hasattr(obs_act, 'p_or'):
+                for _li in _lidxs:
+                    _ln = name_line[_li] if _li < len(name_line) else f"idx_{_li}"
+                    print(f"[compute_superposition] p_or at {_ln}(idx={_li}): obs_start={obs_start.p_or[_li]:.2f}, obs_act({_aid})={obs_act.p_or[_li]:.2f}, delta={obs_act.p_or[_li] - obs_start.p_or[_li]:.2f}")
         
         # Filter lines we care about
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
@@ -2947,6 +2985,10 @@ class RecommenderService:
                  
         lines_we_care_about, branches_with_limits = self._get_monitoring_parameters(obs_start)
 
+        print(f"[compute_superposition] Calling compute_combined_pair_superposition with:")
+        print(f"  act1_line_idxs={line_idxs1}, act1_sub_idxs={sub_idxs1}")
+        print(f"  act2_line_idxs={line_idxs2}, act2_sub_idxs={sub_idxs2}")
+        print(f"  obs_combined present: {all_actions.get(f'{action1_id}+{action2_id}', {}).get('observation') is not None}")
         result = compute_combined_pair_superposition(
             obs_start=obs_start,
             obs_act1=all_actions[action1_id]["observation"],
@@ -2957,6 +2999,7 @@ class RecommenderService:
             act2_sub_idxs=sub_idxs2,
             obs_combined=all_actions.get(f"{action1_id}+{action2_id}", {}).get("observation")
         )
+        print(f"[compute_superposition] Library result: {'error: ' + str(result.get('error')) if 'error' in result else 'betas=' + str(result.get('betas'))}")
 
         if "error" not in result:
              # Logic to compute max_rho and other details, similar to compute_all_pairs_superposition
