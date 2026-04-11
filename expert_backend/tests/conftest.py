@@ -181,8 +181,12 @@ def reset_config():
     # Re-apply standard defaults that the production code expects.
     # Some tests (via patch.object) remove attributes during cleanup;
     # this ensures every test starts with a consistent config state.
+    # Use vars(config) check to avoid overwriting values that were
+    # intentionally set by test modules (e.g. PYPOWSYBL_FAST_MODE = False).
+    config_dict = vars(config)
     for k, v in _CONFIG_DEFAULTS.items():
-        setattr(config, k, v)
+        if k not in config_dict:
+            setattr(config, k, v)
 
 
 @pytest.fixture
