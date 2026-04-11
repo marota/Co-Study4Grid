@@ -2960,14 +2960,16 @@ class RecommenderService:
         name_line = list(env.name_line)
         for _aid, _lidxs in [(action1_id, line_idxs1), (action2_id, line_idxs2)]:
             obs_act = all_actions[_aid]["observation"]
-            for _li in _lidxs:
-                _ln = name_line[_li] if _li < len(name_line) else f"idx_{_li}"
-                print(f"[compute_superposition] rho at {_ln}(idx={_li}): obs_start={obs_start.rho[_li]:.6f}, obs_act({_aid})={obs_act.rho[_li]:.6f}, delta={obs_act.rho[_li] - obs_start.rho[_li]:.6f}")
-            # Also check p_or (active power) if available
-            if hasattr(obs_start, 'p_or') and hasattr(obs_act, 'p_or'):
+            try:
                 for _li in _lidxs:
                     _ln = name_line[_li] if _li < len(name_line) else f"idx_{_li}"
-                    print(f"[compute_superposition] p_or at {_ln}(idx={_li}): obs_start={obs_start.p_or[_li]:.2f}, obs_act({_aid})={obs_act.p_or[_li]:.2f}, delta={obs_act.p_or[_li] - obs_start.p_or[_li]:.2f}")
+                    print(f"[compute_superposition] rho at {_ln}(idx={_li}): obs_start={float(obs_start.rho[_li]):.6f}, obs_act({_aid})={float(obs_act.rho[_li]):.6f}, delta={float(obs_act.rho[_li] - obs_start.rho[_li]):.6f}")
+                if hasattr(obs_start, 'p_or') and hasattr(obs_act, 'p_or'):
+                    for _li in _lidxs:
+                        _ln = name_line[_li] if _li < len(name_line) else f"idx_{_li}"
+                        print(f"[compute_superposition] p_or at {_ln}(idx={_li}): obs_start={float(obs_start.p_or[_li]):.2f}, obs_act({_aid})={float(obs_act.p_or[_li]):.2f}, delta={float(obs_act.p_or[_li] - obs_start.p_or[_li]):.2f}")
+            except (TypeError, ValueError, IndexError):
+                print(f"[compute_superposition] Could not log rho/p_or for {_aid} (mock or missing data)")
         
         # Filter lines we care about
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
@@ -2985,9 +2987,18 @@ class RecommenderService:
                  
         lines_we_care_about, branches_with_limits = self._get_monitoring_parameters(obs_start)
 
+        # Detect PST actions — same logic the library uses in compute_all_pairs_superposition
+        def _is_pst_action(aid):
+            desc = self._dict_action.get(aid, {}) if self._dict_action else {}
+            action_type = classifier.identify_action_type(desc, by_description=True)
+            return action_type == "pst" or action_type == "pst_tap" or "pst_tap" in aid or "pst_" in aid
+
+        act1_is_pst = _is_pst_action(action1_id)
+        act2_is_pst = _is_pst_action(action2_id)
+
         print(f"[compute_superposition] Calling compute_combined_pair_superposition with:")
-        print(f"  act1_line_idxs={line_idxs1}, act1_sub_idxs={sub_idxs1}")
-        print(f"  act2_line_idxs={line_idxs2}, act2_sub_idxs={sub_idxs2}")
+        print(f"  act1_line_idxs={line_idxs1}, act1_sub_idxs={sub_idxs1}, act1_is_pst={act1_is_pst}")
+        print(f"  act2_line_idxs={line_idxs2}, act2_sub_idxs={sub_idxs2}, act2_is_pst={act2_is_pst}")
         print(f"  obs_combined present: {all_actions.get(f'{action1_id}+{action2_id}', {}).get('observation') is not None}")
         result = compute_combined_pair_superposition(
             obs_start=obs_start,
@@ -2997,7 +3008,9 @@ class RecommenderService:
             act1_sub_idxs=sub_idxs1,
             act2_line_idxs=line_idxs2,
             act2_sub_idxs=sub_idxs2,
-            obs_combined=all_actions.get(f"{action1_id}+{action2_id}", {}).get("observation")
+            obs_combined=all_actions.get(f"{action1_id}+{action2_id}", {}).get("observation"),
+            act1_is_pst=act1_is_pst,
+            act2_is_pst=act2_is_pst,
         )
         print(f"[compute_superposition] Library result: {'error: ' + str(result.get('error')) if 'error' in result else 'betas=' + str(result.get('betas'))}")
 
