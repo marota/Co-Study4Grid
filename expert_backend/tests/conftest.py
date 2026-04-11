@@ -56,6 +56,29 @@ for mod_name in _MOCK_MODULES:
             sys.modules[mod_name] = MagicMock()
 
 # ---------------------------------------------------------------------------
+# Ensure the mock config has the standard attributes the production code
+# expects.  ``from expert_op4grid_recommender import config`` resolves via
+# sys.modules["expert_op4grid_recommender.config"], so we set them there.
+# ---------------------------------------------------------------------------
+_mock_config = sys.modules["expert_op4grid_recommender.config"]
+_mock_config.MONITORING_FACTOR_THERMAL_LIMITS = 0.95
+_mock_config.PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD = 0.02
+_mock_config.IGNORE_LINES_MONITORING = True
+_mock_config.PYPOWSYBL_FAST_MODE = True
+_mock_config.MAX_RHO_BOTH_EXTREMITIES = True
+_mock_config.CHECK_ACTION_SIMULATION = False
+_mock_config.IGNORE_RECONNECTIONS = False
+_mock_config.DATE = None
+_mock_config.TIMESTEP = 0
+_mock_config.MONITORED_LINES_COUNT = 0
+_mock_config.DO_VISUALIZATION = True
+_mock_config.USE_DC_LOAD_FLOW = False
+from pathlib import Path as _Path
+
+# Also set on the parent mock's attribute so both import paths work
+sys.modules["expert_op4grid_recommender"].config = _mock_config
+
+# ---------------------------------------------------------------------------
 # Now it is safe to import production code
 # ---------------------------------------------------------------------------
 import pytest
@@ -115,25 +138,55 @@ def mock_network_service(mock_network):
     return service
 
 
+# Only numeric/boolean config attributes need re-application after
+# each test because patch.object may remove them.  Path-like attributes
+# (ENV_PATH, ACTION_FILE_PATH etc.) are left to MagicMock auto-creation
+# so they don't trigger real filesystem access during tests.
+_CONFIG_DEFAULTS = {
+    "MONITORING_FACTOR_THERMAL_LIMITS": 0.95,
+    "PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD": 0.02,
+    "IGNORE_LINES_MONITORING": True,
+    "PYPOWSYBL_FAST_MODE": True,
+    "MAX_RHO_BOTH_EXTREMITIES": True,
+    "CHECK_ACTION_SIMULATION": False,
+    "IGNORE_RECONNECTIONS": False,
+    "DATE": None,
+    "TIMESTEP": 0,
+    "MONITORED_LINES_COUNT": 0,
+    "DO_VISUALIZATION": True,
+    "USE_DC_LOAD_FLOW": False,
+}
+
+
 @pytest.fixture(autouse=True)
 def reset_config():
     """Snapshot and restore the expert_op4grid_recommender.config state after each test."""
     from expert_op4grid_recommender import config
-    
+
     # Snapshot all attributes that don't start with __
     snapshot = {k: v for k, v in vars(config).items() if not k.startswith("__")}
-    
+
     yield
-    
+
     # Restore from snapshot
     for k, v in snapshot.items():
         setattr(config, k, v)
-    
+
     # Remove any attributes that were added during the test
     current_keys = [k for k in vars(config).keys() if not k.startswith("__")]
     for k in current_keys:
         if k not in snapshot:
             delattr(config, k)
+
+    # Re-apply standard defaults that the production code expects.
+    # Some tests (via patch.object) remove attributes during cleanup;
+    # this ensures every test starts with a consistent config state.
+    # Use vars(config) check to avoid overwriting values that were
+    # intentionally set by test modules (e.g. PYPOWSYBL_FAST_MODE = False).
+    config_dict = vars(config)
+    for k, v in _CONFIG_DEFAULTS.items():
+        if k not in config_dict:
+            setattr(config, k, v)
 
 
 @pytest.fixture

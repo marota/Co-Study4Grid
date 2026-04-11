@@ -74,14 +74,14 @@ def test_superposition_vs_simulation_discrepancy(service, mock_env):
     # If we use betas [1.0, 1.0], it would be: -1.0*rho_start + 1.0*rho_act1 + 1.0*rho_act2
     # = - [0.5, 0.5, 0.5] + [0.4, 0.6, 0.5] + [0.6, 0.4, 0.5] = [0.5, 0.5, 0.5]
     
-    with patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_super:
+    with patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_super:
         mock_super.return_value = {
             "betas": [1.0, 1.0],
             "p_or_combined": [50.0, 50.0, 50.0]
         }
         
         # We need to mock _identify_action_elements too
-        with patch('expert_backend.services.recommender_service._identify_action_elements', return_value=([0], [])):
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements', return_value=([0], [])):
             with patch('expert_backend.services.recommender_service.config') as mock_config:
                 mock_config.MONITORING_FACTOR_THERMAL_LIMITS = 1.0
                 mock_config.PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD = 0.02

@@ -111,9 +111,9 @@ class TestBranchesWithLimitsFiltering:
         _setup_env(svc, name_line, obs_n1_rho, obs_n_rho, actions,
                    branches_with_limits=["CANTEY761", "BIESL61PRAGN"])
 
-        with patch('expert_backend.services.recommender_service._identify_action_elements',
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements',
                    return_value=([0], [])), \
-             patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_sp:
+             patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
 
             # betas that would give high rho for CIVAUY712 if it were monitored
             mock_sp.return_value = {"betas": [0.5, 0.5]}
@@ -144,9 +144,9 @@ class TestBranchesWithLimitsFiltering:
                    branches_with_limits=["LINE_A", "LINE_C"],
                    analysis_context=None)
 
-        with patch('expert_backend.services.recommender_service._identify_action_elements',
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements',
                    return_value=([0], [])), \
-             patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_sp:
+             patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
 
             mock_sp.return_value = {"betas": [0.5, 0.5]}
             result = svc.compute_superposition("act1", "act2", "CONTINGENCY")
@@ -185,9 +185,9 @@ class TestOverloadedLinesForceInclusion:
         _setup_env(svc, name_line, obs_n1_rho, obs_n_rho, actions,
                    analysis_context=ctx)
 
-        with patch('expert_backend.services.recommender_service._identify_action_elements',
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements',
                    return_value=([0], [])), \
-             patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_sp:
+             patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
 
             mock_sp.return_value = {"betas": [0.5, 0.5]}
             result = svc.compute_superposition("act1", "act2", "CONTINGENCY")
@@ -217,9 +217,9 @@ class TestOverloadedLinesForceInclusion:
         _setup_env(svc, name_line, obs_n1_rho, obs_n_rho, actions,
                    analysis_context=ctx)
 
-        with patch('expert_backend.services.recommender_service._identify_action_elements',
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements',
                    return_value=([0], [])), \
-             patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_sp:
+             patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
 
             mock_sp.return_value = {"betas": [0.5, 0.5]}
             result = svc.compute_superposition("act1", "act2", "CONTINGENCY")
@@ -260,9 +260,9 @@ class TestPreExistingOverloadHandling:
         _setup_env(svc, name_line, obs_n1_rho, obs_n_rho, actions,
                    analysis_context=None)
 
-        with patch('expert_backend.services.recommender_service._identify_action_elements',
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements',
                    return_value=([0], [])), \
-             patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_sp:
+             patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
 
             mock_sp.return_value = {"betas": [0.5, 0.5]}
             result = svc.compute_superposition("act1", "act2", "CONTINGENCY")
@@ -293,9 +293,9 @@ class TestPreExistingOverloadHandling:
         _setup_env(svc, name_line, obs_n1_rho, obs_n_rho, actions,
                    analysis_context=None)
 
-        with patch('expert_backend.services.recommender_service._identify_action_elements',
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements',
                    return_value=([0], [])), \
-             patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_sp:
+             patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
 
             mock_sp.return_value = {"betas": [0.5, 0.5]}
             result = svc.compute_superposition("act1", "act2", "CONTINGENCY")
@@ -337,9 +337,9 @@ class TestNoNStateOverloads:
                    },
                    analysis_context=ctx)
 
-        with patch('expert_backend.services.recommender_service._identify_action_elements',
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements',
                    return_value=([0], [])), \
-             patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_sp:
+             patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
 
             mock_sp.return_value = {"betas": [0.90, 0.93]}
             result = svc.compute_superposition("pst_tap_PST1_inc2", "reco_SWITCH1", "CONTINGENCY")
@@ -374,9 +374,9 @@ class TestNoNStateOverloads:
         _setup_env(svc, name_line, obs_n1_rho, obs_n_rho, actions,
                    analysis_context=ctx)
 
-        with patch('expert_backend.services.recommender_service._identify_action_elements',
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements',
                    return_value=([0], [])), \
-             patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_sp:
+             patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
 
             # betas=[1.0, 1.0] → rho_combined = |-rho_n1 + obs1 + obs2|
             # LINE_A: |-1.05 + 0.60 + 0.55| = 0.10
@@ -427,9 +427,9 @@ class TestPSTSuperpositionMonitoring:
                    branches_with_limits=["CANTEY761", "BIESL61PRAGN"],
                    analysis_context={"lines_overloaded": ["CANTEY761"]})
 
-        with patch('expert_backend.services.recommender_service._identify_action_elements',
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements',
                    return_value=([0], [])), \
-             patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_sp:
+             patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
 
             mock_sp.return_value = {"betas": [0.90, 0.93]}
             result = svc.compute_superposition("pst_tap_PST1", "reco_SWITCH", "CONTINGENCY")
@@ -459,9 +459,9 @@ class TestPSTSuperpositionMonitoring:
         _setup_env(svc, name_line, obs_n1_rho, obs_n_rho, actions,
                    analysis_context=ctx)
 
-        with patch('expert_backend.services.recommender_service._identify_action_elements',
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements',
                    return_value=([0], [])), \
-             patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_sp:
+             patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
 
             # rho_combined = |(1 - 0.5 - 0.5)*1.1 + 0.5*0.8 + 0.5*0.75|
             # = |0 + 0.4 + 0.375| = 0.775 < 1.10 → reduction
@@ -496,9 +496,9 @@ class TestMonitoringFactorScaling:
         _setup_env(svc, name_line, obs_n1_rho, obs_n_rho, actions,
                    analysis_context=ctx)
 
-        with patch('expert_backend.services.recommender_service._identify_action_elements',
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements',
                    return_value=([0], [])), \
-             patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_sp:
+             patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
 
             mock_sp.return_value = {"betas": [0.5, 0.5]}
             result = svc.compute_superposition("act1", "act2", "CONTINGENCY")

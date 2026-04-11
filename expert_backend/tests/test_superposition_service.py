@@ -69,8 +69,8 @@ def test_compute_superposition_on_demand(recommender):
     }
     _setup_superposition_env(recommender, actions, {})
 
-    with patch('expert_backend.services.recommender_service._identify_action_elements', return_value=([0], [])), \
-         patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_combine:
+    with patch('expert_backend.services.simulation_mixin._identify_action_elements', return_value=([0], [])), \
+         patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_combine:
 
         mock_combine.return_value = {
             "betas": [0.5, 0.5],
@@ -102,8 +102,8 @@ def test_compute_superposition_triggers_simulation(recommender):
     recommender.simulate_manual_action = MagicMock(side_effect=mock_simulate)
     _setup_superposition_env(recommender, actions, da)
 
-    with patch('expert_backend.services.recommender_service._identify_action_elements', return_value=([0], [])), \
-         patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_combine:
+    with patch('expert_backend.services.simulation_mixin._identify_action_elements', return_value=([0], [])), \
+         patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_combine:
 
         mock_combine.return_value = {"betas": [0.5, 0.5]}
         result = recommender.compute_superposition(aid1, aid2, "contingency")
@@ -130,8 +130,8 @@ def test_compute_superposition_passes_pst_flag_for_pst_action(recommender):
     }
     _setup_superposition_env(recommender, actions, da)
 
-    with patch('expert_backend.services.recommender_service._identify_action_elements', return_value=([0], [])), \
-         patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_combine:
+    with patch('expert_backend.services.simulation_mixin._identify_action_elements', return_value=([0], [])), \
+         patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_combine:
 
         mock_combine.return_value = {"betas": [0.6, 0.4]}
         recommender.compute_superposition(pst_id, other_id, "contingency")
@@ -158,8 +158,8 @@ def test_compute_superposition_pst_flag_true_when_pst_is_second(recommender):
     }
     _setup_superposition_env(recommender, actions, da)
 
-    with patch('expert_backend.services.recommender_service._identify_action_elements', return_value=([0], [])), \
-         patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_combine:
+    with patch('expert_backend.services.simulation_mixin._identify_action_elements', return_value=([0], [])), \
+         patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_combine:
 
         mock_combine.return_value = {"betas": [0.5, 0.5]}
         recommender.compute_superposition(other_id, pst_id, "contingency")
@@ -185,8 +185,8 @@ def test_compute_superposition_pst_flag_false_for_non_pst(recommender):
     }
     _setup_superposition_env(recommender, actions, da)
 
-    with patch('expert_backend.services.recommender_service._identify_action_elements', return_value=([0], [])), \
-         patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_combine:
+    with patch('expert_backend.services.simulation_mixin._identify_action_elements', return_value=([0], [])), \
+         patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_combine:
 
         mock_combine.return_value = {"betas": [0.5, 0.5]}
         recommender.compute_superposition(aid1, aid2, "contingency")
@@ -220,8 +220,8 @@ def test_pst_fallback_line_idxs_used_when_identify_returns_empty(recommender):
             return ([], [])  # PST actions often return empty
         return ([1], [])  # LINE_B at index 1
 
-    with patch('expert_backend.services.recommender_service._identify_action_elements', side_effect=side_effect), \
-         patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_combine:
+    with patch('expert_backend.services.simulation_mixin._identify_action_elements', side_effect=side_effect), \
+         patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_combine:
 
         mock_combine.return_value = {"betas": [0.6, 0.4]}
         recommender.compute_superposition(pst_id, other_id, "contingency")

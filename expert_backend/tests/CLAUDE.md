@@ -88,6 +88,7 @@ Configuration in `frontend/vite.config.ts` (Vitest plugin).
 | `test_superposition_filtering_regression.py` | Max rho filtering for heavily loaded lines |
 | `test_superposition_service.py` | On-demand superposition computation |
 | `test_superposition_monitoring_consistency.py` | Monitoring alignment between estimation and simulation (11 tests) |
+| `test_pst_combined_actions.py` | PST tap + combined action simulation, topology preservation, fast_mode protection |
 
 #### Performance & Regression
 | File | Description |

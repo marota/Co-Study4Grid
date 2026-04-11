@@ -174,3 +174,40 @@ describe('Critical CSS: node/label visibility (regression guard)', () => {
         expect(STANDALONE_HTML).not.toContain('data-large-grid');
     });
 });
+
+describe('Critical config: standalone user-config save parity', () => {
+    // The standalone's persist-to-file effect must include ALL config fields
+    // that the React frontend saves. Missing fields silently lose user settings.
+
+    // Extract the POST body from the standalone's user-config save effect
+    const saveMatch = STANDALONE_HTML.match(
+        /axios\.post\([^)]*api\/user-config[^)]*,\s*\{([\s\S]*?)\}\s*\)\.catch/
+    );
+    const saveBody = saveMatch ? saveMatch[1] : '';
+
+    const REQUIRED_CONFIG_FIELDS = [
+        'network_path',
+        'action_file_path',
+        'layout_path',
+        'output_folder_path',
+        'lines_monitoring_path',
+        'min_line_reconnections',
+        'min_close_coupling',
+        'min_open_coupling',
+        'min_line_disconnections',
+        'min_pst',
+        'min_load_shedding',
+        'min_renewable_curtailment_actions',
+        'n_prioritized_actions',
+        'monitoring_factor',
+        'pre_existing_overload_threshold',
+        'ignore_reconnections',
+        'pypowsybl_fast_mode',
+    ];
+
+    REQUIRED_CONFIG_FIELDS.forEach(field => {
+        it(`standalone user-config save includes ${field}`, () => {
+            expect(saveBody).toContain(field);
+        });
+    });
+});

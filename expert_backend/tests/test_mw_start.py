@@ -240,7 +240,7 @@ class TestMwStartLoadShedding:
 
 
 @patch(
-    "expert_backend.services.recommender_service.get_virtual_line_flow",
+    "expert_backend.services.analysis_mixin.get_virtual_line_flow",
     side_effect=_real_get_virtual_line_flow,
 )
 class TestMwStartOpenCoupling:
@@ -405,7 +405,7 @@ class TestMwStartOpenCouplingRealData:
     """
 
     @patch(
-        "expert_backend.services.recommender_service.get_virtual_line_flow",
+        "expert_backend.services.analysis_mixin.get_virtual_line_flow",
         side_effect=_real_get_virtual_line_flow,
     )
     def test_c_regp6_open_coupling(self, _mock_vlf):
@@ -459,7 +459,7 @@ class TestMwStartOpenCouplingRealData:
         assert mw == pytest.approx(63.0, abs=0.1)
 
     @patch(
-        "expert_backend.services.recommender_service.get_virtual_line_flow",
+        "expert_backend.services.analysis_mixin.get_virtual_line_flow",
         side_effect=_real_get_virtual_line_flow,
     )
     def test_cpvanp6_open_coupling(self, _mock_vlf):

@@ -47,7 +47,7 @@ def test_run_analysis_filtering_combined_actions(recommender):
                 target()
             mock_thread.return_value.start.side_effect = mock_start
 
-            with patch('expert_backend.services.recommender_service.run_analysis') as mock_lib_run:
+            with patch('expert_backend.services.analysis_mixin.run_analysis') as mock_lib_run:
                 mock_lib_run.return_value = {
                     "prioritized_actions": {
                         "act1": {"description": "Action 1", "max_rho": 0.5},

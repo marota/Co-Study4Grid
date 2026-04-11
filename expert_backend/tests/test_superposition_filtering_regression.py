@@ -65,8 +65,8 @@ def test_superposition_max_rho_filtering_regression(recommender):
     env.network_manager.network.get_working_variant_id.return_value = "ORIG"
     
     # Use patch to mock compute_combined_pair_superposition AND _identify_action_elements
-    with patch('expert_backend.services.recommender_service._identify_action_elements', return_value=([0], [])):
-        with patch('expert_backend.services.recommender_service.compute_combined_pair_superposition') as mock_super:
+    with patch('expert_backend.services.simulation_mixin._identify_action_elements', return_value=([0], [])):
+        with patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_super:
             # We want betas=[0.5, 0.5] so rho_combined becomes [0.90, 0.8]
             # rho_combined = np.abs((1-sum(betas))*obs_n1.rho + b1*obs_act1.rho + b2*obs_act2.rho)
             mock_super.return_value = {

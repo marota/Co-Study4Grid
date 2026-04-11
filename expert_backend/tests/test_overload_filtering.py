@@ -14,8 +14,8 @@ class TestOverloadFiltering:
     def service(self):
         return RecommenderService()
 
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_graph")
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_discovery")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
     def test_run_analysis_step2_filters_care_about(self, mock_run_discovery, mock_run_graph, service):
         """Verify that deselected overloads are removed from lines_we_care_about."""
         # Setup mocks
@@ -45,8 +45,8 @@ class TestOverloadFiltering:
         assert service._analysis_context["lines_we_care_about"] == {"LINE_1", "LINE_3"}
         assert service._analysis_context["lines_overloaded_names"] == ["LINE_1"]
 
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_graph")
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_discovery")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
     def test_run_analysis_step2_preserves_care_about_when_monitoring(self, mock_run_discovery, mock_run_graph, service):
         """Verify that lines_we_care_about is NOT filtered when monitor_deselected=True."""
         mock_run_graph.side_effect = lambda ctx: ctx
@@ -76,8 +76,8 @@ class TestOverloadFiltering:
         # But resolution targets are still filtered
         assert service._analysis_context["lines_overloaded_names"] == ["LINE_1"]
 
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_graph")
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_discovery")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
     def test_run_analysis_step2_handles_different_iterable_types(self, mock_run_discovery, mock_run_graph, service):
         """Verify filtering works for both sets and lists in lines_we_care_about."""
         mock_run_graph.side_effect = lambda ctx: ctx
@@ -98,8 +98,8 @@ class TestOverloadFiltering:
         list(service.run_analysis_step2(selected_overloads=["L1"], all_overloads=["L1", "L2"], monitor_deselected=False))
         assert service._analysis_context["lines_we_care_about"] == ["L1", "L3"]
 
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_graph")
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_discovery")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
     def test_run_analysis_step2_handles_empty_selection(self, mock_run_discovery, mock_run_graph, service):
         """Verify that empty selected_overloads results in empty targets but doesn't crash."""
         mock_run_graph.side_effect = lambda ctx: ctx
@@ -123,8 +123,8 @@ class TestOverloadFiltering:
         assert service._analysis_context["lines_overloaded_ids"] == []
         assert service._analysis_context["lines_we_care_about"] == {"L3"}
 
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_graph")
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_discovery")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
     def test_run_analysis_step2_handles_invalid_names_in_selection(self, mock_run_discovery, mock_run_graph, service):
         """Verify that invalid names in selected_overloads are ignored."""
         mock_run_graph.side_effect = lambda ctx: ctx
@@ -154,8 +154,8 @@ class TestOverloadFiltering:
         # "L2" was in all_overloads but not in selected, so it should be removed from care
         assert service._analysis_context["lines_we_care_about"] == {"L1", "L3"}
 
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_graph")
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_discovery")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
     def test_run_analysis_step2_handles_error(self, mock_run_discovery, mock_run_graph, service):
         """Verify that backend errors are caught and yielded as error events."""
         mock_run_graph.side_effect = Exception("Simulated Backend Crash")
@@ -171,8 +171,8 @@ class TestOverloadFiltering:
         
         assert any(e.get("type") == "error" and "Simulated Backend Crash" in e.get("message") for e in events)
 
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_graph")
-    @patch("expert_backend.services.recommender_service.run_analysis_step2_discovery")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
     def test_run_analysis_step2_care_initialization(self, mock_run_discovery, mock_run_graph, service):
         """Verify that 'care' is correctly handled (fixing UnboundLocalError regression)."""
         mock_run_graph.side_effect = lambda ctx: ctx

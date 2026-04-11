@@ -61,8 +61,8 @@ class TestMonitoringConsistency:
             lines, _ = service._get_monitoring_parameters(mock_obs)
             assert lines == ["L2"]
 
-    @patch("expert_backend.services.recommender_service._identify_action_elements")
-    @patch("expert_backend.services.recommender_service.compute_combined_pair_superposition")
+    @patch("expert_backend.services.simulation_mixin._identify_action_elements")
+    @patch("expert_backend.services.simulation_mixin.compute_combined_pair_superposition")
     def test_compute_superposition_uses_monitoring_parameters(self, mock_superposition, mock_identify):
         service = RecommenderService()
         mock_obs = MagicMock()
