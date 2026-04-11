@@ -2701,6 +2701,19 @@ class RecommenderService:
                 if len(monitored_rho) > 0:
                     max_rho = float(np.max(monitored_rho)) * mf
                     max_rho_line = monitored_names[np.argmax(monitored_rho)]
+                    # Diagnostic: top 5 simulated lines
+                    top_indices = np.argsort(monitored_rho)[::-1][:5]
+                    print(f"[simulate_manual_action] TOP 5 simulated rho (among {len(monitored_rho)} monitored):")
+                    for rank, ti in enumerate(top_indices):
+                        print(f"  #{rank+1}: {monitored_names[ti]} = {float(monitored_rho[ti]):.6f} "
+                              f"(scaled: {float(monitored_rho[ti]) * mf:.4f})")
+                    # Diagnostic: check .BIESL61PRAGN specifically
+                    biesl_mask = (action_names == '.BIESL61PRAGN')
+                    if np.any(biesl_mask):
+                        biesl_in_care = bool(care_mask[np.where(biesl_mask)[0][0]])
+                        biesl_rho = float(action_rho[np.where(biesl_mask)[0][0]])
+                        print(f"[simulate_manual_action] .BIESL61PRAGN: in_care_mask={biesl_in_care}, "
+                              f"rho={biesl_rho:.6f} (scaled: {biesl_rho * mf:.4f})")
                 else:
                     max_rho = 0.0
                     max_rho_line = "N/A"
@@ -2973,19 +2986,45 @@ class RecommenderService:
         
         # Filter lines we care about
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
-        lines_overloaded_ids = []
-        for i in range(len(obs_start.rho)):
-            if obs_start.rho[i] >= monitoring_factor:
-                 lines_overloaded_ids.append(i)
-                 
+        worsening_threshold = getattr(config, 'PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD', 0.02)
+
+        name_line_list = list(env.name_line)
+        name_to_idx_map = {l: i for i, l in enumerate(name_line_list)}
+        num_lines = len(name_line_list)
+
         # Get pre-existing rho for reduction calculation
         n_variant_id = self._get_n_variant()
         n.set_working_variant(n_variant_id)
         obs_n = env.get_obs()
         # Only consider a line as "pre-existing" if it is actually an overload in the N state
         pre_existing_rho = {i: obs_n.rho[i] for i in range(len(obs_n.rho)) if obs_n.rho[i] >= monitoring_factor}
-                 
+
         lines_we_care_about, branches_with_limits = self._get_monitoring_parameters(obs_start)
+
+        # Determine lines_overloaded_ids: prefer analysis context (consistent with simulate_manual_action)
+        ctx_overloaded = (self._analysis_context or {}).get("lines_overloaded")
+        if ctx_overloaded:
+            lines_overloaded_ids = [name_to_idx_map[l] for l in ctx_overloaded if l in name_to_idx_map]
+            print(f"[compute_superposition] Using analysis context lines_overloaded: {len(lines_overloaded_ids)} lines")
+        else:
+            # Recompute: filter by lines_we_care_about AND branches_with_limits (matching simulate_manual_action)
+            mf = float(monitoring_factor)
+            wt = float(worsening_threshold)
+            lwca_set = set(lines_we_care_about) if lines_we_care_about else set(name_line_list)
+            bwl_set = set(branches_with_limits)
+            lines_overloaded_ids = []
+            for i in range(len(obs_start.rho)):
+                ln = name_line_list[i]
+                if (obs_start.rho[i] >= mf
+                    and ln in lwca_set
+                    and ln in bwl_set):
+                    # Exclude pre-existing N-state overloads unless worsened
+                    if i in pre_existing_rho:
+                        if obs_start.rho[i] <= pre_existing_rho[i] * (1 + wt):
+                            continue
+                    lines_overloaded_ids.append(i)
+            print(f"[compute_superposition] Computed lines_overloaded from N-1 state: {len(lines_overloaded_ids)} lines "
+                  f"(filtered by {len(lwca_set)} care + {len(bwl_set)} with-limits)")
 
         # Detect PST actions — same logic the library uses in compute_all_pairs_superposition
         def _is_pst_action(aid):
@@ -3015,26 +3054,20 @@ class RecommenderService:
         print(f"[compute_superposition] Library result: {'error: ' + str(result.get('error')) if 'error' in result else 'betas=' + str(result.get('betas'))}")
 
         if "error" not in result:
-             # Logic to compute max_rho and other details, similar to compute_all_pairs_superposition
-             name_line = list(env.name_line)
-             num_lines = len(name_line)
-             worsening_threshold = getattr(config, 'PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD', 0.02)
-
-             pre_existing_baseline = np.zeros(num_lines)
-             is_pre_existing = np.zeros(num_lines, dtype=bool)
-             for idx, rho_val in pre_existing_rho.items():
-                 pre_existing_baseline[idx] = rho_val
-                 is_pre_existing[idx] = True
+             # Build care_mask matching simulate_manual_action:
+             # 1) lines_we_care_about AND branches_with_limits
+             # 2) exclude pre-existing N-state overloads unless worsened
+             # 3) force-include lines_overloaded_ids (N-1 overloaded lines)
+             mf = float(monitoring_factor)
+             wt = float(worsening_threshold)
 
              if lines_we_care_about is not None and len(lines_we_care_about) > 0:
-                 care_mask = np.isin(name_line, list(lines_we_care_about))
+                 care_mask = np.isin(name_line_list, list(lines_we_care_about))
              else:
                  care_mask = np.ones(num_lines, dtype=bool)
 
-             # Filter out branches without explicit thermal limits in pypowsybl (consistency with simulation)
-             for i, l in enumerate(name_line):
-                 if care_mask[i] and l not in branches_with_limits:
-                     care_mask[i] = False
+             limits_mask = np.isin(name_line_list, list(branches_with_limits))
+             care_mask &= limits_mask
 
              rho_combined = np.abs(
                  (1.0 - sum(result["betas"])) * obs_start.rho +
@@ -3042,17 +3075,55 @@ class RecommenderService:
                  result["betas"][1] * all_actions[action2_id]["observation"].rho
              )
 
-             # Max rho among monitored lines
-             worsened_mask = rho_combined > pre_existing_baseline * (1 + worsening_threshold)
-             eligible_mask = care_mask & (~is_pre_existing | worsened_mask)
+             # Exclude pre-existing N-state overloads unless the combined action worsens them
+             base_rho_n = np.array(obs_n.rho[:num_lines]) if len(obs_n.rho) >= num_lines else np.array(obs_n.rho)
+             pre_existing = (base_rho_n >= mf)
+             not_worsened = (rho_combined[:num_lines] <= base_rho_n * (1 + wt))
+             care_mask &= ~(pre_existing & not_worsened)
 
+             # Always include lines_overloaded_ids (active monitoring) — consistent with simulate_manual_action
+             for idx in lines_overloaded_ids:
+                 if idx < len(care_mask):
+                     care_mask[idx] = True
+
+             # Find max rho among monitored lines
              max_rho = 0.0
              max_rho_line = "N/A"
-             if np.any(eligible_mask):
-                 masked_rho = rho_combined[eligible_mask]
+             if np.any(care_mask):
+                 masked_rho = rho_combined[care_mask]
+                 masked_names = np.array(name_line_list)[care_mask]
                  max_idx = np.argmax(masked_rho)
                  max_rho = float(masked_rho[max_idx])
-                 max_rho_line = name_line[np.where(eligible_mask)[0][max_idx]]
+                 max_rho_line = masked_names[max_idx]
+
+             # Diagnostic: top 5 monitored lines by estimated rho
+             print(f"[compute_superposition] monitored lines: {int(np.sum(care_mask))}/{num_lines}, "
+                   f"lines_overloaded force-included: {len(lines_overloaded_ids)}")
+             if np.any(care_mask):
+                 top_indices = np.argsort(masked_rho)[::-1][:5]
+                 print(f"[compute_superposition] TOP 5 estimated rho (among {len(masked_rho)} monitored):")
+                 for rank, ti in enumerate(top_indices):
+                     print(f"  #{rank+1}: {masked_names[ti]} = {float(masked_rho[ti]):.6f} "
+                           f"(scaled: {float(masked_rho[ti]) * mf:.4f})")
+
+             # Diagnostic: check .BIESL61PRAGN specifically
+             biesl_idx = name_to_idx_map.get('.BIESL61PRAGN')
+             if biesl_idx is not None:
+                 in_care = bool(care_mask[biesl_idx])
+                 in_limits = '.BIESL61PRAGN' in branches_with_limits
+                 in_lwca = lines_we_care_about is None or '.BIESL61PRAGN' in (lines_we_care_about or [])
+                 est_rho = float(rho_combined[biesl_idx])
+                 n1_rho = float(obs_start.rho[biesl_idx])
+                 n_rho = float(obs_n.rho[biesl_idx])
+                 print(f"[compute_superposition] .BIESL61PRAGN check: "
+                       f"in_care_mask={in_care}, in_limits={in_limits}, in_lwca={in_lwca}, "
+                       f"rho_est={est_rho:.6f} (scaled:{est_rho*mf:.4f}), "
+                       f"rho_N1={n1_rho:.6f}, rho_N={n_rho:.6f}")
+             else:
+                 print(f"[compute_superposition] .BIESL61PRAGN NOT FOUND in name_line_list")
+
+             print(f"[compute_superposition] RESULT: max_rho_line={max_rho_line}, "
+                   f"max_rho_raw={max_rho:.6f}, max_rho_scaled={max_rho * mf:.4f}")
 
              # Scale by monitoring_factor for operational loading display
              res_max_rho = max_rho * monitoring_factor

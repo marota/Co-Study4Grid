@@ -1,6 +1,6 @@
-# Renewable Curtailment & Load Shedding — Implementation Status
+# Renewable Curtailment, Load Shedding & PST Actions — Implementation Status
 
-This document describes the implementation of renewable curtailment and load shedding actions in Co-Study4Grid, including the recent migration to the **power reduction format** (`set_load_p`/`set_gen_p`) introduced in [Expert_op4grid_recommender PR #74](https://github.com/marota/Expert_op4grid_recommender/pull/74).
+This document describes the implementation of renewable curtailment, load shedding, and **Phase Shifting Transformer (PST)** actions in Co-Study4Grid. It covers the power reduction format (`set_load_p`/`set_gen_p`) introduced in [Expert_op4grid_recommender PR #74](https://github.com/marota/Expert_op4grid_recommender/pull/74), as well as PST tap actions and their integration with the superposition estimation engine.
 
 ## 1. Action Format Evolution
 
@@ -232,3 +232,206 @@ When `target_mw` is provided for an action already in `_dict_action`:
 - **Re-simulate button**: Triggers `simulateManualAction` with the new `target_mw` value
 - Default value: the total shedded/curtailed MW from the current simulation result
 - The action card updates in-place with the new simulation results
+
+## 7. PST (Phase Shifting Transformer) Actions
+
+PST actions change the tap position of a phase-shifting transformer to redirect power flows and relieve overloads. Unlike topology actions (switching, coupling) or power reduction actions (curtailment, load shedding), PST actions modify a continuous parameter.
+
+### Action Format
+
+```python
+# PST tap change
+{"pst_tap": {".ARKA TD 661": 32}}
+# Topology: pst_tap = {".ARKA TD 661": 32}
+```
+
+The tap value is an integer within the transformer's valid range (e.g., `[0..32]`).
+
+### Action Classification
+
+`ActionClassifier.identify_action_type()` returns `"pst"` or `"pst_tap"` for PST actions. The action ID convention is `pst_tap_<transformer_name>_inc<N>` (e.g., `pst_tap_.ARKA TD 661_inc2`).
+
+### Configurable Tap Position
+
+Users can manually adjust the target tap value when simulating PST actions, similar to configurable MW for load shedding/curtailment.
+
+#### API
+
+`POST /api/simulate-manual-action` accepts an optional `target_tap` field:
+
+```json
+{
+    "action_id": "pst_tap_.ARKA TD 661_inc2",
+    "disconnected_element": "LINE_X",
+    "target_tap": 30
+}
+```
+
+#### Backend (`recommender_service.py`)
+
+When `target_tap` is provided:
+1. The `content.pst_tap` dictionary is updated with the new tap value
+2. The action entry in `_dict_action` is merged (preserving library keys)
+3. Simulation runs with the updated tap position
+
+#### Frontend
+
+- **Action card**: Shows editable tap input with valid range `[0..max_tap]`
+- **Re-simulate button**: Triggers re-simulation with updated `target_tap`
+- **PST details**: Purple background (`#f3e8ff`), shows transformer name and tap value
+- **Combined actions**: After re-simulation, refreshes all combined pair estimations involving this PST action
+
+### PST Details Metadata
+
+```python
+# Backend returns:
+{
+    "pst_details": [
+        {"pst_name": ".ARKA TD 661", "tap_position": 32}
+    ]
+}
+```
+
+### Dynamic PST Action Creation
+
+When a user manually simulates `pst_tap_<name>_inc<N>`, the backend:
+1. Extracts the transformer name from the action ID
+2. Looks up the current tap position from the N-1 observation
+3. Computes `new_tap = current_tap + N` (clamped to valid range)
+4. Creates topology: `{"pst_tap": {"<name>": new_tap}}`
+
+## 8. PST Actions in Superposition Estimation
+
+PST tap changes require special handling in the superposition theorem because they don't disconnect/reconnect elements. The standard no-op detection (comparing line status arrays) fails for PSTs.
+
+### The `is_pst` Flag
+
+When computing superposition for a pair that includes a PST action, the backend passes `act1_is_pst=True` or `act2_is_pst=True` to `compute_combined_pair_superposition()`. This tells the library to use **flow-based no-op detection** (comparing `p_or` deltas) instead of line-status comparison.
+
+```python
+# In compute_superposition():
+act1_is_pst = _is_pst_action(action1_id)
+act2_is_pst = _is_pst_action(action2_id)
+
+result = compute_combined_pair_superposition(
+    ...,
+    act1_is_pst=act1_is_pst,
+    act2_is_pst=act2_is_pst,
+)
+```
+
+Detection heuristic (`_is_pst_action`):
+- `ActionClassifier.identify_action_type()` returns `"pst"` or `"pst_tap"`
+- OR the action ID contains `"pst_tap"` or `"pst_"`
+
+### PST Element Identification Fallback
+
+`_identify_action_elements()` may return empty line indices for PST actions (since they don't disconnect lines). The fallback extracts the transformer index from the `pst_tap` content in `_dict_action`:
+
+```python
+if len(line_idxs) == 0 and _is_pst_action(aid):
+    pst_content = _dict_action.get(aid, {}).get("content", {}).get("pst_tap", {})
+    for pst_name in pst_content:
+        idx = name_line.index(pst_name)  # find index in env.name_line
+        line_idxs = [idx]
+```
+
+### Re-simulation and Combined Pair Refresh
+
+When a PST tap is re-simulated at a different position:
+1. The PST action's observation is updated in `_last_result["prioritized_actions"]`
+2. All combined pairs containing this PST action are re-estimated via `refreshCombinedEstimations()`
+3. The superposition formula uses the updated observation for the new betas computation
+
+## 9. Monitoring Consistency (Estimation vs Simulation)
+
+The superposition estimation (`compute_superposition`) and the full simulation (`simulate_manual_action`) must use the **same set of monitored lines** for `max_rho` computation. Inconsistency leads to the estimation and simulation reporting different worst-case lines.
+
+### Monitored Lines Definition
+
+Both paths use a `care_mask` built identically:
+
+1. **lines_we_care_about** — from analysis context or all lines (configurable)
+2. **AND branches_with_limits** — lines with permanent thermal limits in pypowsybl (type=CURRENT, acceptable_duration=-1)
+3. **EXCLUDE** pre-existing N-state overloads unless the action **worsens** them beyond a threshold (default 2%)
+4. **FORCE-INCLUDE** `lines_overloaded_ids` — the N-1 overloaded lines under active monitoring
+
+```
+care_mask = (lines_we_care_about & branches_with_limits)
+          & ~(pre_existing & not_worsened)
+          | lines_overloaded_ids
+```
+
+### lines_overloaded_ids Priority
+
+Both `compute_superposition` and `simulate_manual_action` use the same priority for determining `lines_overloaded_ids`:
+
+1. **Analysis context** (`_analysis_context["lines_overloaded"]`) — set during step1 analysis, contains line names already filtered by monitoring parameters
+2. **Recomputation fallback** — lines with `rho >= monitoring_factor` in N-1 state, filtered by `lines_we_care_about` AND `branches_with_limits`
+
+### branches_with_limits Resolution
+
+The `_get_monitoring_parameters()` method queries pypowsybl for permanent thermal limits:
+
+```python
+limits = network.get_operational_limits()
+perm_limits = limits[(limits['type'] == 'CURRENT') & (limits['acceptable_duration'] == -1)]
+branches_with_limits = set(perm_limits['element_id'].unique())
+```
+
+If this query fails (e.g., `'type'` column not found), the fallback includes ALL lines. This warning appears as:
+```
+Warning: Failed to identify branches with limits: 'type'
+```
+
+### Superposition Estimation Accuracy
+
+The superposition formula `rho_combined = |(1-β₁-β₂)·ρ_N1 + β₁·ρ_act1 + β₂·ρ_act2|` is a **linear approximation** of the nonlinear power flow. Typical accuracy is within ~1-2% of the full simulation, but:
+
+- Lines with loading driven by **nonlinear redistribution** (not direct action effect) may be under/overestimated
+- When two lines have very close loading (e.g., 93.1% vs 93.6%), the ~1% estimation error can **flip the ranking** of which line appears as the worst
+- The estimated `max_rho_line` may differ from the simulated one, even though both are within the accuracy band
+- This is an inherent limitation of the linear superposition approach, not a code bug
+
+**Example from real data:**
+
+| Line | Estimated rho | Simulated rho | Error |
+|------|--------------|---------------|-------|
+| CANTEY761 | 93.6% | 92.8% | +0.8% (overestimate) |
+| .BIESL61PRAGN | 93.1% | 94.4% | -1.3% (underestimate) |
+
+Estimation picks CANTEY761 as worst; simulation picks .BIESL61PRAGN. Both are correct within the linear approximation error band.
+
+## 10. Testing
+
+### Backend (`expert_backend/tests/`)
+
+#### Load Shedding & Curtailment Tests
+- `test_power_reduction_format.py` — 23 tests for new format scenarios
+- `test_renewable_curtailment.py` — curtailment detail computation
+- `test_manual_action_enrichment.py` — enrichment with new topology format
+- `test_dynamic_actions.py` — on-the-fly action creation
+- `test_mw_start.py` — MW start computation for all action types
+- `test_configurable_mw.py` — 8 tests for configurable MW reduction
+
+#### PST & Superposition Tests
+- `test_superposition_service.py` — PST flag passing, element identification fallback, dict_action merge preservation
+- `test_superposition_accuracy.py` — estimation vs simulation discrepancy detection
+- `test_superposition_filtering_regression.py` — heavily loaded lines not filtered from max_rho
+- `test_superposition_monitoring_consistency.py` — 11 tests for monitoring alignment:
+  - Lines without thermal limits excluded from max_rho (CIVAUY712 regression)
+  - Fallback lines_overloaded_ids filtered by lines_we_care_about AND branches_with_limits
+  - N-1 overloaded lines force-included despite pre-existing N-state overloads
+  - Analysis context lines_overloaded takes priority over recomputation
+  - Pre-existing N-state overloads excluded unless combined action worsens them
+  - Pre-existing overloads included when worsened beyond threshold
+  - All monitored lines eligible without N-state overloads
+  - Global max scan across all monitored lines (no caching)
+  - PST + switching pair monitors same lines as switching + switching
+  - is_rho_reduction computed on overloaded lines
+  - max_rho scaled by monitoring_factor
+
+### Frontend (`frontend/src/`)
+- `ActionFeed.test.tsx` — rendering of load shedding/curtailment/PST details
+- `CombinedActionsModal.test.tsx` — combined action pair computation modal
+- `svgUtils.test.ts` — target detection with all topology formats
