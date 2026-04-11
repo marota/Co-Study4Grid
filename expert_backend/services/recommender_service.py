@@ -341,14 +341,21 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         return variant_id
 
     def _get_n1_variant(self, contingency: str):
-        """Return the variant ID for the N-1 state, creating and simulating it if necessary."""
+        """Return the variant ID for the N-1 state, creating and simulating it if necessary.
+
+        Always clones from the N state variant (not the current working variant)
+        to avoid inheriting modifications from prior action simulations.
+        """
         n = self._get_base_network()
         safe_cont = contingency.replace(" ", "_").replace("-", "_") if contingency else "none"
         variant_id = f"N_1_state_{safe_cont}"
-        
+
         if variant_id not in n.get_variant_ids():
             original_variant = n.get_working_variant_id()
-            n.clone_variant(original_variant, variant_id)
+            # Clone from the clean N state — not the working variant, which
+            # may have been left on a simulation variant with modified topology.
+            n_variant_id = self._get_n_variant()
+            n.clone_variant(n_variant_id, variant_id)
             n.set_working_variant(variant_id)
             if contingency:
                 try:
