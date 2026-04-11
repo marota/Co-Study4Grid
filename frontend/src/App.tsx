@@ -136,7 +136,12 @@ function App() {
     setError('');
     analysis.setInfoMessage('');
     diagrams.setInspectQuery('');
-    diagrams.lastZoomState.current = { query: '', branch: '' };
+    // Do NOT reset lastZoomState here.  Resetting it causes the auto-zoom
+    // effect to detect a spurious "branch change" during the same render
+    // cycle in which the old n1Diagram SVG is still mounted, firing the
+    // zoom on stale data and consuming the intent before the new diagram
+    // loads.  Leaving lastZoomState intact lets the natural selectedBranch
+    // change trigger the zoom correctly after the new SVG is ready.
   }, [setError, actionsHook, analysis, diagrams]);
 
   // Full reset: contingency state + network/diagram state
