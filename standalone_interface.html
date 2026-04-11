@@ -2193,7 +2193,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 setSuggestedByRecommenderIds(new Set());
                 setActionDiagram(null);
                 setN1Diagram(null);
-                setActiveTab('n');
+                // Do NOT reset activeTab here — the caller (fetchN1) sets it
+                // to 'n-1' immediately. Resetting to 'n' caused the auto-zoom
+                // effect to skip zoom on the second contingency because the
+                // branch-change guard (branchChanged && activeTab === 'n')
+                // fired during the intermediate render.
                 setVlOverlay(null);
                 setAnalysisRan(false);
                 setError('');
@@ -2211,6 +2215,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             // Full reset: contingency state + network/diagram state
             const resetAllState = useCallback(() => {
                 clearContingencyState();
+                setActiveTab('n');
                 setNDiagram(null);
                 setOriginalViewBox(null);
                 setActionViewMode('network');

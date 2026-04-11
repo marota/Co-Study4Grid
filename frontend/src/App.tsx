@@ -129,7 +129,9 @@ function App() {
     actionsHook.clearActionState();
     diagrams.setSelectedActionId(null);
     diagrams.setActionDiagram(null);
-    diagrams.setActiveTab('n');
+    // Do NOT reset activeTab to 'n' here — the caller (fetchN1) sets
+    // it to 'n-1' immediately. Resetting to 'n' interfered with the
+    // auto-zoom effect on the second contingency change.
     diagrams.setVlOverlay(null);
     setError('');
     analysis.setInfoMessage('');
@@ -140,6 +142,7 @@ function App() {
   // Full reset: contingency state + network/diagram state
   const resetAllState = useCallback(() => {
     clearContingencyState();
+    diagrams.setActiveTab('n');
     diagrams.setNDiagram(null);
     diagrams.setN1Diagram(null);
     diagrams.setOriginalViewBox(null);

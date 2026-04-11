@@ -206,6 +206,12 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
                     raw_dict_action[action_id] = {
                         "description": f"Disconnection of line/transformer '{branch}'",
                         "description_unitaire": f"Ouverture de la ligne '{branch}'",
+                        "content": {
+                            "set_bus": {
+                                "lines_or_id": {branch: -1},
+                                "lines_ex_id": {branch: -1},
+                            }
+                        },
                     }
                 logger.info(f"[RecommenderService] Auto-generated {len(branches)} disco_ actions")
 

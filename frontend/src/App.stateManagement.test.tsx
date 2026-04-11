@@ -312,4 +312,40 @@ describe('Phase 2: State Management Optimization', () => {
       expect(screen.getByTestId('overload-panel')).toBeInTheDocument();
     });
   });
+
+  describe('Second contingency state reset', () => {
+    it('clearContingencyState does NOT reset activeTab to n', async () => {
+      await renderAndLoadStudy();
+
+      // Select first branch → should switch to n-1 tab
+      await selectBranch('BRANCH_A');
+
+      await waitFor(() => {
+        const lastViz = vizPanelRenderLog[vizPanelRenderLog.length - 1];
+        expect(lastViz.activeTab).toBe('n-1');
+      });
+
+      // Select second branch → should stay on n-1 tab (not flash to n)
+      await selectBranch('BRANCH_B');
+
+      await waitFor(() => {
+        const lastViz = vizPanelRenderLog[vizPanelRenderLog.length - 1];
+        // activeTab must be 'n-1' after contingency switch, NOT 'n'
+        expect(lastViz.activeTab).toBe('n-1');
+      });
+    });
+
+    it('n1Diagram is cleared and re-fetched on contingency switch', async () => {
+      await renderAndLoadStudy();
+
+      await selectBranch('BRANCH_A');
+      const firstCallCount = mockApi.getN1Diagram.mock.calls.length;
+
+      await selectBranch('BRANCH_B');
+
+      // Should have fetched N-1 diagram for the new branch
+      expect(mockApi.getN1Diagram).toHaveBeenCalledWith('BRANCH_B');
+      expect(mockApi.getN1Diagram.mock.calls.length).toBeGreaterThan(firstCallCount);
+    });
+  });
 });

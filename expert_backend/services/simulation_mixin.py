@@ -608,7 +608,7 @@ class SimulationMixin:
                     description = dict_entry["description"]
                 if "content" in dict_entry:
                     content = dict_entry["content"]
-        
+
         if content is None and topo:
             # Best-effort reconstruction for manual/combined actions from topology
             try:
@@ -616,7 +616,11 @@ class SimulationMixin:
                 content = restored.get("content")
             except Exception as e:
                 logger.debug("Suppressed exception: %s", e)
-                content = None
+
+        # Guarantee content is never None — the analysis library's rule
+        # validator calls content.get("set_bus", {}) and crashes on None.
+        if content is None:
+            content = {}
 
         action_data = {
             "content": content,
@@ -664,8 +668,10 @@ class SimulationMixin:
             existing["observation"] = action_data.get("observation")
             existing["action"] = action_data.get("action")
             existing["action_topology"] = action_data.get("action_topology")
-            # Update content with the latest (tap/MW may have changed)
-            if action_data.get("content"):
+            # Update content with the latest (tap/MW may have changed).
+            # Always update — even empty dict {} is valid and must replace
+            # a stale None to prevent content.get() crashes in the library.
+            if action_data.get("content") is not None:
                 existing["content"] = action_data["content"]
             logger.debug(f"  merged keys: {list(existing.keys())}")
         else:
