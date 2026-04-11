@@ -10,6 +10,7 @@
     "min_line_disconnections": 3.0,
     "min_pst": 1.0,
     "min_load_shedding": 0.0,
+    "min_renewable_curtailment_actions": 0,
     "n_prioritized_actions": 10,
     "monitoring_factor": 0.95,
     "pre_existing_overload_threshold": 0.02,
