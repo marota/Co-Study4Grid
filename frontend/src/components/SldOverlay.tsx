@@ -562,16 +562,22 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             }
         }
 
-        // --- Overloaded lines (N-1 tab only) ---
+        // --- Overloaded lines ---
+        // N-1 tab: highlight overloads present in the N-1 state.
+        // Action tab: highlight post-action overloads (overloads that persist or new
+        // ones that emerged). Overloads solved by the action are NOT highlighted here.
+        let overloadedLinesToShow: string[] | undefined;
         if (vlOverlay.tab === 'n-1') {
-            const overloadedLines = result?.lines_overloaded;
-            if (overloadedLines && overloadedLines.length > 0) {
-                for (const lineId of overloadedLines) {
-                    const cell = findCellForEquipment(lineId);
-                    if (cell && !highlightedCells.has(cell)) {
-                        cloneHighlight(cell, 'sld-highlight-overloaded');
-                        highlightedCells.add(cell);
-                    }
+            overloadedLinesToShow = result?.lines_overloaded;
+        } else if (vlOverlay.tab === 'action' && actionDetail) {
+            overloadedLinesToShow = actionDetail.lines_overloaded_after;
+        }
+        if (overloadedLinesToShow && overloadedLinesToShow.length > 0) {
+            for (const lineId of overloadedLinesToShow) {
+                const cell = findCellForEquipment(lineId);
+                if (cell && !highlightedCells.has(cell)) {
+                    cloneHighlight(cell, 'sld-highlight-overloaded');
+                    highlightedCells.add(cell);
                 }
             }
         }

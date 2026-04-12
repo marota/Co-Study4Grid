@@ -232,8 +232,17 @@ export function useSettings(): SettingsState {
         interactionLogger.record('path_picked', { type, path });
         setter(path);
       }
-    } catch {
-      console.error('Failed to open file picker');
+    } catch (e) {
+      // Surface the backend error so the user knows why the dialog didn't
+      // open (e.g. tkinter unavailable on a headless server). Previously
+      // this was silently logged to the console and looked like a broken
+      // button.
+      const message = e instanceof Error ? e.message : 'Failed to open file picker';
+      console.error('Failed to open file picker:', e);
+      alert(
+        `Unable to open the native file picker:\n${message}\n\n` +
+        'Paste the path into the text field manually instead.'
+      );
     }
   }, []);
 

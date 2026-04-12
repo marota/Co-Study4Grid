@@ -309,6 +309,10 @@ const CombinedActionsModal: React.FC<Props> = ({
                 n_components: result.n_components,
                 disconnected_mw: result.disconnected_mw,
                 non_convergence: result.non_convergence,
+                lines_overloaded_after: result.lines_overloaded_after,
+                load_shedding_details: result.load_shedding_details,
+                curtailment_details: result.curtailment_details,
+                pst_details: result.pst_details,
                 estimated_max_rho: estimationData?.estimated_max_rho ?? estimationData?.max_rho,
                 estimated_max_rho_line: estimationData?.estimated_max_rho_line ?? estimationData?.max_rho_line,
                 is_estimated: false,
@@ -316,6 +320,9 @@ const CombinedActionsModal: React.FC<Props> = ({
             };
             
             onSimulateCombined(idToSimulate, detail, result.lines_overloaded || []);
+            // Close the modal so the user immediately sees the new action
+            // variant diagram in the main visualization panel.
+            onClose();
         } catch (e: unknown) {
             const err = e as { response?: { data?: { detail?: string } }, message?: string };
             setError(err?.response?.data?.detail || err?.message || 'Simulation failed');

@@ -86,9 +86,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     const [tooltip, setTooltip] = useState<{ content: React.ReactNode; x: number; y: number } | null>(null);
     const [suggestedTab, setSuggestedTab] = useState<'prioritized' | 'rejected'>('prioritized');
     const [dismissedSelectedWarning, setDismissedSelectedWarning] = useState(false);
-    // Per-action target MW inputs for score table rows (keyed by actionId)
-    const [scoreTargetMw, setScoreTargetMw] = useState<Record<string, string>>({});
-    // Per-action editable MW for action card re-simulation (keyed by actionId)
+    // Per-action editable MW for LS/RC actions. This state is shared between
+    // the score table row input (in the manual-selection dropdown) and the
+    // action card input, so that editing one reflects immediately in the other.
     const [cardEditMw, setCardEditMw] = useState<Record<string, string>>({});
     // Per-action editable tap position for PST action re-simulation (keyed by actionId)
     const [cardEditTap, setCardEditTap] = useState<Record<string, string>>({});
@@ -284,6 +284,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 n_components: result.n_components,
                 disconnected_mw: result.disconnected_mw,
                 non_convergence: result.non_convergence,
+                lines_overloaded_after: result.lines_overloaded_after,
                 load_shedding_details: result.load_shedding_details,
                 curtailment_details: result.curtailment_details,
                 pst_details: result.pst_details,
@@ -356,6 +357,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 n_components: result.n_components,
                 disconnected_mw: result.disconnected_mw,
                 non_convergence: result.non_convergence,
+                lines_overloaded_after: result.lines_overloaded_after,
                 load_shedding_details: result.load_shedding_details,
                 curtailment_details: result.curtailment_details,
                 pst_details: result.pst_details,
@@ -396,6 +398,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 n_components: result.n_components,
                 disconnected_mw: result.disconnected_mw,
                 non_convergence: result.non_convergence,
+                lines_overloaded_after: result.lines_overloaded_after,
                 load_shedding_details: result.load_shedding_details,
                 curtailment_details: result.curtailment_details,
                 pst_details: result.pst_details,
@@ -557,8 +560,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         filteredActions={filteredActions}
                         actionScores={actionScores}
                         actions={actions}
-                        scoreTargetMw={scoreTargetMw}
-                        onScoreTargetMwChange={(actionId, value) => setScoreTargetMw(prev => ({ ...prev, [actionId]: value }))}
+                        cardEditMw={cardEditMw}
+                        onCardEditMwChange={(actionId, value) => setCardEditMw(prev => ({ ...prev, [actionId]: value }))}
                         cardEditTap={cardEditTap}
                         onCardEditTapChange={(actionId, value) => setCardEditTap(prev => ({ ...prev, [actionId]: value }))}
                         simulating={simulating}

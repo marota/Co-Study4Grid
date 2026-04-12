@@ -167,6 +167,15 @@ function App() {
     [diagrams, result, selectedBranch, voltageLevels.length, setResult, setError]
   );
 
+  // Force-select variant used after a (re)simulation. This skips the
+  // "already selected → deselect" toggle path in handleActionSelect so the
+  // newly-simulated action diagram is always re-fetched.
+  const wrappedForcedActionSelect = useCallback(
+    (actionId: string | null) =>
+      diagrams.handleActionSelect(actionId, result, selectedBranch, voltageLevels.length, setResult, setError, true),
+    [diagrams, result, selectedBranch, voltageLevels.length, setResult, setError]
+  );
+
   const wrappedActionFavorite = useCallback(
     (actionId: string) => actionsHook.handleActionFavorite(actionId, setResult),
     [actionsHook, setResult]
@@ -174,8 +183,8 @@ function App() {
 
   const wrappedManualActionAdded = useCallback(
     (actionId: string, detail: ActionDetail, linesOverloaded: string[]) =>
-      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedActionSelect),
-    [actionsHook, setResult, wrappedActionSelect]
+      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect),
+    [actionsHook, setResult, wrappedForcedActionSelect]
   );
 
   const handleUpdateCombinedEstimation = useCallback(
