@@ -179,6 +179,17 @@ describe('api client', () => {
             );
             expect(result).toBe('/home/user/networks');
         });
+
+        // Bug 4: when the backend returns an error field (e.g. tkinter
+        // failed to launch), the API client must throw so the caller can
+        // surface a visible message instead of silently returning "".
+        it('throws when the backend response contains an error field', async () => {
+            mockedAxios.get.mockResolvedValue({
+                data: { path: '', error: 'tkinter: no display' },
+            });
+
+            await expect(api.pickPath('file')).rejects.toThrow('tkinter: no display');
+        });
     });
 
     describe('runAnalysisStep1', () => {

@@ -221,4 +221,89 @@ describe('CombinedActionsModal', () => {
 
         expect(await screen.findByText('N/A')).toBeInTheDocument();
     });
+
+    // Bugs 6 & 7: simulations triggered from the modal must
+    //   (1) land in the correct bucket (single → Suggested via
+    //       onSimulateSingleAction; combined pair → Selected via
+    //       onSimulateCombined), and
+    //   (2) leave the modal open so the user can keep exploring /
+    //       simulating additional rows without losing their place.
+    describe('simulation dispatch & modal persistence (Bugs 6/7)', () => {
+        const simResult = {
+            action_id: 'act1',
+            description_unitaire: 'Simulated Action 1',
+            rho_before: [0.8],
+            rho_after: [0.7],
+            max_rho: 0.7,
+            max_rho_line: 'L1',
+            is_rho_reduction: true,
+            non_convergence: null,
+            lines_overloaded: ['LINE_A'],
+        } as unknown as SimulateResult;
+
+        it('routes a single-action Explore-Pairs simulation through onSimulateSingleAction, not onSimulateCombined', async () => {
+            const onSimulateSingleAction = vi.fn();
+            const onSimulateCombined = vi.fn();
+            const onClose = vi.fn();
+            vi.spyOn(api, 'simulateManualAction').mockResolvedValue(simResult);
+
+            render(
+                <CombinedActionsModal
+                    {...defaultProps}
+                    onSimulateSingleAction={onSimulateSingleAction}
+                    onSimulateCombined={onSimulateCombined}
+                    onClose={onClose}
+                />,
+            );
+            fireEvent.click(getExploreTab());
+
+            // The mock analysisResult has pre-simulated rho_after values,
+            // so the per-row button is labelled "Re-run" — click any of
+            // them to trigger a single-action simulation.
+            const simulateButtons = await screen.findAllByText('Re-run');
+            fireEvent.click(simulateButtons[0]);
+
+            await waitFor(() => {
+                expect(onSimulateSingleAction).toHaveBeenCalledTimes(1);
+            });
+            // Single action must NOT be promoted to Selected via
+            // onSimulateCombined...
+            expect(onSimulateCombined).not.toHaveBeenCalled();
+            // ...and the modal must stay open.
+            expect(onClose).not.toHaveBeenCalled();
+        });
+
+        it('routes a computed pair simulation through onSimulateCombined and keeps the modal open', async () => {
+            const onSimulateSingleAction = vi.fn();
+            const onSimulateCombined = vi.fn();
+            const onClose = vi.fn();
+            vi.spyOn(api, 'simulateManualAction').mockResolvedValue({
+                ...simResult,
+                action_id: 'act1+act2',
+            } as unknown as SimulateResult);
+
+            render(
+                <CombinedActionsModal
+                    {...defaultProps}
+                    onSimulateSingleAction={onSimulateSingleAction}
+                    onSimulateCombined={onSimulateCombined}
+                    onClose={onClose}
+                />,
+            );
+
+            // The Computed Pairs tab is the default. Click the first
+            // "Simulate" button available for a pre-computed pair row.
+            const simulateButtons = await screen.findAllByText('Simulate');
+            fireEvent.click(simulateButtons[0]);
+
+            await waitFor(() => {
+                expect(onSimulateCombined).toHaveBeenCalledTimes(1);
+            });
+            // Combined pair id containing '+' must NOT trigger the
+            // single-action path.
+            expect(onSimulateSingleAction).not.toHaveBeenCalled();
+            // Crucially: the modal must remain open (Bug 7).
+            expect(onClose).not.toHaveBeenCalled();
+        });
+    });
 });

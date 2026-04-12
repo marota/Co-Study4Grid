@@ -194,4 +194,50 @@ describe('useDiagrams — interaction logging', () => {
         expect(log[0].type).toBe('zoom_in');
         expect(log[0].details).toEqual({ tab: 'action' });
     });
+
+    // Bug 3: re-simulating an action that is ALREADY the currently-viewed
+    // action must re-fetch its variant diagram instead of silently
+    // deselecting it (which left the action tab blank). `handleActionSelect`
+    // now accepts a `force` flag that bypasses the "same id → toggle off"
+    // early return and always proceeds with the fetch.
+    describe('handleActionSelect force flag (Bug 3)', () => {
+        it('does NOT deselect when called with force=true on the already-selected action', async () => {
+            const { api } = await import('../api');
+            const { result } = renderHook(() => useDiagrams([], [], ''));
+
+            act(() => { result.current.setSelectedActionId('act_1'); });
+            interactionLogger.clear();
+            vi.mocked(api.getActionVariantDiagram).mockClear();
+
+            await act(async () => {
+                await result.current.handleActionSelect('act_1', null, '', 0, vi.fn(), vi.fn(), true);
+            });
+
+            // Must NOT have logged a deselect event.
+            const log = interactionLogger.getLog();
+            expect(log.some(e => e.type === 'action_deselected')).toBe(false);
+            // Must have requested a fresh diagram fetch for act_1.
+            expect(api.getActionVariantDiagram).toHaveBeenCalledWith('act_1');
+            // Selection must still be on act_1.
+            expect(result.current.selectedActionId).toBe('act_1');
+        });
+
+        it('still deselects when called without force on the already-selected action', async () => {
+            const { api } = await import('../api');
+            const { result } = renderHook(() => useDiagrams([], [], ''));
+
+            act(() => { result.current.setSelectedActionId('act_1'); });
+            interactionLogger.clear();
+            vi.mocked(api.getActionVariantDiagram).mockClear();
+
+            await act(async () => {
+                await result.current.handleActionSelect('act_1', null, '', 0, vi.fn(), vi.fn());
+            });
+
+            const log = interactionLogger.getLog();
+            expect(log.some(e => e.type === 'action_deselected')).toBe(true);
+            // No fetch is issued on the toggle-off path.
+            expect(api.getActionVariantDiagram).not.toHaveBeenCalled();
+        });
+    });
 });

@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useActions } from './useActions';
 import { interactionLogger } from '../utils/interactionLogger';
+import type { ActionDetail, AnalysisResult } from '../types';
 
 describe('useActions — interaction logging', () => {
     beforeEach(() => {
@@ -93,5 +94,142 @@ describe('useActions — interaction logging', () => {
         });
 
         expect(interactionLogger.getLog()).toHaveLength(0);
+    });
+
+    // Bug 5: re-simulating an existing action (editing Target MW / tap and
+    // clicking "Re-simulate") must NOT promote it into the Selected
+    // Actions bucket. A recommender-suggested card must stay in Suggested,
+    // and a recommender-suggested action's is_manual flag must not flip.
+    describe('handleActionResimulated (Bug 5)', () => {
+        const newDetail: ActionDetail = {
+            description_unitaire: 'resimulated',
+            rho_before: [1.1],
+            rho_after: [0.7],
+            max_rho: 0.7,
+            max_rho_line: 'LINE_B',
+            is_rho_reduction: true,
+            load_shedding_details: [
+                { load_name: 'LOAD_1', voltage_level_id: 'VL_1', shedded_mw: 4.2 },
+            ],
+        };
+
+        it('does not add the action id to selectedActionIds or manuallyAddedIds', () => {
+            const { result } = renderHook(() => useActions());
+            let captured: AnalysisResult | null = null;
+            const mockSetResult = (updater: unknown) => {
+                if (typeof updater === 'function') {
+                    captured = (updater as (p: AnalysisResult | null) => AnalysisResult | null)({
+                        pdf_path: null, pdf_url: null, actions: {
+                            load_shedding_L1: {
+                                description_unitaire: 'initial',
+                                rho_before: [1.1],
+                                rho_after: [0.9],
+                                max_rho: 0.9,
+                                max_rho_line: 'LINE_B',
+                                is_rho_reduction: true,
+                                is_manual: false,
+                            },
+                        },
+                        lines_overloaded: ['LINE_A'],
+                        message: '',
+                        dc_fallback: false,
+                    });
+                }
+            };
+            const mockOnSelect = vi.fn();
+
+            act(() => {
+                result.current.handleActionResimulated(
+                    'load_shedding_L1',
+                    newDetail,
+                    ['LINE_A'],
+                    mockSetResult as React.Dispatch<React.SetStateAction<AnalysisResult | null>>,
+                    mockOnSelect,
+                );
+            });
+
+            expect(result.current.selectedActionIds.has('load_shedding_L1')).toBe(false);
+            expect(result.current.manuallyAddedIds.has('load_shedding_L1')).toBe(false);
+            // The force-select callback is still fired so the diagram
+            // re-fetches with the new state.
+            expect(mockOnSelect).toHaveBeenCalledWith('load_shedding_L1');
+            // The action detail got updated, but is_manual stays false
+            // because the existing entry had is_manual=false.
+            expect(captured?.actions.load_shedding_L1.rho_after).toEqual([0.7]);
+            expect(captured?.actions.load_shedding_L1.is_manual).toBe(false);
+        });
+
+        it('preserves an existing is_manual=true flag on resimulation', () => {
+            const { result } = renderHook(() => useActions());
+            let captured: AnalysisResult | null = null;
+            const mockSetResult = (updater: unknown) => {
+                if (typeof updater === 'function') {
+                    captured = (updater as (p: AnalysisResult | null) => AnalysisResult | null)({
+                        pdf_path: null, pdf_url: null, actions: {
+                            load_shedding_L1: {
+                                description_unitaire: 'initial',
+                                rho_before: [1.1],
+                                rho_after: [0.9],
+                                max_rho: 0.9,
+                                max_rho_line: 'LINE_B',
+                                is_rho_reduction: true,
+                                is_manual: true,
+                            },
+                        },
+                        lines_overloaded: ['LINE_A'],
+                        message: '',
+                        dc_fallback: false,
+                    });
+                }
+            };
+
+            act(() => {
+                result.current.handleActionResimulated(
+                    'load_shedding_L1',
+                    newDetail,
+                    ['LINE_A'],
+                    mockSetResult as React.Dispatch<React.SetStateAction<AnalysisResult | null>>,
+                    vi.fn(),
+                );
+            });
+
+            expect(captured?.actions.load_shedding_L1.is_manual).toBe(true);
+        });
+
+        // Regression guard: handleManualActionAdded still promotes into
+        // both sets (the "add brand-new manual action" path is unchanged).
+        it('handleManualActionAdded still promotes into Selected and Manually-Added', () => {
+            const { result } = renderHook(() => useActions());
+
+            act(() => {
+                result.current.handleManualActionAdded(
+                    'new_manual_action',
+                    newDetail,
+                    ['LINE_A'],
+                    vi.fn(),
+                    vi.fn(),
+                );
+            });
+
+            expect(result.current.selectedActionIds.has('new_manual_action')).toBe(true);
+            expect(result.current.manuallyAddedIds.has('new_manual_action')).toBe(true);
+        });
+
+        it('logs manual_action_simulated on resimulation too', () => {
+            const { result } = renderHook(() => useActions());
+
+            act(() => {
+                result.current.handleActionResimulated(
+                    'act_7',
+                    newDetail,
+                    [],
+                    vi.fn(),
+                    vi.fn(),
+                );
+            });
+
+            const log = interactionLogger.getLog();
+            expect(log.some(e => e.type === 'manual_action_simulated' && e.details.action_id === 'act_7')).toBe(true);
+        });
     });
 });

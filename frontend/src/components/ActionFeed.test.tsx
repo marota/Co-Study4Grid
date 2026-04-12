@@ -1233,6 +1233,125 @@ describe('ActionFeed', () => {
         });
     });
 
+    // Bug 5: re-simulating a Suggested LS / RC / PST card must dispatch
+    // through the `onActionResimulated` callback (which preserves the
+    // action's current bucket) — NEVER `onManualActionAdded`, which would
+    // silently promote the card into Selected Actions.
+    describe('Re-simulate dispatches to onActionResimulated (Bug 5)', () => {
+        const buildLsProps = () => {
+            const actionId = 'load_shedding_LOAD_B5';
+            const props = {
+                ...defaultProps,
+                onManualActionAdded: vi.fn(),
+                onActionResimulated: vi.fn(),
+                actions: {
+                    [actionId]: {
+                        description_unitaire: 'ls B5',
+                        rho_before: [0.95],
+                        rho_after: [0.7],
+                        max_rho: 0.7,
+                        max_rho_line: 'LINE_1',
+                        is_rho_reduction: true,
+                        non_convergence: null,
+                        load_shedding_details: [
+                            { load_name: 'LOAD_B5', voltage_level_id: 'VL', shedded_mw: 6.4 },
+                        ],
+                        action_topology: { ...emptyTopo, loads_p: { LOAD_B5: 0.0 } },
+                    } as ActionDetail,
+                },
+            };
+            const mockResult = {
+                action_id: actionId,
+                description_unitaire: 'ls B5',
+                rho_before: [0.95],
+                rho_after: [0.5],
+                max_rho: 0.5,
+                max_rho_line: 'LINE_1',
+                is_rho_reduction: true,
+                non_convergence: null,
+                lines_overloaded: ['LINE_1'],
+                lines_overloaded_after: [],
+                load_shedding_details: [
+                    { load_name: 'LOAD_B5', voltage_level_id: 'VL', shedded_mw: 5.4 },
+                ],
+            };
+            return { actionId, props, mockResult };
+        };
+
+        it('calls onActionResimulated (not onManualActionAdded) on LS re-simulate', async () => {
+            const { actionId, props, mockResult } = buildLsProps();
+            (api.simulateManualAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mockResult);
+
+            render(<ActionFeed {...props} />);
+            fireEvent.change(screen.getByTestId(`edit-mw-${actionId}`), { target: { value: '5.4' } });
+            fireEvent.click(screen.getByTestId(`resimulate-${actionId}`));
+
+            await waitFor(() => {
+                expect(props.onActionResimulated).toHaveBeenCalledTimes(1);
+            });
+            expect(props.onActionResimulated).toHaveBeenCalledWith(
+                actionId,
+                expect.objectContaining({
+                    lines_overloaded_after: [],
+                }),
+                ['LINE_1'],
+            );
+            // Critical: the "add manual action" callback (which would
+            // promote the card into Selected Actions) must NOT have been
+            // invoked.
+            expect(props.onManualActionAdded).not.toHaveBeenCalled();
+        });
+
+        it('calls onActionResimulated (not onManualActionAdded) on PST tap re-simulate', async () => {
+            const pstActionId = 'pst_B5';
+            const props = {
+                ...defaultProps,
+                onManualActionAdded: vi.fn(),
+                onActionResimulated: vi.fn(),
+                actions: {
+                    [pstActionId]: {
+                        description_unitaire: 'pst B5',
+                        rho_before: [0.95],
+                        rho_after: [0.7],
+                        max_rho: 0.7,
+                        max_rho_line: 'LINE_1',
+                        is_rho_reduction: true,
+                        non_convergence: null,
+                        pst_details: [
+                            { pst_name: 'PST_B5', tap_position: 3, low_tap: -5, high_tap: 5 },
+                        ],
+                        action_topology: { ...emptyTopo, pst_tap: { PST_B5: 0 } },
+                    } as ActionDetail,
+                },
+            };
+            const mockResult = {
+                action_id: pstActionId,
+                description_unitaire: 'pst B5',
+                rho_before: [0.95],
+                rho_after: [0.5],
+                max_rho: 0.5,
+                max_rho_line: 'LINE_1',
+                is_rho_reduction: true,
+                non_convergence: null,
+                lines_overloaded: ['LINE_1'],
+                lines_overloaded_after: [],
+                pst_details: [
+                    { pst_name: 'PST_B5', tap_position: 4, low_tap: -5, high_tap: 5 },
+                ],
+            };
+            (api.simulateManualAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mockResult);
+
+            render(<ActionFeed {...props} />);
+            fireEvent.change(screen.getByTestId(`edit-tap-${pstActionId}`), { target: { value: '4' } });
+            fireEvent.click(screen.getByTestId(`resimulate-tap-${pstActionId}`));
+
+            await waitFor(() => {
+                expect(props.onActionResimulated).toHaveBeenCalledTimes(1);
+            });
+            expect(props.onManualActionAdded).not.toHaveBeenCalled();
+        });
+    });
+
     // =========================================================================
     // PST Tap Start / Target Tap — score table tests
     // =========================================================================
