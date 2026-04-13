@@ -6,8 +6,9 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 export type ConfirmDialogState = {
-  type: 'contingency' | 'loadStudy';
+  type: 'contingency' | 'loadStudy' | 'applySettings' | 'changeNetwork';
   pendingBranch?: string;
+  pendingNetworkPath?: string;
 } | null;
 
 interface ConfirmationDialogProps {
@@ -23,26 +24,43 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
 }) => {
   if (!confirmDialog) return null;
 
+  const title =
+    confirmDialog.type === 'contingency' ? 'Change Contingency?'
+      : confirmDialog.type === 'applySettings' ? 'Apply New Settings?'
+        : confirmDialog.type === 'changeNetwork' ? 'Change Network?'
+          : 'Reload Study?';
+
+  const trailingMessage =
+    confirmDialog.type === 'contingency'
+      ? ' The network state will be preserved.'
+      : confirmDialog.type === 'applySettings'
+        ? ' The network will be reloaded with the new configuration.'
+        : confirmDialog.type === 'changeNetwork'
+          ? ' The current study will be reloaded from the new network file.'
+          : ' The network will be reloaded from scratch.';
+
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
       backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 4000,
       display: 'flex', justifyContent: 'center', alignItems: 'center'
     }}>
-      <div style={{
-        background: 'white', padding: '25px', borderRadius: '10px',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-        maxWidth: '450px', width: '90%', textAlign: 'center'
-      }}>
+      <div
+        role="dialog"
+        data-testid={`confirm-dialog-${confirmDialog.type}`}
+        style={{
+          background: 'white', padding: '25px', borderRadius: '10px',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+          maxWidth: '450px', width: '90%', textAlign: 'center'
+        }}
+      >
         <div style={{ fontSize: '2rem', marginBottom: '12px' }}>&#9888;</div>
         <h3 style={{ margin: '0 0 12px', color: '#2c3e50', fontSize: '1.1rem' }}>
-          {confirmDialog.type === 'contingency' ? 'Change Contingency?' : 'Reload Study?'}
+          {title}
         </h3>
         <p style={{ margin: '0 0 20px', color: '#555', fontSize: '0.9rem', lineHeight: '1.5' }}>
           All previous analysis results, manual simulations, action selections, and diagrams will be cleared.
-          {confirmDialog.type === 'contingency'
-            ? ' The network state will be preserved.'
-            : ' The network will be reloaded from scratch.'}
+          {trailingMessage}
         </p>
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
           <button

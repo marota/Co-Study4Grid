@@ -62,8 +62,16 @@ function App() {
   const [configLoading, setConfigLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Confirmation dialog state for contingency change / load study
+  // Confirmation dialog state for contingency change / load study /
+  // apply settings / change network path.
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>(null);
+
+  // Path of the network file the currently-loaded study was loaded from.
+  // Updated after every successful handleLoadConfig / applySettings, used
+  // by requestNetworkPathChange to detect "user is switching to a
+  // different network while a study is already loaded" and prompt for
+  // confirmation before silently dropping the in-flight work.
+  const committedNetworkPathRef = useRef('');
 
   // ===== Hook integrations =====
   const actionsHook = useActions();
@@ -167,6 +175,15 @@ function App() {
     [diagrams, result, selectedBranch, voltageLevels.length, setResult, setError]
   );
 
+  // Force-select variant used after a (re)simulation. This skips the
+  // "already selected → deselect" toggle path in handleActionSelect so the
+  // newly-simulated action diagram is always re-fetched.
+  const wrappedForcedActionSelect = useCallback(
+    (actionId: string | null) =>
+      diagrams.handleActionSelect(actionId, result, selectedBranch, voltageLevels.length, setResult, setError, true),
+    [diagrams, result, selectedBranch, voltageLevels.length, setResult, setError]
+  );
+
   const wrappedActionFavorite = useCallback(
     (actionId: string) => actionsHook.handleActionFavorite(actionId, setResult),
     [actionsHook, setResult]
@@ -174,8 +191,16 @@ function App() {
 
   const wrappedManualActionAdded = useCallback(
     (actionId: string, detail: ActionDetail, linesOverloaded: string[]) =>
-      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedActionSelect),
-    [actionsHook, setResult, wrappedActionSelect]
+      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect),
+    [actionsHook, setResult, wrappedForcedActionSelect]
+  );
+
+  // Re-simulation of an already-present action (edit Target MW / tap on a
+  // suggested card). Does NOT move the action into the selected bucket.
+  const wrappedActionResimulated = useCallback(
+    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) =>
+      actionsHook.handleActionResimulated(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect),
+    [actionsHook, setResult, wrappedForcedActionSelect]
   );
 
   const handleUpdateCombinedEstimation = useCallback(
@@ -298,7 +323,7 @@ function App() {
   }, [result, pendingAnalysisResult, selectedActionId, actionDiagram, manuallyAddedIds, selectedActionIds, rejectedActionIds]);
 
 
-  const handleApplySettings = useCallback(async () => {
+  const applySettingsImmediate = useCallback(async () => {
     interactionLogger.record('settings_applied');
     try {
       resetAllState();
@@ -334,6 +359,7 @@ function App() {
 
       diagrams.fetchBaseDiagram(vlRes.length);
 
+      committedNetworkPathRef.current = networkPath;
       interactionLogger.record('config_loaded', { network_path: networkPath, action_path: actionPath });
       setSettingsBackup(createCurrentBackup());
       setIsSettingsOpen(false);
@@ -342,6 +368,21 @@ function App() {
       setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
     }
   }, [networkPath, actionPath, buildConfigRequest, applyConfigResponse, createCurrentBackup, setError, setSettingsBackup, setIsSettingsOpen, diagrams, configFilePath, lastActiveConfigFilePath, changeConfigFilePath, resetAllState]);
+
+  // Apply Settings entry point used by the Settings modal. If a study
+  // is already loaded — whether or not analysis has been run yet — we
+  // route through the same confirmation dialog as the "Load Study"
+  // button. Applying any settings (in particular changing the config
+  // file path) silently reloads the network and drops the in-flight
+  // study, so the user must be warned even when only a base network
+  // is loaded with no analysis state.
+  const handleApplySettingsClick = useCallback(() => {
+    if (hasAnalysisState() || committedNetworkPathRef.current) {
+      setConfirmDialog({ type: 'applySettings' });
+      return;
+    }
+    applySettingsImmediate();
+  }, [hasAnalysisState, applySettingsImmediate]);
 
 
 
@@ -373,6 +414,7 @@ function App() {
       }
 
       diagrams.fetchBaseDiagram(vlRes.length);
+      committedNetworkPathRef.current = networkPath;
       interactionLogger.record('config_loaded', { network_path: networkPath, action_path: actionPath });
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
@@ -391,17 +433,42 @@ function App() {
     }
   }, [hasAnalysisState, handleLoadConfig]);
 
+  // Network path commit pipeline used by the Header (file picker AND
+  // input blur). When a study is already loaded and the path is being
+  // changed to a different value, prompt for confirmation before
+  // silently dropping the in-flight study. The setNetworkPath call is
+  // optimistic — it makes the input immediately reflect the new path
+  // even while the dialog is open — and is reverted by
+  // handleCancelDialog if the user backs out.
+  const requestNetworkPathChange = useCallback((newPath: string) => {
+    setNetworkPath(newPath);
+    const trimmed = newPath.trim();
+    if (!trimmed) return;
+    if (trimmed === committedNetworkPathRef.current) return;
+    // Only warn once a study has actually been loaded — initial path
+    // entry on an empty session must not trigger the dialog.
+    if (!committedNetworkPathRef.current) return;
+    setConfirmDialog({ type: 'changeNetwork', pendingNetworkPath: trimmed });
+  }, [setNetworkPath]);
+
   const handleConfirmDialog = useCallback(() => {
     if (!confirmDialog) return;
     interactionLogger.record('contingency_confirmed', { type: confirmDialog.type, pending_branch: confirmDialog.pendingBranch });
     if (confirmDialog.type === 'contingency') {
       clearContingencyState();
       setSelectedBranch(confirmDialog.pendingBranch || '');
+    } else if (confirmDialog.type === 'applySettings') {
+      applySettingsImmediate();
+    } else if (confirmDialog.type === 'changeNetwork') {
+      // pendingNetworkPath was already setNetworkPath'd by
+      // requestNetworkPathChange. Reload the config so the backend
+      // picks up the new file.
+      handleLoadConfig();
     } else {
       handleLoadConfig();
     }
     setConfirmDialog(null);
-  }, [confirmDialog, clearContingencyState, handleLoadConfig]);
+  }, [confirmDialog, clearContingencyState, handleLoadConfig, applySettingsImmediate]);
 
 
   // ===== App-Level Effects =====
@@ -477,44 +544,60 @@ function App() {
 
     if (tab === 'n-1') {
       if (diagrams.n1SvgContainerRef.current) {
-        if (actionViewMode !== 'delta' && diagrams.n1MetaIndex && overloadedLines.length > 0) {
+        // IMPORTANT: run highlight CLONES before applyDeltaVisuals.
+        // The clone-based highlights (`applyOverloadedHighlights`,
+        // `applyContingencyHighlight`) use cloneNode(true) on the
+        // original SVG element. If applyDeltaVisuals has already
+        // tagged the original with `nad-delta-positive/negative/grey`,
+        // the clone inherits that class — and because the `.nad-delta-*`
+        // CSS is declared LATER in App.css than `.nad-contingency-highlight`
+        // / `.nad-overloaded`, the delta rule wins the cascade and the
+        // halo becomes a thin orange/blue stroke, effectively making the
+        // highlight disappear in Impacts mode. Cloning first guarantees
+        // the halos stay on a pristine copy of the element.
+        //
+        // Overloaded lines must also be highlighted in BOTH Flows and
+        // Impacts modes — the user looks at the Impacts view to see how
+        // the action redistributes flows AND which lines are still
+        // (or newly) overloaded; suppressing the halos in delta mode
+        // hides exactly that information.
+        if (diagrams.n1MetaIndex && overloadedLines.length > 0) {
           applyOverloadedHighlights(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, overloadedLines);
         }
-        applyDeltaVisuals(diagrams.n1SvgContainerRef.current, n1Diagram, diagrams.n1MetaIndex, actionViewMode === 'delta');
         applyContingencyHighlight(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, selectedBranch);
+        applyDeltaVisuals(diagrams.n1SvgContainerRef.current, n1Diagram, diagrams.n1MetaIndex, actionViewMode === 'delta');
       }
     }
     if (tab === 'action') {
-      applyDeltaVisuals(diagrams.actionSvgContainerRef.current, actionDiagram, diagrams.actionMetaIndex, actionViewMode === 'delta');
-
       const actionDetail = result?.actions?.[selectedActionId || ''];
 
       if (actionDetail) {
-        if (actionViewMode !== 'delta') {
-          let overloadsToHighlight: string[] = [];
+        // Same ordering rule as the N-1 tab: clone-based highlights
+        // first (so they capture pristine elements), delta visuals
+        // last. Overload halos render in both Flows and Impacts modes.
+        let overloadsToHighlight: string[] = [];
 
-          if (actionDetail.lines_overloaded_after && actionDetail.lines_overloaded_after.length > 0) {
-            overloadsToHighlight = actionDetail.lines_overloaded_after;
-          } else {
-            // Fallback for legacy results or actions without full enrichment
-            if (overloadedLines.length > 0 && actionDetail.rho_after) {
-              overloadedLines.forEach((name, i) => {
-                const rho = actionDetail.rho_after![i];
-                if (rho != null && rho > monitoringFactor) {
-                  overloadsToHighlight.push(name);
-                }
-              });
-            }
-            if (actionDetail.max_rho != null && actionDetail.max_rho > monitoringFactor && actionDetail.max_rho_line) {
-              if (!overloadsToHighlight.includes(actionDetail.max_rho_line)) {
-                overloadsToHighlight.push(actionDetail.max_rho_line);
+        if (actionDetail.lines_overloaded_after && actionDetail.lines_overloaded_after.length > 0) {
+          overloadsToHighlight = actionDetail.lines_overloaded_after;
+        } else {
+          // Fallback for legacy results or actions without full enrichment
+          if (overloadedLines.length > 0 && actionDetail.rho_after) {
+            overloadedLines.forEach((name, i) => {
+              const rho = actionDetail.rho_after![i];
+              if (rho != null && rho > monitoringFactor) {
+                overloadsToHighlight.push(name);
               }
+            });
+          }
+          if (actionDetail.max_rho != null && actionDetail.max_rho > monitoringFactor && actionDetail.max_rho_line) {
+            if (!overloadsToHighlight.includes(actionDetail.max_rho_line)) {
+              overloadsToHighlight.push(actionDetail.max_rho_line);
             }
           }
+        }
 
-          if (diagrams.actionSvgContainerRef.current && diagrams.actionMetaIndex) {
-            applyOverloadedHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, overloadsToHighlight);
-          }
+        if (diagrams.actionSvgContainerRef.current && diagrams.actionMetaIndex) {
+          applyOverloadedHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, overloadsToHighlight);
         }
 
         if (diagrams.actionSvgContainerRef.current) {
@@ -527,6 +610,11 @@ function App() {
           applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, null, null, null);
         }
       }
+
+      // Delta visuals run LAST so they decorate the originals without
+      // contaminating the highlight clones already in the background
+      // layer.
+      applyDeltaVisuals(diagrams.actionSvgContainerRef.current, actionDiagram, diagrams.actionMetaIndex, actionViewMode === 'delta');
     }
   }, [n1Diagram, actionDiagram, result, selectedActionId, actionViewMode, selectedBranch, diagrams, monitoringFactor]);
 
@@ -591,14 +679,22 @@ function App() {
   }, [handleVlDoubleClick, activeTab, selectedActionId]);
 
   const handleCancelDialog = useCallback(() => {
+    // Cancelling a "Change Network?" dialog must roll back the
+    // optimistic networkPath update done by requestNetworkPathChange,
+    // otherwise the Header field would silently diverge from the
+    // currently-loaded study's path.
+    if (confirmDialog?.type === 'changeNetwork') {
+      setNetworkPath(committedNetworkPathRef.current);
+    }
     setConfirmDialog(null);
-  }, []);
+  }, [confirmDialog, setNetworkPath]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <Header
         networkPath={networkPath}
         setNetworkPath={setNetworkPath}
+        onCommitNetworkPath={requestNetworkPathChange}
         configLoading={configLoading}
         result={result}
         selectedBranch={selectedBranch}
@@ -611,7 +707,7 @@ function App() {
       />
 
       {/* Settings Modal */}
-      <SettingsModal settings={settings} onApply={handleApplySettings} />
+      <SettingsModal settings={settings} onApply={handleApplySettingsClick} />
 
 
       <ReloadSessionModal
@@ -683,6 +779,7 @@ function App() {
               edgesByEquipmentId={diagrams.nMetaIndex?.edgesByEquipmentId ?? null}
               disconnectedElement={selectedBranch || null}
               onManualActionAdded={wrappedManualActionAdded}
+              onActionResimulated={wrappedActionResimulated}
               analysisLoading={analysisLoading}
               monitoringFactor={monitoringFactor}
               onVlDoubleClick={handleVlDoubleClick}

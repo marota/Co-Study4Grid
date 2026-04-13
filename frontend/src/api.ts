@@ -103,6 +103,7 @@ export const api = {
         disconnected_mw?: number;
         non_convergence: string | null;
         lines_overloaded: string[];
+        lines_overloaded_after?: string[];
         action_topology?: import('./types').ActionTopology;
         load_shedding_details?: import('./types').LoadSheddingDetail[];
         curtailment_details?: import('./types').CurtailmentDetail[];
@@ -123,9 +124,15 @@ export const api = {
         return response.data;
     },
     pickPath: async (type: 'file' | 'dir'): Promise<string | null> => {
-        const response = await axios.get<{ path: string | null }>(
+        const response = await axios.get<{ path: string | null; error?: string }>(
             `${API_BASE_URL}/api/pick-path?type=${type}`
         );
+        // Backend returns {"path": "", "error": "..."} when the native dialog
+        // cannot be launched (e.g. no display, tkinter missing). Surface it
+        // so the caller can show the user why nothing happened.
+        if (response.data.error) {
+            throw new Error(response.data.error);
+        }
         return response.data.path;
     },
     saveSession: async (params: {

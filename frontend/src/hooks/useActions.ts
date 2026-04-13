@@ -28,6 +28,13 @@ export interface ActionsState {
     setResult: Dispatch<SetStateAction<AnalysisResult | null>>,
     onSelectAction: (actionId: string) => void,
   ) => void;
+  handleActionResimulated: (
+    actionId: string,
+    detail: ActionDetail,
+    linesOverloaded: string[],
+    setResult: Dispatch<SetStateAction<AnalysisResult | null>>,
+    onSelectAction: (actionId: string) => void,
+  ) => void;
   clearActionState: () => void;
 }
 
@@ -112,6 +119,37 @@ export function useActions(): ActionsState {
     onSelectAction(actionId);
   }, []);
 
+  // Re-simulating an existing action (e.g. editing the Target MW of a
+  // suggested load-shedding card and clicking "Re-simulate") must update
+  // the action's details in place WITHOUT promoting it into the Selected
+  // Actions list — otherwise a still-suggested action would silently jump
+  // into the selected bucket on every edit. We still trigger onSelectAction
+  // so the action-variant diagram is refetched for the new state.
+  const handleActionResimulated = useCallback((
+    actionId: string,
+    detail: ActionDetail,
+    linesOverloaded: string[],
+    setResult: React.Dispatch<React.SetStateAction<AnalysisResult | null>>,
+    onSelectAction: (actionId: string) => void,
+  ) => {
+    interactionLogger.record('manual_action_simulated', { action_id: actionId });
+    setResult(prev => {
+      if (!prev) return prev;
+      const existing = prev.actions[actionId];
+      return {
+        ...prev,
+        lines_overloaded: prev.lines_overloaded.length > 0 ? prev.lines_overloaded : linesOverloaded,
+        actions: {
+          ...prev.actions,
+          // Preserve the is_manual flag from the existing entry so a
+          // recommender-suggested action stays recommender-suggested.
+          [actionId]: { ...detail, is_manual: existing?.is_manual ?? false },
+        },
+      };
+    });
+    onSelectAction(actionId);
+  }, []);
+
   const clearActionState = useCallback(() => {
     setSelectedActionIds(new Set());
     setManuallyAddedIds(new Set());
@@ -127,9 +165,10 @@ export function useActions(): ActionsState {
     handleActionFavorite,
     handleActionReject,
     handleManualActionAdded,
+    handleActionResimulated,
     clearActionState,
   }), [
     selectedActionIds, manuallyAddedIds, rejectedActionIds, suggestedByRecommenderIds,
-    handleActionFavorite, handleActionReject, handleManualActionAdded, clearActionState
+    handleActionFavorite, handleActionReject, handleManualActionAdded, handleActionResimulated, clearActionState
   ]);
 }

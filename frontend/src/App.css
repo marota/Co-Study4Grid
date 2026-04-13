@@ -309,14 +309,20 @@ circle.nad-highlight {
     fill: none !important;
 }
 
-/* Overloaded lines on SLD (dashed orange halo behind) */
+/* Overloaded lines on SLD (orange halo, consistent with contingency style) */
+.sld-highlight-clone.sld-highlight-overloaded {
+    filter: drop-shadow(0 0 4px #ff8c00) drop-shadow(0 0 8px #ff8c00);
+}
+
 .sld-highlight-clone.sld-highlight-overloaded path,
 .sld-highlight-clone.sld-highlight-overloaded line,
-.sld-highlight-clone.sld-highlight-overloaded polyline {
+.sld-highlight-clone.sld-highlight-overloaded polyline,
+.sld-highlight-clone.sld-highlight-overloaded rect,
+.sld-highlight-clone.sld-highlight-overloaded circle {
     stroke: #ff8c00 !important;
-    stroke-width: 5px !important;
-    stroke-dasharray: 6 3 !important;
+    stroke-width: 6px !important;
     stroke-opacity: 1 !important;
+    stroke-dasharray: none !important;
     fill: none !important;
 }
 

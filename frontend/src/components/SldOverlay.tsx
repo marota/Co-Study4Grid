@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import type { DiagramData, AnalysisResult, ActionDetail, VlOverlay, SldTab, SldFeederNode } from '../types';
 import { isCouplingAction } from '../utils/svgUtils';
 
@@ -362,9 +362,41 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
     // Uses a clone-behind technique: clones target elements and inserts them as
     // direct siblings (before the original) so they naturally track the original
     // during pan/zoom without needing CTM-based repositioning.
-    useEffect(() => {
+    //
+    // Uses `useLayoutEffect` with no deps (runs after every render) plus a
+    // signature-based guard so we only rewrite the DOM when the highlight
+    // inputs actually change, BUT we also detect when the clones have been
+    // wiped out from under us (e.g. when the pan transform causes React to
+    // reconcile the innerHTML div and replace its children) and re-apply.
+    const appliedSigRef = useRef<string>('');
+    useLayoutEffect(() => {
         const container = overlayBodyRef.current;
         if (!container || !vlOverlay.svg) return;
+
+        // Compute a signature that summarises what SHOULD be highlighted
+        // right now. If the signature hasn't changed AND the clones are
+        // still in the DOM, there is nothing to do. If the signature is
+        // the same but the clones are missing (pan reconciliation ate
+        // them), re-apply.
+        const actionDetailForSig: ActionDetail | undefined =
+            (vlOverlay.actionId && result?.actions) ? result.actions[vlOverlay.actionId] : undefined;
+        const sig = JSON.stringify({
+            svgLen: vlOverlay.svg.length,
+            meta: vlOverlay.sldMetadata?.length ?? 0,
+            tab: vlOverlay.tab,
+            actionId: vlOverlay.actionId,
+            changedSwitches: vlOverlay.changed_switches
+                ? Object.keys(vlOverlay.changed_switches).sort()
+                : [],
+            branch: selectedBranch,
+            n1Overloads: result?.lines_overloaded ?? [],
+            actionOverloads: actionDetailForSig?.lines_overloaded_after ?? [],
+        });
+        const clonesExist = container.querySelector('.sld-highlight-clone') !== null;
+        if (sig === appliedSigRef.current && clonesExist) {
+            return;
+        }
+        appliedSigRef.current = sig;
 
         // Remove previous highlight clones
         container.querySelectorAll('.sld-highlight-clone').forEach(el => el.remove());
@@ -562,22 +594,32 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             }
         }
 
-        // --- Overloaded lines (N-1 tab only) ---
+        // --- Overloaded lines ---
+        // N-1 tab: highlight overloads present in the N-1 state.
+        // Action tab: highlight post-action overloads (overloads that persist or new
+        // ones that emerged). Overloads solved by the action are NOT highlighted here.
+        let overloadedLinesToShow: string[] | undefined;
         if (vlOverlay.tab === 'n-1') {
-            const overloadedLines = result?.lines_overloaded;
-            if (overloadedLines && overloadedLines.length > 0) {
-                for (const lineId of overloadedLines) {
-                    const cell = findCellForEquipment(lineId);
-                    if (cell && !highlightedCells.has(cell)) {
-                        cloneHighlight(cell, 'sld-highlight-overloaded');
-                        highlightedCells.add(cell);
-                    }
+            overloadedLinesToShow = result?.lines_overloaded;
+        } else if (vlOverlay.tab === 'action' && actionDetail) {
+            overloadedLinesToShow = actionDetail.lines_overloaded_after;
+        }
+        if (overloadedLinesToShow && overloadedLinesToShow.length > 0) {
+            for (const lineId of overloadedLinesToShow) {
+                const cell = findCellForEquipment(lineId);
+                if (cell && !highlightedCells.has(cell)) {
+                    cloneHighlight(cell, 'sld-highlight-overloaded');
+                    highlightedCells.add(cell);
                 }
             }
         }
 
-    }, [vlOverlay.svg, vlOverlay.sldMetadata, vlOverlay.tab, vlOverlay.actionId,
-    vlOverlay.changed_switches, selectedBranch, result]);
+        // No deps on purpose: this layoutEffect intentionally runs after
+        // every render and self-gates via `appliedSigRef` + `clonesExist`.
+        // That way, if React reconciles the innerHTML container during a
+        // pan and drops the clones, we immediately replant them instead
+        // of waiting for a tab switch to re-trigger the effect.
+    });
 
     // Non-passive wheel zoom on overlay body
     useEffect(() => {

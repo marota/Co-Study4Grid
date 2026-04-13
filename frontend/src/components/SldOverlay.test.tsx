@@ -115,4 +115,271 @@ describe('SldOverlay', () => {
         render(<SldOverlay {...defaultProps} actionViewMode="delta" />);
         expect(screen.getByText('Impacts')).toBeInTheDocument();
     });
+
+    describe('post-action overload highlight (Bug 2)', () => {
+        // Minimal SVG + metadata so the cell-lookup machinery inside the
+        // SldOverlay highlight effect can resolve an equipment id to a
+        // DOM element and clone it with the `sld-highlight-overloaded`
+        // class.
+        // IDs must be unique — duplicate ids break both querySelector and
+        // the elMap built inside SldOverlay's highlight effect. We only
+        // need one id'd element per equipment; the highlight clone will
+        // be inserted as a sibling and the original element gets tagged
+        // with an `-original` class.
+        const buildHighlightOverlay = (tab: SldTab): VlOverlay => ({
+            vlName: 'VL_400',
+            actionId: 'action_1',
+            svg:
+                '<svg xmlns="http://www.w3.org/2000/svg">'
+                + '<g><rect id="cell_resolved" width="10" height="10"/></g>'
+                + '<g><rect id="cell_new" width="10" height="10"/></g>'
+                + '<g><rect id="cell_n1" width="10" height="10"/></g>'
+                + '</svg>',
+            sldMetadata: JSON.stringify({
+                nodes: [
+                    { id: 'cell_resolved', equipmentId: 'LINE_RESOLVED' },
+                    { id: 'cell_new', equipmentId: 'LINE_NEW' },
+                    { id: 'cell_n1', equipmentId: 'LINE_N1' },
+                ],
+            }),
+            loading: false,
+            error: null,
+            tab,
+        });
+
+        const baseActionDetail = {
+            description_unitaire: 'test action',
+            rho_before: null,
+            rho_after: null,
+            max_rho: 0.5,
+            max_rho_line: 'LINE_NEW',
+            is_rho_reduction: true,
+        };
+
+        // When the SLD overlay is showing the ACTION tab, an overload that
+        // existed in the N-1 state but was RESOLVED by the action must not
+        // be highlighted — only the overloads that persist or newly appear
+        // (lines_overloaded_after) should be highlighted.
+        it('highlights post-action overloads on the ACTION tab, not stale N-1 overloads', () => {
+            const vlOverlay = buildHighlightOverlay('action');
+            const result = {
+                actions: {
+                    action_1: {
+                        ...baseActionDetail,
+                        lines_overloaded_after: ['LINE_NEW'],
+                    },
+                },
+                lines_overloaded: ['LINE_RESOLVED'],
+                pdf_path: null,
+                pdf_url: null,
+                message: '',
+                dc_fallback: false,
+            } as unknown as AnalysisResult;
+
+            const { container } = render(
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+            );
+
+            const highlights = container.querySelectorAll('.sld-highlight-overloaded');
+            // Exactly one highlight clone, for the post-action overload,
+            // NOT for the pre-action N-1 overload.
+            expect(highlights.length).toBe(1);
+            // The ORIGINAL element also gets tagged with an `-original`
+            // class so it can be cleaned up on the next render pass.
+            const tagged = container.querySelectorAll('.sld-highlight-overloaded-original');
+            expect(tagged.length).toBe(1);
+            // Confirm it is LINE_NEW that was highlighted, not LINE_RESOLVED.
+            expect(container.querySelector('#cell_new.sld-highlight-overloaded-original')).toBeTruthy();
+            expect(container.querySelector('#cell_resolved.sld-highlight-overloaded-original')).toBeNull();
+        });
+
+        // Regression guard: on the N-1 tab the overload list still comes
+        // from result.lines_overloaded (N-1 state), independent of any
+        // action's lines_overloaded_after.
+        it('still highlights N-1 overloads on the N-1 tab', () => {
+            const vlOverlay = buildHighlightOverlay('n-1');
+            const result = {
+                actions: {},
+                lines_overloaded: ['LINE_N1'],
+                pdf_path: null,
+                pdf_url: null,
+                message: '',
+                dc_fallback: false,
+            } as unknown as AnalysisResult;
+
+            const { container } = render(
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+            );
+
+            expect(container.querySelector('#cell_n1.sld-highlight-overloaded-original')).toBeTruthy();
+        });
+
+        // Regression: a persistent overload (the N-1 overloaded line is
+        // STILL overloaded after the action — its equipment id is in
+        // BOTH `result.lines_overloaded` and
+        // `actionDetail.lines_overloaded_after`) must get a
+        // `sld-highlight-overloaded` clone on the ACTION tab.
+        it('highlights a persistent overload on the ACTION tab', () => {
+            const vlOverlay = buildHighlightOverlay('action');
+            const result = {
+                actions: {
+                    action_1: {
+                        ...baseActionDetail,
+                        // LINE_N1 was overloaded in N-1 and stays overloaded
+                        // after the action.
+                        lines_overloaded_after: ['LINE_N1'],
+                    },
+                },
+                lines_overloaded: ['LINE_N1'],
+                pdf_path: null,
+                pdf_url: null,
+                message: '',
+                dc_fallback: false,
+            } as unknown as AnalysisResult;
+
+            const { container } = render(
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+            );
+
+            expect(
+                container.querySelector('#cell_n1.sld-highlight-overloaded-original'),
+            ).toBeTruthy();
+            expect(
+                container.querySelectorAll('.sld-highlight-clone.sld-highlight-overloaded').length,
+            ).toBe(1);
+        });
+
+        // Regression: when the action creates MULTIPLE post-action
+        // overloads — a mix of persistent and brand-new ones — ALL of
+        // them must be highlighted on the ACTION tab.
+        it('highlights a mix of persistent and newly-created overloads on the ACTION tab', () => {
+            const vlOverlay = buildHighlightOverlay('action');
+            const result = {
+                actions: {
+                    action_1: {
+                        ...baseActionDetail,
+                        // LINE_N1 was in N-1 and stays overloaded.
+                        // LINE_NEW is a new overload the action created.
+                        lines_overloaded_after: ['LINE_N1', 'LINE_NEW'],
+                    },
+                },
+                // LINE_RESOLVED was in N-1 but is resolved by the action
+                // — it must NOT get a highlight on the ACTION tab.
+                lines_overloaded: ['LINE_N1', 'LINE_RESOLVED'],
+                pdf_path: null,
+                pdf_url: null,
+                message: '',
+                dc_fallback: false,
+            } as unknown as AnalysisResult;
+
+            const { container } = render(
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+            );
+
+            expect(container.querySelector('#cell_n1.sld-highlight-overloaded-original')).toBeTruthy();
+            expect(container.querySelector('#cell_new.sld-highlight-overloaded-original')).toBeTruthy();
+            // The resolved overload must NOT be highlighted.
+            expect(container.querySelector('#cell_resolved.sld-highlight-overloaded-original')).toBeNull();
+            expect(
+                container.querySelectorAll('.sld-highlight-clone.sld-highlight-overloaded').length,
+            ).toBe(2);
+        });
+
+        // When the action solves ALL overloads (lines_overloaded_after is
+        // empty) no `sld-highlight-overloaded` clones are added at all.
+        it('adds no overload clones when the action solves every overload', () => {
+            const vlOverlay = buildHighlightOverlay('action');
+            const result = {
+                actions: {
+                    action_1: {
+                        ...baseActionDetail,
+                        lines_overloaded_after: [],
+                    },
+                },
+                lines_overloaded: ['LINE_RESOLVED'],
+                pdf_path: null,
+                pdf_url: null,
+                message: '',
+                dc_fallback: false,
+            } as unknown as AnalysisResult;
+
+            const { container } = render(
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+            );
+            expect(container.querySelectorAll('.sld-highlight-overloaded').length).toBe(0);
+        });
+    });
+
+    // When the user pans or zooms the SLD overlay, React reconciles the
+    // <div dangerouslySetInnerHTML> wrapper, which in some cases wipes
+    // out the highlight clones that were imperatively inserted as svg
+    // siblings. The previous implementation only re-applied highlights
+    // when a dep in its dep array changed, so a pan would leave the
+    // user looking at a diagram with no highlights until they switched
+    // tabs. The new implementation uses a self-gating layout effect
+    // that runs after every render and re-plants the clones whenever
+    // the DOM has lost them.
+    describe('highlight persistence across pan/re-render (regression)', () => {
+        const buildOverlay = (): VlOverlay => ({
+            vlName: 'VL_400',
+            actionId: null,
+            svg:
+                '<svg xmlns="http://www.w3.org/2000/svg">'
+                + '<g><rect id="cell_n1" width="10" height="10"/></g>'
+                + '</svg>',
+            sldMetadata: JSON.stringify({
+                nodes: [{ id: 'cell_n1', equipmentId: 'LINE_N1' }],
+            }),
+            loading: false,
+            error: null,
+            tab: 'n-1' as SldTab,
+        });
+
+        const result = {
+            actions: {},
+            lines_overloaded: ['LINE_N1'],
+            pdf_path: null,
+            pdf_url: null,
+            message: '',
+            dc_fallback: false,
+        } as unknown as AnalysisResult;
+
+        it('replants highlight clones after they are wiped from the DOM', () => {
+            const vlOverlay = buildOverlay();
+            const { container, rerender } = render(
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+            );
+            // Initial render plants exactly one overload clone for cell_n1.
+            expect(container.querySelectorAll('.sld-highlight-clone.sld-highlight-overloaded').length).toBe(1);
+
+            // Simulate what React's reconciliation does during a pan: it
+            // reinjects the SVG into its wrapper, blowing away the
+            // clones we planted.
+            container.querySelectorAll('.sld-highlight-clone').forEach(el => el.remove());
+            expect(container.querySelectorAll('.sld-highlight-clone').length).toBe(0);
+
+            // A subsequent render (e.g. from the pan transform state
+            // updating) must replant the clones, even though no
+            // highlight-relevant prop changed.
+            rerender(
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+            );
+            expect(container.querySelectorAll('.sld-highlight-clone.sld-highlight-overloaded').length).toBe(1);
+            expect(container.querySelector('#cell_n1.sld-highlight-overloaded-original')).toBeTruthy();
+        });
+
+        it('does not duplicate clones when a render fires but nothing changed', () => {
+            const vlOverlay = buildOverlay();
+            const { container, rerender } = render(
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+            );
+            // Multiple rerenders with no DOM wipeout must NOT stack up
+            // additional clones — the signature guard keeps the effect
+            // idempotent.
+            rerender(<SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />);
+            rerender(<SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />);
+            rerender(<SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />);
+            expect(container.querySelectorAll('.sld-highlight-clone.sld-highlight-overloaded').length).toBe(1);
+        });
+    });
 });

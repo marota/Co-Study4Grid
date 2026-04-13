@@ -38,6 +38,18 @@ describe('ConfirmationDialog', () => {
         expect(screen.getByText(/The network will be reloaded from scratch./)).toBeInTheDocument();
     });
 
+    it('renders correctly for apply settings', () => {
+        render(<ConfirmationDialog {...defaultProps} confirmDialog={{ type: 'applySettings' }} />);
+        expect(screen.getByText('Apply New Settings?')).toBeInTheDocument();
+        expect(screen.getByText(/All previous analysis results/)).toBeInTheDocument();
+        expect(
+            screen.getByText(/The network will be reloaded with the new configuration./),
+        ).toBeInTheDocument();
+        // The dialog must carry a stable testid so App.tsx integration
+        // tests can target the apply-settings variant unambiguously.
+        expect(screen.getByTestId('confirm-dialog-applySettings')).toBeInTheDocument();
+    });
+
     it('calls onConfirm when confirm button is clicked', () => {
         render(<ConfirmationDialog {...defaultProps} />);
         fireEvent.click(screen.getByText('Confirm'));

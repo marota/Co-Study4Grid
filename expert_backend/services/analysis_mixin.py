@@ -36,13 +36,24 @@ logger = logging.getLogger(__name__)
 class AnalysisMixin:
     """Mixin providing contingency analysis and action enrichment methods."""
 
-    def _enrich_actions(self, prioritized_actions_dict):
+    def _enrich_actions(self, prioritized_actions_dict, lines_overloaded_names=None):
         """Helper to convert raw prioritized actions into enriched dict for JSON response.
 
         The discovery engine returns raw obs.rho values (physical loading
         fraction where 1.0 = 100% of the thermal limit).  We scale them
         by monitoring_factor so the frontend displays operational loading
         percentages (relative to the reduced operational limit).
+
+        Args:
+            prioritized_actions_dict: raw prioritized actions dict from the
+                discovery engine.
+            lines_overloaded_names: ordered list of N-1 overloaded line
+                names (same ordering as the rho_before / rho_after arrays
+                in action_data). Used to compute lines_overloaded_after
+                for suggested actions that the discovery engine does not
+                populate natively — without this, frontend overload
+                highlights silently disappear on the Action tab for any
+                persistent / newly-emerged overload.
         """
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
         enriched_actions = {}
@@ -68,6 +79,34 @@ class AnalysisMixin:
                         else:
                             non_convergence = str(exc)
 
+            # Compute lines_overloaded_after if the discovery engine did
+            # not populate it. We pair rho_after_raw (N-1 overloaded
+            # subset, unscaled) with lines_overloaded_names and keep
+            # everything that is still >= 1.0 (i.e. still overloaded).
+            # We also merge in max_rho_line when its raw value is >= 1.0
+            # so new overloads introduced by the action are caught.
+            raw_loa = action_data.get("lines_overloaded_after")
+            if raw_loa is None or len(raw_loa) == 0:
+                computed_loa: list[str] = []
+                max_rho_line = action_data.get("max_rho_line", "")
+                if lines_overloaded_names and rho_after_raw is not None:
+                    for i, name in enumerate(lines_overloaded_names):
+                        if i >= len(rho_after_raw):
+                            break
+                        val = rho_after_raw[i]
+                        if val is not None and val >= 1.0:
+                            computed_loa.append(name)
+                if (
+                    max_rho_raw is not None
+                    and max_rho_raw >= 1.0
+                    and max_rho_line
+                    and max_rho_line not in computed_loa
+                ):
+                    computed_loa.append(max_rho_line)
+                lines_overloaded_after = computed_loa
+            else:
+                lines_overloaded_after = list(raw_loa)
+
             enriched_actions[action_id] = {
                 "description_unitaire": action_data.get("description_unitaire") or "No description available",
                 "rho_before": sanitize_for_json(rho_before),
@@ -76,7 +115,7 @@ class AnalysisMixin:
                 "max_rho_line": action_data.get("max_rho_line", ""),
                 "is_rho_reduction": bool(action_data.get("is_rho_reduction", False)),
                 "non_convergence": non_convergence,
-                "lines_overloaded_after": sanitize_for_json(action_data.get("lines_overloaded_after", [])),
+                "lines_overloaded_after": sanitize_for_json(lines_overloaded_after),
             }
 
             # Extract topology from the underlying action object
@@ -843,7 +882,10 @@ class AnalysisMixin:
             self._last_result = results # Store for diagram generation
 
             # Build enriched actions the same way as run_analysis - with monitoring_factor applied and topology
-            enriched_actions = self._enrich_actions(results["prioritized_actions"])
+            enriched_actions = self._enrich_actions(
+                results["prioritized_actions"],
+                lines_overloaded_names=results.get("lines_overloaded_names"),
+            )
 
             # Safety filter: ensure no combined actions (with '+') leak into the main actions feed during initial analysis
             # They should only exist in combined_actions as estimations.
@@ -993,7 +1035,10 @@ class AnalysisMixin:
             action_scores = sanitize_for_json(result.get("action_scores", {}))
             action_scores = self._compute_mw_start_for_scores(action_scores)
 
-            enriched_actions = self._enrich_actions(prioritized)
+            enriched_actions = self._enrich_actions(
+                prioritized,
+                lines_overloaded_names=lines_overloaded,
+            )
 
         from expert_backend.services.network_service import network_service
         total_branches = len(network_service.get_disconnectable_elements())

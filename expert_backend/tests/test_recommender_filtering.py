@@ -35,8 +35,11 @@ def test_run_analysis_filtering_combined_actions(recommender):
     with patch('expert_backend.services.network_service.network_service') as mock_ns:
         mock_ns.network = MagicMock()
         
-        # Mock _enrich_actions
-        def mock_enrich(actions_dict):
+        # Mock _enrich_actions — accepts the optional
+        # `lines_overloaded_names` kwarg used by the production
+        # implementation to compute lines_overloaded_after for
+        # recommender-suggested actions.
+        def mock_enrich(actions_dict, lines_overloaded_names=None):  # noqa: ARG001
             return {aid: {"max_rho": d.get("max_rho", 0), "is_estimated": d.get("is_estimated", False)} for aid, d in actions_dict.items()}
         recommender._enrich_actions = MagicMock(side_effect=mock_enrich)
 

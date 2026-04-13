@@ -38,8 +38,8 @@ interface ActionSearchDropdownProps {
     filteredActions: AvailableAction[];
     actionScores: Record<string, Record<string, unknown>> | undefined;
     actions: Record<string, ActionDetail>;
-    scoreTargetMw: Record<string, string>;
-    onScoreTargetMwChange: (actionId: string, value: string) => void;
+    cardEditMw: Record<string, string>;
+    onCardEditMwChange: (actionId: string, value: string) => void;
     cardEditTap: Record<string, string>;
     onCardEditTapChange: (actionId: string, value: string) => void;
     simulating: string | null;
@@ -64,8 +64,8 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
     filteredActions,
     actionScores,
     actions,
-    scoreTargetMw,
-    onScoreTargetMwChange,
+    cardEditMw,
+    onCardEditMwChange,
     cardEditTap,
     onCardEditTapChange,
     simulating,
@@ -147,8 +147,8 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                                 scoredActionsList={scoredActionsList}
                                 actionScores={actionScores}
                                 actions={actions}
-                                scoreTargetMw={scoreTargetMw}
-                                onScoreTargetMwChange={onScoreTargetMwChange}
+                                cardEditMw={cardEditMw}
+                                onCardEditMwChange={onCardEditMwChange}
                                 cardEditTap={cardEditTap}
                                 onCardEditTapChange={onCardEditTapChange}
                                 simulating={simulating}
@@ -229,8 +229,8 @@ interface ScoreTableProps {
     scoredActionsList: ScoredActionItem[];
     actionScores: Record<string, Record<string, unknown>> | undefined;
     actions: Record<string, ActionDetail>;
-    scoreTargetMw: Record<string, string>;
-    onScoreTargetMwChange: (actionId: string, value: string) => void;
+    cardEditMw: Record<string, string>;
+    onCardEditMwChange: (actionId: string, value: string) => void;
     cardEditTap: Record<string, string>;
     onCardEditTapChange: (actionId: string, value: string) => void;
     simulating: string | null;
@@ -246,8 +246,8 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
     scoredActionsList,
     actionScores,
     actions,
-    scoreTargetMw,
-    onScoreTargetMwChange,
+    cardEditMw,
+    onCardEditMwChange,
     cardEditTap,
     onCardEditTapChange,
     simulating,
@@ -312,10 +312,21 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                             <tbody>
                                 {scoredActionsList.filter(item => item.type === type).map(item => {
                                     const isComputed = !!actions[item.actionId];
-                                    const targetVal = scoreTargetMw[item.actionId];
-                                    const parsedTarget = targetVal !== undefined ? parseFloat(targetVal) : null;
+                                    // Stored MW from an already-simulated LS/RC action (used as default input value).
+                                    const storedMw = isLsOrRcType && isComputed
+                                        ? (actions[item.actionId]?.load_shedding_details?.[0]?.shedded_mw
+                                            ?? actions[item.actionId]?.curtailment_details?.[0]?.curtailed_mw
+                                            ?? null)
+                                        : null;
+                                    // Displayed value: user edit takes precedence, otherwise the stored simulated MW.
+                                    const mwEditVal = cardEditMw[item.actionId];
+                                    const effectiveMwStr = mwEditVal
+                                        ?? (storedMw != null ? storedMw.toFixed(1) : '');
+                                    const parsedTarget = effectiveMwStr !== '' ? parseFloat(effectiveMwStr) : null;
                                     const isValidTarget = parsedTarget !== null && !isNaN(parsedTarget) && parsedTarget >= 0 && (item.mwStart == null || parsedTarget <= item.mwStart);
-                                    const canResimulate = isLsOrRcType && isComputed && isValidTarget;
+                                    // Only re-simulate if the user has actually edited the value and it differs from the stored one.
+                                    const userEditedMw = mwEditVal !== undefined && (storedMw == null || parseFloat(mwEditVal) !== storedMw);
+                                    const canResimulate = isLsOrRcType && isComputed && isValidTarget && userEditedMw;
                                     const actionParams = isPstType ? typeData.params?.[item.actionId] : undefined;
                                     const previousTap = actionParams
                                         ? (actionParams['previous tap'] ?? actionParams['previous_tap'] ?? actionParams['previousTap'] ??
@@ -432,8 +443,8 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                                                         max={item.mwStart ?? undefined}
                                                         step={0.1}
                                                         placeholder={item.mwStart != null ? item.mwStart.toFixed(1) : '0'}
-                                                        value={scoreTargetMw[item.actionId] ?? ''}
-                                                        onChange={(e) => onScoreTargetMwChange(item.actionId, e.target.value)}
+                                                        value={effectiveMwStr}
+                                                        onChange={(e) => onCardEditMwChange(item.actionId, e.target.value)}
                                                         style={{
                                                             width: '60px',
                                                             fontSize: '11px',

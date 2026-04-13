@@ -293,26 +293,45 @@ def pick_path(type: str = Query("file", enum=["file", "dir"])):
     Opens a native OS file or directory picker and returns the selected path.
     Uses a subprocess to avoid tkinter/display issues in the main thread.
     """
+    # Keep the root window tiny and topmost instead of withdrawing it:
+    # withdraw() makes -topmost a no-op on some window managers, so the
+    # filedialog can end up hidden behind the browser. We briefly lift
+    # and focus a 1x1 topmost root to force the dialog to the foreground.
     script = f"""
 import tkinter as tk
 from tkinter import filedialog
-import sys
 
 root = tk.Tk()
-root.withdraw()
+root.geometry('1x1+0+0')
 root.attributes('-topmost', True)
+root.lift()
+root.focus_force()
+root.update()
 if "{type}" == "dir":
-    path = filedialog.askdirectory()
+    path = filedialog.askdirectory(parent=root)
 else:
-    path = filedialog.askopenfilename()
+    path = filedialog.askopenfilename(parent=root)
 root.destroy()
 if path:
     print(path)
 """
     try:
-        # Run the script with the same python interpreter as the server
-        result = subprocess.check_output([sys.executable, "-c", script], text=True).strip()
-        return {"path": result if result else ""}
+        # Run the script with the same python interpreter as the server.
+        # Capture stderr separately so tkinter import / display errors can
+        # be surfaced to the frontend instead of being silently swallowed.
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if proc.returncode != 0:
+            err = (proc.stderr or "").strip() or f"file picker exited with status {proc.returncode}"
+            print(f"Error picking path: {err}")
+            return {"path": "", "error": err}
+        return {"path": proc.stdout.strip()}
+    except subprocess.TimeoutExpired:
+        return {"path": "", "error": "File picker timed out (no selection made)."}
     except Exception as e:
         print(f"Error picking path: {e}")
         return {"path": "", "error": str(e)}

@@ -51,16 +51,117 @@ class TestRecommenderNonConvergence:
     def test_enrich_actions_handles_list_exception(self):
         """Verify that _enrich_actions handles list of exceptions."""
         mock_obs = self.MockObs(converged=False, exception=["Error 1", "Error 2"])
-        
+
         prioritized = {
             "action_1": {
                 "observation": mock_obs,
                 "description_unitaire": "Test Action"
             }
         }
-        
+
         enriched = self.service._enrich_actions(prioritized)
         assert enriched["action_1"]["non_convergence"] == "Error 1; Error 2"
+
+    def test_enrich_actions_computes_lines_overloaded_after_when_missing(self):
+        """When the discovery engine does not populate lines_overloaded_after
+        on an action, _enrich_actions must compute it from rho_after (raw,
+        unscaled) + the N-1 overloaded line list, so the frontend's Action
+        tab overload highlights stay visible for persistent and new
+        overloads."""
+        config.MONITORING_FACTOR_THERMAL_LIMITS = 0.95
+
+        prioritized = {
+            "action_still_overloaded": {
+                # N-1 overloads: LINE_A, LINE_B. After this action rho_after
+                # values are [0.8, 1.10] — LINE_A is solved but LINE_B
+                # stays overloaded.
+                "rho_before": [1.05, 1.20],
+                "rho_after": [0.80, 1.10],
+                "max_rho": 1.10,
+                "max_rho_line": "LINE_B",
+                "is_rho_reduction": True,
+                "description_unitaire": "still overloaded",
+            },
+            "action_new_overload": {
+                # Both N-1 overloads are solved (rho_after < 1.0), but
+                # the action creates a NEW overload on LINE_C (captured
+                # as max_rho_line with max_rho >= 1.0).
+                "rho_before": [1.05, 1.20],
+                "rho_after": [0.85, 0.90],
+                "max_rho": 1.30,
+                "max_rho_line": "LINE_C",
+                "is_rho_reduction": True,
+                "description_unitaire": "new overload elsewhere",
+            },
+            "action_solves_all": {
+                # Every overload is fully resolved. lines_overloaded_after
+                # must stay empty.
+                "rho_before": [1.05, 1.20],
+                "rho_after": [0.70, 0.75],
+                "max_rho": 0.75,
+                "max_rho_line": "LINE_A",
+                "is_rho_reduction": True,
+                "description_unitaire": "solves all",
+            },
+        }
+
+        enriched = self.service._enrich_actions(
+            prioritized,
+            lines_overloaded_names=["LINE_A", "LINE_B"],
+        )
+
+        assert enriched["action_still_overloaded"]["lines_overloaded_after"] == ["LINE_B"]
+        # New overload on LINE_C must be captured even though it was not
+        # in the original N-1 overload list.
+        assert enriched["action_new_overload"]["lines_overloaded_after"] == ["LINE_C"]
+        # An action that solves every overload must keep the list empty.
+        assert enriched["action_solves_all"]["lines_overloaded_after"] == []
+
+    def test_enrich_actions_preserves_existing_lines_overloaded_after(self):
+        """When the discovery engine already provides lines_overloaded_after
+        (e.g. simulated actions coming through simulate_manual_action that
+        were merged into _last_result), the enrichment must not overwrite
+        it with a recomputed list — the library's value is authoritative."""
+        config.MONITORING_FACTOR_THERMAL_LIMITS = 0.95
+
+        prioritized = {
+            "action_1": {
+                "rho_before": [1.05],
+                "rho_after": [1.10],
+                "max_rho": 1.10,
+                "max_rho_line": "LINE_A",
+                "is_rho_reduction": False,
+                "description_unitaire": "already enriched",
+                "lines_overloaded_after": ["LINE_ALREADY_LISTED"],
+            },
+        }
+
+        enriched = self.service._enrich_actions(
+            prioritized,
+            lines_overloaded_names=["LINE_A"],
+        )
+        assert enriched["action_1"]["lines_overloaded_after"] == ["LINE_ALREADY_LISTED"]
+
+    def test_enrich_actions_without_lines_overloaded_names_defaults_to_max_rho_line_only(self):
+        """Back-compat: callers that do not pass lines_overloaded_names
+        (e.g. legacy call sites) should still get a non-empty
+        lines_overloaded_after when the action creates/keeps an overload,
+        falling back to max_rho_line when max_rho >= 1.0."""
+        config.MONITORING_FACTOR_THERMAL_LIMITS = 0.95
+
+        prioritized = {
+            "action_1": {
+                "rho_before": [1.10],
+                "rho_after": [1.05],
+                "max_rho": 1.05,
+                "max_rho_line": "LINE_MAX",
+                "is_rho_reduction": True,
+                "description_unitaire": "no N-1 names passed",
+            },
+        }
+
+        enriched = self.service._enrich_actions(prioritized)
+        assert enriched["action_1"]["lines_overloaded_after"] == ["LINE_MAX"]
 
     @patch("expert_backend.services.recommender_service.config")
     def test_simulate_manual_action_returns_non_convergence(self, mock_config):

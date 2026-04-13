@@ -121,4 +121,48 @@ describe('useSettings — interaction logging', () => {
         expect(log).toHaveLength(3);
         expect(log.map(e => e.details.tab)).toEqual(['paths', 'recommender', 'configurations']);
     });
+
+    // Bug 4: the file-picker buttons used to silently fail when the native
+    // dialog couldn't open (no display, tkinter missing). They now surface
+    // the backend error via window.alert so the user understands *why*
+    // nothing is happening, while still leaving the setter untouched.
+    describe('pickSettingsPath error surfacing (Bug 4)', () => {
+        it('calls window.alert with the backend error message when the picker fails', async () => {
+            const { api } = await import('../api');
+            (api.pickPath as ReturnType<typeof vi.fn>).mockRejectedValue(
+                new Error('tkinter: no display'),
+            );
+            const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
+            const setter = vi.fn();
+
+            const { result } = renderHook(() => useSettings());
+
+            await act(async () => {
+                await result.current.pickSettingsPath('file', setter);
+            });
+
+            expect(alertSpy).toHaveBeenCalledTimes(1);
+            const message = alertSpy.mock.calls[0][0] as string;
+            expect(message).toContain('tkinter: no display');
+            expect(setter).not.toHaveBeenCalled();
+
+            alertSpy.mockRestore();
+        });
+
+        it('does not alert when the picker succeeds', async () => {
+            const { api } = await import('../api');
+            (api.pickPath as ReturnType<typeof vi.fn>).mockResolvedValue('/tmp/x.xiidm');
+            const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
+            const setter = vi.fn();
+
+            const { result } = renderHook(() => useSettings());
+            await act(async () => {
+                await result.current.pickSettingsPath('file', setter);
+            });
+
+            expect(alertSpy).not.toHaveBeenCalled();
+            expect(setter).toHaveBeenCalledWith('/tmp/x.xiidm');
+            alertSpy.mockRestore();
+        });
+    });
 });

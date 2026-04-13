@@ -211,3 +211,42 @@ describe('Critical config: standalone user-config save parity', () => {
         });
     });
 });
+
+describe('Critical CSS: SLD overload highlight is a halo (not dashed stroke)', () => {
+    // The SLD overload highlight must use the same drop-shadow halo style
+    // as the contingency highlight (for visual consistency), with a
+    // distinct orange color. A previous version drew a dashed stroke,
+    // which was visually inconsistent and easy to lose on dense SLDs.
+
+    it('overload halo uses drop-shadow filter with the orange color #ff8c00', () => {
+        // Exactly the same shape as the contingency rule, just orange.
+        expect(APP_CSS).toMatch(
+            /\.sld-highlight-clone\.sld-highlight-overloaded\s*\{[^}]*filter:\s*drop-shadow\([^)]*#ff8c00[^)]*\)\s+drop-shadow\([^)]*#ff8c00[^)]*\)[^}]*\}/,
+        );
+    });
+
+    it('overload stroke rule is a SOLID orange stroke (no dash pattern)', () => {
+        // Grab the .sld-highlight-overloaded path/line/etc block.
+        const match = APP_CSS.match(
+            /\.sld-highlight-clone\.sld-highlight-overloaded\s+path[\s\S]*?\{([^}]+)\}/,
+        );
+        expect(match).not.toBeNull();
+        const block = match![1];
+        expect(block).toContain('stroke: #ff8c00');
+        // Regression guards: the old version had `stroke-dasharray: 6 3`
+        // and `stroke-width: 5px`, making the highlight look like a dashed
+        // stripe. It must now be solid and use the 6px width shared by
+        // the other halo highlights.
+        expect(block).toContain('stroke-dasharray: none');
+        expect(block).toContain('stroke-width: 6px');
+        expect(block).not.toMatch(/stroke-dasharray:\s*6\s+3/);
+    });
+
+    it('overload rule targets the same element set as the contingency rule', () => {
+        // rect + circle were missing before — the halo must also cover
+        // bus nodes / feeder circles, not just lines.
+        expect(APP_CSS).toMatch(
+            /\.sld-highlight-clone\.sld-highlight-overloaded\s+path,[\s\S]*?\.sld-highlight-clone\.sld-highlight-overloaded\s+line,[\s\S]*?\.sld-highlight-clone\.sld-highlight-overloaded\s+polyline,[\s\S]*?\.sld-highlight-clone\.sld-highlight-overloaded\s+rect,[\s\S]*?\.sld-highlight-clone\.sld-highlight-overloaded\s+circle/,
+        );
+    });
+});

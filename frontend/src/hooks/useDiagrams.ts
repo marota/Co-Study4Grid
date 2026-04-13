@@ -91,6 +91,7 @@ export interface DiagramsState {
     voltageLevelsLength: number,
     setResult: Dispatch<SetStateAction<AnalysisResult | null>>,
     setError: (v: string) => void,
+    force?: boolean,
   ) => Promise<void>;
   handleManualZoomIn: () => void;
   handleManualZoomOut: () => void;
@@ -203,6 +204,9 @@ export function useDiagrams(
   }, []);
 
   // ===== Action Select =====
+  // When `force` is true, skip the "already-selected → deselect" toggle path
+  // and always re-fetch the action diagram. Used after a fresh (re)simulation
+  // so the newly simulated network state is always shown.
   const handleActionSelect = useCallback(async (
     actionId: string | null,
     result: AnalysisResult | null,
@@ -210,8 +214,9 @@ export function useDiagrams(
     voltageLevelsLength: number,
     setResult: React.Dispatch<React.SetStateAction<AnalysisResult | null>>,
     setError: (v: string) => void,
+    force: boolean = false,
   ) => {
-    if (actionId === selectedActionId) {
+    if (!force && actionId === selectedActionId) {
       interactionLogger.record('action_deselected', { action_id: actionId });
       setSelectedActionId(null);
       setActionDiagram(null);

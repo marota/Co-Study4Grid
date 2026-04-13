@@ -12,6 +12,13 @@ type SettingsTab = 'paths' | 'recommender' | 'configurations';
 interface HeaderProps {
   networkPath: string;
   setNetworkPath: (path: string) => void;
+  /**
+   * Called when the user "commits" a network path change — either by
+   * blurring the path input after editing it, or by selecting a new
+   * file via the picker. Goes through App's confirmation pipeline so
+   * the user is warned before the currently-loaded study is dropped.
+   */
+  onCommitNetworkPath: (path: string) => void;
   configLoading: boolean;
   result: AnalysisResult | null;
   selectedBranch: string;
@@ -26,6 +33,7 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({
   networkPath,
   setNetworkPath,
+  onCommitNetworkPath,
   configLoading,
   result,
   selectedBranch,
@@ -50,9 +58,15 @@ const Header: React.FC<HeaderProps> = ({
         <label style={{ fontSize: '0.7rem', opacity: 0.8, whiteSpace: 'nowrap' }}>Network Path</label>
         <div style={{ display: 'flex', gap: '4px' }}>
           <input
+            data-testid="header-network-path-input"
             type="text"
             value={networkPath}
             onChange={e => setNetworkPath(e.target.value)}
+            // Run the confirmation pipeline once the user finishes
+            // editing so that switching networks while a study is
+            // already loaded prompts before silently dropping the
+            // in-flight work.
+            onBlur={e => onCommitNetworkPath(e.target.value)}
             placeholder="load your grid xiidm file path"
             style={{
               flex: 1, minWidth: 0, padding: '5px 8px',
@@ -61,7 +75,11 @@ const Header: React.FC<HeaderProps> = ({
             }}
           />
           <button
-            onClick={() => onPickSettingsPath('file', setNetworkPath)}
+            // The picker also routes through onCommitNetworkPath: the
+            // user just chose a new file — that's an intentional commit
+            // and must trigger the confirmation dialog if it would
+            // overwrite an active study.
+            onClick={() => onPickSettingsPath('file', onCommitNetworkPath)}
             style={{
               padding: '4px 8px', background: 'rgba(255,255,255,0.15)',
               border: '1px solid rgba(255,255,255,0.25)', borderRadius: '4px',

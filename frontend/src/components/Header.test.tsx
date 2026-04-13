@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
+import { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import Header from './Header';
@@ -18,6 +19,7 @@ describe('Header', () => {
     const defaultProps = {
         networkPath: '/path/to/network.xiidm',
         setNetworkPath: vi.fn(),
+        onCommitNetworkPath: vi.fn(),
         configLoading: false,
         result: null,
         selectedBranch: '',
@@ -69,5 +71,53 @@ describe('Header', () => {
         render(<Header {...defaultProps} />);
         fireEvent.click(screen.getByText('📄'));
         expect(defaultProps.onPickSettingsPath).toHaveBeenCalled();
+    });
+
+    // The picker must commit through onCommitNetworkPath (App's
+    // confirmation pipeline) rather than calling setNetworkPath
+    // directly, so that picking a different file while a study is
+    // already loaded triggers the confirmation dialog.
+    it('routes the file picker through onCommitNetworkPath', () => {
+        const onCommitNetworkPath = vi.fn();
+        const onPickSettingsPath = vi.fn();
+        render(
+            <Header
+                {...defaultProps}
+                onCommitNetworkPath={onCommitNetworkPath}
+                onPickSettingsPath={onPickSettingsPath}
+            />,
+        );
+        fireEvent.click(screen.getByText('📄'));
+        expect(onPickSettingsPath).toHaveBeenCalledTimes(1);
+        // Second positional argument is the setter the picker will
+        // call with the chosen path; it must be onCommitNetworkPath.
+        expect(onPickSettingsPath.mock.calls[0][0]).toBe('file');
+        expect(onPickSettingsPath.mock.calls[0][1]).toBe(onCommitNetworkPath);
+    });
+
+    // Blurring the input after editing the path also goes through
+    // onCommitNetworkPath so the dialog fires for users who type a
+    // path manually rather than using the picker. The Header uses a
+    // controlled input so we wrap it in a stateful harness — without
+    // it, fireEvent.change would be reverted by React's reconciliation
+    // and the blur callback would still see the old value.
+    it('calls onCommitNetworkPath when the network path input loses focus', () => {
+        const onCommitNetworkPath = vi.fn();
+        const Harness = () => {
+            const [networkPath, setNetworkPath] = useState('/old/path.xiidm');
+            return (
+                <Header
+                    {...defaultProps}
+                    networkPath={networkPath}
+                    setNetworkPath={setNetworkPath}
+                    onCommitNetworkPath={onCommitNetworkPath}
+                />
+            );
+        };
+        render(<Harness />);
+        const input = screen.getByTestId('header-network-path-input') as HTMLInputElement;
+        fireEvent.change(input, { target: { value: '/new/path.xiidm' } });
+        fireEvent.blur(input);
+        expect(onCommitNetworkPath).toHaveBeenCalledWith('/new/path.xiidm');
     });
 });

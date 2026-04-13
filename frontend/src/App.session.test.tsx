@@ -414,6 +414,22 @@ describe('Full State Reset on Apply Settings', () => {
     });
   }
 
+  // Convenience: click Apply and confirm the resulting "Apply New
+  // Settings?" dialog. With a study already loaded, every Apply now
+  // routes through the confirmation pipeline (Bug "user warning when
+  // changing config path while a network is loaded").
+  async function applyAndConfirm() {
+    await act(async () => {
+      await userEvent.click(screen.getByText('Apply'));
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Apply New Settings?')).toBeInTheDocument();
+    });
+    await act(async () => {
+      await userEvent.click(screen.getByText('Confirm'));
+    });
+  }
+
   it('clears branch selection after Apply Settings', async () => {
     await renderAndLoadStudy();
     await selectBranch('BRANCH_A');
@@ -423,10 +439,7 @@ describe('Full State Reset on Apply Settings', () => {
     mockApi.updateConfig.mockClear();
 
     await openSettings();
-
-    await act(async () => {
-      await userEvent.click(screen.getByText('Apply'));
-    });
+    await applyAndConfirm();
 
     await waitFor(() => {
       expect(mockApi.updateConfig).toHaveBeenCalled();
@@ -446,10 +459,7 @@ describe('Full State Reset on Apply Settings', () => {
     mockApi.updateConfig.mockClear();
 
     await openSettings();
-
-    await act(async () => {
-      await userEvent.click(screen.getByText('Apply'));
-    });
+    await applyAndConfirm();
 
     await waitFor(() => {
       expect(mockApi.updateConfig).toHaveBeenCalled();
@@ -465,9 +475,7 @@ describe('Full State Reset on Apply Settings', () => {
 
     expect(screen.getByText('Apply')).toBeInTheDocument();
 
-    await act(async () => {
-      await userEvent.click(screen.getByText('Apply'));
-    });
+    await applyAndConfirm();
 
     await waitFor(() => {
       expect(mockApi.updateConfig).toHaveBeenCalled();
@@ -482,10 +490,7 @@ describe('Full State Reset on Apply Settings', () => {
     mockApi.updateConfig.mockClear();
 
     await openSettings();
-
-    await act(async () => {
-      await userEvent.click(screen.getByText('Apply'));
-    });
+    await applyAndConfirm();
 
     await waitFor(() => {
       expect(mockApi.updateConfig).toHaveBeenCalled();
@@ -504,10 +509,7 @@ describe('Full State Reset on Apply Settings', () => {
     mockApi.updateConfig.mockClear();
 
     await openSettings();
-
-    await act(async () => {
-      await userEvent.click(screen.getByText('Apply'));
-    });
+    await applyAndConfirm();
 
     await waitFor(() => {
       expect(mockApi.updateConfig).toHaveBeenCalled();
@@ -515,5 +517,282 @@ describe('Full State Reset on Apply Settings', () => {
 
     // Apply Settings DOES now re-fetch branches (matching Load Study behavior)
     expect(mockApi.getBranches).toHaveBeenCalled();
+  });
+});
+
+describe('Apply Settings Confirmation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  async function openSettings() {
+    const settingsBtn = screen.getByTitle('Settings');
+    await act(async () => {
+      await userEvent.click(settingsBtn);
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Apply')).toBeInTheDocument();
+    });
+  }
+
+  it('applies settings directly when no study has been loaded yet', async () => {
+    // Brand-new app, no Load Study clicked. There's nothing to
+    // discard, so Apply must not show the dialog.
+    render(<App />);
+
+    const settingsBtn = screen.getByTitle('Settings');
+    await act(async () => {
+      await userEvent.click(settingsBtn);
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Apply')).toBeInTheDocument();
+    });
+
+    mockApi.updateConfig.mockClear();
+    await act(async () => {
+      await userEvent.click(screen.getByText('Apply'));
+    });
+
+    // No confirmation dialog, settings apply immediately.
+    expect(screen.queryByText('Apply New Settings?')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockApi.updateConfig).toHaveBeenCalled();
+    });
+  });
+
+  // Regression: changing a config-relevant setting (e.g. the config
+  // file path) and clicking Apply while a network is loaded BUT no
+  // analysis has been run must still warn the user, because Apply
+  // unconditionally reloads the network and would silently drop the
+  // currently-loaded grid.
+  it('shows confirmation dialog when applying settings with a loaded network but no analysis', async () => {
+    await renderAndLoadStudy();
+    // Deliberately no selectBranch / no runAnalysis — only the base
+    // network is loaded.
+
+    mockApi.updateConfig.mockClear();
+    await openSettings();
+
+    // Type a new config file path (the typical user action this
+    // request is about) before clicking Apply.
+    const configPathInput = screen.getByLabelText(/Config File Path/i);
+    await userEvent.clear(configPathInput);
+    await userEvent.type(configPathInput, '/new/config.json');
+
+    await act(async () => {
+      await userEvent.click(screen.getByText('Apply'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Apply New Settings?')).toBeInTheDocument();
+    });
+    // Backend must NOT have been called yet — the user has to
+    // confirm first.
+    expect(mockApi.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('shows confirmation dialog when applying settings after running analysis', async () => {
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+    await runAnalysis();
+
+    mockApi.updateConfig.mockClear();
+    await openSettings();
+
+    await act(async () => {
+      await userEvent.click(screen.getByText('Apply'));
+    });
+
+    // Dialog appears, with the apply-settings-specific copy.
+    await waitFor(() => {
+      expect(screen.getByText('Apply New Settings?')).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(/The network will be reloaded with the new configuration/),
+    ).toBeInTheDocument();
+
+    // Backend must NOT have been called yet — applying is gated on
+    // the user's confirmation.
+    expect(mockApi.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('proceeds with apply settings after confirmation', async () => {
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+    await runAnalysis();
+
+    mockApi.updateConfig.mockClear();
+    await openSettings();
+
+    await act(async () => {
+      await userEvent.click(screen.getByText('Apply'));
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Apply New Settings?')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      await userEvent.click(screen.getByText('Confirm'));
+    });
+
+    // Dialog dismissed, settings applied, modal closed.
+    expect(screen.queryByText('Apply New Settings?')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockApi.updateConfig).toHaveBeenCalled();
+    });
+    expect(screen.queryByText('Apply')).not.toBeInTheDocument();
+  });
+
+  it('keeps state and modal open when user cancels apply settings dialog', async () => {
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+    await runAnalysis();
+
+    mockApi.updateConfig.mockClear();
+    await openSettings();
+
+    await act(async () => {
+      await userEvent.click(screen.getByText('Apply'));
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Apply New Settings?')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      await userEvent.click(screen.getByText('Cancel'));
+    });
+
+    // Dialog dismissed, no backend call, settings modal still open
+    // (so the user can adjust their inputs without losing them).
+    expect(screen.queryByText('Apply New Settings?')).not.toBeInTheDocument();
+    expect(mockApi.updateConfig).not.toHaveBeenCalled();
+    expect(screen.getByText('Apply')).toBeInTheDocument();
+    // The contingency selection must also still be intact.
+    expect(screen.getByPlaceholderText('Search line/bus...')).toHaveValue('BRANCH_A');
+  });
+});
+
+describe('Change Network Path Confirmation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it('does not prompt when no study has been loaded yet', async () => {
+    // Fresh app, no Load Study click. Typing a new network path and
+    // blurring must NOT show the dialog — there's nothing to discard.
+    render(<App />);
+
+    const input = await screen.findByTestId('header-network-path-input');
+    await act(async () => {
+      await userEvent.clear(input);
+      await userEvent.type(input, '/tmp/freshly-chosen.xiidm');
+      input.blur();
+    });
+
+    expect(screen.queryByText('Change Network?')).not.toBeInTheDocument();
+  });
+
+  it('shows confirmation dialog when typing a different path after a study is loaded', async () => {
+    await renderAndLoadStudy();
+
+    mockApi.updateConfig.mockClear();
+
+    const input = screen.getByTestId('header-network-path-input');
+    await act(async () => {
+      await userEvent.clear(input);
+      await userEvent.type(input, '/tmp/new-network.xiidm');
+      input.blur();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Change Network?')).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(/The current study will be reloaded from the new network file/),
+    ).toBeInTheDocument();
+    // The backend must NOT have been called yet — confirmation is
+    // what triggers the reload.
+    expect(mockApi.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('reloads the study with the new path on Confirm', async () => {
+    await renderAndLoadStudy();
+
+    mockApi.updateConfig.mockClear();
+    mockApi.getBranches.mockClear();
+
+    const input = screen.getByTestId('header-network-path-input');
+    await act(async () => {
+      await userEvent.clear(input);
+      await userEvent.type(input, '/tmp/new-network.xiidm');
+      input.blur();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Change Network?')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      await userEvent.click(screen.getByText('Confirm'));
+    });
+
+    // Dialog dismissed and a fresh load kicks in with the new path.
+    expect(screen.queryByText('Change Network?')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockApi.updateConfig).toHaveBeenCalled();
+    });
+    const lastCall = mockApi.updateConfig.mock.calls.at(-1)![0];
+    expect(lastCall.network_path).toBe('/tmp/new-network.xiidm');
+    expect(mockApi.getBranches).toHaveBeenCalled();
+  });
+
+  it('reverts the network path input on Cancel and keeps the current study', async () => {
+    await renderAndLoadStudy();
+    const initialPath = (screen.getByTestId('header-network-path-input') as HTMLInputElement).value;
+
+    mockApi.updateConfig.mockClear();
+
+    const input = screen.getByTestId('header-network-path-input');
+    await act(async () => {
+      await userEvent.clear(input);
+      await userEvent.type(input, '/tmp/rejected.xiidm');
+      input.blur();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Change Network?')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      await userEvent.click(screen.getByText('Cancel'));
+    });
+
+    // Dialog gone, no reload, and the Header field is back to the
+    // path the currently-loaded study was loaded from.
+    expect(screen.queryByText('Change Network?')).not.toBeInTheDocument();
+    expect(mockApi.updateConfig).not.toHaveBeenCalled();
+    expect(
+      (screen.getByTestId('header-network-path-input') as HTMLInputElement).value,
+    ).toBe(initialPath);
+  });
+
+  it('does not prompt when blurring the input without actually changing the path', async () => {
+    await renderAndLoadStudy();
+
+    mockApi.updateConfig.mockClear();
+
+    const input = screen.getByTestId('header-network-path-input');
+    // Just focus and blur — same value committed.
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+
+    expect(screen.queryByText('Change Network?')).not.toBeInTheDocument();
+    expect(mockApi.updateConfig).not.toHaveBeenCalled();
   });
 });

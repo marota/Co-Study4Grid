@@ -26,8 +26,8 @@ describe('ActionSearchDropdown', () => {
         filteredActions: [] as { id: string; description: string; type?: string }[],
         actionScores: undefined as Record<string, Record<string, unknown>> | undefined,
         actions: {} as Record<string, ActionDetail>,
-        scoreTargetMw: {} as Record<string, string>,
-        onScoreTargetMwChange: vi.fn(),
+        cardEditMw: {} as Record<string, string>,
+        onCardEditMwChange: vi.fn(),
         cardEditTap: {} as Record<string, string>,
         onCardEditTapChange: vi.fn(),
         simulating: null as string | null,
@@ -132,5 +132,174 @@ describe('ActionSearchDropdown', () => {
         const filteredActions = [{ id: 'act_sim', description: 'Test Action' }];
         render(<ActionSearchDropdown {...defaultProps} searchQuery="act" filteredActions={filteredActions} simulating="act_sim" />);
         expect(screen.getByText('Simulating...')).toBeInTheDocument();
+    });
+
+    describe('Target MW sync (Bug 1)', () => {
+        // A computed load-shedding action is already in the `actions` map
+        // with a simulated shedded_mw value. The score table row for that
+        // action must display the simulated value by default instead of an
+        // empty input, so the user can see what the action was run with.
+        it('populates LS score-table input with stored shedded_mw for computed actions', () => {
+            const scoredActionsList = [
+                { type: 'load_shedding', actionId: 'load_shedding_L1', score: 1.0, mwStart: 6.4 },
+            ];
+            const actionScores = {
+                load_shedding: { scores: { load_shedding_L1: 1.0 }, params: {} },
+            };
+            const actions: Record<string, ActionDetail> = {
+                load_shedding_L1: {
+                    description_unitaire: 'shed L1',
+                    rho_before: null,
+                    rho_after: null,
+                    max_rho: 0.5,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    load_shedding_details: [
+                        { load_name: 'L1', voltage_level_id: 'VL1', shedded_mw: 5.4 },
+                    ],
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={scoredActionsList}
+                    actionScores={actionScores}
+                    actions={actions}
+                />,
+            );
+            const input = screen.getByTestId('target-mw-load_shedding_L1') as HTMLInputElement;
+            expect(input.value).toBe('5.4');
+        });
+
+        // Same guarantee for renewable curtailment: the stored curtailed_mw
+        // must show up as the default value for computed rows.
+        it('populates RC score-table input with stored curtailed_mw for computed actions', () => {
+            const scoredActionsList = [
+                { type: 'renewable_curtailment', actionId: 'curtail_G1', score: 1.0, mwStart: 8.0 },
+            ];
+            const actionScores = {
+                renewable_curtailment: { scores: { curtail_G1: 1.0 }, params: {} },
+            };
+            const actions: Record<string, ActionDetail> = {
+                curtail_G1: {
+                    description_unitaire: 'curtail G1',
+                    rho_before: null,
+                    rho_after: null,
+                    max_rho: 0.6,
+                    max_rho_line: 'LINE_B',
+                    is_rho_reduction: true,
+                    curtailment_details: [
+                        { gen_name: 'G1', voltage_level_id: 'VL2', curtailed_mw: 3.1 },
+                    ],
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={scoredActionsList}
+                    actionScores={actionScores}
+                    actions={actions}
+                />,
+            );
+            const input = screen.getByTestId('target-mw-curtail_G1') as HTMLInputElement;
+            expect(input.value).toBe('3.1');
+        });
+
+        // The cardEditMw value (written when the user edits the input on the
+        // prioritized action card) must be reflected in the score table row
+        // input, so the two UIs stay synchronized.
+        it('mirrors cardEditMw value in the score-table input', () => {
+            const scoredActionsList = [
+                { type: 'load_shedding', actionId: 'load_shedding_L1', score: 1.0, mwStart: 6.4 },
+            ];
+            const actionScores = {
+                load_shedding: { scores: { load_shedding_L1: 1.0 }, params: {} },
+            };
+            const actions: Record<string, ActionDetail> = {
+                load_shedding_L1: {
+                    description_unitaire: 'shed L1',
+                    rho_before: null,
+                    rho_after: null,
+                    max_rho: 0.5,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    load_shedding_details: [
+                        { load_name: 'L1', voltage_level_id: 'VL1', shedded_mw: 5.4 },
+                    ],
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={scoredActionsList}
+                    actionScores={actionScores}
+                    actions={actions}
+                    cardEditMw={{ load_shedding_L1: '4.2' }}
+                />,
+            );
+            const input = screen.getByTestId('target-mw-load_shedding_L1') as HTMLInputElement;
+            // cardEditMw overrides the stored shedded_mw default.
+            expect(input.value).toBe('4.2');
+        });
+
+        // Typing in the score-table row must propagate the change through
+        // onCardEditMwChange (the shared edit state used by both the row and
+        // the action card).
+        it('forwards score-table edits through onCardEditMwChange', () => {
+            const onCardEditMwChange = vi.fn();
+            const scoredActionsList = [
+                { type: 'load_shedding', actionId: 'load_shedding_L1', score: 1.0, mwStart: 6.4 },
+            ];
+            const actionScores = {
+                load_shedding: { scores: { load_shedding_L1: 1.0 }, params: {} },
+            };
+            const actions: Record<string, ActionDetail> = {
+                load_shedding_L1: {
+                    description_unitaire: 'shed L1',
+                    rho_before: null,
+                    rho_after: null,
+                    max_rho: 0.5,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    load_shedding_details: [
+                        { load_name: 'L1', voltage_level_id: 'VL1', shedded_mw: 5.4 },
+                    ],
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={scoredActionsList}
+                    actionScores={actionScores}
+                    actions={actions}
+                    onCardEditMwChange={onCardEditMwChange}
+                />,
+            );
+            const input = screen.getByTestId('target-mw-load_shedding_L1');
+            fireEvent.change(input, { target: { value: '4.0' } });
+            expect(onCardEditMwChange).toHaveBeenCalledWith('load_shedding_L1', '4.0');
+        });
+
+        // A non-computed LS row (no action detail yet) should render an
+        // empty input — the stored-MW fallback only applies once the action
+        // has been simulated.
+        it('leaves LS input empty for non-computed actions', () => {
+            const scoredActionsList = [
+                { type: 'load_shedding', actionId: 'load_shedding_L2', score: 1.0, mwStart: 6.4 },
+            ];
+            const actionScores = {
+                load_shedding: { scores: { load_shedding_L2: 1.0 }, params: {} },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={scoredActionsList}
+                    actionScores={actionScores}
+                    actions={{}}
+                />,
+            );
+            const input = screen.getByTestId('target-mw-load_shedding_L2') as HTMLInputElement;
+            expect(input.value).toBe('');
+        });
     });
 });

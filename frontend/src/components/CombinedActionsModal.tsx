@@ -27,7 +27,13 @@ interface Props {
     analysisResult: AnalysisResult | null;
     simulatedActions?: Record<string, ActionDetail>;
     disconnectedElement: string | null;
+    // Called when a COMBINED pair is simulated (green "Simulate Combined"
+    // button). Promotes the new pair into Selected Actions.
     onSimulateCombined: (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => void;
+    // Called when a SINGLE action is (re-)simulated from the Explore Pairs
+    // table. Updates the action in place — the action stays in its current
+    // bucket (Suggested / Selected) and is not auto-promoted.
+    onSimulateSingleAction: (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => void;
     monitoringFactor?: number;
     linesOverloaded?: string[];
 }
@@ -45,6 +51,7 @@ const CombinedActionsModal: React.FC<Props> = ({
     simulatedActions = {},
     disconnectedElement,
     onSimulateCombined,
+    onSimulateSingleAction,
     monitoringFactor = 1.0,
     linesOverloaded = [],
 }) => {
@@ -153,7 +160,13 @@ const CombinedActionsModal: React.FC<Props> = ({
         }
     }, [isOpen]);
 
-    // Only handle automatic preview for pre-computed actions or resetting
+    // Drive the estimation/comparison card from the current selection
+    // and active tab only. We intentionally do NOT depend on
+    // analysisResult here: a successful Simulate Combined mutates
+    // analysisResult.actions through onSimulateCombined, and we must
+    // keep the preview card visible so the user can read the simulation
+    // result in place. The card is only reset when the user changes
+    // their pair selection or leaves the Explore Pairs tab.
     useEffect(() => {
         const currentSelection = Array.from(selectedIds).sort().join('+');
         lastSelectionRef.current = currentSelection;
@@ -180,7 +193,9 @@ const CombinedActionsModal: React.FC<Props> = ({
             setError(null);
             setSimulationFeedback(null);
         }
-    }, [selectedIds, disconnectedElement, analysisResult, activeTab]);
+        // analysisResult is deliberately omitted — see comment above.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedIds, disconnectedElement, activeTab]);
 
     const handleEstimate = async () => {
         if (activeTab !== 'explore' || selectedIds.size !== 2 || !disconnectedElement) return;
@@ -309,13 +324,37 @@ const CombinedActionsModal: React.FC<Props> = ({
                 n_components: result.n_components,
                 disconnected_mw: result.disconnected_mw,
                 non_convergence: result.non_convergence,
+                lines_overloaded_after: result.lines_overloaded_after,
+                load_shedding_details: result.load_shedding_details,
+                curtailment_details: result.curtailment_details,
+                pst_details: result.pst_details,
                 estimated_max_rho: estimationData?.estimated_max_rho ?? estimationData?.max_rho,
                 estimated_max_rho_line: estimationData?.estimated_max_rho_line ?? estimationData?.max_rho_line,
                 is_estimated: false,
                 action_topology: result.action_topology
             };
             
-            onSimulateCombined(idToSimulate, detail, result.lines_overloaded || []);
+            // A "single action" simulation is one triggered from a row in
+            // the Explore Pairs table (actionId is passed AND does not
+            // contain '+'). In that case the user is just previewing an
+            // individual action to compare before combining — it should
+            // land in Suggested Actions (not Selected).
+            //
+            // A combined pair simulation (no actionId, or an id containing
+            // '+') is an explicit user action to add the pair as a new
+            // candidate and is promoted into Selected Actions.
+            //
+            // In either case we deliberately DO NOT close the modal: the
+            // updated action card and its action-variant diagram are
+            // populated in the background so the user can keep interacting
+            // with the modal (e.g. simulate more rows, compare another
+            // pair) without losing their place.
+            const isSingleActionFromExplore = actionId !== undefined && !actionId.includes('+');
+            if (isSingleActionFromExplore) {
+                onSimulateSingleAction(idToSimulate, detail, result.lines_overloaded || []);
+            } else {
+                onSimulateCombined(idToSimulate, detail, result.lines_overloaded || []);
+            }
         } catch (e: unknown) {
             const err = e as { response?: { data?: { detail?: string } }, message?: string };
             setError(err?.response?.data?.detail || err?.message || 'Simulation failed');
@@ -334,17 +373,24 @@ const CombinedActionsModal: React.FC<Props> = ({
             alignItems: 'center',
             justifyContent: 'center'
         }}>
-            <div style={{
-                background: 'white',
-                borderRadius: '12px',
-                width: '950px',
-                maxWidth: '95vw',
-                maxHeight: '90vh',
-                display: 'flex',
-                flexDirection: 'column',
-                boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
-                overflow: 'hidden'
-            }}>
+            <div
+                data-testid="combine-modal-card"
+                style={{
+                    background: 'white',
+                    borderRadius: '12px',
+                    // Use (almost) the full viewport width instead of a
+                    // fixed 950px so wide tables in the Computed / Explore
+                    // Pairs tabs fit without forcing a horizontal
+                    // scrollbar on the modal itself.
+                    width: '95vw',
+                    maxWidth: '95vw',
+                    maxHeight: '90vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
+                    overflow: 'hidden'
+                }}
+            >
                 <div style={{ padding: '15px 24px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfcfc' }}>
                     <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Combine Actions</h2>
                     <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: '24px', cursor: 'pointer', color: '#999' }}>&times;</button>
@@ -355,7 +401,21 @@ const CombinedActionsModal: React.FC<Props> = ({
                     <div className={`modal-tab ${activeTab === 'explore' ? 'active' : ''}`} onClick={() => setActiveTab('explore')} data-testid="tab-explore">Explore Pairs</div>
                 </div>
 
-                <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <div
+                    data-testid="combine-modal-body"
+                    style={{
+                        padding: '20px 24px',
+                        overflowY: 'auto',
+                        // Tables inside the modal manage their own scroll;
+                        // never let horizontal overflow escape to the
+                        // modal level.
+                        overflowX: 'hidden',
+                        flex: 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minWidth: 0,
+                    }}
+                >
                     {activeTab === 'computed' ? (
                         <ComputedPairsTable
                             computedPairsList={computedPairsList as ComputedPairEntry[]}
