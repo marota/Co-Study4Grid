@@ -222,6 +222,44 @@ describe('CombinedActionsModal', () => {
         expect(await screen.findByText('N/A')).toBeInTheDocument();
     });
 
+    // Modal layout: the dialog should use (almost) the full viewport
+    // width so wide tables fit without a horizontal scrollbar at the
+    // modal level. The body container must also suppress horizontal
+    // overflow so any over-wide inner element scrolls within its own
+    // sub-container instead of leaking out.
+    describe('modal layout width', () => {
+        it('uses 95vw as its width — no fixed 950px cap', () => {
+            render(<CombinedActionsModal {...defaultProps} />);
+            const card = screen.getByTestId('combine-modal-card');
+            expect(card.style.width).toBe('95vw');
+            expect(card.style.maxWidth).toBe('95vw');
+            // Regression guard: the previous hard-coded 950px width
+            // caused horizontal scrolling on narrow viewports and
+            // wasted space on wide ones.
+            expect(card.style.width).not.toBe('950px');
+        });
+
+        it('body prevents horizontal overflow from leaking to the modal', () => {
+            render(<CombinedActionsModal {...defaultProps} />);
+            const body = screen.getByTestId('combine-modal-body');
+            // overflowX must be explicitly hidden so tables inside
+            // cannot force the modal to grow a horizontal scrollbar.
+            expect(body.style.overflowX).toBe('hidden');
+            // Vertical scrolling remains enabled for long content.
+            expect(body.style.overflowY).toBe('auto');
+            // minWidth: 0 is required so this flex child can shrink
+            // below its intrinsic content width instead of forcing
+            // the parent flex container to overflow.
+            expect(body.style.minWidth).toBe('0px');
+        });
+
+        it('outer modal card still hides its own overflow', () => {
+            render(<CombinedActionsModal {...defaultProps} />);
+            const card = screen.getByTestId('combine-modal-card');
+            expect(card.style.overflow).toBe('hidden');
+        });
+    });
+
     // Bugs 6 & 7: simulations triggered from the modal must
     //   (1) land in the correct bucket (single → Suggested via
     //       onSimulateSingleAction; combined pair → Selected via

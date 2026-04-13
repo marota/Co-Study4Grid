@@ -365,17 +365,24 @@ const CombinedActionsModal: React.FC<Props> = ({
             alignItems: 'center',
             justifyContent: 'center'
         }}>
-            <div style={{
-                background: 'white',
-                borderRadius: '12px',
-                width: '950px',
-                maxWidth: '95vw',
-                maxHeight: '90vh',
-                display: 'flex',
-                flexDirection: 'column',
-                boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
-                overflow: 'hidden'
-            }}>
+            <div
+                data-testid="combine-modal-card"
+                style={{
+                    background: 'white',
+                    borderRadius: '12px',
+                    // Use (almost) the full viewport width instead of a
+                    // fixed 950px so wide tables in the Computed / Explore
+                    // Pairs tabs fit without forcing a horizontal
+                    // scrollbar on the modal itself.
+                    width: '95vw',
+                    maxWidth: '95vw',
+                    maxHeight: '90vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
+                    overflow: 'hidden'
+                }}
+            >
                 <div style={{ padding: '15px 24px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfcfc' }}>
                     <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Combine Actions</h2>
                     <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: '24px', cursor: 'pointer', color: '#999' }}>&times;</button>
@@ -386,7 +393,21 @@ const CombinedActionsModal: React.FC<Props> = ({
                     <div className={`modal-tab ${activeTab === 'explore' ? 'active' : ''}`} onClick={() => setActiveTab('explore')} data-testid="tab-explore">Explore Pairs</div>
                 </div>
 
-                <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <div
+                    data-testid="combine-modal-body"
+                    style={{
+                        padding: '20px 24px',
+                        overflowY: 'auto',
+                        // Tables inside the modal manage their own scroll;
+                        // never let horizontal overflow escape to the
+                        // modal level.
+                        overflowX: 'hidden',
+                        flex: 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minWidth: 0,
+                    }}
+                >
                     {activeTab === 'computed' ? (
                         <ComputedPairsTable
                             computedPairsList={computedPairsList as ComputedPairEntry[]}
