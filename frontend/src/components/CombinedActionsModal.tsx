@@ -160,7 +160,13 @@ const CombinedActionsModal: React.FC<Props> = ({
         }
     }, [isOpen]);
 
-    // Only handle automatic preview for pre-computed actions or resetting
+    // Drive the estimation/comparison card from the current selection
+    // and active tab only. We intentionally do NOT depend on
+    // analysisResult here: a successful Simulate Combined mutates
+    // analysisResult.actions through onSimulateCombined, and we must
+    // keep the preview card visible so the user can read the simulation
+    // result in place. The card is only reset when the user changes
+    // their pair selection or leaves the Explore Pairs tab.
     useEffect(() => {
         const currentSelection = Array.from(selectedIds).sort().join('+');
         lastSelectionRef.current = currentSelection;
@@ -187,7 +193,9 @@ const CombinedActionsModal: React.FC<Props> = ({
             setError(null);
             setSimulationFeedback(null);
         }
-    }, [selectedIds, disconnectedElement, analysisResult, activeTab]);
+        // analysisResult is deliberately omitted — see comment above.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedIds, disconnectedElement, activeTab]);
 
     const handleEstimate = async () => {
         if (activeTab !== 'explore' || selectedIds.size !== 2 || !disconnectedElement) return;

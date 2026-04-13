@@ -222,6 +222,125 @@ describe('CombinedActionsModal', () => {
         expect(await screen.findByText('N/A')).toBeInTheDocument();
     });
 
+    // Bug: the Explore Pairs estimation/comparison card must stay
+    // visible after a successful Simulate Combined call so the user
+    // can read the simulation result in place. Previously the useEffect
+    // that rebuilt the preview from `analysisResult.combined_actions`
+    // wiped the card the moment `onSimulateCombined` mutated the parent
+    // analysisResult (because the newly-simulated pair lands in
+    // `actions`, not in `combined_actions`).
+    describe('Estimation card persistence on Simulate Combined', () => {
+        const simResponse = {
+            action_id: 'act1+act2',
+            description_unitaire: 'Simulated combined',
+            rho_before: [0.8],
+            rho_after: [0.73],
+            max_rho: 0.73,
+            max_rho_line: 'L3_SIM',
+            is_rho_reduction: true,
+            is_islanded: false,
+            non_convergence: null,
+            lines_overloaded: [],
+            is_estimated: false,
+        } as unknown as SimulateResult;
+
+        // After Simulate Combined completes, the comparison card (the
+        // one carrying the "Explore Pairs Comparison" header) must
+        // stay rendered and must show the simulation feedback.
+        it('keeps the comparison card open and shows the feedback after Simulate', async () => {
+            vi.mocked(api.simulateManualAction).mockResolvedValueOnce(simResponse);
+
+            const { rerender } = render(<CombinedActionsModal {...defaultProps} />);
+            fireEvent.click(getExploreTab());
+            fireEvent.click(screen.getByText('act1'));
+            fireEvent.click(screen.getByText('act2'));
+
+            // Pre-computed pair 'act1+act2' exists in mockAnalysisResult,
+            // so the preview card is visible immediately.
+            expect(await screen.findByTestId('comparison-card')).toBeInTheDocument();
+
+            const simButton = await screen.findByText('Simulate Combined');
+            fireEvent.click(simButton);
+
+            // Simulation feedback appears inside the SAME comparison card.
+            await waitFor(() => {
+                const feedback = screen.getByTestId('simulation-feedback');
+                expect(within(feedback).getByText('73.0%')).toBeInTheDocument();
+            });
+            expect(screen.getByTestId('comparison-card')).toBeInTheDocument();
+
+            // Regression: re-render with a NEW analysisResult that now
+            // contains the simulated pair in `actions` (the real flow
+            // via onSimulateCombined). The card must NOT disappear.
+            const updatedResult: AnalysisResult = {
+                ...mockAnalysisResult,
+                actions: {
+                    ...mockAnalysisResult.actions,
+                    'act1+act2': {
+                        description_unitaire: 'Simulated combined',
+                        rho_before: [0.8],
+                        rho_after: [0.73],
+                        max_rho: 0.73,
+                        max_rho_line: 'L3_SIM',
+                        is_rho_reduction: true,
+                    },
+                },
+            };
+            rerender(<CombinedActionsModal {...defaultProps} analysisResult={updatedResult} />);
+
+            expect(screen.getByTestId('comparison-card')).toBeInTheDocument();
+            const feedback = screen.getByTestId('simulation-feedback');
+            expect(within(feedback).getByText('73.0%')).toBeInTheDocument();
+        });
+
+        // The card should still reset when the user changes their pair
+        // selection (deselect then pick different actions).
+        it('resets the comparison card when the pair selection changes', async () => {
+            vi.mocked(api.simulateManualAction).mockResolvedValueOnce(simResponse);
+
+            render(<CombinedActionsModal {...defaultProps} />);
+            fireEvent.click(getExploreTab());
+            fireEvent.click(screen.getByText('act1'));
+            fireEvent.click(screen.getByText('act2'));
+
+            const card = await screen.findByTestId('comparison-card');
+            expect(card).toBeInTheDocument();
+
+            // Click Simulate Combined — card must stay.
+            fireEvent.click(await screen.findByText('Simulate Combined'));
+            await waitFor(() => {
+                expect(screen.getByTestId('simulation-feedback')).toBeInTheDocument();
+            });
+
+            // Deselect act2 → only 1 selected → card must disappear.
+            // After selection, 'act2' text appears in both the selection
+            // chip and the row; click the chip's × button so we hit a
+            // single, unambiguous element.
+            const chip = screen.getByTestId('chip-act2');
+            const closeBtn = within(chip).getByText('\u00D7');
+            fireEvent.click(closeBtn);
+            await waitFor(() => {
+                expect(screen.queryByTestId('comparison-card')).not.toBeInTheDocument();
+            });
+        });
+
+        // The card should also reset when the user leaves the Explore
+        // Pairs tab (e.g. jumps back to Computed Pairs).
+        it('resets the comparison card when leaving the Explore Pairs tab', async () => {
+            render(<CombinedActionsModal {...defaultProps} />);
+            fireEvent.click(getExploreTab());
+            fireEvent.click(screen.getByText('act1'));
+            fireEvent.click(screen.getByText('act2'));
+
+            expect(await screen.findByTestId('comparison-card')).toBeInTheDocument();
+
+            fireEvent.click(screen.getByTestId('tab-computed'));
+            await waitFor(() => {
+                expect(screen.queryByTestId('comparison-card')).not.toBeInTheDocument();
+            });
+        });
+    });
+
     // Modal layout: the dialog should use (almost) the full viewport
     // width so wide tables fit without a horizontal scrollbar at the
     // modal level. The body container must also suppress horizontal
