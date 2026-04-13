@@ -32,6 +32,19 @@ interface VisualizationPanelProps {
     onVoltageRangeChange: (range: [number, number]) => void;
     actionViewMode: 'network' | 'delta';
     onViewModeChange: (mode: 'network' | 'delta') => void;
+    /**
+     * Resolves the Flow/Impacts view mode for a specific tab. A
+     * detached tab has its own view mode independent of the main
+     * window's `actionViewMode` — see App.tsx's `detachedViewModes`.
+     */
+    viewModeForTab?: (tab: TabId) => 'network' | 'delta';
+    /**
+     * Per-tab Flow/Impacts toggle handler. Routes the change into
+     * either the main-window `actionViewMode` or the detached
+     * tab's entry in `detachedViewModes` based on whether the tab
+     * is currently detached.
+     */
+    onViewModeChangeForTab?: (tab: TabId, mode: 'network' | 'delta') => void;
     inspectQuery: string;
     onInspectQueryChange: (query: string) => void;
     /**
@@ -115,6 +128,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onReattachTab,
     onFocusDetachedTab,
     onInspectQueryChangeFor,
+    viewModeForTab,
+    onViewModeChangeForTab,
     isTabTied,
     onToggleTabTie,
 }) => {
@@ -124,6 +139,11 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     const focusDetachedTabCb = onFocusDetachedTab ?? (() => {});
     const inspectQueryChangeForCb = onInspectQueryChangeFor
         ?? ((_tab: TabId, q: string) => onInspectQueryChange(q));
+    // When the per-tab view mode hooks are not wired up (older call
+    // sites / tests) we fall back to the global `actionViewMode`
+    // state passed in as a prop. That preserves backward compatibility.
+    const viewModeForTabFn = viewModeForTab ?? (() => actionViewMode);
+    const viewModeChangeForTabCb = onViewModeChangeForTab ?? ((_tab: TabId, mode: 'network' | 'delta') => onViewModeChange(mode));
     const isTabTiedFn = isTabTied ?? (() => false);
     const toggleTabTieCb = onToggleTabTie ?? (() => {});
     const [warningDismissed, setWarningDismissed] = useState(false);
@@ -188,6 +208,11 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
             (tabId === 'n-1' && !!n1Diagram?.svg) ||
             (tabId === 'action' && !!actionDiagram?.svg);
         const tied = isTabTiedFn(tabId);
+        // Per-tab view mode: each detached popup tracks its own
+        // Flow/Impacts state, independent of the main window — so
+        // the toggle inside the popup only affects the popup, and
+        // vice versa.
+        const tabViewMode = viewModeForTabFn(tabId);
 
         return (
             <>
@@ -211,22 +236,22 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                 backgroundColor: '#fff',
                             }}>
                                 <button
-                                    onClick={() => onViewModeChange('network')}
+                                    onClick={() => viewModeChangeForTabCb(tabId, 'network')}
                                     style={{
                                         padding: '4px 12px', border: 'none', cursor: 'pointer',
-                                        backgroundColor: actionViewMode === 'network' ? '#007bff' : '#fff',
-                                        color: actionViewMode === 'network' ? '#fff' : '#555',
+                                        backgroundColor: tabViewMode === 'network' ? '#007bff' : '#fff',
+                                        color: tabViewMode === 'network' ? '#fff' : '#555',
                                         transition: 'all 0.15s ease'
                                     }}
                                 >
                                     Flows
                                 </button>
                                 <button
-                                    onClick={() => onViewModeChange('delta')}
+                                    onClick={() => viewModeChangeForTabCb(tabId, 'delta')}
                                     style={{
                                         padding: '4px 12px', border: 'none', borderLeft: '1px solid #ccc', cursor: 'pointer',
-                                        backgroundColor: actionViewMode === 'delta' ? '#007bff' : '#fff',
-                                        color: actionViewMode === 'delta' ? '#fff' : '#555',
+                                        backgroundColor: tabViewMode === 'delta' ? '#007bff' : '#fff',
+                                        color: tabViewMode === 'delta' ? '#fff' : '#555',
                                         transition: 'all 0.15s ease'
                                     }}
                                 >

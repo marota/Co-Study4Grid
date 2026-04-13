@@ -183,6 +183,64 @@ describe('VisualizationPanel', () => {
         expect(onViewModeChange).toHaveBeenCalledWith('delta');
     });
 
+    // Regression tests for the Flow/Impacts mode being PER-TAB in a
+    // detached popup. Before the fix, the mode was a global state
+    // shared between main and popup: flipping Impacts in one
+    // window automatically flipped it in the other, and Impacts
+    // never rendered in the popup because the highlights effect
+    // only reran for the main activeTab.
+    describe('per-tab Flow/Impacts view mode (detached window)', () => {
+        it('reads the per-tab view mode from viewModeForTab so each tab shows its own mode', () => {
+            // Simulate a world where the 'n' tab is in delta (popup)
+            // while 'n-1' is still in network (main). The per-tab
+            // getter returns 'delta' for 'n' and 'network' for 'n-1'.
+            const nDiagram: DiagramData = { svg: '<svg>n</svg>', metadata: null };
+            const n1Diagram: DiagramData = { svg: '<svg>n1</svg>', metadata: null };
+            const viewModeForTab = vi.fn((tab: TabId) => tab === 'n' ? 'delta' : 'network');
+
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'n',
+                nDiagram,
+                n1Diagram,
+                viewModeForTab,
+            })} />);
+
+            // viewModeForTab must have been invoked for each tab
+            // that has a diagram (n and n-1) when their overlays
+            // rendered.
+            const calledTabs = viewModeForTab.mock.calls.map(c => c[0]);
+            expect(calledTabs).toContain('n');
+            expect(calledTabs).toContain('n-1');
+        });
+
+        it('routes the Impacts click through onViewModeChangeForTab with the tab id', async () => {
+            const user = userEvent.setup();
+            const onViewModeChangeForTab = vi.fn();
+            const nDiagram: DiagramData = { svg: '<svg>n</svg>', metadata: null };
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'n',
+                nDiagram,
+                onViewModeChangeForTab,
+                // When the per-tab getter exists, the overlay reads
+                // from it rather than the global actionViewMode.
+                viewModeForTab: () => 'network' as const,
+            })} />);
+
+            // All three tabs render an overlay (n / n-1 / action);
+            // only the active one (n) is actually visible, but all
+            // three buttons are in the DOM.
+            const impactsButtons = screen.getAllByText('Impacts');
+            // Click the first one (the active N tab's overlay).
+            await user.click(impactsButtons[0]);
+            // The call must include the tab id, proving that the
+            // router can dispatch to the right per-window state.
+            expect(onViewModeChangeForTab).toHaveBeenCalled();
+            const [firstCall] = onViewModeChangeForTab.mock.calls;
+            expect(firstCall[0]).toBe('n');
+            expect(firstCall[1]).toBe('delta');
+        });
+    });
+
     it('shows convergence warning for N-1 when AC did not converge', () => {
         const n1Diagram: DiagramData = {
             svg: '<svg>n1</svg>',

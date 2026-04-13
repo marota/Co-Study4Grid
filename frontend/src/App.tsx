@@ -587,7 +587,55 @@ function App() {
   const staleHighlights = useRef<Set<TabId>>(new Set());
   const prevHighlightTabRef = useRef<TabId>(activeTab);
 
-  const applyHighlightsForTab = useCallback((tab: TabId) => {
+  // Flow vs Impacts view mode is now TAB-SCOPED and WINDOW-SCOPED:
+  // main window has `actionViewMode` (from useDiagrams) while each
+  // detached tab has its own entry here. Toggling Impacts in a
+  // detached popup therefore only affects that popup's tab; the
+  // main window's mode is untouched, and vice versa. A reattach
+  // clears the detached-mode entry so the tab resumes the
+  // main-window mode from that point onward.
+  const [detachedViewModes, setDetachedViewModes] = useState<Partial<Record<TabId, 'network' | 'delta'>>>({});
+
+  // Which Flow/Impacts mode applies to a given tab right now.
+  const viewModeForTab = useCallback((tab: TabId): 'network' | 'delta' => {
+    if (detachedTabs[tab]) return detachedViewModes[tab] ?? 'network';
+    return actionViewMode;
+  }, [detachedTabs, detachedViewModes, actionViewMode]);
+
+  // Per-tab Flow/Impacts toggle routing: if the tab is currently
+  // detached, update its entry in `detachedViewModes`; otherwise
+  // update the main-window `actionViewMode`. This is how a Flow
+  // /Impacts button inside a detached popup affects ONLY the
+  // detached window.
+  const handleViewModeChangeForTab = useCallback((tab: TabId, mode: 'network' | 'delta') => {
+    interactionLogger.record('view_mode_changed', { mode, tab, scope: detachedTabs[tab] ? 'detached' : 'main' });
+    if (detachedTabs[tab]) {
+      setDetachedViewModes(prev => ({ ...prev, [tab]: mode }));
+    } else {
+      diagrams.setActionViewMode(mode);
+    }
+  }, [detachedTabs, diagrams]);
+
+  // On reattach, drop the tab's detached view-mode entry so the
+  // main window's `actionViewMode` takes over for that tab from
+  // that point onward.
+  useEffect(() => {
+    setDetachedViewModes(prev => {
+      const next: Partial<Record<TabId, 'network' | 'delta'>> = {};
+      let changed = false;
+      for (const tabId of Object.keys(prev) as TabId[]) {
+        if (detachedTabs[tabId]) {
+          next[tabId] = prev[tabId];
+        } else {
+          changed = true; // dropped
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [detachedTabs]);
+
+  const applyHighlightsForTab = useCallback((tab: TabId, mode?: 'network' | 'delta') => {
+    const effectiveMode = mode ?? viewModeForTab(tab);
     const overloadedLines = result?.lines_overloaded || [];
 
     if (tab === 'n-1') {
@@ -613,7 +661,7 @@ function App() {
           applyOverloadedHighlights(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, overloadedLines);
         }
         applyContingencyHighlight(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, selectedBranch);
-        applyDeltaVisuals(diagrams.n1SvgContainerRef.current, n1Diagram, diagrams.n1MetaIndex, actionViewMode === 'delta');
+        applyDeltaVisuals(diagrams.n1SvgContainerRef.current, n1Diagram, diagrams.n1MetaIndex, effectiveMode === 'delta');
       }
     }
     if (tab === 'action') {
@@ -662,9 +710,9 @@ function App() {
       // Delta visuals run LAST so they decorate the originals without
       // contaminating the highlight clones already in the background
       // layer.
-      applyDeltaVisuals(diagrams.actionSvgContainerRef.current, actionDiagram, diagrams.actionMetaIndex, actionViewMode === 'delta');
+      applyDeltaVisuals(diagrams.actionSvgContainerRef.current, actionDiagram, diagrams.actionMetaIndex, effectiveMode === 'delta');
     }
-  }, [n1Diagram, actionDiagram, result, selectedActionId, actionViewMode, selectedBranch, diagrams, monitoringFactor]);
+  }, [n1Diagram, actionDiagram, result, selectedActionId, selectedBranch, diagrams, monitoringFactor, viewModeForTab]);
 
   useEffect(() => {
     const isTabSwitch = prevHighlightTabRef.current !== activeTab;
@@ -672,20 +720,34 @@ function App() {
     const otherTabs: TabId[] = ['n', 'n-1', 'action'].filter(t => t !== activeTab) as TabId[];
     otherTabs.forEach(t => staleHighlights.current.add(t));
 
+    // Apply highlights + delta visuals to both the main window's
+    // active tab AND every currently-detached tab — because Impacts
+    // mode must keep working inside a detached popup when only the
+    // popup's view mode changes (the main window may be showing a
+    // different tab entirely).
+    const applyAll = () => {
+      applyHighlightsForTab(activeTab);
+      staleHighlights.current.delete(activeTab);
+      for (const detachedId of Object.keys(detachedTabs) as TabId[]) {
+        if (detachedId === activeTab) continue;
+        if (detachedId === 'overflow') continue;
+        applyHighlightsForTab(detachedId);
+        staleHighlights.current.delete(detachedId);
+      }
+    };
+
     if (isTabSwitch) {
       // Double rAF to ensure browser layout is settled before getScreenCTM()
       const id = requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          applyHighlightsForTab(activeTab);
-          staleHighlights.current.delete(activeTab);
+          applyAll();
         });
       });
       return () => cancelAnimationFrame(id);
     } else {
-      applyHighlightsForTab(activeTab);
-      staleHighlights.current.delete(activeTab);
+      applyAll();
     }
-  }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, activeTab, selectedBranch, applyHighlightsForTab]);
+  }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, detachedViewModes, detachedTabs, activeTab, selectedBranch, applyHighlightsForTab]);
 
   // ===== Extracted JSX callbacks (stable references for React.memo) =====
 
@@ -868,6 +930,8 @@ function App() {
             onVoltageRangeChange={handleVoltageRangeChange}
             actionViewMode={actionViewMode}
             onViewModeChange={handleViewModeChange}
+            viewModeForTab={viewModeForTab}
+            onViewModeChangeForTab={handleViewModeChangeForTab}
             inspectQuery={inspectQuery}
             onInspectQueryChange={handleInspectQueryChange}
             onInspectQueryChangeFor={handleInspectQueryChangeFor}

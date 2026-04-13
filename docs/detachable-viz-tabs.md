@@ -371,37 +371,84 @@ popup" actually zoom to that substation inside the popup.
 
 ## Tied detached tabs
 
-A tab that is detached AND tied gets its pan/zoom state mirrored
-one-way into the main window's active tab. The feature is
-implemented in `frontend/src/hooks/useTiedTabsSync.ts` and wired
-into `App.tsx`.
+A tab that is detached AND tied has its pan/zoom state mirrored
+**bidirectionally** between the detached popup and the main
+window's active tab. It is implemented in
+`frontend/src/hooks/useTiedTabsSync.ts` and wired into `App.tsx`.
 
-**Why one-way?** Bidirectional sync caused ping-pong loops when both
-sides' viewBox were observed in the same effect. The
-"detached is the driver, main follows" model avoids the loop and
-gives the operator a clear mental model: they interact with the
-popup, and the main view updates to match.
+**Scope**: tying only affects pan / zoom / asset-focus. The
+Flow/Impacts view-mode is deliberately **never** tied — see
+[Per-window view mode](#per-window-view-mode) below.
 
-**How it's implemented:**
+**How bidirectional sync works without ping-ponging:**
 
 1. `useTiedTabsSync` keeps a `Set<TabId>` of tied tabs in state.
-2. The hook takes the three pan/zoom instances (`nPZ`, `n1PZ`,
-   `actionPZ`), the main window's `activeTab`, and the
-   `detachedTabs` map.
-3. A `useEffect` observes each PZ's `viewBox` and, whenever one
-   changes, checks if any tied+detached tab has a source viewBox
-   to mirror. If so, it writes that viewBox into the main window's
-   active-tab PZ via `setViewBox`.
-4. A `lastMirroredRef` guards against re-applying the same
-   viewBox on every tick, keeping the interaction log clean.
-5. The UI lives inside `VisualizationPanel.renderTabOverlay`: each
-   detached tab's top-right cluster adds an extra "⛓ Tie" /
-   "🔗 Tied" toggle button that calls `onToggleTabTie(tabId)` (a
-   callback fed from `App.tsx`'s `tiedTabsHook.toggleTie`).
+2. It snapshots every tab's previous `viewBox` in a ref
+   (`prevVbsRef`) so that on each effect run it can tell WHICH
+   tab just changed by comparing current vs. previous identity.
+3. From the direction of change, it decides the mirror target:
+   - If the change happened in a tied+detached tab → mirror into
+     the main-window active tab's PZ.
+   - If the change happened in the main-window active tab and any
+     tied+detached tab exists → mirror out into each of them.
+4. Loop protection via `isSyncingRef`: set to `true` just before
+   a mirror write, the next effect invocation (triggered by that
+   mirror's re-render) reads the flag, resets it, and returns
+   early. The mirror helper ALSO skips writes whose target
+   viewBox is already equal, because the underlying
+   `setViewBoxPublic` bails on equality — without that skip, the
+   bail would prevent the re-render that would otherwise reset
+   the flag, leaving the guard stuck on.
+5. **Seed mirror on tie**: when the user clicks the Tie button,
+   the hook observes a freshly-added tab id and does a one-time
+   sync from the popup → main so both windows start at the same
+   baseline viewBox (instead of waiting for the first
+   interaction).
+6. The UI lives inside `VisualizationPanel.renderTabOverlay`:
+   each detached tab's top-right cluster adds a "⛓ Tie" /
+   "🔗 Tied" toggle that calls `onToggleTabTie(tabId)`.
 
-Interaction log: `tab_tied` and `tab_untied` events are emitted by
-the hook so session replays can reproduce the operator's
+Interaction log: `tab_tied` and `tab_untied` events are emitted
+by the hook so session replays can reproduce the operator's
 synchronisation choices.
+
+## Per-window view mode
+
+The Flow/Impacts toggle controls how the N-1 and Action diagrams
+are visually decorated: "Flows" shows raw post-contingency flow
+labels, "Impacts" renders the delta against the N state as a
+red/green gradient. In the first iteration this mode was a single
+global state (`actionViewMode` in `useDiagrams`), which meant
+toggling Impacts in one window automatically toggled it in the
+other — not what the operator wants when comparing two views
+side-by-side.
+
+**Fix**: each detached tab now has its OWN view-mode entry in a
+new `detachedViewModes: Partial<Record<TabId, 'network' | 'delta'>>`
+state held in `App.tsx`. The main-window `actionViewMode` is
+unchanged. A new helper `viewModeForTab(tab: TabId)` returns the
+effective mode for a given tab:
+
+- If the tab is detached → `detachedViewModes[tab] ?? 'network'`.
+- Otherwise → `actionViewMode`.
+
+The Flow/Impacts overlay inside each tab container now uses this
+per-tab getter for display, and a new
+`handleViewModeChangeForTab(tab, mode)` callback routes the
+toggle click into either `actionViewMode` (when the tab is not
+detached) or `detachedViewModes[tab]` (when it is). Result: Flow
+in the popup, Impacts in the main window (or vice versa) is now
+a valid and fully supported state.
+
+When a tab is **reattached**, its entry in `detachedViewModes`
+is cleared (by a small effect watching `detachedTabs`), so the
+tab resumes the main-window `actionViewMode` from that moment on.
+
+**Rendering fix**: `applyHighlightsForTab` now iterates over every
+detached tab (not just `activeTab`), calling `applyDeltaVisuals`
+with the per-tab effective mode. Before this fix, Impacts mode
+never rendered inside a detached popup because the highlights
+effect only ran for the main window's active tab.
 
 ## Bugs fixed in the second iteration
 

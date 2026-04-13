@@ -183,4 +183,84 @@ describe('useTiedTabsSync', () => {
         expect(setViewBoxSpy(pz['n-1'])).not.toHaveBeenCalled();
         expect(setViewBoxSpy(pz['action'])).not.toHaveBeenCalled();
     });
+
+    // Bidirectional-sync regression tests: a change on EITHER the
+    // detached-popup side OR the main-window side should mirror
+    // into the other.
+    describe('bidirectional sync', () => {
+        it('mirrors a MAIN-WINDOW change into the tied+detached popup', () => {
+            const actionVb: ViewBox = { x: 0, y: 0, w: 100, h: 100 };
+            // Main activeTab = 'action', tied+detached tab = 'n'.
+            const pz = makePZMap(actionVb /* n */, null, actionVb /* action */);
+            const detachedTabs = { n: { mountNode: document.createElement('div') } };
+
+            // After tie, the effect's seed mirror will have run
+            // once (from n → action). Reset that before testing the
+            // reverse direction.
+            const { result, rerender } = renderHook(
+                ({ pzmap }: { pzmap: PZMap }) =>
+                    useTiedTabsSync(pzmap, 'action', detachedTabs),
+                { initialProps: { pzmap: pz } }
+            );
+            act(() => { result.current.tie('n'); });
+            setViewBoxSpy(pz['n']).mockClear();
+            setViewBoxSpy(pz['action']).mockClear();
+
+            // Simulate a user interaction in the MAIN window: the
+            // action tab's viewBox changes. We replace the pz map
+            // with a new object whose 'action' entry has a new
+            // viewBox, so the hook's identity-based change detection
+            // picks it up.
+            const newActionVb: ViewBox = { x: 5, y: 5, w: 50, h: 50 };
+            const newPz: PZMap = {
+                'n': pz['n'],
+                'n-1': pz['n-1'],
+                'action': { ...pz['action'], viewBox: newActionVb } as unknown as PZInstance,
+            };
+            rerender({ pzmap: newPz });
+
+            // The change originated in the main activeTab ('action')
+            // and the tied+detached tab is 'n' — so the mirror
+            // target is nPZ. Its setViewBox should have been called
+            // with the new viewBox.
+            expect(setViewBoxSpy(pz['n'])).toHaveBeenCalledWith(newActionVb);
+        });
+
+        it('does NOT push changes back into the source (loop protection)', () => {
+            // Seed the mocked PZs with already-equal viewBoxes so
+            // the `tie` seed-mirror is a no-op and doesn't leave
+            // `isSyncingRef` stuck (the real usePanZoom would clear
+            // the flag via a React re-render triggered by setViewBox,
+            // but our mocked setViewBox doesn't go through React).
+            const baseVb: ViewBox = { x: 0, y: 0, w: 100, h: 100 };
+            const pz = makePZMap(baseVb, null, baseVb);
+            const detachedTabs = { n: { mountNode: document.createElement('div') } };
+
+            const { result, rerender } = renderHook(
+                ({ pzmap }: { pzmap: PZMap }) =>
+                    useTiedTabsSync(pzmap, 'action', detachedTabs),
+                { initialProps: { pzmap: pz } }
+            );
+            act(() => { result.current.tie('n'); });
+            setViewBoxSpy(pz['n']).mockClear();
+            setViewBoxSpy(pz['action']).mockClear();
+
+            // Simulate a popup interaction: the 'n' tab's viewBox
+            // updates. We create a new wrapper so the hook's
+            // identity-based change detection fires.
+            const newNVb: ViewBox = { x: 10, y: 10, w: 80, h: 80 };
+            const newPz: PZMap = {
+                'n': { ...pz['n'], viewBox: newNVb } as unknown as PZInstance,
+                'n-1': pz['n-1'],
+                'action': pz['action'],
+            };
+            rerender({ pzmap: newPz });
+
+            // action (the main target) received the mirror.
+            expect(setViewBoxSpy(pz['action'])).toHaveBeenCalledWith(newNVb);
+            // BUT 'n' (the source) did NOT receive a bounce-back
+            // write — loop protection kept the mirror one-shot.
+            expect(setViewBoxSpy(pz['n'])).not.toHaveBeenCalled();
+        });
+    });
 });
