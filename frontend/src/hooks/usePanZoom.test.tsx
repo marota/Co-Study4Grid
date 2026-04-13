@@ -333,4 +333,111 @@ describe('usePanZoom', () => {
             expect(container.getAttribute('data-zoom-tier')).toBe('detail');
         });
     });
+
+    // Regression for Bug 1/2/4 in docs/detachable-viz-tabs.md:
+    // `usePanZoom` used to bind mousemove/mouseup to `window` captured
+    // at effect-run time. When a tab was detached into a popup, the
+    // element's ownerWindow became the popup but the listeners still
+    // lived on the main window — drag-pan therefore stopped working
+    // inside the popup. The fix binds mousemove/mouseup PER-DRAG
+    // inside handleMouseDown, using a fresh
+    // `el.ownerDocument.defaultView` lookup each time. This test
+    // verifies that drag-start binds to the element's current owner
+    // window and drag-end unbinds from it, regardless of the window
+    // identity.
+    describe('drag listeners bind to the element\'s current ownerWindow per-drag (Bug 1/2/4)', () => {
+        it('does not register any mousemove/mouseup on window at effect bind time', () => {
+            const { container } = createMockSvgContainer('0 0 1000 800');
+            const ref = { current: container };
+
+            const windowAddSpy = vi.spyOn(window, 'addEventListener');
+            renderHook(() => usePanZoom(ref, initialVB, true));
+
+            // Critical: the effect must NOT register any
+            // mousemove/mouseup globally at bind time. Those are only
+            // registered when a drag actually starts (in handleMouseDown).
+            const globalMouseMoveCalls = windowAddSpy.mock.calls.filter(
+                ([evt]) => evt === 'mousemove' || evt === 'mouseup'
+            );
+            expect(globalMouseMoveCalls).toEqual([]);
+            windowAddSpy.mockRestore();
+        });
+
+        it('binds mousemove/mouseup on the element\'s current ownerWindow when mousedown fires', () => {
+            const { container } = createMockSvgContainer('0 0 1000 800');
+            const ref = { current: container };
+            renderHook(() => usePanZoom(ref, initialVB, true));
+
+            // `container.ownerDocument.defaultView` is the jsdom
+            // window here. Spy on addEventListener on that window.
+            const ownerWindow = container.ownerDocument.defaultView!;
+            const addSpy = vi.spyOn(ownerWindow, 'addEventListener');
+
+            // Fire a mousedown on the element to enter drag state.
+            const mouseDown = new MouseEvent('mousedown', { bubbles: true, clientX: 10, clientY: 10 });
+            container.dispatchEvent(mouseDown);
+
+            // The drag listeners are now bound on the owner window.
+            const calls = addSpy.mock.calls.map(([evt]) => evt);
+            expect(calls).toContain('mousemove');
+            expect(calls).toContain('mouseup');
+            addSpy.mockRestore();
+        });
+
+        it('unbinds mousemove/mouseup from the owner window on mouseup', () => {
+            const { container } = createMockSvgContainer('0 0 1000 800');
+            const ref = { current: container };
+            renderHook(() => usePanZoom(ref, initialVB, true));
+
+            const ownerWindow = container.ownerDocument.defaultView!;
+            const removeSpy = vi.spyOn(ownerWindow, 'removeEventListener');
+
+            container.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 10, clientY: 10 }));
+            ownerWindow.dispatchEvent(new MouseEvent('mouseup'));
+
+            const calls = removeSpy.mock.calls.map(([evt]) => evt);
+            expect(calls).toContain('mousemove');
+            expect(calls).toContain('mouseup');
+            removeSpy.mockRestore();
+        });
+
+        it('resolves the ownerWindow on every mousedown, even across container movements', () => {
+            // Use a detached container so we can freely patch its
+            // ownerDocument.defaultView without affecting other tests.
+            const doc = document.implementation.createHTMLDocument('t');
+            const container = doc.createElement('div');
+            const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('viewBox', '0 0 1000 800');
+            container.appendChild(svg);
+            const ref = { current: container };
+            renderHook(() => usePanZoom(ref, initialVB, true));
+
+            // Simulate a "second window" by patching the detached
+            // document's defaultView to point at a fake window. This
+            // is what would happen when the tab is relocated to a
+            // popup via imperative DOM move.
+            let lastTarget: EventTarget | null = null;
+            const fakeWindow: Partial<Window> = {
+                addEventListener: ((event: string) => {
+                    lastTarget = fakeWindow as unknown as EventTarget;
+                    void event;
+                }) as Window['addEventListener'],
+                removeEventListener: (() => {}) as Window['removeEventListener'],
+            };
+
+            Object.defineProperty(doc, 'defaultView', {
+                configurable: true,
+                get: () => fakeWindow,
+            });
+
+            container.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 10, clientY: 10 }));
+
+            // On this drag, listeners were bound to the fake window —
+            // proving that the lookup happens per-drag rather than
+            // once at effect time. (If it were captured at effect
+            // time, the drag would have bound to whatever `window`
+            // was at that moment, not the current ownerWindow.)
+            expect(lastTarget).toBe(fakeWindow);
+        });
+    });
 });

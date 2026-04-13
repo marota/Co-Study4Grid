@@ -10,10 +10,12 @@ import type { TabId } from '../types';
 
 /**
  * A "detached" tab lives in a secondary browser window. The React component
- * tree for the tab content is still rendered from App.tsx — only the final
- * DOM output is relocated via `createPortal` into the popup's body. This
- * preserves refs, viewBox state and zoom handlers across detach/reattach,
- * because the sub-tree is never unmounted.
+ * tree for the tab content is still rendered from App.tsx — only a stable
+ * portal-target DOM node is physically relocated (via appendChild) into the
+ * popup's body by `DetachableTabHost`. Because the createPortal target never
+ * changes (it's the same orphan div), React never unmounts the sub-tree —
+ * so refs, event listeners, MemoizedSvgContainer state and the SVG viewBox
+ * attribute all survive the detach/reattach round-trip unchanged.
  */
 export interface DetachedTabEntry {
     /** The opened popup window — closed popups are pruned automatically. */
@@ -96,6 +98,15 @@ export function useDetachedTabs(
     // "no ref writes during render" rule.
     const detachedRef = useRef<DetachedTabsMap>({});
     const onPopupBlockedRef = useRef(options.onPopupBlocked);
+    // Popups that should be closed AFTER React has had a chance to
+    // relocate the tab's DOM back to the main window. Closing the popup
+    // synchronously inside `reattach` can unmap its document while the
+    // tab's portal host is still inside it — which, with the previous
+    // React-portal implementation, tore down the React sub-tree in a
+    // dying document and left other tabs in a blank state. Deferring
+    // the close to a useEffect ensures the imperative DOM move has
+    // already run before the popup window goes away.
+    const pendingCloseRef = useRef<Window[]>([]);
     useLayoutEffect(() => {
         detachedRef.current = detachedTabs;
     }, [detachedTabs]);
@@ -115,10 +126,26 @@ export function useDetachedTabs(
     const reattach = useCallback((tabId: TabId) => {
         const entry = detachedRef.current[tabId];
         if (entry && !entry.window.closed) {
-            try { entry.window.close(); } catch { /* ignore */ }
+            // Queue the popup for closing; the effect below will close it
+            // only after VisualizationPanel's useLayoutEffect has moved
+            // the tab host back into the main window.
+            pendingCloseRef.current.push(entry.window);
         }
         pruneTab(tabId);
     }, [pruneTab]);
+
+    // Runs after VisualizationPanel's own useLayoutEffect (children run
+    // before parents, and useEffect runs after useLayoutEffect in the
+    // same commit), so by the time we close the popup the tab's DOM has
+    // already been relocated back to the main tree.
+    useEffect(() => {
+        const popups = pendingCloseRef.current;
+        if (popups.length === 0) return;
+        pendingCloseRef.current = [];
+        for (const w of popups) {
+            try { if (!w.closed) w.close(); } catch { /* ignore */ }
+        }
+    }, [detachedTabs]);
 
     const detach = useCallback((tabId: TabId): DetachedTabEntry | null => {
         const existing = detachedRef.current[tabId];

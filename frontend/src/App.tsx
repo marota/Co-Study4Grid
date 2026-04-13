@@ -24,6 +24,7 @@ import { useAnalysis } from './hooks/useAnalysis';
 import { useDiagrams } from './hooks/useDiagrams';
 import { useSession } from './hooks/useSession';
 import { useDetachedTabs } from './hooks/useDetachedTabs';
+import { useTiedTabsSync } from './hooks/useTiedTabsSync';
 import { interactionLogger } from './utils/interactionLogger';
 
 function App() {
@@ -59,9 +60,31 @@ function App() {
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [branches, setBranches] = useState<string[]>([]);
   const [voltageLevels, setVoltageLevels] = useState<string[]>([]);
-  const diagrams = useDiagrams(branches, voltageLevels, selectedBranch);
   const [configLoading, setConfigLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // ===== Detached Visualization Tabs (must be instantiated BEFORE useDiagrams
+  // so that the detached-tabs map can be threaded into useDiagrams → usePanZoom,
+  // keeping a detached tab interactive even when it's not the main `activeTab`.)
+  const detachedTabsHook = useDetachedTabs({
+    onPopupBlocked: () => setError('Popup blocked by the browser. Please allow popups for this site to detach tabs.'),
+  });
+  const { detachedTabs, detach: detachTab, reattach: reattachTab, focus: focusDetachedTab } = detachedTabsHook;
+
+  const diagrams = useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs);
+
+  // ===== Tied Detached Tabs =====
+  // When a detached tab is "tied", its viewBox is mirrored one-way
+  // into the main window's active tab on every pan/zoom change —
+  // supporting side-by-side comparison workflows. See
+  // docs/detachable-viz-tabs.md#tied-detached-tabs for the full
+  // design rationale.
+  const tiedTabsHook = useTiedTabsSync(
+    { 'n': diagrams.nPZ, 'n-1': diagrams.n1PZ, 'action': diagrams.actionPZ },
+    diagrams.activeTab,
+    detachedTabs,
+  );
+  const { isTied: isTabTied, toggleTie: toggleTabTie } = tiedTabsHook;
 
   // Confirmation dialog state for contingency change / load study /
   // apply settings / change network path.
@@ -128,16 +151,10 @@ function App() {
   } = session;
 
   // ===== Detached Visualization Tabs =====
-  // Each viz tab (N / N-1 / Action / Overflow) can be detached into a
-  // secondary browser window and reattached on demand. The hook manages
-  // the popup lifecycle; `VisualizationPanel` uses React portals to
-  // relocate the tab's DOM subtree into the popup without unmounting it
-  // (this preserves zoom/viewBox state across the round-trip).
-  const detachedTabsHook = useDetachedTabs({
-    onPopupBlocked: () => setError('Popup blocked by the browser. Please allow popups for this site to detach tabs.'),
-  });
-  const { detachedTabs, detach: detachTab, reattach: reattachTab, focus: focusDetachedTab } = detachedTabsHook;
-
+  // `useDetachedTabs` is instantiated higher up so its map can be passed
+  // into `useDiagrams` (see above). Here we wire the detach/reattach
+  // callbacks that depend on diagrams (activeTab fallback logic) and
+  // the interaction logger.
   const handleDetachTab = useCallback((tabId: TabId) => {
     interactionLogger.record('tab_detached', { tab: tabId });
     const entry = detachTab(tabId);
@@ -570,7 +587,55 @@ function App() {
   const staleHighlights = useRef<Set<TabId>>(new Set());
   const prevHighlightTabRef = useRef<TabId>(activeTab);
 
-  const applyHighlightsForTab = useCallback((tab: TabId) => {
+  // Flow vs Impacts view mode is now TAB-SCOPED and WINDOW-SCOPED:
+  // main window has `actionViewMode` (from useDiagrams) while each
+  // detached tab has its own entry here. Toggling Impacts in a
+  // detached popup therefore only affects that popup's tab; the
+  // main window's mode is untouched, and vice versa. A reattach
+  // clears the detached-mode entry so the tab resumes the
+  // main-window mode from that point onward.
+  const [detachedViewModes, setDetachedViewModes] = useState<Partial<Record<TabId, 'network' | 'delta'>>>({});
+
+  // Which Flow/Impacts mode applies to a given tab right now.
+  const viewModeForTab = useCallback((tab: TabId): 'network' | 'delta' => {
+    if (detachedTabs[tab]) return detachedViewModes[tab] ?? 'network';
+    return actionViewMode;
+  }, [detachedTabs, detachedViewModes, actionViewMode]);
+
+  // Per-tab Flow/Impacts toggle routing: if the tab is currently
+  // detached, update its entry in `detachedViewModes`; otherwise
+  // update the main-window `actionViewMode`. This is how a Flow
+  // /Impacts button inside a detached popup affects ONLY the
+  // detached window.
+  const handleViewModeChangeForTab = useCallback((tab: TabId, mode: 'network' | 'delta') => {
+    interactionLogger.record('view_mode_changed', { mode, tab, scope: detachedTabs[tab] ? 'detached' : 'main' });
+    if (detachedTabs[tab]) {
+      setDetachedViewModes(prev => ({ ...prev, [tab]: mode }));
+    } else {
+      diagrams.setActionViewMode(mode);
+    }
+  }, [detachedTabs, diagrams]);
+
+  // On reattach, drop the tab's detached view-mode entry so the
+  // main window's `actionViewMode` takes over for that tab from
+  // that point onward.
+  useEffect(() => {
+    setDetachedViewModes(prev => {
+      const next: Partial<Record<TabId, 'network' | 'delta'>> = {};
+      let changed = false;
+      for (const tabId of Object.keys(prev) as TabId[]) {
+        if (detachedTabs[tabId]) {
+          next[tabId] = prev[tabId];
+        } else {
+          changed = true; // dropped
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [detachedTabs]);
+
+  const applyHighlightsForTab = useCallback((tab: TabId, mode?: 'network' | 'delta') => {
+    const effectiveMode = mode ?? viewModeForTab(tab);
     const overloadedLines = result?.lines_overloaded || [];
 
     if (tab === 'n-1') {
@@ -596,7 +661,7 @@ function App() {
           applyOverloadedHighlights(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, overloadedLines);
         }
         applyContingencyHighlight(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, selectedBranch);
-        applyDeltaVisuals(diagrams.n1SvgContainerRef.current, n1Diagram, diagrams.n1MetaIndex, actionViewMode === 'delta');
+        applyDeltaVisuals(diagrams.n1SvgContainerRef.current, n1Diagram, diagrams.n1MetaIndex, effectiveMode === 'delta');
       }
     }
     if (tab === 'action') {
@@ -645,9 +710,9 @@ function App() {
       // Delta visuals run LAST so they decorate the originals without
       // contaminating the highlight clones already in the background
       // layer.
-      applyDeltaVisuals(diagrams.actionSvgContainerRef.current, actionDiagram, diagrams.actionMetaIndex, actionViewMode === 'delta');
+      applyDeltaVisuals(diagrams.actionSvgContainerRef.current, actionDiagram, diagrams.actionMetaIndex, effectiveMode === 'delta');
     }
-  }, [n1Diagram, actionDiagram, result, selectedActionId, actionViewMode, selectedBranch, diagrams, monitoringFactor]);
+  }, [n1Diagram, actionDiagram, result, selectedActionId, selectedBranch, diagrams, monitoringFactor, viewModeForTab]);
 
   useEffect(() => {
     const isTabSwitch = prevHighlightTabRef.current !== activeTab;
@@ -655,20 +720,34 @@ function App() {
     const otherTabs: TabId[] = ['n', 'n-1', 'action'].filter(t => t !== activeTab) as TabId[];
     otherTabs.forEach(t => staleHighlights.current.add(t));
 
+    // Apply highlights + delta visuals to both the main window's
+    // active tab AND every currently-detached tab — because Impacts
+    // mode must keep working inside a detached popup when only the
+    // popup's view mode changes (the main window may be showing a
+    // different tab entirely).
+    const applyAll = () => {
+      applyHighlightsForTab(activeTab);
+      staleHighlights.current.delete(activeTab);
+      for (const detachedId of Object.keys(detachedTabs) as TabId[]) {
+        if (detachedId === activeTab) continue;
+        if (detachedId === 'overflow') continue;
+        applyHighlightsForTab(detachedId);
+        staleHighlights.current.delete(detachedId);
+      }
+    };
+
     if (isTabSwitch) {
       // Double rAF to ensure browser layout is settled before getScreenCTM()
       const id = requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          applyHighlightsForTab(activeTab);
-          staleHighlights.current.delete(activeTab);
+          applyAll();
         });
       });
       return () => cancelAnimationFrame(id);
     } else {
-      applyHighlightsForTab(activeTab);
-      staleHighlights.current.delete(activeTab);
+      applyAll();
     }
-  }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, activeTab, selectedBranch, applyHighlightsForTab]);
+  }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, detachedViewModes, detachedTabs, activeTab, selectedBranch, applyHighlightsForTab]);
 
   // ===== Extracted JSX callbacks (stable references for React.memo) =====
 
@@ -705,9 +784,23 @@ function App() {
     diagrams.setInspectQuery(q);
   }, [diagrams]);
 
+  // Per-tab inspect variant. Lets a detached tab's overlay zoom its
+  // own tab rather than the main-window activeTab — see
+  // useDiagrams.setInspectQueryForTab for the full story.
+  const handleInspectQueryChangeFor = useCallback((targetTab: TabId, q: string) => {
+    interactionLogger.record('inspect_query_changed', { query: q, target_tab: targetTab });
+    diagrams.setInspectQueryForTab(targetTab, q);
+  }, [diagrams]);
+
   const handleVlOpen = useCallback((vlName: string) => {
-    handleVlDoubleClick(activeTab === 'action' ? selectedActionId || '' : '', vlName);
-  }, [handleVlDoubleClick, activeTab, selectedActionId]);
+    // Always carry the currently-selected action id into the SLD
+    // overlay — NOT just when activeTab === 'action'. The SLD's
+    // internal sub-tab buttons let the user switch to the "action"
+    // sub-tab from any tab, and if we open the overlay with an
+    // empty actionId the backend rejects the switch with
+    // "Action '' not found in last analysis result".
+    handleVlDoubleClick(selectedActionId || '', vlName);
+  }, [handleVlDoubleClick, selectedActionId]);
 
   const handleCancelDialog = useCallback(() => {
     // Cancelling a "Change Network?" dialog must roll back the
@@ -843,8 +936,11 @@ function App() {
             onVoltageRangeChange={handleVoltageRangeChange}
             actionViewMode={actionViewMode}
             onViewModeChange={handleViewModeChange}
+            viewModeForTab={viewModeForTab}
+            onViewModeChangeForTab={handleViewModeChangeForTab}
             inspectQuery={inspectQuery}
             onInspectQueryChange={handleInspectQueryChange}
+            onInspectQueryChangeFor={handleInspectQueryChangeFor}
             inspectableItems={inspectableItems}
             onResetView={handleManualReset}
             onZoomIn={handleManualZoomIn}
@@ -863,6 +959,8 @@ function App() {
             onDetachTab={handleDetachTab}
             onReattachTab={handleReattachTab}
             onFocusDetachedTab={focusDetachedTab}
+            isTabTied={isTabTied}
+            onToggleTabTie={toggleTabTie}
           />
         </div>
       </div>

@@ -145,4 +145,68 @@ describe('useDetachedTabs', () => {
         unmount();
         expect(popup.closed).toBe(true);
     });
+
+    // Regression for the "blank other tabs on reattach" bug (Bug 3 in
+    // docs/detachable-viz-tabs.md). The previous implementation closed
+    // the popup window synchronously inside `reattach()`, which tore
+    // down the popup document while React was still trying to unmount
+    // children from the popup's mount node. The fix is to queue the
+    // popup for close and let a useEffect drain the queue AFTER all
+    // useLayoutEffects (including VisualizationPanel's host-move effect)
+    // have run in the same commit.
+    describe('reattach defers popup close until after layout effects (Bug 3)', () => {
+        it('does not call window.close synchronously from the reattach call', () => {
+            const { result } = renderHook(() => useDetachedTabs());
+            act(() => { result.current.detach('n-1'); });
+            const popup = fakePopups[0];
+
+            // Monkey-patch close() to record the exact call order.
+            const callOrder: string[] = [];
+            const origClose = popup.close;
+            popup.close = () => { callOrder.push('close'); origClose(); };
+
+            // Wrap the reattach call in a synchronous IIFE so we can
+            // observe the state BEFORE act() flushes effects.
+            let duringReattach = false;
+            let stateAfterReattachCall: typeof result.current.detachedTabs | null = null;
+            act(() => {
+                duringReattach = true;
+                result.current.reattach('n-1');
+                // At this point reattach has queued the popup for
+                // close and pruned state. But act() hasn't returned
+                // yet, so effects haven't flushed. The close MUST NOT
+                // have fired yet.
+                expect(callOrder).toEqual([]);
+                stateAfterReattachCall = result.current.detachedTabs;
+                duringReattach = false;
+            });
+
+            // After act() returns, effects have flushed: the popup is
+            // now closed.
+            expect(duringReattach).toBe(false);
+            expect(callOrder).toEqual(['close']);
+            expect(popup.closed).toBe(true);
+            // And the tab is no longer recorded as detached.
+            // (We can't use the mid-act snapshot because renderHook's
+            // `result.current` is updated at the end of act().)
+            expect(stateAfterReattachCall).not.toBeNull();
+            expect(result.current.detachedTabs['n-1']).toBeUndefined();
+        });
+
+        it('still closes popups that were scheduled while a previous close was pending', () => {
+            const { result } = renderHook(() => useDetachedTabs());
+            act(() => {
+                result.current.detach('n');
+                result.current.detach('action');
+            });
+            const popupN = fakePopups[0];
+            const popupAction = fakePopups[1];
+
+            act(() => { result.current.reattach('n'); });
+            act(() => { result.current.reattach('action'); });
+
+            expect(popupN.closed).toBe(true);
+            expect(popupAction.closed).toBe(true);
+        });
+    });
 });

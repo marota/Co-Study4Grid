@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
-import { useState, useCallback, useRef, type MutableRefObject } from 'react';
+import { useState, useCallback, useRef, useEffect, type MutableRefObject } from 'react';
 import { api } from '../api';
 import type { VlOverlay, SldTab, FlowDelta, AssetDelta, TabId } from '../types';
 import { interactionLogger } from '../utils/interactionLogger';
@@ -19,9 +19,25 @@ export interface SldOverlayState {
     handleOverlayClose: () => void;
 }
 
-export function useSldOverlay(activeTab: TabId): SldOverlayState {
+/**
+ * @param activeTab              currently-visible main-window tab
+ * @param liveSelectedActionId   optional live selectedActionId used as a
+ *                                fallback when `vlOverlay.actionId` is
+ *                                empty (e.g. the operator opened the SLD
+ *                                from the N tab and THEN switched to the
+ *                                "action" sub-tab of the overlay). Without
+ *                                this fallback the backend rejected the
+ *                                switch with "Action '' not found in
+ *                                last analysis result."
+ */
+export function useSldOverlay(activeTab: TabId, liveSelectedActionId?: string | null): SldOverlayState {
     const [vlOverlay, setVlOverlay] = useState<VlOverlay | null>(null);
     const selectedBranchForSld = useRef('');
+    // Mirror the selectedActionId into a ref so the fetch closure
+    // can read the latest value without being re-created on every
+    // action change — keeping `fetchSldVariant`'s identity stable.
+    const selectedActionIdRef = useRef<string | null | undefined>(liveSelectedActionId);
+    useEffect(() => { selectedActionIdRef.current = liveSelectedActionId; }, [liveSelectedActionId]);
 
     const fetchSldVariant = useCallback(async (vlName: string, actionId: string | null, sldTab: SldTab, selectedBranch: string) => {
         setVlOverlay(prev => prev ? { ...prev, loading: true, error: null, tab: sldTab } : null);
@@ -45,13 +61,38 @@ export function useSldOverlay(activeTab: TabId): SldOverlayState {
                 reactiveFlowDeltas = res.reactive_flow_deltas;
                 assetDeltas = res.asset_deltas;
             } else {
-                const res = await api.getActionVariantSld(actionId!, vlName);
+                // Fallback to the live selectedActionId if the
+                // overlay was opened from a tab where no action
+                // was carried along (the stored `actionId` is ''
+                // in that case). This prevents a backend error
+                // when the operator switches to the action
+                // sub-tab AFTER opening the SLD from the N /
+                // N-1 tab.
+                const effectiveActionId = (actionId && actionId.length > 0)
+                    ? actionId
+                    : (selectedActionIdRef.current ?? '');
+                if (!effectiveActionId) {
+                    setVlOverlay(prev => prev && prev.tab === sldTab
+                        ? { ...prev, loading: false, error: 'No action selected. Pick an action first and then re-open the SLD.' }
+                        : prev
+                    );
+                    return;
+                }
+                const res = await api.getActionVariantSld(effectiveActionId, vlName);
                 svgData = res.svg;
                 metaData = res.sld_metadata ?? null;
                 flowDeltas = res.flow_deltas;
                 reactiveFlowDeltas = res.reactive_flow_deltas;
                 assetDeltas = res.asset_deltas;
                 changedSwitches = res.changed_switches;
+                // Persist the resolved actionId back onto the
+                // overlay so subsequent re-renders and highlight
+                // passes can find it on `vlOverlay.actionId`.
+                setVlOverlay(prev =>
+                    prev && prev.vlName === vlName && prev.tab === sldTab
+                        ? { ...prev, actionId: effectiveActionId }
+                        : prev
+                );
             }
             setVlOverlay(prev =>
                 prev && prev.vlName === vlName && prev.tab === sldTab

@@ -240,4 +240,56 @@ describe('useDiagrams — interaction logging', () => {
             expect(api.getActionVariantDiagram).not.toHaveBeenCalled();
         });
     });
+
+    // Regression tests for the detachable-tab fixes (see
+    // docs/detachable-viz-tabs.md "Bugs fixed in the second iteration").
+    // The previous `active` gate on usePanZoom was `activeTab === '<id>'`
+    // alone, which meant that when the user detached a tab the main
+    // window auto-switched activeTab elsewhere and the detached tab's
+    // pan/zoom listeners were never bound — the popup looked frozen.
+    // The fix threads a detachedTabs map through useDiagrams so a
+    // detached tab stays interactive even when it is not activeTab.
+    describe('useDiagrams accepts detachedTabs for pan/zoom activation (Bug 1)', () => {
+        it('accepts a detachedTabs map as the 4th argument', () => {
+            // With an empty map the hook behaves exactly like before.
+            const { result } = renderHook(() => useDiagrams([], [], '', {}));
+            expect(result.current.activeTab).toBe('n');
+        });
+
+        it('tolerates each detached-tab key variant without throwing', () => {
+            const maps: Array<Partial<Record<string, unknown>>> = [
+                { n: { window: {}, mountNode: document.createElement('div') } },
+                { 'n-1': { window: {}, mountNode: document.createElement('div') } },
+                { action: { window: {}, mountNode: document.createElement('div') } },
+                { overflow: { window: {}, mountNode: document.createElement('div') } },
+            ];
+            for (const m of maps) {
+                // Each map represents one tab being detached; the
+                // hook should still initialise without any runtime
+                // error. This guards against a regression where the
+                // 4th-argument type tightens and the map's shape can
+                // no longer be passed in.
+                expect(() => renderHook(() => useDiagrams([], [], '', m as never))).not.toThrow();
+            }
+        });
+
+        it('re-renders with a new detachedTabs map without losing state', () => {
+            // Start with no detached tabs.
+            const { result, rerender } = renderHook(
+                ({ dt }: { dt: Record<string, unknown> }) => useDiagrams([], [], '', dt),
+                { initialProps: { dt: {} as Record<string, unknown> } }
+            );
+            const initialActiveTab = result.current.activeTab;
+
+            // Detach the N tab.
+            rerender({ dt: { n: { window: {}, mountNode: document.createElement('div') } } });
+            // Hook state (refs, active tab) is not clobbered.
+            expect(result.current.activeTab).toBe(initialActiveTab);
+            // SVG refs remain the same object identity — critical for
+            // stable pan/zoom across detach.
+            const nRef = result.current.nSvgContainerRef;
+            rerender({ dt: {} });
+            expect(result.current.nSvgContainerRef).toBe(nRef);
+        });
+    });
 });

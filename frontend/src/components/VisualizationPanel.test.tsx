@@ -128,24 +128,36 @@ describe('VisualizationPanel', () => {
         expect(screen.getByText('Generating Action Variant Diagram...')).toBeInTheDocument();
     });
 
-    it('renders zoom controls when not on overflow tab', () => {
-        render(<VisualizationPanel {...createDefaultProps()} />);
-        expect(screen.getByTitle('Zoom In')).toBeInTheDocument();
-        expect(screen.getByTitle('Zoom Out')).toBeInTheDocument();
+    it('renders zoom controls inside a tab when that tab has a diagram', () => {
+        // Zoom controls now live inside each tab container and are
+        // only shown when the tab has a diagram to zoom, so the test
+        // must provide a diagram for the active tab.
+        const nDiagram: DiagramData = { svg: '<svg>n</svg>', metadata: null };
+        render(<VisualizationPanel {...createDefaultProps({ nDiagram })} />);
+        expect(screen.getAllByTitle('Zoom In').length).toBeGreaterThan(0);
+        expect(screen.getAllByTitle('Zoom Out').length).toBeGreaterThan(0);
     });
 
-    it('calls zoom handlers', async () => {
+    it('calls zoom handlers (with target tab argument) when the per-tab buttons are clicked', async () => {
         const user = userEvent.setup();
         const onZoomIn = vi.fn();
         const onZoomOut = vi.fn();
         const onResetView = vi.fn();
-        render(<VisualizationPanel {...createDefaultProps({ onZoomIn, onZoomOut, onResetView })} />);
+        const nDiagram: DiagramData = { svg: '<svg>n</svg>', metadata: null };
+        render(<VisualizationPanel {...createDefaultProps({
+            nDiagram, onZoomIn, onZoomOut, onResetView,
+        })} />);
 
-        await user.click(screen.getByTitle('Zoom In'));
-        expect(onZoomIn).toHaveBeenCalled();
+        // Use getAllByTitle because each tab renders its own copy —
+        // even though only the active-tab copy is visible, all four
+        // are in the DOM for performance reasons. The N tab is the
+        // active one in this test.
+        await user.click(screen.getAllByTitle('Zoom In')[0]);
+        // Per-tab click now passes the tabId as the first argument.
+        expect(onZoomIn).toHaveBeenCalledWith('n');
 
-        await user.click(screen.getByTitle('Zoom Out'));
-        expect(onZoomOut).toHaveBeenCalled();
+        await user.click(screen.getAllByTitle('Zoom Out')[0]);
+        expect(onZoomOut).toHaveBeenCalledWith('n');
     });
 
     it('shows view mode toggle when diagram is loaded', () => {
@@ -171,6 +183,209 @@ describe('VisualizationPanel', () => {
         expect(onViewModeChange).toHaveBeenCalledWith('delta');
     });
 
+    // Regression tests for the Tie button location (third
+    // iteration). The Tie button used to be grouped in the
+    // top-right cluster next to the Flow/Impacts toggle, which
+    // was misleading because Tie only synchronises pan/zoom and
+    // asset focus — the Flow/Impacts mode is deliberately NOT
+    // tied between main and detached windows. The button now
+    // lives in the bottom-left cluster, directly above the
+    // zoom/inspect controls it actually mirrors.
+    describe('Tie button placement and visibility', () => {
+        const nDiagram: DiagramData = { svg: '<svg>n</svg>', metadata: null };
+
+        // Helper: make a detached-tabs map whose mount node is
+        // attached to `document.body` so testing-library's `within`
+        // queries can reach it. Returns the mount node so tests can
+        // scope their assertions to the "popup" content.
+        const makeDetached = (tabId: 'n' | 'n-1' | 'action') => {
+            const mountNode = document.createElement('div');
+            document.body.appendChild(mountNode);
+            return {
+                mountNode,
+                detachedTabs: { [tabId]: { window: {} as Window, mountNode } },
+            };
+        };
+
+        it('does not render the Tie button when the tab is not detached', () => {
+            // No detachedTabs → no popup → no Tie button visible.
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'n',
+                nDiagram,
+                hasBranches: true,
+                isTabTied: () => false,
+                onToggleTabTie: vi.fn(),
+            })} />);
+            // The Tie button carries a title starting with "Tie"
+            // — easy to query without confusion with similar words.
+            const tieButtons = document.body.querySelectorAll('button[title^="Tie"]');
+            expect(tieButtons).toHaveLength(0);
+        });
+
+        it('renders the Tie button in the bottom-left cluster when the tab is detached', () => {
+            const { mountNode } = makeDetached('n');
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'n',
+                nDiagram,
+                hasBranches: true,
+                detachedTabs: { n: { window: {} as Window, mountNode } },
+                isTabTied: () => false,
+                onToggleTabTie: vi.fn(),
+            })} />);
+
+            // The Tie button lives inside the imperatively-moved
+            // orphan div, which is now a descendant of the fake
+            // popup's mountNode — NOT inside testing-library's
+            // container. Query the mountNode directly.
+            const tieButton = mountNode.querySelector('button[title^="Tie"]');
+            expect(tieButton).not.toBeNull();
+            document.body.removeChild(mountNode);
+        });
+
+        it('places the Tie button in the same cluster as the Zoom buttons, NOT in the top-right Flows/Impacts cluster', () => {
+            const { mountNode } = makeDetached('n');
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'n',
+                nDiagram,
+                hasBranches: true,
+                detachedTabs: { n: { window: {} as Window, mountNode } },
+                isTabTied: () => false,
+                onToggleTabTie: vi.fn(),
+            })} />);
+
+            const tieButton = mountNode.querySelector('button[title^="Tie"]') as HTMLElement | null;
+            const zoomInButton = mountNode.querySelector('button[title="Zoom In"]') as HTMLElement | null;
+            const flowsButton = Array.from(
+                mountNode.querySelectorAll('button')
+            ).find(b => b.textContent === 'Flows') as HTMLElement | undefined;
+
+            expect(tieButton).not.toBeNull();
+            expect(zoomInButton).not.toBeNull();
+            expect(flowsButton).toBeDefined();
+
+            // Walk up from zoomIn collecting ancestors; the Tie
+            // button must live in that same ancestor chain.
+            const zoomAncestors = new Set<HTMLElement>();
+            let cursor: HTMLElement | null = zoomInButton;
+            while (cursor) {
+                zoomAncestors.add(cursor);
+                cursor = cursor.parentElement;
+            }
+            let tieCursor: HTMLElement | null = tieButton;
+            let sharedWithZoom = false;
+            while (tieCursor) {
+                if (zoomAncestors.has(tieCursor)) { sharedWithZoom = true; break; }
+                tieCursor = tieCursor.parentElement;
+            }
+            expect(sharedWithZoom).toBe(true);
+
+            // And the Flow/Impacts top-right cluster must NOT
+            // contain the Tie button. Walk up from Flows to the
+            // absolutely-positioned cluster div and check.
+            let flowsCluster: HTMLElement | null = flowsButton!.parentElement;
+            while (flowsCluster && flowsCluster.style.position !== 'absolute') {
+                flowsCluster = flowsCluster.parentElement;
+            }
+            expect(flowsCluster).not.toBeNull();
+            expect(flowsCluster!.contains(tieButton)).toBe(false);
+
+            document.body.removeChild(mountNode);
+        });
+
+        it('calls onToggleTabTie with the tab id when clicked', async () => {
+            const user = userEvent.setup();
+            const { mountNode } = makeDetached('n');
+            const onToggleTabTie = vi.fn();
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'n',
+                nDiagram,
+                hasBranches: true,
+                detachedTabs: { n: { window: {} as Window, mountNode } },
+                isTabTied: () => false,
+                onToggleTabTie,
+            })} />);
+
+            const tieButton = mountNode.querySelector('button[title^="Tie"]') as HTMLElement;
+            await user.click(tieButton);
+            expect(onToggleTabTie).toHaveBeenCalledWith('n');
+            document.body.removeChild(mountNode);
+        });
+
+        it('renders the "Untie" (Tied) variant when the tab is already tied', () => {
+            const { mountNode } = makeDetached('n');
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'n',
+                nDiagram,
+                hasBranches: true,
+                detachedTabs: { n: { window: {} as Window, mountNode } },
+                isTabTied: (t: TabId) => t === 'n',
+                onToggleTabTie: vi.fn(),
+            })} />);
+            // When tied the button's title starts with "Untie".
+            const untieButton = mountNode.querySelector('button[title^="Untie"]');
+            expect(untieButton).not.toBeNull();
+            document.body.removeChild(mountNode);
+        });
+    });
+
+    // Regression tests for the Flow/Impacts mode being PER-TAB in a
+    // detached popup. Before the fix, the mode was a global state
+    // shared between main and popup: flipping Impacts in one
+    // window automatically flipped it in the other, and Impacts
+    // never rendered in the popup because the highlights effect
+    // only reran for the main activeTab.
+    describe('per-tab Flow/Impacts view mode (detached window)', () => {
+        it('reads the per-tab view mode from viewModeForTab so each tab shows its own mode', () => {
+            // Simulate a world where the 'n' tab is in delta (popup)
+            // while 'n-1' is still in network (main). The per-tab
+            // getter returns 'delta' for 'n' and 'network' for 'n-1'.
+            const nDiagram: DiagramData = { svg: '<svg>n</svg>', metadata: null };
+            const n1Diagram: DiagramData = { svg: '<svg>n1</svg>', metadata: null };
+            const viewModeForTab = vi.fn((tab: TabId) => tab === 'n' ? 'delta' : 'network');
+
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'n',
+                nDiagram,
+                n1Diagram,
+                viewModeForTab,
+            })} />);
+
+            // viewModeForTab must have been invoked for each tab
+            // that has a diagram (n and n-1) when their overlays
+            // rendered.
+            const calledTabs = viewModeForTab.mock.calls.map(c => c[0]);
+            expect(calledTabs).toContain('n');
+            expect(calledTabs).toContain('n-1');
+        });
+
+        it('routes the Impacts click through onViewModeChangeForTab with the tab id', async () => {
+            const user = userEvent.setup();
+            const onViewModeChangeForTab = vi.fn();
+            const nDiagram: DiagramData = { svg: '<svg>n</svg>', metadata: null };
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'n',
+                nDiagram,
+                onViewModeChangeForTab,
+                // When the per-tab getter exists, the overlay reads
+                // from it rather than the global actionViewMode.
+                viewModeForTab: () => 'network' as const,
+            })} />);
+
+            // All three tabs render an overlay (n / n-1 / action);
+            // only the active one (n) is actually visible, but all
+            // three buttons are in the DOM.
+            const impactsButtons = screen.getAllByText('Impacts');
+            // Click the first one (the active N tab's overlay).
+            await user.click(impactsButtons[0]);
+            // The call must include the tab id, proving that the
+            // router can dispatch to the right per-window state.
+            expect(onViewModeChangeForTab).toHaveBeenCalled();
+            const [firstCall] = onViewModeChangeForTab.mock.calls;
+            expect(firstCall[0]).toBe('n');
+            expect(firstCall[1]).toBe('delta');
+        });
+    });
+
     it('shows convergence warning for N-1 when AC did not converge', () => {
         const n1Diagram: DiagramData = {
             svg: '<svg>n1</svg>',
@@ -186,13 +401,17 @@ describe('VisualizationPanel', () => {
         expect(screen.getByText(/MAX_ITERATION_REACHED/)).toBeInTheDocument();
     });
 
-    it('renders inspect input when branches exist', () => {
-        render(<VisualizationPanel {...createDefaultProps({ hasBranches: true })} />);
-        expect(screen.getByPlaceholderText(/Inspect/)).toBeInTheDocument();
+    it('renders inspect input when branches exist and the active tab has a diagram', () => {
+        // Inspect now lives inside each tab overlay and only appears
+        // when the tab has a diagram AND there are branches.
+        const nDiagram: DiagramData = { svg: '<svg>n</svg>', metadata: null };
+        render(<VisualizationPanel {...createDefaultProps({ hasBranches: true, nDiagram })} />);
+        expect(screen.getAllByPlaceholderText(/Inspect/).length).toBeGreaterThan(0);
     });
 
-    it('does not render inspect input when no branches', () => {
-        render(<VisualizationPanel {...createDefaultProps({ hasBranches: false })} />);
+    it('does not render inspect input when there are no branches', () => {
+        const nDiagram: DiagramData = { svg: '<svg>n</svg>', metadata: null };
+        render(<VisualizationPanel {...createDefaultProps({ hasBranches: false, nDiagram })} />);
         expect(screen.queryByPlaceholderText(/Inspect/)).not.toBeInTheDocument();
     });
 

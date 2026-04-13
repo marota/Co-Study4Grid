@@ -199,4 +199,119 @@ describe('useSldOverlay', () => {
         expect(result.current.vlOverlay!.error).toBe('Network error');
         expect(result.current.vlOverlay!.svg).toBeNull();
     });
+
+    // Regression for the "Action '' not found in last analysis
+    // result" bug: the operator opens the SLD overlay from the
+    // N tab (actionId = '') with a remedial action already
+    // selected, then clicks the ACTION sub-tab inside the overlay.
+    // Previously, handleOverlaySldTabChange forwarded the stored
+    // actionId ('') and the backend rejected the request. The
+    // hook now falls back to the `liveSelectedActionId` it was
+    // instantiated with so a real action id reaches the API.
+    describe('action sub-tab fallback (Action "" not found bug)', () => {
+        it('falls back to liveSelectedActionId when vlOverlay.actionId is empty', async () => {
+            vi.mocked(api.getNSld).mockResolvedValue({
+                svg: '<svg>N-SLD</svg>',
+                sld_metadata: null,
+            });
+            vi.mocked(api.getActionVariantSld).mockResolvedValue({
+                svg: '<svg>ACT-SLD</svg>',
+                sld_metadata: null,
+                flow_deltas: {},
+                reactive_flow_deltas: {},
+                asset_deltas: {},
+                changed_switches: {},
+            });
+
+            // The hook is instantiated from the main (N) tab with
+            // an already-selected action 'ACT_42'.
+            const { result } = renderHook(() => useSldOverlay('n', 'ACT_42'));
+
+            // Open the SLD with an empty actionId — this is what
+            // App.tsx USED to do when the activeTab was 'n'.
+            act(() => {
+                result.current.handleVlDoubleClick('', 'VL_400');
+            });
+            await vi.waitFor(() => {
+                expect(result.current.vlOverlay!.loading).toBe(false);
+            });
+            // Clear mocks so we only see the upcoming call.
+            vi.mocked(api.getActionVariantSld).mockClear();
+
+            // Now the user flips the overlay sub-tab to 'action'.
+            act(() => {
+                result.current.handleOverlaySldTabChange('action');
+            });
+            await vi.waitFor(() => {
+                expect(result.current.vlOverlay!.loading).toBe(false);
+            });
+
+            // The API must have been called with the LIVE
+            // selectedActionId ('ACT_42'), NOT with the empty
+            // actionId stored on vlOverlay. This proves the
+            // fallback kicked in.
+            expect(api.getActionVariantSld).toHaveBeenCalledWith('ACT_42', 'VL_400');
+            // And the overlay now holds the resolved action id so
+            // subsequent highlight passes can find it.
+            expect(result.current.vlOverlay!.actionId).toBe('ACT_42');
+            // No error should have been set.
+            expect(result.current.vlOverlay!.error).toBeNull();
+        });
+
+        it('shows a friendly error when no action is available at all', async () => {
+            vi.mocked(api.getNSld).mockResolvedValue({
+                svg: '<svg>N-SLD</svg>',
+                sld_metadata: null,
+            });
+            // No liveSelectedActionId passed → the fallback has
+            // nothing to fall back to.
+            const { result } = renderHook(() => useSldOverlay('n'));
+
+            act(() => {
+                result.current.handleVlDoubleClick('', 'VL_400');
+            });
+            await vi.waitFor(() => {
+                expect(result.current.vlOverlay!.loading).toBe(false);
+            });
+
+            act(() => {
+                result.current.handleOverlaySldTabChange('action');
+            });
+            await vi.waitFor(() => {
+                expect(result.current.vlOverlay!.loading).toBe(false);
+            });
+
+            // No API call should have been issued (we don't want
+            // the backend to see the empty-string id and throw).
+            expect(api.getActionVariantSld).not.toHaveBeenCalled();
+            // Instead, a friendly inline error is shown.
+            expect(result.current.vlOverlay!.error).toMatch(/no action selected/i);
+        });
+
+        it('prefers the explicit actionId when one is stored on vlOverlay', async () => {
+            vi.mocked(api.getActionVariantSld).mockResolvedValue({
+                svg: '<svg>ACT-SLD</svg>',
+                sld_metadata: null,
+                flow_deltas: {},
+                reactive_flow_deltas: {},
+                asset_deltas: {},
+                changed_switches: {},
+            });
+
+            // Hook instantiated with a "live" selection of ACT_B,
+            // but the overlay was opened with the explicit
+            // argument ACT_A — the explicit id must win.
+            const { result } = renderHook(() => useSldOverlay('action', 'ACT_B'));
+
+            act(() => {
+                result.current.handleVlDoubleClick('ACT_A', 'VL_400');
+            });
+            await vi.waitFor(() => {
+                expect(result.current.vlOverlay!.loading).toBe(false);
+            });
+
+            // First call uses the explicit ACT_A.
+            expect(api.getActionVariantSld).toHaveBeenCalledWith('ACT_A', 'VL_400');
+        });
+    });
 });
