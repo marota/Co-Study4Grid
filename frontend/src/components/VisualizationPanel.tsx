@@ -9,7 +9,7 @@ import React, { useState, useMemo, type RefObject } from 'react';
 import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab } from '../types';
 import MemoizedSvgContainer from './MemoizedSvgContainer';
 import SldOverlay from './SldOverlay';
-import TabPortal from './TabPortal';
+import DetachableTabHost from './DetachableTabHost';
 import type { DetachedTabsMap } from '../hooks/useDetachedTabs';
 
 interface VisualizationPanelProps {
@@ -354,50 +354,65 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                     </div>
                 )}
 
-                {/* Overflow Container — portaled when the tab is detached. */}
-                {(activeTab === 'overflow' || detachedTabs['overflow']) && (
-                    <TabPortal target={detachedTabs['overflow']?.mountNode ?? null}>
-                        <div style={{
-                            width: '100%', height: '100%',
-                            position: 'absolute', top: 0, left: 0,
-                            backgroundColor: 'white', zIndex: 20,
-                        }}>
-                            {detachedTabs['overflow'] && renderDetachedHeader('overflow', 'Overflow Analysis', '#27ae60')}
-                            {result?.pdf_url ? (
-                                <iframe
-                                    src={`http://localhost:8000${result.pdf_url}`}
-                                    key={result.pdf_url}
-                                    style={{ width: '100%', height: '100%', border: 'none' }}
-                                    title="Overflow Graph"
-                                />
-                            ) : (
-                                <div style={{
-                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%',
-                                    color: analysisLoading ? '#856404' : '#999',
-                                    background: analysisLoading ? '#fff3cd' : 'white',
-                                    fontWeight: analysisLoading ? 600 : 'normal',
-                                    gap: '10px'
-                                }}>
-                                    {analysisLoading ? (
-                                        <>
-                                            <span style={{ fontSize: '24px' }}>⚙️</span>
-                                            <span>Processing Analysis...</span>
-                                        </>
-                                    ) : <span style={{ fontStyle: 'italic', color: '#999' }}>Run &ldquo;Analyze &amp; Suggest&rdquo; to see the overflow graph.</span>}
-                                </div>
-                            )}
-                        </div>
-                    </TabPortal>
-                )}
-                {activeTab === 'overflow' && detachedTabs['overflow'] && renderDetachedPlaceholder('overflow', 'Overflow Analysis', '#27ae60')}
-
-                <TabPortal target={detachedTabs['n']?.mountNode ?? null}>
+                {/* Overflow Container — always rendered via DetachableTabHost so
+                    its sub-tree stays mounted across detach/reattach. */}
+                <DetachableTabHost
+                    detachedMountNode={detachedTabs['overflow']?.mountNode ?? null}
+                    homeStyle={{
+                        width: '100%', height: '100%',
+                        position: 'absolute', top: 0, left: 0,
+                        backgroundColor: 'white',
+                        zIndex: !detachedTabs['overflow'] && activeTab === 'overflow' ? 20 : -1,
+                        visibility: !detachedTabs['overflow'] && activeTab === 'overflow' ? 'visible' : 'hidden',
+                        pointerEvents: !detachedTabs['overflow'] && activeTab === 'overflow' ? 'auto' : 'none',
+                    }}
+                >
                     <div style={{
                         width: '100%', height: '100%',
                         position: 'absolute', top: 0, left: 0,
-                        zIndex: detachedTabs['n'] ? 10 : (activeTab === 'n' ? 10 : -1),
-                        visibility: detachedTabs['n'] || activeTab === 'n' ? 'visible' : 'hidden',
-                        pointerEvents: detachedTabs['n'] || activeTab === 'n' ? 'auto' : 'none',
+                        backgroundColor: 'white',
+                    }}>
+                        {detachedTabs['overflow'] && renderDetachedHeader('overflow', 'Overflow Analysis', '#27ae60')}
+                        {result?.pdf_url ? (
+                            <iframe
+                                src={`http://localhost:8000${result.pdf_url}`}
+                                key={result.pdf_url}
+                                style={{ width: '100%', height: '100%', border: 'none' }}
+                                title="Overflow Graph"
+                            />
+                        ) : (
+                            <div style={{
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%',
+                                color: analysisLoading ? '#856404' : '#999',
+                                background: analysisLoading ? '#fff3cd' : 'white',
+                                fontWeight: analysisLoading ? 600 : 'normal',
+                                gap: '10px'
+                            }}>
+                                {analysisLoading ? (
+                                    <>
+                                        <span style={{ fontSize: '24px' }}>⚙️</span>
+                                        <span>Processing Analysis...</span>
+                                    </>
+                                ) : <span style={{ fontStyle: 'italic', color: '#999' }}>Run &ldquo;Analyze &amp; Suggest&rdquo; to see the overflow graph.</span>}
+                            </div>
+                        )}
+                    </div>
+                </DetachableTabHost>
+                {activeTab === 'overflow' && detachedTabs['overflow'] && renderDetachedPlaceholder('overflow', 'Overflow Analysis', '#27ae60')}
+
+                <DetachableTabHost
+                    detachedMountNode={detachedTabs['n']?.mountNode ?? null}
+                    homeStyle={{
+                        width: '100%', height: '100%',
+                        position: 'absolute', top: 0, left: 0,
+                        zIndex: !detachedTabs['n'] && activeTab === 'n' ? 10 : -1,
+                        visibility: !detachedTabs['n'] && activeTab === 'n' ? 'visible' : 'hidden',
+                        pointerEvents: !detachedTabs['n'] && activeTab === 'n' ? 'auto' : 'none',
+                    }}
+                >
+                    <div style={{
+                        width: '100%', height: '100%',
+                        position: 'absolute', top: 0, left: 0,
                     }}>
                         {detachedTabs['n'] && renderDetachedHeader('n', 'Network (N)', '#3498db')}
                         {/* Always mounted — see comment on N-1 container below. */}
@@ -413,17 +428,23 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             </div>
                         )}
                     </div>
-                </TabPortal>
+                </DetachableTabHost>
                 {activeTab === 'n' && detachedTabs['n'] && renderDetachedPlaceholder('n', 'Network (N)', '#3498db')}
 
                 {/* N-1 Container — always mounted, hidden via CSS to preserve zoom state */}
-                <TabPortal target={detachedTabs['n-1']?.mountNode ?? null}>
+                <DetachableTabHost
+                    detachedMountNode={detachedTabs['n-1']?.mountNode ?? null}
+                    homeStyle={{
+                        width: '100%', height: '100%',
+                        position: 'absolute', top: 0, left: 0,
+                        zIndex: !detachedTabs['n-1'] && activeTab === 'n-1' ? 10 : -1,
+                        visibility: !detachedTabs['n-1'] && activeTab === 'n-1' ? 'visible' : 'hidden',
+                        pointerEvents: !detachedTabs['n-1'] && activeTab === 'n-1' ? 'auto' : 'none',
+                    }}
+                >
                     <div style={{
                         width: '100%', height: '100%',
                         position: 'absolute', top: 0, left: 0,
-                        zIndex: detachedTabs['n-1'] ? 10 : (activeTab === 'n-1' ? 10 : -1),
-                        visibility: detachedTabs['n-1'] || activeTab === 'n-1' ? 'visible' : 'hidden',
-                        pointerEvents: detachedTabs['n-1'] || activeTab === 'n-1' ? 'auto' : 'none',
                     }}>
                         {detachedTabs['n-1'] && renderDetachedHeader('n-1', 'Contingency (N-1)', '#e74c3c')}
                         {/* Convergence warning banner */}
@@ -454,17 +475,23 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             </div>
                         )}
                     </div>
-                </TabPortal>
+                </DetachableTabHost>
                 {activeTab === 'n-1' && detachedTabs['n-1'] && renderDetachedPlaceholder('n-1', 'Contingency (N-1)', '#e74c3c')}
 
                 {/* Action Variant Container — always mounted, hidden via CSS to preserve zoom state */}
-                <TabPortal target={detachedTabs['action']?.mountNode ?? null}>
+                <DetachableTabHost
+                    detachedMountNode={detachedTabs['action']?.mountNode ?? null}
+                    homeStyle={{
+                        width: '100%', height: '100%',
+                        position: 'absolute', top: 0, left: 0,
+                        zIndex: !detachedTabs['action'] && activeTab === 'action' ? 10 : -1,
+                        visibility: !detachedTabs['action'] && activeTab === 'action' ? 'visible' : 'hidden',
+                        pointerEvents: !detachedTabs['action'] && activeTab === 'action' ? 'auto' : 'none',
+                    }}
+                >
                     <div style={{
                         width: '100%', height: '100%',
                         position: 'absolute', top: 0, left: 0,
-                        zIndex: detachedTabs['action'] ? 10 : (activeTab === 'action' ? 10 : -1),
-                        visibility: detachedTabs['action'] || activeTab === 'action' ? 'visible' : 'hidden',
-                        pointerEvents: detachedTabs['action'] || activeTab === 'action' ? 'auto' : 'none',
                     }}>
                         {detachedTabs['action'] && renderDetachedHeader('action', selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action', '#ff4081')}
                         {/* Convergence warning banner */}
@@ -496,7 +523,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             </div>
                         )}
                     </div>
-                </TabPortal>
+                </DetachableTabHost>
                 {activeTab === 'action' && detachedTabs['action'] && renderDetachedPlaceholder('action', selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action', '#ff4081')}
 
                 {/* Voltage Range Sidebar — collapsed by default, toggle to expand */}

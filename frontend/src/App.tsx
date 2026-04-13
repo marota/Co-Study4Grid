@@ -59,9 +59,18 @@ function App() {
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [branches, setBranches] = useState<string[]>([]);
   const [voltageLevels, setVoltageLevels] = useState<string[]>([]);
-  const diagrams = useDiagrams(branches, voltageLevels, selectedBranch);
   const [configLoading, setConfigLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // ===== Detached Visualization Tabs (must be instantiated BEFORE useDiagrams
+  // so that the detached-tabs map can be threaded into useDiagrams → usePanZoom,
+  // keeping a detached tab interactive even when it's not the main `activeTab`.)
+  const detachedTabsHook = useDetachedTabs({
+    onPopupBlocked: () => setError('Popup blocked by the browser. Please allow popups for this site to detach tabs.'),
+  });
+  const { detachedTabs, detach: detachTab, reattach: reattachTab, focus: focusDetachedTab } = detachedTabsHook;
+
+  const diagrams = useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs);
 
   // Confirmation dialog state for contingency change / load study /
   // apply settings / change network path.
@@ -128,16 +137,10 @@ function App() {
   } = session;
 
   // ===== Detached Visualization Tabs =====
-  // Each viz tab (N / N-1 / Action / Overflow) can be detached into a
-  // secondary browser window and reattached on demand. The hook manages
-  // the popup lifecycle; `VisualizationPanel` uses React portals to
-  // relocate the tab's DOM subtree into the popup without unmounting it
-  // (this preserves zoom/viewBox state across the round-trip).
-  const detachedTabsHook = useDetachedTabs({
-    onPopupBlocked: () => setError('Popup blocked by the browser. Please allow popups for this site to detach tabs.'),
-  });
-  const { detachedTabs, detach: detachTab, reattach: reattachTab, focus: focusDetachedTab } = detachedTabsHook;
-
+  // `useDetachedTabs` is instantiated higher up so its map can be passed
+  // into `useDiagrams` (see above). Here we wire the detach/reattach
+  // callbacks that depend on diagrams (activeTab fallback logic) and
+  // the interaction logger.
   const handleDetachTab = useCallback((tabId: TabId) => {
     interactionLogger.record('tab_detached', { tab: tabId });
     const entry = detachTab(tabId);

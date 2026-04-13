@@ -12,6 +12,15 @@ The implementation follows the initial collaboration plan — this document
 records **what was actually shipped**, where it diverges from the plan, and
 which design decisions were made along the way.
 
+> **Important**: the first iteration of this feature used a naive
+> `TabPortal` that swapped its `createPortal` target between `null`
+> (render in place) and the popup `mountNode`. This caused the portaled
+> sub-tree to be **unmounted and remounted on every detach/reattach**,
+> which in turn broke pan/zoom event listeners, made the popup window
+> look frozen and left other tabs blank on reattach. That approach was
+> replaced by a **stable portal target + imperative DOM move**; the
+> section ["Stable portal target + imperative DOM move"](#stable-portal-target--imperative-dom-move) below describes the fix.
+
 ## Feature summary
 
 - Each of the four visualization tabs exposes a small detach button `⧉` in
@@ -34,10 +43,123 @@ The feature rests on four pieces, all under `frontend/src`:
 
 | File | Role |
 |---|---|
-| `hooks/useDetachedTabs.ts` | Owns the popup lifecycle state (`tabId → Window`), exposes `detach`/`reattach`/`focus`/`isDetached`, prunes closed popups automatically. |
-| `components/TabPortal.tsx` | Thin `createPortal` wrapper — renders children in place when `target` is `null`, or into the given DOM node otherwise. |
-| `components/VisualizationPanel.tsx` | Wraps each of the four tab containers in a `TabPortal`, adds the per-tab detach/reattach button to the tab bar, and renders the "detached" placeholder + the popup header. |
-| `App.tsx` | Instantiates `useDetachedTabs`, wires detach/reattach callbacks, and auto-switches `activeTab` when the currently-active tab is detached. |
+| `hooks/useDetachedTabs.ts` | Owns the popup lifecycle state (`tabId → Window`), exposes `detach`/`reattach`/`focus`/`isDetached`, prunes closed popups automatically. Defers `popup.close()` to a `useEffect` so VisualizationPanel has a chance to relocate the tab host out of the popup before the popup document is torn down. |
+| `components/DetachableTabHost.tsx` | Stable-portal-target wrapper. Creates a single orphan `<div>` via `useState` lazy init, uses it as the (never-changing) `createPortal` target, and imperatively `appendChild`s it between a "home" placeholder in the main tree and the popup's mount node. The sub-tree is therefore never unmounted. |
+| `components/VisualizationPanel.tsx` | Wraps each of the four tab containers in a `DetachableTabHost`, adds the per-tab detach/reattach button to the tab bar, and renders the "detached" placeholder + the popup header. |
+| `App.tsx` | Instantiates `useDetachedTabs` before `useDiagrams`, threads the detached-tabs map into `useDiagrams` so detached tabs stay interactive for pan/zoom, wires detach/reattach callbacks, and auto-switches `activeTab` when the currently-active tab is detached. |
+
+### Stable portal target + imperative DOM move
+
+The heart of the correct implementation is a two-layer trick:
+
+1. **The `createPortal` target is stable**. `DetachableTabHost` creates a
+   single orphan `<div>` once (via `useState` lazy initializer) and
+   always passes it to `createPortal(children, realTarget)`. Because
+   the target reference never changes, **React never unmounts the
+   portaled sub-tree**. That preserves refs
+   (`nSvgContainerRef`, `n1SvgContainerRef`, `actionSvgContainerRef`),
+   DOM-attached event listeners (wheel/mousedown), the
+   `MemoizedSvgContainer` layout effect's prior `replaceChildren` move,
+   and the SVG element's current `viewBox` attribute.
+2. **The orphan `<div>` is physically moved** between a home placeholder
+   in the main tree and the popup's `mountNode`. This is a plain
+   `appendChild` call inside a `useLayoutEffect` that watches the
+   `detachedMountNode` prop. `appendChild` automatically detaches the
+   node from its current parent, so moving it is effectively free and
+   leaves no broken references.
+
+The home placeholder is always rendered by React at the normal position
+inside the flex layout. When the tab is detached, the placeholder stays
+in place as an empty positioned slot — so the parent's virtual-DOM
+children list never changes, and React never needs to run
+`insertBefore` against a missing anchor.
+
+Why this matters:
+
+- The SVG element with its live `viewBox` attribute is the same element
+  before and after detach, so the detached popup opens at the **exact
+  zoom level and pan position** the user had in the main window.
+  Similarly for reattach.
+- All event listeners (`wheel`, `mousedown` on the SVG container) are
+  attached directly to the stable element, so they survive the move.
+  No rebinding is required.
+- The popup cannot corrupt other tabs' state during reattach because
+  no React sub-tree is ever unmounted from the popup document.
+
+### Per-drag owner-window resolution for drag-pan
+
+`mousemove` / `mouseup` listeners fundamentally have to live on a
+window or document object — not on the SVG element itself, because the
+user's cursor routinely leaves the element during a drag. The old code
+captured `ownerWindow = el.ownerDocument.defaultView` at effect-bind
+time, but that effect never re-ran when the element was moved to a
+popup, so it continued to listen to the main window and the popup's
+drag events went unheard.
+
+The fix (`frontend/src/hooks/usePanZoom.ts`): bind `mousemove` /
+`mouseup` **inside `handleMouseDown`** using a fresh
+`el.ownerDocument.defaultView`, and unbind them in `handleMouseUp`. A
+closure-scoped `activeDragWindow` tracks the current binding so the
+effect cleanup can also tear them down if the component unmounts
+mid-drag. The `wheel` and `mousedown` listeners remain on `el` itself
+(they do survive a DOM move) — only the "drag tracking" globals need
+per-drag resolution.
+
+The equivalent fix in `components/SldOverlay.tsx` for overlay drag/pan
+was already in place.
+
+### Detached tabs are "active" for pan/zoom purposes
+
+`usePanZoom`'s `active` parameter gates event-listener binding: when
+`active === false`, the effect early-returns and no listeners are
+attached at all. Previously that gate was driven purely by
+`activeTab === 'n'` etc. — which meant that **the moment a tab was
+detached the main window auto-switched `activeTab` to another tab, and
+the detached tab's pan/zoom listeners were immediately torn down**.
+That's why the popup felt frozen.
+
+The fix threads the `detachedTabs` map from `useDetachedTabs` into
+`useDiagrams`, which ORs it into the `active` flag:
+
+```ts
+const nPZ = usePanZoom(
+    nSvgContainerRef,
+    nDiagram?.originalViewBox,
+    activeTab === 'n' || !!detachedTabs?.['n'],
+);
+```
+
+This required reordering `App.tsx` so `useDetachedTabs` is called
+**before** `useDiagrams`. The detach/reattach *callbacks* (which
+depend on `diagrams.activeTab` / `diagrams.setActiveTab`) are still
+declared after `useDiagrams`.
+
+### Deferred popup close on reattach
+
+`useDetachedTabs.reattach(tabId)` no longer closes the popup
+synchronously. It queues the popup window in `pendingCloseRef` and
+then prunes the tab from state. A regular `useEffect` (running after
+the VisualizationPanel layout effect that moves the orphan div back
+into the main tree) drains the queue and calls `popup.close()`.
+
+The ordering is guaranteed by React's commit phase: child layout
+effects run before parent layout effects, and all layout effects run
+before any `useEffect`. So the sequence on reattach is:
+
+1. `reattach(tabId)` → queue popup, prune state.
+2. React re-renders `App.tsx` → `VisualizationPanel`.
+3. `DetachableTabHost.useLayoutEffect` detects `detachedMountNode
+   === null` and `appendChild`s the orphan div back into the home
+   placeholder in the main tree.
+4. `useDetachedTabs.useEffect` runs and closes the popup window.
+
+Before this fix, the popup was closed synchronously inside
+`reattach()`, which meant the popup document was torn down **while
+React's portal sub-tree was still rooted inside it**. When React then
+reconciled the portal target change, it tried to unmount children from
+a dying document; on some browsers that threw exceptions that left
+other tabs' DOM in a half-updated state — the "blank other tabs after
+reattach" bug.
 
 ### The critical invariant — never unmount the SVG subtree
 
@@ -85,10 +207,11 @@ the parsed SVG element, the zoom state inside `usePanZoom`, and the
 
 Previously each tab container was rendered only when `activeTab === <id>`
 (except the always-mounted `N-1`/`Action` containers). The refactor
-generalises that so every tab container is rendered whenever it is *either*
-active *or* detached. The container is wrapped in a `TabPortal` whose
-`target` is the popup's `mountNode` if detached, or `null` (render in
-place) otherwise.
+generalises that so every tab container is always rendered and always
+wrapped in a `DetachableTabHost`. The home placeholder carries
+`visibility: hidden` + `pointer-events: none` + `z-index: -1` when the
+tab is neither active in the main window nor detached, so only the
+active tab is visible even though all four sub-trees are mounted.
 
 In the main window, when the active tab is detached, the panel renders a
 placeholder (`renderDetachedPlaceholder`) with "Focus window" and
@@ -106,19 +229,26 @@ not left showing an empty container.
 ### Pan/zoom in detached windows
 
 Global DOM event listeners attached to the main `window` object do **not**
-receive events fired inside a popup. Two call sites had to be updated:
+receive events fired inside a popup. The following call sites were
+updated:
 
-- `hooks/usePanZoom.ts` — the `mousemove`/`mouseup` listeners used to
-  track drag-pan now bind to `el.ownerDocument.defaultView` (the popup's
-  `Window` when portaled there, otherwise the main `window`).
+- `hooks/usePanZoom.ts` — `mousemove` / `mouseup` are now bound **inside
+  `handleMouseDown`** using `el.ownerDocument.defaultView` resolved at
+  drag-start time (see ["Per-drag owner-window resolution for
+  drag-pan"](#per-drag-owner-window-resolution-for-drag-pan)), and
+  unbound in `handleMouseUp`. The effect closure tracks the current
+  drag window in a local variable so cleanup on component unmount can
+  still remove the listeners. This replaced the earlier "bind once at
+  effect time" approach, which was stale after an imperative DOM move.
 - `components/SldOverlay.tsx` — both `startOverlayDrag` and
   `startOverlayPan` use `(e.currentTarget as HTMLElement).ownerDocument
   .defaultView` for the same reason.
 
-No other places in the SVG zoom / visualization code needed changes. The
-wheel handler is already attached directly to the SVG element, which
-continues to work across windows, and `MemoizedSvgContainer` uses only
-`ref.current.ownerDocument` for measurements.
+No other places in the SVG zoom / visualization code needed changes.
+The wheel and mousedown handlers are attached directly to the SVG
+container element, which stays the same DOM node across detach/reattach
+(thanks to the stable-portal-target design), so those listeners survive
+the round-trip without needing to be re-bound.
 
 ### Interaction logging
 
@@ -158,25 +288,92 @@ concrete choices / deviations:
 
 ## File-by-file summary
 
-- **`frontend/src/hooks/useDetachedTabs.ts`** (new, 196 lines) — popup
-  lifecycle hook.
-- **`frontend/src/hooks/useDetachedTabs.test.ts`** (new, 148 lines) —
-  Vitest tests for the hook using a fake `Window` constructed over a
-  jsdom document.
-- **`frontend/src/components/TabPortal.tsx`** (new, 30 lines) — portal
-  wrapper.
-- **`frontend/src/components/VisualizationPanel.tsx`** — refactored the
-  four tab containers to be portal-targets + always rendered when
-  detached; added tab-bar detach buttons; added detached-header and
-  detached-placeholder renderers.
-- **`frontend/src/App.tsx`** — instantiates `useDetachedTabs`, wires
-  `handleDetachTab` (with active-tab fallback) and `handleReattachTab`
-  (with interaction logging), passes props down to `VisualizationPanel`.
-- **`frontend/src/hooks/usePanZoom.ts`** — bind drag-pan listeners to
-  `el.ownerDocument.defaultView`.
+- **`frontend/src/hooks/useDetachedTabs.ts`** — popup lifecycle hook.
+  Defers `popup.close()` to a `useEffect` so VisualizationPanel can
+  first move the tab host back into the main tree.
+- **`frontend/src/hooks/useDetachedTabs.test.ts`** — Vitest tests for
+  the hook using a fake `Window` constructed over a jsdom document.
+- **`frontend/src/components/DetachableTabHost.tsx`** (new) —
+  stable-portal-target wrapper. Creates a single orphan `<div>` via
+  `useState` lazy init, uses it as the never-changing `createPortal`
+  target, and imperatively `appendChild`s it between the home
+  placeholder and the popup's mount node. Replaces the earlier
+  `TabPortal.tsx`, which has been deleted.
+- **`frontend/src/components/VisualizationPanel.tsx`** — each of the
+  four tab containers is wrapped in `DetachableTabHost`; tab-bar
+  detach/reattach buttons; detached-header and detached-placeholder
+  renderers.
+- **`frontend/src/App.tsx`** — `useDetachedTabs` is instantiated
+  **before** `useDiagrams` so the detached map can be threaded in, and
+  the wiring callbacks (`handleDetachTab` with the active-tab
+  fallback, `handleReattachTab` with interaction logging) stay after
+  `useDiagrams`.
+- **`frontend/src/hooks/useDiagrams.ts`** — accepts an optional
+  `detachedTabs` map so the `usePanZoom` `active` flag becomes
+  `activeTab === <id> || !!detachedTabs?.[<id>]`. A detached tab
+  therefore stays interactive even when the main window has
+  auto-switched `activeTab` to a different tab.
+- **`frontend/src/hooks/usePanZoom.ts`** — `mousemove` / `mouseup`
+  listeners are bound per-drag inside `handleMouseDown` using a fresh
+  `el.ownerDocument.defaultView`, not captured at effect-bind time.
 - **`frontend/src/components/SldOverlay.tsx`** — same treatment for
   overlay drag/pan handlers.
-- **`frontend/src/types.ts`** — two new `InteractionType` variants.
+- **`frontend/src/types.ts`** — two new `InteractionType` variants
+  (`tab_detached`, `tab_reattached`).
+
+## Bugs fixed in the second iteration
+
+The initial shipment (commit `ca80547`) worked visually but suffered
+from four related bugs reported shortly after merge. The follow-up
+refactor described above fixes all four:
+
+1. **Detached window is frozen — no wheel zoom / drag / asset focus.**
+   Root cause: `usePanZoom`'s `active` param was `activeTab === 'n'`
+   etc. When the operator detached a tab, App auto-switched
+   `activeTab` to another tab, so `active` became `false` for the
+   detached tab, and the hook's effect early-returned without ever
+   binding wheel/mousedown listeners. Fix: OR `!!detachedTabs?.[id]`
+   into the active flag (see `useDiagrams.ts`).
+
+2. **Detached window does not inherit the pre-detach zoom.**
+   Root cause: the previous `TabPortal` swapped its `createPortal`
+   target from `null` to the popup's mount node, which triggered a
+   full unmount/remount of the portaled sub-tree. The remount created
+   a new container div, and while `MemoizedSvgContainer.replaceChildren`
+   moved the existing SVG element back in, the pan/zoom's captured
+   `el` was stale and the hook never re-ran its effect. Fix: stable
+   portal target + imperative DOM move — the SVG element and its
+   `viewBox` attribute are the same across the move, so the popup
+   opens at the exact zoom level/pan position the main window was
+   showing.
+
+3. **Reattach blanks out other tabs in the main window.**
+   Root cause: `reattach()` synchronously called `popup.close()` and
+   then pruned state. React then tried to reconcile the portal target
+   change (popup `mountNode` → `null`), which involved unmounting
+   children from the popup's about-to-be-destroyed document. On some
+   browsers that threw exceptions during DOM manipulation, leaving
+   other tabs' containers in an inconsistent state. Fix: (a) the
+   stable-portal-target design means React never has to unmount the
+   sub-tree; (b) `useDetachedTabs.reattach` now queues the popup for
+   close and lets a downstream `useEffect` call `popup.close()` only
+   **after** `DetachableTabHost.useLayoutEffect` has moved the orphan
+   div back into the main tree.
+
+4. **Reattached tab loses zoom/drag interactions (while highlighting
+   still works).** Same root cause as bug 2: the unmount/remount
+   produced a fresh container div whose wheel/mousedown listeners had
+   never been bound (the pan/zoom effect never re-ran), while the
+   highlighting code operated on the SVG element via `nDiagram.svg`
+   state and so continued to work. Fix: same as bug 2 — the stable
+   portal target means the container div and its listeners survive
+   the move, so pan/zoom works continuously without any rebinding
+   needing to happen.
+
+Additionally, the reattached tab now also preserves the **zoom level
+that was active inside the popup** — because the SVG element (and
+therefore its `viewBox`) is the same DOM node before, during, and
+after the move.
 
 ## Known limitations
 

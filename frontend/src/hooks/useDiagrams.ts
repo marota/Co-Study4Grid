@@ -119,6 +119,12 @@ export function useDiagrams(
   branches: string[],
   voltageLevels: string[],
   selectedBranch: string,
+  // Optional map of tabs that are currently "detached" into a secondary
+  // browser window. A detached tab must be treated as interactive for
+  // pan/zoom purposes even though it is not the `activeTab` in the main
+  // window — otherwise its event listeners are never bound and the
+  // popup looks frozen. Only the keys are read (truthiness check).
+  detachedTabs?: Partial<Record<TabId, unknown>>,
 ): DiagramsState {
   // Tab
   const [activeTab, setActiveTab] = useState<TabId>('n');
@@ -152,10 +158,25 @@ export function useDiagrams(
   const n1SvgContainerRef = useRef<HTMLDivElement>(null);
   const actionSvgContainerRef = useRef<HTMLDivElement>(null);
 
-  // Pan/Zoom
-  const nPZ = usePanZoom(nSvgContainerRef, nDiagram?.originalViewBox, activeTab === 'n');
-  const n1PZ = usePanZoom(n1SvgContainerRef, n1Diagram?.originalViewBox, activeTab === 'n-1');
-  const actionPZ = usePanZoom(actionSvgContainerRef, actionDiagram?.originalViewBox, activeTab === 'action');
+  // Pan/Zoom — a tab is interactive when it is the active tab in the
+  // main window OR when it has been detached into its own popup window
+  // (in the latter case the main-window `activeTab` may be pointing at
+  // a different tab, but the detached popup still needs live pan/zoom).
+  const nPZ = usePanZoom(
+    nSvgContainerRef,
+    nDiagram?.originalViewBox,
+    activeTab === 'n' || !!detachedTabs?.['n'],
+  );
+  const n1PZ = usePanZoom(
+    n1SvgContainerRef,
+    n1Diagram?.originalViewBox,
+    activeTab === 'n-1' || !!detachedTabs?.['n-1'],
+  );
+  const actionPZ = usePanZoom(
+    actionSvgContainerRef,
+    actionDiagram?.originalViewBox,
+    activeTab === 'action' || !!detachedTabs?.['action'],
+  );
 
   // Zoom state
   const lastZoomState = useRef({ query: '', branch: '' });
