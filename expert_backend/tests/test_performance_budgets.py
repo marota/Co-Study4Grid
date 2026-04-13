@@ -86,6 +86,23 @@ class TestPerformanceBudgets:
         mock_get_env.return_value = env
         
         with patch.object(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95):
+            # Warm up to absorb first-call overhead (module import resolution,
+            # MagicMock attribute caching, cold BLAS/pandas paths). Without
+            # this, a cold first call on a loaded CI machine occasionally
+            # spikes past the budget even though the steady-state logic is
+            # an order of magnitude faster. Mirrors the warm-up in the
+            # large-grid test above.
+            service.simulate_manual_action("act1", "DISCO_1")
+
+            # Rebuild the side_effect iterator — the warm-up consumed the
+            # first two obs values we prepared. env.get_obs is re-driven
+            # from this iterator on every simulate_manual_action call.
+            obs_n2 = self._make_large_obs(n_lines)
+            obs_n1_2 = self._make_large_obs(n_lines)
+            obs_after2 = self._make_large_obs(n_lines)
+            obs_n1_2.simulate.return_value = (obs_after2, None, None, {"exception": None})
+            env.get_obs.side_effect = [obs_n2, obs_n1_2]
+
             start_time = time.perf_counter()
             service.simulate_manual_action("act1", "DISCO_1")
             end_time = time.perf_counter()
