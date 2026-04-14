@@ -220,6 +220,17 @@ export function useDiagrams(
     activeTab === 'action' || !!detachedTabs?.['action'],
   );
 
+  // Ref mirror of the `detachedTabs` map so stable callbacks (notably
+  // `handleActionSelect`) can read the latest detached state without
+  // having to be re-bound on every map change. This is the same pattern
+  // used for `activeTabRef` above. When the action tab is detached, the
+  // selecting-an-action flow must NOT switch the main window's active
+  // tab to 'action' — the main window should keep showing whatever tab
+  // the user had open (typically N or N-1), and only the popup gets the
+  // updated diagram.
+  const detachedTabsRef = useRef<Partial<Record<TabId, unknown>> | undefined>(detachedTabs);
+  useLayoutEffect(() => { detachedTabsRef.current = detachedTabs; }, [detachedTabs]);
+
   // Zoom state
   const lastZoomState = useRef({ query: '', branch: '' });
   const actionSyncSourceRef = useRef<ViewBox | null>(null);
@@ -290,16 +301,37 @@ export function useDiagrams(
     setError: (v: string) => void,
     force: boolean = false,
   ) => {
+    const isActionDetached = !!detachedTabsRef.current?.['action'];
+
     if (!force && actionId === selectedActionId) {
       interactionLogger.record('action_deselected', { action_id: actionId });
       setSelectedActionId(null);
       setActionDiagram(null);
-      setActiveTab('n-1');
+      // Only fall back to the N-1 tab in the main window when the
+      // action tab is currently inline (i.e. the user was actually
+      // looking at the action tab in the main window). When the
+      // action tab is detached into a popup, the main window is
+      // already showing N or N-1 and must not be force-switched.
+      if (!isActionDetached) {
+        setActiveTab('n-1');
+      }
       return;
     }
 
+    // Preserve the current viewBox across action switches. When the
+    // action tab is inline in the main window, `activeTab === 'action'`
+    // tells us the user is currently looking at the action diagram and
+    // `actionPZ.viewBox` is the right source. When the action tab is
+    // DETACHED into a popup, `activeTab` is 'n' or 'n-1' (the main
+    // window's current tab) but the popup is still showing the action
+    // diagram — so `actionPZ.viewBox` is STILL the correct source and
+    // we must use it even though `activeTab` is not 'action'. Without
+    // this branch, clicking a different action card in a detached
+    // popup would snap the popup back to the N / N-1 viewBox instead
+    // of preserving the zoom the user had on the previous action.
+    const actionTabShowsActionDiagram = activeTabRef.current === 'action' || isActionDetached;
     actionSyncSourceRef.current =
-      (activeTabRef.current === 'action' ? actionPZ.viewBox : null)
+      (actionTabShowsActionDiagram ? actionPZ.viewBox : null)
       || n1PZ.viewBox || nPZ.viewBox;
 
     if (actionId !== null) {
@@ -310,7 +342,14 @@ export function useDiagrams(
     if (actionId === null) return;
 
     setActionDiagramLoading(true);
-    setActiveTab('action');
+    // Switching the main window's activeTab to 'action' would blank the
+    // current N or N-1 view and replace it with the "Detached" placeholder.
+    // When the action tab lives in a popup, keep the main window where the
+    // user left it and let the popup pick up the new diagram via its
+    // existing render path.
+    if (!isActionDetached) {
+      setActiveTab('action');
+    }
     try {
       const res = await api.getActionVariantDiagram(actionId);
       const { svg, viewBox } = processSvg(res.svg, voltageLevelsLength);
@@ -461,13 +500,21 @@ export function useDiagrams(
     else if (activeTab === 'action') actionPZ.setViewBox(sourceVB);
   }, [activeTab, nPZ, n1PZ, actionPZ]);
 
-  // Re-sync after action diagram loads
+  // Re-sync after action diagram loads. Fires when the action tab is
+  // currently inline in the main window OR detached into a popup —
+  // both cases need the captured viewBox to be re-applied over the
+  // native one usePanZoom resets to on every new diagram load.
+  // Without the detached branch, switching actions inside a detached
+  // popup would lose the user's zoom every time (see
+  // handleActionSelect for the capture side of the same pattern).
   useEffect(() => {
-    if (actionDiagram && activeTab === 'action' && actionSyncSourceRef.current) {
-      actionPZ.setViewBox(actionSyncSourceRef.current);
+    const isActionDetached = !!detachedTabsRef.current?.['action'];
+    const captured = actionSyncSourceRef.current;
+    if (actionDiagram && captured && (activeTab === 'action' || isActionDetached)) {
+      actionPZ.setViewBox(captured);
       actionSyncSourceRef.current = null;
     }
-  }, [actionDiagram, activeTab, actionPZ]);
+  }, [actionDiagram, activeTab, actionPZ, detachedTabs]);
 
   // ===== Asset Click =====
   const handleAssetClick = useCallback((
@@ -478,17 +525,38 @@ export function useDiagrams(
     handleActionSelectFn: (actionId: string | null) => void,
   ) => {
     interactionLogger.record('asset_clicked', { action_id: actionId, asset_name: assetName, tab });
-    setInspectQuery(assetName);
+    // Route the auto-zoom to the clicked tab explicitly — the
+    // auto-zoom effect reads `inspectFocusTabRef` and falls back to
+    // `activeTab` only when no explicit target is set. Routing here
+    // is what lets the zoom happen on the correct (detached) tab
+    // even when we DO NOT switch the main window's `activeTab`.
+    setInspectQueryForTab(tab, assetName);
+
+    // A tab that lives in a detached popup must NOT force the main
+    // window's `activeTab` — doing so blanks whatever tab the user
+    // had open and replaces it with the "Detached" placeholder. The
+    // detached popup is already re-rendering the correct diagram via
+    // the shared React subtree, so we just update inspect state and
+    // leave `activeTab` alone.
+    const isTabDetached = !!detachedTabsRef.current?.[tab];
+
     if (tab === 'n') {
-      setActiveTab('n');
+      if (!isTabDetached) setActiveTab('n');
     } else if (tab === 'n-1') {
-      setActiveTab('n-1');
+      if (!isTabDetached) setActiveTab('n-1');
     } else if (actionId !== currentSelectedActionId) {
+      // Selecting a different action card. `handleActionSelect`
+      // already has its own detached-tab guard (it refrains from
+      // switching activeTab to 'action' when the tab is detached),
+      // so we just forward the call.
       handleActionSelectFn(actionId);
     } else {
-      setActiveTab('action');
+      // Same action, user is re-focusing an asset within it. Only
+      // force `activeTab` to 'action' when the tab is inline — for
+      // the detached case we keep the main window where it is.
+      if (!isTabDetached) setActiveTab('action');
     }
-  }, []);
+  }, [setInspectQueryForTab]);
 
   // ===== Zoom to Element =====
   // Accepts an optional `targetTab` so an in-tab inspect overlay can

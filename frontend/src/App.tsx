@@ -17,6 +17,7 @@ import ConfirmationDialog from './components/modals/ConfirmationDialog';
 import type { ConfirmDialogState } from './components/modals/ConfirmationDialog';
 import { api } from './api';
 import { applyOverloadedHighlights, applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight, processSvg } from './utils/svgUtils';
+import { computeN1OverloadHighlights } from './utils/overloadHighlights';
 import type { ActionDetail, TabId, RecommenderDisplayConfig } from './types';
 import { useSettings } from './hooks/useSettings';
 import { useActions } from './hooks/useActions';
@@ -749,6 +750,22 @@ function App() {
     const effectiveMode = mode ?? viewModeForTab(tab);
     const overloadedLines = result?.lines_overloaded || [];
 
+    // For the N-1 tab, the overloads are known as soon as the N-1
+    // diagram comes back from the backend (`n1Diagram.lines_overloaded`)
+    // — well before any action analysis has run. Falling back to that
+    // list lets the orange overload halos show up immediately on the
+    // N-1 view, matching the standalone interface and what the user
+    // expects to see right after picking a contingency. Once analysis
+    // runs and `result.lines_overloaded` becomes available, we use that.
+    // In both cases the user's selected-overload set (from the
+    // Overloads panel) further filters the list down. Extracted to a
+    // pure helper for unit testing.
+    const n1OverloadedLines = computeN1OverloadHighlights(
+      overloadedLines,
+      n1Diagram?.lines_overloaded,
+      selectedOverloads,
+    );
+
     if (tab === 'n-1') {
       if (diagrams.n1SvgContainerRef.current) {
         // IMPORTANT: run highlight CLONES before applyDeltaVisuals.
@@ -768,8 +785,8 @@ function App() {
         // the action redistributes flows AND which lines are still
         // (or newly) overloaded; suppressing the halos in delta mode
         // hides exactly that information.
-        if (diagrams.n1MetaIndex && overloadedLines.length > 0) {
-          applyOverloadedHighlights(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, overloadedLines);
+        if (diagrams.n1MetaIndex && n1OverloadedLines.length > 0) {
+          applyOverloadedHighlights(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, n1OverloadedLines);
         }
         applyContingencyHighlight(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, selectedBranch);
         applyDeltaVisuals(diagrams.n1SvgContainerRef.current, n1Diagram, diagrams.n1MetaIndex, effectiveMode === 'delta');
@@ -823,7 +840,7 @@ function App() {
       // layer.
       applyDeltaVisuals(diagrams.actionSvgContainerRef.current, actionDiagram, diagrams.actionMetaIndex, effectiveMode === 'delta');
     }
-  }, [n1Diagram, actionDiagram, result, selectedActionId, selectedBranch, diagrams, monitoringFactor, viewModeForTab]);
+  }, [n1Diagram, actionDiagram, result, selectedActionId, selectedBranch, diagrams, monitoringFactor, viewModeForTab, selectedOverloads]);
 
   useEffect(() => {
     const isTabSwitch = prevHighlightTabRef.current !== activeTab;
@@ -858,7 +875,7 @@ function App() {
     } else {
       applyAll();
     }
-  }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, detachedViewModes, detachedTabs, activeTab, selectedBranch, applyHighlightsForTab]);
+  }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, detachedViewModes, detachedTabs, activeTab, selectedBranch, selectedOverloads, applyHighlightsForTab]);
 
   // ===== Extracted JSX callbacks (stable references for React.memo) =====
 

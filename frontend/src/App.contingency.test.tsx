@@ -471,3 +471,90 @@ describe('Overload Clearing Logic', () => {
     });
   });
 });
+
+// Regression: when the user selects a contingency, the N-1 diagram comes
+// back from the backend with `lines_overloaded` already populated. Those
+// overloaded lines must be picked up by the app state IMMEDIATELY — and
+// fed into the highlight pipeline — without waiting for the user to run
+// "Analyze & Suggest". The previous implementation only sourced highlight
+// data from `result.lines_overloaded` (set post-analysis), so the orange
+// halos never appeared on the freshly-loaded N-1 view. The pure
+// computation that selects which lines to highlight is unit-tested in
+// `src/utils/overloadHighlights.test.ts`. The integration assertions
+// here verify the data flows through App state into the panels that
+// drive that computation, even before any analysis has run.
+describe('N-1 overload state is populated before action analysis', () => {
+  beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    Object.values(mockApi).forEach(m => {
+      if (vi.isMockFunction(m)) m.mockReset();
+    });
+    mockApi.updateConfig.mockResolvedValue({ monitored_lines_count: 10, total_lines_count: 10 });
+    mockApi.getBranches.mockResolvedValue(['BRANCH_A', 'BRANCH_B', 'BRANCH_C']);
+    mockApi.getVoltageLevels.mockResolvedValue(['VL1', 'VL2']);
+    mockApi.getNominalVoltages.mockResolvedValue({ mapping: {}, unique_kv: [63, 225] });
+    mockApi.getNetworkDiagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null });
+    mockApi.getN1Diagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] });
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it('exposes N-1 overloads + a default selection set as soon as the N-1 diagram loads (no analysis yet)', async () => {
+    mockApi.getN1Diagram.mockResolvedValueOnce({
+      svg: '<svg></svg>',
+      metadata: null,
+      lines_overloaded: ['LINE_OL_A', 'LINE_OL_B'],
+    });
+
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+
+    // The OverloadPanel reflects the two overloads from the N-1
+    // diagram fetch — and they are auto-selected so the
+    // computeN1OverloadHighlights helper will return them as the
+    // highlight set on the very next render of the N-1 tab.
+    await waitFor(() => {
+      expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-n1-ol-count', '2');
+      expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-sel-ol-count', '2');
+    });
+
+    // No analysis was run, so the ActionFeed sees zero result-side
+    // overloads. The N-1 highlight pipeline must therefore use the
+    // n1Diagram fallback (covered by the unit tests on the helper).
+    expect(screen.getByTestId('action-feed')).toHaveAttribute('data-ol-count', '0');
+  });
+
+  it('replaces the overload selection when switching contingencies without running analysis', async () => {
+    mockApi.getN1Diagram.mockResolvedValueOnce({
+      svg: '<svg></svg>',
+      metadata: null,
+      lines_overloaded: ['LINE_OL_A', 'LINE_OL_B'],
+    });
+
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-n1-ol-count', '2');
+    });
+
+    mockApi.getN1Diagram.mockResolvedValueOnce({
+      svg: '<svg></svg>',
+      metadata: null,
+      lines_overloaded: ['LINE_OL_C'],
+    });
+
+    const input = screen.getByPlaceholderText('Search line/bus...');
+    await act(async () => {
+      await userEvent.clear(input);
+      await userEvent.type(input, 'BRANCH_B');
+    });
+
+    await waitFor(() => {
+      expect(mockApi.getN1Diagram).toHaveBeenCalledWith('BRANCH_B');
+      expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-n1-ol-count', '1');
+      expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-sel-ol-count', '1');
+    });
+  });
+});

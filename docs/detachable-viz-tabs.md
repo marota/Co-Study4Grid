@@ -49,6 +49,21 @@ which design decisions were made along the way.
 - Detach, reattach, tie and untie events are all recorded in the
   interaction log so that session replays can reproduce the operator's
   window layout AND any synchronisation they set up.
+- **Main-window tab is never disturbed by interactions targeting a
+  detached tab.** Clicking an action card, clicking an asset badge
+  inside an action card, clicking an overload badge targeting N / N-1,
+  or re-focusing an asset on the currently-selected action all keep
+  the main window on whatever tab the operator chose, as long as the
+  target tab lives in a detached popup. The detached popup still
+  receives the new diagram / zoom / focus via the shared React
+  subtree. See ["Main window stays steady on detached-tab
+  interactions"](#main-window-stays-steady-on-detached-tab-interactions)
+  for the full interaction contract.
+- **Action-tab zoom is preserved across action switches in a detached
+  popup**, exactly as it is when the Action tab is inline. Clicking a
+  different action card in the popup keeps the user's current
+  pan/zoom on the new action diagram instead of snapping to the N-1
+  viewBox. See ["Preserving action-tab zoom across action switches"](#preserving-action-tab-zoom-across-action-switches).
 
 ## Architecture
 
@@ -455,6 +470,188 @@ with the per-tab effective mode. Before this fix, Impacts mode
 never rendered inside a detached popup because the highlights
 effect only ran for the main window's active tab.
 
+## Main window stays steady on detached-tab interactions
+
+**Invariant** — if a user interaction targets a tab that currently
+lives in a detached popup, the main window's `activeTab` MUST NOT
+change. The interaction still takes effect (new diagram, new zoom
+focus, new selection), but it is routed through the shared React
+subtree / the detached popup's render path, while the main window
+keeps showing whatever tab the operator last chose (typically N or
+N-1 while working the detached Action popup).
+
+Before this invariant was enforced, every click on an action card
+(or on an asset badge inside one) flipped the main window to the
+Action tab — which then rendered only the "view is detached"
+placeholder over whatever N / N-1 diagram the operator was studying.
+The result was a jarring "main window blanks out every few seconds"
+experience for anyone using the detached Action popup alongside the
+main-window N-1 tab, exactly the dual-screen workflow this feature
+was built for. The symmetric versions of the same bug existed for the
+N and N-1 tabs (clicking an overload badge in the OverloadPanel).
+
+### Entry points covered
+
+The detached-tab guard applies uniformly at every entry point that
+used to call `setActiveTab(...)` in response to a user click:
+
+| Entry point | Location | Detached-guard behaviour |
+|---|---|---|
+| Clicking an action card in the ActionFeed | `useDiagrams.handleActionSelect` | When the action tab is detached, the selection, diagram fetch and zoom restore proceed as normal but `setActiveTab('action')` is skipped. |
+| Re-clicking the currently-selected action card (toggle deselect) | `useDiagrams.handleActionSelect` (toggle branch) | When the action tab is detached, the selection is cleared but `setActiveTab('n-1')` is skipped so the main window's N / N-1 view is not disturbed. |
+| Clicking an asset badge inside an action card (same action) | `useDiagrams.handleAssetClick` (`tab === 'action'`, same action) | When the action tab is detached, the inspect query + focus target are set on the action tab but `setActiveTab('action')` is skipped. |
+| Clicking an asset badge inside an action card (different action) | `useDiagrams.handleAssetClick` delegates to `handleActionSelectFn` | The delegation is unchanged; `handleActionSelect`'s own detached guard (row 1) then applies. |
+| Clicking an N-overload badge in the OverloadPanel | `useDiagrams.handleAssetClick` (`tab === 'n'`) | When the N tab is detached, `setActiveTab('n')` is skipped. |
+| Clicking an N-1-overload badge in the OverloadPanel | `useDiagrams.handleAssetClick` (`tab === 'n-1'`) | When the N-1 tab is detached, `setActiveTab('n-1')` is skipped. |
+
+**Inline behaviour is unchanged.** When the target tab is NOT
+detached, every entry point still force-switches `activeTab` exactly
+as before — that is the behaviour the operator expects when working
+entirely inside the main window. The guards are pure "don't disturb
+a popup-backed workflow" overrides and are never taken in the inline
+case.
+
+### Why the zoom / focus still lands on the correct (detached) tab
+
+`handleAssetClick` used to call `setInspectQuery(assetName)`, which
+drives the auto-zoom effect with a target tab of `activeTab` (the
+main window's current tab). That worked for the inline case
+specifically because the function was also calling `setActiveTab(tab)`
+— so `activeTab` was already `tab` by the time the auto-zoom effect
+ran.
+
+Removing the `setActiveTab` call would have broken the zoom: the
+auto-zoom would default to whatever the main-window tab was (N or
+N-1) and try to zoom the wrong SVG. The fix routes the inspect query
+through `setInspectQueryForTab(tab, assetName)` unconditionally. This
+records an explicit focus target in `inspectFocusTabRef` that the
+auto-zoom effect prefers over `activeTab`, so the zoom always lands
+on the correct SVG — whether that tab is inline or detached.
+
+### Implementation
+
+All guards live inside `useDiagrams.ts` and read the detached-tab
+state through a small ref mirror of the `detachedTabs` prop:
+
+```ts
+// useDiagrams.ts
+const detachedTabsRef = useRef(detachedTabs);
+useLayoutEffect(() => { detachedTabsRef.current = detachedTabs; }, [detachedTabs]);
+```
+
+`useLayoutEffect` keeps the ref in sync with the latest render
+**before** any subsequent callback runs, so the stable
+`useCallback`-wrapped handlers (`handleActionSelect`,
+`handleAssetClick`, ...) can read
+`detachedTabsRef.current?.[tab]` without having to declare
+`detachedTabs` in their dependency arrays — important because those
+callbacks are bound into `useMemo`-returned objects and re-binding
+them on every `detachedTabs` change would invalidate every downstream
+memo that depends on the hook's stable shape.
+
+`handleActionSelect` reads the ref once at the top:
+
+```ts
+const isActionDetached = !!detachedTabsRef.current?.['action'];
+...
+if (!isActionDetached) setActiveTab('action');   // select branch
+...
+if (!isActionDetached) setActiveTab('n-1');      // deselect branch
+```
+
+`handleAssetClick` reads it per `tab` argument:
+
+```ts
+setInspectQueryForTab(tab, assetName);
+const isTabDetached = !!detachedTabsRef.current?.[tab];
+if (tab === 'n') {
+    if (!isTabDetached) setActiveTab('n');
+} else if (tab === 'n-1') {
+    if (!isTabDetached) setActiveTab('n-1');
+} else if (actionId !== currentSelectedActionId) {
+    handleActionSelectFn(actionId);              // delegates
+} else {
+    if (!isTabDetached) setActiveTab('action');
+}
+```
+
+## Preserving action-tab zoom across action switches
+
+**Problem** — even with the detached-tab guard in place, clicking a
+different action card inside a detached Action popup used to snap
+the popup to the N-1 viewBox instead of preserving the operator's
+current zoom on the new action diagram. The attached (inline)
+behaviour has always preserved the zoom, so the detached case was a
+surprising divergence.
+
+**Root cause** — `useDiagrams` has a capture + restore pattern that
+preserves the action-tab viewBox across action switches:
+
+1. **Capture** (`handleActionSelect`): before triggering a new fetch,
+   save the current action viewBox into a ref
+   (`actionSyncSourceRef.current`).
+2. **Restore** (the "re-sync after action diagram loads" effect):
+   when the new action diagram loads, read the ref and re-apply it
+   via `actionPZ.setViewBox(captured)`, overriding the native viewBox
+   `usePanZoom` reset the pan/zoom to on every diagram load.
+
+Both halves of that pattern were gated on `activeTab === 'action'`:
+
+```ts
+// Capture
+actionSyncSourceRef.current =
+    (activeTabRef.current === 'action' ? actionPZ.viewBox : null)
+    || n1PZ.viewBox || nPZ.viewBox;
+
+// Restore
+useEffect(() => {
+    if (actionDiagram && activeTab === 'action' && actionSyncSourceRef.current) {
+        actionPZ.setViewBox(actionSyncSourceRef.current);
+        actionSyncSourceRef.current = null;
+    }
+}, [actionDiagram, activeTab, actionPZ]);
+```
+
+When the Action tab is detached, `activeTab` is NOT `'action'` — it
+is `'n'` or `'n-1'` (the main window's current tab). So the capture
+fell through to the `n1PZ.viewBox || nPZ.viewBox` fallback (capturing
+the wrong zoom) and the restore effect's guard was false (so the
+captured value, even if correct, was never re-applied). The popup
+therefore always snapped to the N / N-1 viewBox.
+
+**Fix** — both sides now treat "the action tab is currently showing
+the action diagram" as `activeTab === 'action' || isActionDetached`:
+
+```ts
+// Capture
+const actionTabShowsActionDiagram = activeTabRef.current === 'action' || isActionDetached;
+actionSyncSourceRef.current =
+    (actionTabShowsActionDiagram ? actionPZ.viewBox : null)
+    || n1PZ.viewBox || nPZ.viewBox;
+
+// Restore
+useEffect(() => {
+    const isActionDetached = !!detachedTabsRef.current?.['action'];
+    const captured = actionSyncSourceRef.current;
+    if (actionDiagram && captured && (activeTab === 'action' || isActionDetached)) {
+        actionPZ.setViewBox(captured);
+        actionSyncSourceRef.current = null;
+    }
+}, [actionDiagram, activeTab, actionPZ, detachedTabs]);
+```
+
+The restore effect also depends on `detachedTabs` so it re-runs when
+a tab transitions from inline to detached (or vice versa) while a
+capture is queued, keeping the guard honest.
+
+**First-action fallback still works.** If the operator detaches the
+Action tab before selecting any action, `actionPZ.viewBox` is still
+`null`. In that case the `||` chain falls through to
+`n1PZ.viewBox || nPZ.viewBox`, exactly like the inline case — so
+picking the first action syncs from the main-window N-1 / N viewBox.
+Only the "I already had an action zoomed in" case benefits from the
+fix.
+
 ## Bugs fixed in the second iteration
 
 The initial shipment (commit `ca80547`) worked visually but suffered
@@ -613,6 +810,34 @@ Vitest suites:
   directly (`document.body` children), because the overlay's
   DOM is imperatively relocated out of testing-library's
   container when the tab is detached.
+
+- **`frontend/src/hooks/useDiagrams.test.ts`** (+14 tests across
+  three describes) — regressions for the "main window stays steady
+  on detached-tab interactions" invariant and the "preserve
+  action-tab zoom across action switches" fix:
+
+  - `handleActionSelect respects detached action tab` (5 tests):
+    selecting a new action when the action tab is detached does
+    NOT switch `activeTab` to `'action'`; it still does when the
+    tab is inline (regression guard); the action variant diagram is
+    still fetched so the popup receives it; deselecting (re-clicking
+    the same card) while detached does NOT fall back to
+    `'n-1'`; still does when inline.
+  - `handleActionSelect preserves action-tab zoom when detached`
+    (3 tests): the captured viewBox is re-applied after the new
+    diagram loads in the detached case; the same holds for the
+    inline case (regression guard); the N-1 fallback still kicks in
+    when there is no prior action-tab viewBox to preserve.
+  - `handleAssetClick does not force activeTab onto detached tabs`
+    (6 tests): action-card asset click with action tab detached
+    stays on N-1; with action tab inline still switches to
+    `'action'`; N-overload badge click with N tab detached stays on
+    action; N-1-overload badge click with N-1 tab detached stays on
+    action; still switches to `'n-1'` when the N-1 tab is inline;
+    different-action asset click still delegates to
+    `handleActionSelectFn` (whose own detached guard is tested
+    above). Each test also checks `inspectQuery` is set so the
+    auto-zoom lands on the correct tab regardless of `activeTab`.
 
 ## Known limitations
 

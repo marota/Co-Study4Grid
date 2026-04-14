@@ -285,6 +285,388 @@ describe('useDiagrams — interaction logging', () => {
             }
         });
 
+        // When the action tab is detached into a popup, selecting an
+        // action card must NOT switch the main window's activeTab to
+        // 'action'. The popup gets the new diagram via the existing
+        // render path; the main window stays on whatever tab the user
+        // had open (typically N or N-1). Without this guard the main
+        // window blanks out into the "Detached" placeholder every time
+        // the user clicks a different action card. (Sync window/zoom
+        // view fix.)
+        describe('handleActionSelect respects detached action tab', () => {
+            it('does NOT switch activeTab to "action" when the action tab is detached', async () => {
+                const { result, rerender } = renderHook(
+                    ({ dt }: { dt: Record<string, unknown> }) => useDiagrams([], [], '', dt),
+                    {
+                        initialProps: {
+                            dt: { action: { window: {}, mountNode: document.createElement('div') } } as Record<string, unknown>,
+                        },
+                    },
+                );
+
+                // User parked the main window on the N-1 tab while the
+                // action tab is open in a popup.
+                act(() => { result.current.setActiveTab('n-1'); });
+                expect(result.current.activeTab).toBe('n-1');
+
+                // Re-render with the same detached map so the ref mirror
+                // is up-to-date before the callback fires.
+                rerender({ dt: { action: { window: {}, mountNode: document.createElement('div') } } });
+
+                await act(async () => {
+                    await result.current.handleActionSelect('act_42', null, '', 0, vi.fn(), vi.fn());
+                });
+
+                // selection moved, but main-window activeTab is unchanged.
+                expect(result.current.selectedActionId).toBe('act_42');
+                expect(result.current.activeTab).toBe('n-1');
+            });
+
+            it('still switches activeTab to "action" when the action tab is NOT detached', async () => {
+                const { result } = renderHook(() => useDiagrams([], [], '', {}));
+
+                act(() => { result.current.setActiveTab('n-1'); });
+                expect(result.current.activeTab).toBe('n-1');
+
+                await act(async () => {
+                    await result.current.handleActionSelect('act_99', null, '', 0, vi.fn(), vi.fn());
+                });
+
+                expect(result.current.selectedActionId).toBe('act_99');
+                expect(result.current.activeTab).toBe('action');
+            });
+
+            it('still fetches the action variant diagram when the action tab is detached', async () => {
+                const { api } = await import('../api');
+                const { result, rerender } = renderHook(
+                    ({ dt }: { dt: Record<string, unknown> }) => useDiagrams([], [], '', dt),
+                    {
+                        initialProps: {
+                            dt: { action: { window: {}, mountNode: document.createElement('div') } } as Record<string, unknown>,
+                        },
+                    },
+                );
+
+                act(() => { result.current.setActiveTab('n'); });
+                rerender({ dt: { action: { window: {}, mountNode: document.createElement('div') } } });
+                vi.mocked(api.getActionVariantDiagram).mockClear();
+
+                await act(async () => {
+                    await result.current.handleActionSelect('act_77', null, '', 0, vi.fn(), vi.fn());
+                });
+
+                // The popup-rendered tab still needs the new diagram, so
+                // the fetch must fire even though the main window did not
+                // switch to the action tab.
+                expect(api.getActionVariantDiagram).toHaveBeenCalledWith('act_77');
+                // And the main window stays on N.
+                expect(result.current.activeTab).toBe('n');
+            });
+
+            it('does NOT switch main window to "n-1" on deselect when action tab is detached', async () => {
+                const { result, rerender } = renderHook(
+                    ({ dt }: { dt: Record<string, unknown> }) => useDiagrams([], [], '', dt),
+                    {
+                        initialProps: {
+                            dt: { action: { window: {}, mountNode: document.createElement('div') } } as Record<string, unknown>,
+                        },
+                    },
+                );
+
+                // User is on the N tab in the main window; action tab
+                // detached and showing 'act_1'.
+                act(() => { result.current.setSelectedActionId('act_1'); });
+                act(() => { result.current.setActiveTab('n'); });
+                rerender({ dt: { action: { window: {}, mountNode: document.createElement('div') } } });
+
+                // Re-clicking the same card toggles deselect.
+                await act(async () => {
+                    await result.current.handleActionSelect('act_1', null, '', 0, vi.fn(), vi.fn());
+                });
+
+                // Selection cleared, but main-window tab is unchanged.
+                expect(result.current.selectedActionId).toBe(null);
+                expect(result.current.activeTab).toBe('n');
+            });
+
+            it('still falls back to "n-1" on deselect when action tab is NOT detached', async () => {
+                const { result } = renderHook(() => useDiagrams([], [], '', {}));
+
+                act(() => { result.current.setSelectedActionId('act_1'); });
+                act(() => { result.current.setActiveTab('action'); });
+
+                await act(async () => {
+                    await result.current.handleActionSelect('act_1', null, '', 0, vi.fn(), vi.fn());
+                });
+
+                expect(result.current.selectedActionId).toBe(null);
+                expect(result.current.activeTab).toBe('n-1');
+            });
+        });
+
+        // When the action tab is detached into a popup, clicking another
+        // action card must preserve the pan/zoom the user had on the
+        // previous action — same behaviour as the inline (attached) case.
+        // The capture + restore pattern in handleActionSelect / the re-sync
+        // effect were previously gated on `activeTab === 'action'`, which
+        // is FALSE for the detached case (the main window is on N or N-1),
+        // so the viewBox fell through to the N-1 / N viewBox fallback and
+        // the popup snapped to a completely different zoom every time the
+        // user clicked a different action card.
+        describe('handleActionSelect preserves action-tab zoom when detached', () => {
+            const zoomedVb = { x: 10, y: 20, w: 50, h: 40 };
+
+            it('keeps the previous action-tab viewBox after switching actions (detached case)', async () => {
+                const { api } = await import('../api');
+                // Return a new SVG with a native viewBox so usePanZoom's
+                // sync effect actively tries to reset to it — this
+                // mirrors real diagram loads and makes the test
+                // observably exercise the capture+restore path (if the
+                // restore were missing, viewBox would end up as the
+                // native one, not `zoomedVb`).
+                vi.mocked(api.getActionVariantDiagram).mockResolvedValueOnce({
+                    svg: '<svg viewBox="0 0 1000 800"></svg>',
+                    metadata: null,
+                });
+
+                const { result, rerender } = renderHook(
+                    ({ dt }: { dt: Record<string, unknown> }) => useDiagrams([], [], '', dt),
+                    {
+                        initialProps: {
+                            dt: { action: { window: {}, mountNode: document.createElement('div') } } as Record<string, unknown>,
+                        },
+                    },
+                );
+
+                // User parked the main window on N-1; the action tab
+                // lives in a popup and currently shows 'act_prev' at a
+                // zoomed-in viewBox.
+                act(() => { result.current.setActiveTab('n-1'); });
+                act(() => { result.current.setSelectedActionId('act_prev'); });
+                act(() => { result.current.actionPZ.setViewBox(zoomedVb); });
+                rerender({ dt: { action: { window: {}, mountNode: document.createElement('div') } } });
+                expect(result.current.actionPZ.viewBox).toEqual(zoomedVb);
+
+                // User clicks a different action card in the popup.
+                // handleActionSelect must capture the current action
+                // viewBox (zoomedVb) into actionSyncSourceRef and
+                // re-apply it after the new diagram loads — so the
+                // popup stays exactly where it was.
+                await act(async () => {
+                    await result.current.handleActionSelect('act_next', null, '', 0, vi.fn(), vi.fn());
+                });
+
+                expect(result.current.selectedActionId).toBe('act_next');
+                // Main window stayed on N-1 (covered by a previous test,
+                // but double-checked here as the precondition for the
+                // zoom-preserve branch).
+                expect(result.current.activeTab).toBe('n-1');
+                // The captured viewBox was re-applied — NOT the native
+                // one from the freshly loaded SVG.
+                expect(result.current.actionPZ.viewBox).toEqual(zoomedVb);
+            });
+
+            it('still preserves the action-tab viewBox across action switches when the action tab is inline (attached case)', async () => {
+                const { api } = await import('../api');
+                vi.mocked(api.getActionVariantDiagram).mockResolvedValueOnce({
+                    svg: '<svg viewBox="0 0 1000 800"></svg>',
+                    metadata: null,
+                });
+
+                const { result } = renderHook(() => useDiagrams([], [], '', {}));
+
+                // User is on the action tab inline, zoomed into
+                // 'act_prev'.
+                act(() => { result.current.setActiveTab('action'); });
+                act(() => { result.current.setSelectedActionId('act_prev'); });
+                act(() => { result.current.actionPZ.setViewBox(zoomedVb); });
+                expect(result.current.actionPZ.viewBox).toEqual(zoomedVb);
+
+                // Click a different action card.
+                await act(async () => {
+                    await result.current.handleActionSelect('act_next', null, '', 0, vi.fn(), vi.fn());
+                });
+
+                // Sanity: this is the long-standing attached-case
+                // behaviour. Regression guard for it.
+                expect(result.current.selectedActionId).toBe('act_next');
+                expect(result.current.activeTab).toBe('action');
+                expect(result.current.actionPZ.viewBox).toEqual(zoomedVb);
+            });
+
+            it('falls back to the N-1 viewBox when selecting an action with no prior action-tab viewBox (detached case)', async () => {
+                const { api } = await import('../api');
+                vi.mocked(api.getActionVariantDiagram).mockResolvedValueOnce({
+                    svg: '<svg viewBox="0 0 1000 800"></svg>',
+                    metadata: null,
+                });
+
+                const n1Vb = { x: 100, y: 200, w: 300, h: 400 };
+
+                const { result, rerender } = renderHook(
+                    ({ dt }: { dt: Record<string, unknown> }) => useDiagrams([], [], '', dt),
+                    {
+                        initialProps: {
+                            dt: { action: { window: {}, mountNode: document.createElement('div') } } as Record<string, unknown>,
+                        },
+                    },
+                );
+
+                // Main window on N-1 with a viewBox, action tab
+                // detached but the user has NOT yet selected an
+                // action — so actionPZ.viewBox is still null.
+                act(() => { result.current.setActiveTab('n-1'); });
+                act(() => { result.current.n1PZ.setViewBox(n1Vb); });
+                rerender({ dt: { action: { window: {}, mountNode: document.createElement('div') } } });
+                expect(result.current.actionPZ.viewBox).toBeNull();
+
+                // Picking the first action in the detached popup
+                // should fall back to the N-1 viewBox (the standard
+                // "sync across tabs" behaviour, unchanged by this fix).
+                await act(async () => {
+                    await result.current.handleActionSelect('act_first', null, '', 0, vi.fn(), vi.fn());
+                });
+
+                expect(result.current.actionPZ.viewBox).toEqual(n1Vb);
+            });
+        });
+
+        // Any interaction targeting a tab that is currently detached
+        // must leave the main window's `activeTab` alone. In particular,
+        // clicking an asset button inside an action card (or an N / N-1
+        // overload badge) used to force the main window to switch to
+        // that tab — for a detached tab, that means the main window
+        // goes from N or N-1 to the blank "Detached" placeholder every
+        // time. The fix routes the auto-zoom via `setInspectQueryForTab`
+        // (so the zoom still lands on the detached tab) while skipping
+        // the `setActiveTab` call for any detached target.
+        describe('handleAssetClick does not force activeTab onto detached tabs', () => {
+            it('does NOT switch activeTab to "action" when clicking an asset on the already-selected action card while the action tab is detached', () => {
+                const { result, rerender } = renderHook(
+                    ({ dt }: { dt: Record<string, unknown> }) => useDiagrams([], [], '', dt),
+                    {
+                        initialProps: {
+                            dt: { action: { window: {}, mountNode: document.createElement('div') } } as Record<string, unknown>,
+                        },
+                    },
+                );
+
+                // Main window on N-1, action tab in popup showing 'act_1'.
+                act(() => { result.current.setActiveTab('n-1'); });
+                act(() => { result.current.setSelectedActionId('act_1'); });
+                rerender({ dt: { action: { window: {}, mountNode: document.createElement('div') } } });
+
+                // User clicks an asset badge inside the act_1 card.
+                act(() => {
+                    result.current.handleAssetClick('act_1', 'LINE_XY', 'action', 'act_1', vi.fn());
+                });
+
+                // Main-window activeTab unchanged.
+                expect(result.current.activeTab).toBe('n-1');
+                // And the inspect query is set (drives the auto-zoom
+                // on the detached action tab).
+                expect(result.current.inspectQuery).toBe('LINE_XY');
+            });
+
+            it('still switches activeTab to "action" when clicking an asset on the already-selected action and the action tab is NOT detached', () => {
+                const { result } = renderHook(() => useDiagrams([], [], '', {}));
+
+                act(() => { result.current.setSelectedActionId('act_1'); });
+                act(() => { result.current.setActiveTab('n-1'); });
+
+                act(() => {
+                    result.current.handleAssetClick('act_1', 'LINE_XY', 'action', 'act_1', vi.fn());
+                });
+
+                // No detachment → main window follows the click.
+                expect(result.current.activeTab).toBe('action');
+                expect(result.current.inspectQuery).toBe('LINE_XY');
+            });
+
+            it('does NOT switch activeTab to "n" when clicking an asset targeting a detached N tab', () => {
+                const { result, rerender } = renderHook(
+                    ({ dt }: { dt: Record<string, unknown> }) => useDiagrams([], [], '', dt),
+                    {
+                        initialProps: {
+                            dt: { n: { window: {}, mountNode: document.createElement('div') } } as Record<string, unknown>,
+                        },
+                    },
+                );
+
+                act(() => { result.current.setActiveTab('action'); });
+                rerender({ dt: { n: { window: {}, mountNode: document.createElement('div') } } });
+
+                act(() => {
+                    result.current.handleAssetClick('', 'LINE_N', 'n', null, vi.fn());
+                });
+
+                expect(result.current.activeTab).toBe('action');
+                expect(result.current.inspectQuery).toBe('LINE_N');
+            });
+
+            it('does NOT switch activeTab to "n-1" when clicking an asset targeting a detached N-1 tab', () => {
+                const { result, rerender } = renderHook(
+                    ({ dt }: { dt: Record<string, unknown> }) => useDiagrams([], [], '', dt),
+                    {
+                        initialProps: {
+                            dt: { 'n-1': { window: {}, mountNode: document.createElement('div') } } as Record<string, unknown>,
+                        },
+                    },
+                );
+
+                act(() => { result.current.setActiveTab('action'); });
+                act(() => { result.current.setSelectedActionId('act_1'); });
+                rerender({ dt: { 'n-1': { window: {}, mountNode: document.createElement('div') } } });
+
+                act(() => {
+                    result.current.handleAssetClick('', 'LINE_N1', 'n-1', 'act_1', vi.fn());
+                });
+
+                expect(result.current.activeTab).toBe('action');
+                expect(result.current.inspectQuery).toBe('LINE_N1');
+            });
+
+            it('still switches activeTab to "n-1" when clicking an asset targeting an INLINE N-1 tab', () => {
+                const { result } = renderHook(() => useDiagrams([], [], '', {}));
+
+                act(() => { result.current.setActiveTab('action'); });
+
+                act(() => {
+                    result.current.handleAssetClick('', 'LINE_N1', 'n-1', null, vi.fn());
+                });
+
+                expect(result.current.activeTab).toBe('n-1');
+            });
+
+            it('still forwards to handleActionSelect (which has its own detached guard) when clicking an asset on a DIFFERENT action while the action tab is detached', () => {
+                const handleActionSelectFn = vi.fn();
+                const { result, rerender } = renderHook(
+                    ({ dt }: { dt: Record<string, unknown> }) => useDiagrams([], [], '', dt),
+                    {
+                        initialProps: {
+                            dt: { action: { window: {}, mountNode: document.createElement('div') } } as Record<string, unknown>,
+                        },
+                    },
+                );
+
+                act(() => { result.current.setSelectedActionId('act_prev'); });
+                act(() => { result.current.setActiveTab('n-1'); });
+                rerender({ dt: { action: { window: {}, mountNode: document.createElement('div') } } });
+
+                act(() => {
+                    result.current.handleAssetClick('act_new', 'LINE_X', 'action', 'act_prev', handleActionSelectFn);
+                });
+
+                // The different-action branch delegates to the caller
+                // (wrappedActionSelect → handleActionSelect), NOT to
+                // setActiveTab directly. The detached-guard for the
+                // activeTab switch lives in handleActionSelect itself
+                // (tested elsewhere in this file).
+                expect(handleActionSelectFn).toHaveBeenCalledWith('act_new');
+                expect(result.current.activeTab).toBe('n-1');
+            });
+        });
+
         it('re-renders with a new detachedTabs map without losing state', () => {
             // Start with no detached tabs.
             const { result, rerender } = renderHook(
