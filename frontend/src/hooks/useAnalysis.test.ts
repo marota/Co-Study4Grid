@@ -358,6 +358,71 @@ describe('useAnalysis', () => {
             expect(result.current.result?.actions?.manual_1).toBeDefined();
             expect(result.current.result?.actions?.reco_1).toBeDefined();
         });
+
+        it('preserves a manually added action that is ALSO returned by the recommender (overlap case)', async () => {
+            // Regression: a user "first guess" action that happens
+            // to coincide with a suggestion from the recommender
+            // used to disappear from the Selected bucket after the
+            // analysis was displayed, because handleDisplayPrioritized
+            // used the plain analysis entry (without is_manual) for
+            // the overlapping id. The fix preserves the
+            // manually-added entry (keeping is_manual=true) so it
+            // stays in Selected and the "was also suggested" warning
+            // can fire.
+            const { result } = renderHook(() => useAnalysis());
+
+            act(() => {
+                result.current.setResult({
+                    actions: {
+                        overlap_1: {
+                            description_unitaire: 'Manual guess',
+                            rho_before: null, rho_after: [0.7],
+                            max_rho: 0.7, max_rho_line: 'LINE_A',
+                            is_rho_reduction: true, is_manual: true,
+                        },
+                    },
+                    lines_overloaded: ['LINE_A'],
+                    message: '', dc_fallback: false,
+                    pdf_path: null, pdf_url: null,
+                });
+            });
+
+            act(() => {
+                result.current.setPendingAnalysisResult({
+                    actions: {
+                        overlap_1: {
+                            description_unitaire: 'Recommender entry',
+                            rho_before: [1.1], rho_after: [0.75],
+                            max_rho: 0.75, max_rho_line: 'LINE_A',
+                            is_rho_reduction: true,
+                        },
+                        reco_other: {
+                            description_unitaire: 'Another suggestion',
+                            rho_before: [1.2], rho_after: [0.85],
+                            max_rho: 0.85, max_rho_line: 'LINE_A',
+                            is_rho_reduction: true,
+                        },
+                    },
+                    lines_overloaded: ['LINE_A'],
+                    message: 'OK', dc_fallback: false,
+                    pdf_path: null, pdf_url: null,
+                });
+            });
+
+            // Display prioritized — even with an EMPTY selectedActionIds
+            // (mirrors resetForAnalysisRun clearing the selection of
+            // non-manual favorites) the manual action must survive.
+            act(() => {
+                result.current.handleDisplayPrioritizedActions(new Set());
+            });
+
+            // Overlapping id must remain and stay flagged as manual.
+            expect(result.current.result?.actions?.overlap_1).toBeDefined();
+            expect(result.current.result?.actions?.overlap_1?.is_manual).toBe(true);
+            // The new purely-suggested action is merged in as usual.
+            expect(result.current.result?.actions?.reco_other).toBeDefined();
+            expect(result.current.result?.actions?.reco_other?.is_manual).toBeFalsy();
+        });
     });
 
     describe('overload filtering in step 2', () => {

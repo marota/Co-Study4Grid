@@ -100,6 +100,47 @@ describe('ActionFeed', () => {
         expect(screen.getByPlaceholderText(/Search action by ID/)).toBeInTheDocument();
     });
 
+    it('keeps a manually added action in Selected and shows the overlap warning when it is ALSO suggested by the analysis', () => {
+        // Regression: a user "first guess" that coincides with a
+        // recommender suggestion used to silently vanish from the
+        // Selected bucket after analysis. It must stay selected and
+        // the yellow "also recommended" warning must fire.
+        const actionId = 'overlap_act';
+        const props = {
+            ...defaultProps,
+            actions: {
+                [actionId]: {
+                    description_unitaire: 'Shared action',
+                    rho_before: [1.1],
+                    rho_after: [0.8],
+                    max_rho: 0.8,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    is_manual: true,
+                    action_topology: emptyTopo,
+                },
+            },
+            // The same id is present in both the selected set (user
+            // added it manually) and the analysis scores (the
+            // recommender also recommends it).
+            selectedActionIds: new Set([actionId]),
+            manuallyAddedIds: new Set([actionId]),
+            actionScores: {
+                line_disconnection: {
+                    scores: { [actionId]: 42 },
+                    params: {},
+                },
+            },
+        };
+        render(<ActionFeed {...props} />);
+        // Selected Actions section still shows the card.
+        expect(screen.getByText('Shared action')).toBeInTheDocument();
+        // Overlap warning is visible and mentions the overlapping id.
+        const warning = screen.getByText(/also recommended by the recent analysis run/);
+        expect(warning).toBeInTheDocument();
+        expect(warning.textContent).toContain(actionId);
+    });
+
     it('hides "Make a first guess" when there are already selected actions', () => {
         const actionId = 'manual_1';
         const props = {
