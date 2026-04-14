@@ -9,7 +9,7 @@ Co-Study4Grid supports **saving** and **reloading** full analysis sessions:
 
 ### What is saved
 
-- **`session.json`** — all inputs, outputs, user decisions, and combined action pairs
+- **`session.json`** — all inputs, outputs, user decisions, combined action pairs, per-action enrichment details (`load_shedding_details` / `curtailment_details` / `pst_details` / `lines_overloaded_after`) and, when available, the per-element sidebar sticky-header loading ratios (`n_overloads_rho` / `n1_overloads_rho`)
 - **`interaction_log.json`** — timestamped log of every user interaction, suitable for automated session replay (see [docs/interaction-logging.md](interaction-logging.md))
 - **`<overflow>.pdf`** — a copy of the overflow graph PDF (when an analysis has been run)
 
@@ -69,16 +69,26 @@ Settings → gear icon → Paths tab → Output Folder Path
 
 ### What happens on reload
 
-1. **Configuration** is restored (all paths and algorithm parameters)
-2. **Network** is loaded on the backend with the saved configuration
-3. **N and N-1 diagrams** are fetched for the saved contingency
-4. **Overflow graph PDF** is restored (copied back from session folder if needed)
-5. **Action cards** are displayed with their saved data (max_rho, status tags, etc.)
-6. **Combined pairs** are restored in the Combine Actions modal
-7. **No action card is active** initially — no re-simulation until the user clicks one
-8. When the user **clicks an action card**, the action is simulated on-demand to generate its diagram
+1. **Configuration** is restored (all paths and algorithm parameters, including `min_load_shedding` and `min_renewable_curtailment_actions`)
+2. **`committedNetworkPathRef`** is set to the restored `network_path` — this gates the "Change Network?" confirmation dialog the next time the user edits the Header network input. Without this the dialog would either misfire (empty ref) or fire against a stale previous value.
+3. **Network** is loaded on the backend with the saved configuration
+4. **N and N-1 diagrams** are fetched for the saved contingency
+5. **Overflow graph PDF** is restored (copied back from session folder if needed)
+6. **Action cards** are displayed with their saved data — rho values, status tags, **and all enrichment fields** (`load_shedding_details`, `curtailment_details`, `pst_details`, `lines_overloaded_after`) so the PST / load-shedding / curtailment editor cards render their inputs populated and the Remedial Action tab draws its post-action overload halos
+7. **Combined pairs** are restored in the Combine Actions modal. Estimation-only combined entries (`"act_a+act_b"` with `is_estimated: true` and no manual simulation) are filtered out of the top-level `actions` map but survive under `combined_actions`.
+8. **Action status flags** (`is_selected`, `is_suggested`, `is_rejected`, `is_manually_simulated`) are partitioned back into the four `Set<string>` state variables used by the Selected / Rejected / Manual buckets.
+9. **No action card is active** initially — no re-simulation until the user clicks one
+10. When the user **clicks an action card**, the action is simulated on-demand to generate its diagram
 
-> **Key design decision:** Actions are not re-simulated on reload. The saved rho values, status tags, and combined pairs are displayed immediately. Simulation only happens when the user actively selects an action card to view its diagram.
+> **Key design decision:** Actions are not re-simulated on reload. The saved rho values, status tags, enrichment details and combined pairs are displayed immediately. Simulation only happens when the user actively selects an action card to view its diagram.
+
+### What is NOT persisted
+
+Some pieces of in-memory state are deliberately ephemeral and will reset on reload:
+
+- **Per-card edit state** (`cardEditMw`, `cardEditTap`): the raw, uncommitted values in the action card inputs. Only the committed, re-simulated result survives — persisted as `pst_details.tap_position` / `load_shedding_details[].shedded_mw` / `curtailment_details[].curtailed_mw`. A replay agent that wants to reproduce exact keystrokes must consume the `action_mw_resimulated` / `pst_tap_resimulated` events from `interaction_log.json` instead.
+- **Detached / tied visualization tab state** (PRs #84/#85): `detachedTabs` and the tied-tab registry are not in `session.json`. Detaching a tab does not change any analysis result, so reload intentionally starts with all tabs attached to the main window. A replay that needs to reproduce detach / reattach / tie / untie must stream the matching events from `interaction_log.json`.
+- **Live diagram rho ratios** are not threaded back from `session.overloads.n1_overloads_rho` into the `n1Diagram` object — they come from the re-fetched N-1 payload after `setSelectedBranch` fires. The persisted rho arrays are primarily useful for inspection of standalone `session.json` dumps and for replay agents that don't re-run the backend.
 
 ---
 
@@ -97,6 +107,8 @@ Settings → gear icon → Paths tab → Output Folder Path
     "min_open_coupling": 2.0,
     "min_line_disconnections": 3.0,
     "min_pst": 1.0,
+    "min_load_shedding": 2.5,
+    "min_renewable_curtailment_actions": 1.25,
     "n_prioritized_actions": 10,
     "lines_monitoring_path": "/data/monitoring.csv",
     "monitoring_factor": 0.95,
@@ -114,7 +126,9 @@ Settings → gear icon → Paths tab → Output Folder Path
   "overloads": {
     "n_overloads":        ["LINE_PRE"],
     "n1_overloads":       ["LINE_A", "LINE_B", "LINE_C"],
-    "resolved_overloads": ["LINE_A", "LINE_B"]
+    "resolved_overloads": ["LINE_A", "LINE_B"],
+    "n_overloads_rho":    [1.04],
+    "n1_overloads_rho":   [1.23, 1.17, 1.07]
   },
 
   "overflow_graph": {
@@ -142,8 +156,20 @@ Settings → gear icon → Paths tab → Output Folder Path
           "lines_ex_bus": {},
           "lines_or_bus": {},
           "gens_bus":     {},
-          "loads_bus":    {}
+          "loads_bus":    {},
+          "loads_p":      {},
+          "gens_p":       {}
         },
+        "lines_overloaded_after": ["LINE_C"],
+        "load_shedding_details": [
+          { "load_name": "LOAD_1", "voltage_level_id": "VL_1", "shedded_mw": 4.2 }
+        ],
+        "curtailment_details": [
+          { "gen_name": "WIND_1", "voltage_level_id": "VL_2", "curtailed_mw": 7.5 }
+        ],
+        "pst_details": [
+          { "pst_name": "PST_A", "tap_position": 5, "low_tap": -16, "high_tap": 16 }
+        ],
         "status": {
           "is_selected":          true,
           "is_suggested":         true,
@@ -185,8 +211,12 @@ All settings active when the analysis was run. Matches the fields sent to `POST 
 |---|---|
 | `layout_path` | Path to the grid layout file (node positions) |
 | `min_pst` | Minimum PST actions threshold |
+| `min_load_shedding` | Minimum load-shedding actions threshold (PR #73/#78 — new `loads_p` format) |
+| `min_renewable_curtailment_actions` | Minimum renewable-curtailment actions threshold (PR #73/#78 — new `gens_p` format) |
 
 *(Other fields match the Recommender and Configurations settings tabs.)*
+
+> **Legacy sessions:** `min_load_shedding` and `min_renewable_curtailment_actions` were added alongside the new `loads_p` / `gens_p` power-reduction action format. Older session dumps that predate these fields are restored with the default value `0.0`, matching the backend default.
 
 ### `contingency`
 
@@ -203,6 +233,10 @@ All settings active when the analysis was run. Matches the fields sent to `POST 
 | `n_overloads` | Overloaded lines detected in the **N** (base) state |
 | `n1_overloads` | Overloaded lines detected in the **N-1** (post-contingency) state |
 | `resolved_overloads` | Lines the recommender was asked to resolve (`result.lines_overloaded`) |
+| `n_overloads_rho` | *(optional)* Per-element loading ratio (`max\|i\|/permanent_limit`) parallel to `n_overloads`. Feeds the sidebar sticky-header percentages (PR #88). |
+| `n1_overloads_rho` | *(optional)* Per-element loading ratio parallel to `n1_overloads`. |
+
+> **Length guard:** `buildSessionResult` only persists an `*_rho` array when its length matches the corresponding name array. A shorter or missing array means the N / N-1 diagram payload predates the rho feature — the field is omitted from the JSON rather than saved misaligned. Older session dumps without these fields reload correctly; the sticky header renders its percentages from the freshly re-fetched N-1 diagram instead.
 
 ### `overflow_graph`
 
@@ -238,7 +272,13 @@ Each action entry mirrors the `ActionDetail` type plus a `status` object:
 | `n_components` | Number of connected components after action |
 | `disconnected_mw` | MW disconnected by islanding |
 | `non_convergence` | Error message when the AC load flow did not converge; `null` otherwise |
-| `action_topology` | Bus assignments changed by the action (`lines_ex_bus`, `lines_or_bus`, etc.) |
+| `action_topology` | Bus assignments changed by the action (`lines_ex_bus`, `lines_or_bus`, `loads_p`, `gens_p`, etc.) |
+| `lines_overloaded_after` | Overloaded lines remaining **after** the action is applied — drives the post-action overload halos on the Remedial Action NAD / SLD tab (PR #83). |
+| `load_shedding_details` | Per-load MW values for the load-shedding editor card. Array of `{ load_name, voltage_level_id, shedded_mw }` (PR #73). |
+| `curtailment_details` | Per-generator MW values for the renewable-curtailment editor card. Array of `{ gen_name, voltage_level_id, curtailed_mw }` (PR #73). |
+| `pst_details` | PST editor state: array of `{ pst_name, tap_position, low_tap, high_tap }`. `low_tap` / `high_tap` may be `null` if the network manager did not expose bounds (PR #78). |
+
+> **Why the enrichment fields matter on reload:** the PST / load-shedding / curtailment editor cards read directly from `pst_details` / `load_shedding_details` / `curtailment_details` to populate their inputs, and the Remedial Action tab uses `lines_overloaded_after` to clone the post-action overload halos. Before PR #83, these four fields were written to `session.json` but silently dropped on reload, which left the editor cards empty and wiped the overload halos until the user re-ran analysis. They are now restored in full by `handleRestoreSession`.
 
 ### Action `status` tags
 
@@ -284,6 +324,7 @@ Each combined action entry represents a pair of actions estimated by linear supe
 | `json_content` | `str` | Serialised `session.json` content |
 | `pdf_path` | `str \| null` | Absolute path to the overflow PDF to copy |
 | `output_folder_path` | `str` | Parent output directory |
+| `interaction_log` | `str \| null` | Serialised `interaction_log.json` content (see [docs/interaction-logging.md](interaction-logging.md)). When non-null, the backend writes it to `<session_folder>/interaction_log.json`. |
 
 Returns `{ "session_folder": "<path>", "pdf_copied": bool }`.
 
@@ -308,23 +349,33 @@ Returns the parsed `session.json` content. Also restores the overflow PDF to `Ov
 
 ## Implementation Details
 
-### Frontend (`App.tsx`, `utils/sessionUtils.ts`)
+### Frontend (`hooks/useSession.ts`, `utils/sessionUtils.ts`)
 
 **Save flow:**
-1. `handleSaveResults` calls `buildSessionResult(input: SessionInput)` to build the JSON
-2. If `outputFolderPath` is set: calls `api.saveSession(...)` -> backend saves files
-3. If empty: falls back to browser download
+1. `handleSaveResults` in `hooks/useSession.ts` calls `buildSessionResult(input: SessionInput)` to build the JSON
+2. The `SessionInput` it passes includes `nOverloadsRho` / `n1OverloadsRho` from `nDiagram.lines_overloaded_rho` / `n1Diagram.lines_overloaded_rho` (when present)
+3. `buildSessionResult` writes them into `session.overloads.n_overloads_rho` / `n1_overloads_rho` only if the arrays match the corresponding name arrays in length (length guard, see "Overloads" section above)
+4. If `outputFolderPath` is set: calls `api.saveSession(...)` with the JSON **and** the current `interactionLogger.getLog()` serialised as `interaction_log` → backend writes both `session.json` and `interaction_log.json`
+5. If empty: falls back to browser download (no `interaction_log.json` is written in that case)
 
 **Reload flow:**
 1. `handleOpenReloadModal` calls `api.listSessions(outputFolderPath)` and displays the modal
-2. User clicks a session -> `handleRestoreSession(sessionName)`:
+2. User clicks a session → `handleRestoreSession(sessionName, restoreContext)`:
    - Calls `api.loadSession(...)` to fetch the session JSON
-   - Restores all configuration state and calls `api.updateConfig(...)` to load the network
+   - Restores every configuration field — including `min_load_shedding` and `min_renewable_curtailment_actions`, falling back to `0.0` when absent — via the setters in `restoreContext`
+   - Calls `api.updateConfig(...)` to load the network, forwarding every threshold
+   - **Updates `committedNetworkPathRef.current`** to the restored `network_path`
    - Fetches branches, voltage levels, and nominal voltages
-   - Restores analysis result with all actions, status tags, and combined pairs
+   - Rebuilds each `ActionDetail` from its `SavedActionEntry`, **including** `lines_overloaded_after`, `load_shedding_details`, `curtailment_details` and `pst_details`. Estimation-only combined entries (`id.includes('+') && is_estimated && !is_manually_simulated`) are filtered out of the top-level actions map but kept under `combined_actions`.
+   - Partitions action status flags into `selectedActionIds` / `rejectedActionIds` / `manuallyAddedIds` / `suggestedByRecommenderIds`
    - Sets `selectedBranch` which triggers N-1 diagram fetch
    - No action card is active — diagrams are fetched on-demand when clicked
 3. `handleActionSelect` falls back to `simulateManualAction` if `getActionVariantDiagram` fails (action not in backend memory after restore)
+
+**`SessionInput` / `RestoreContext` signatures:**
+
+- `SessionInput` (in `utils/sessionUtils.ts`) is the plain-data interface consumed by `buildSessionResult`. It carries every configuration field, the action-status sets, the interaction log, and the optional `nOverloadsRho` / `n1OverloadsRho` arrays.
+- `RestoreContext` (in `hooks/useSession.ts`) is the companion interface for `handleRestoreSession`. It includes `committedNetworkPathRef` so the restore path can update it in place — a missed setter would silently break the "Change Network?" confirmation dialog after a reload.
 
 ### Standalone Interface (`standalone_interface.html`)
 
@@ -334,19 +385,48 @@ Both save and reload are implemented inline with the same logic as the React app
 
 ## Testing
 
-### `frontend/src/utils/sessionUtils.test.ts` (pure unit tests)
+### `frontend/src/utils/sessionUtils.test.ts` (pure unit tests on `buildSessionResult`)
 
-- Configuration fields including `layout_path` and `min_pst`
+- Configuration fields including `layout_path`, `min_pst`, `min_load_shedding`, `min_renewable_curtailment_actions`
 - All four status tags independently computed
 - **Combined actions:** serialised with estimation and simulation data
 - **Combined actions:** `is_simulated` flag based on presence in `result.actions`
 - **Combined actions:** empty object when no combined actions exist
 - Edge cases for `is_suggested` / `is_manually_simulated` overlap
+- **Sticky-header rho persistence:**
+  - `n_overloads_rho` / `n1_overloads_rho` are persisted when the rho arrays match the corresponding name array length
+  - Both fields are **omitted** when lengths mismatch (guard against misaligned legacy data)
+  - Both fields are **omitted** when not provided at all (legacy save flow)
 
-### `frontend/src/App.test.tsx` (UI integration tests)
+### `frontend/src/hooks/useSession.test.ts` (`handleRestoreSession` tests)
 
-- Save Results and Reload Session buttons present in header
-- Button states (disabled/enabled) based on contingency selection
+A `makeCtx()` / `makeSession()` fixture pair makes each test self-contained:
+
+- Full configuration restore — every setter is called with the saved value, including the new `min_load_shedding` / `min_renewable_curtailment_actions` thresholds
+- Legacy sessions (neither new threshold present) fall back to `0.0` on reload
+- **`committedNetworkPathRef.current` is set** to the restored `network_path` — regression guard for the "Change Network?" dialog misfire
+- `api.updateConfig` is called once with the full configuration payload
+- A `session_reloaded` interaction event is recorded with the session name
+- Empty `outputFolderPath` short-circuits the call: no API requests, no setters, ref untouched
+- Backend errors surface via `ctx.setError`; the ref is left empty on failure
+- **Enrichment field round-trip:** a `captureRestoredResult()` helper replays the functional `setResult` updater against a `null` previous state and asserts `load_shedding_details`, `curtailment_details`, `pst_details` and `lines_overloaded_after` all land on the restored `ActionDetail`
+- Action status flags partition correctly into the four `Set<string>` state updates
+- Legacy action entries that omit enrichment fields don't crash — values come through as `undefined`
+- Estimation-only combined entries are filtered out of top-level `actions` but survive under `combined_actions`
+
+### `frontend/src/components/ActionFeed.test.tsx` (re-simulation logging)
+
+- `action_mw_resimulated` is recorded with `target_mw === parseFloat(userInput)` on load-shedding / curtailment re-simulate
+- `manual_action_simulated` is NOT emitted on LS re-simulate (regression guard for the mistyped event that used to live in `useActions`)
+- `pst_tap_resimulated` is recorded with `target_tap === parseInt(userInput, 10)` on PST re-simulate
+- `target_mw` is normalised via `parseFloat` even when the user types trailing zeros (`5.400` → `5.4`)
+
+### `frontend/src/components/modals/SettingsModal.test.tsx` (tab-change logging)
+
+- `settings_tab_changed` is logged with `{ from_tab, to_tab }` on every real transition
+- `from_tab` tracks the currently-active tab, not the initial one
+- Clicking the already-active tab does NOT emit a `settings_tab_changed` event (no-op skip)
+- `setSettingsTab` is still called unconditionally on no-op clicks — pins the "setter always, logger only on transition" split behaviour
 
 Run tests with:
 
