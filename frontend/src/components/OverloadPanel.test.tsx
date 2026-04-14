@@ -14,7 +14,7 @@ describe('OverloadPanel', () => {
     const defaultProps = {
         nOverloads: [] as string[],
         n1Overloads: [] as string[],
-        onZoomToAsset: vi.fn(),
+        onAssetClick: vi.fn(),
     };
 
     it('renders the Overloads heading', () => {
@@ -49,34 +49,34 @@ describe('OverloadPanel', () => {
         expect(screen.getByText('TRAFO_1')).toBeInTheDocument();
     });
 
-    it('calls onZoomToAsset with line name for N overloads', async () => {
+    it('calls onAssetClick with N tab for N overloads', async () => {
         const user = userEvent.setup();
-        const onZoomToAsset = vi.fn();
+        const onAssetClick = vi.fn();
         render(
             <OverloadPanel
                 {...defaultProps}
                 nOverloads={['LINE_A']}
-                onZoomToAsset={onZoomToAsset}
+                onAssetClick={onAssetClick}
             />
         );
 
         await user.click(screen.getByText('LINE_A'));
-        expect(onZoomToAsset).toHaveBeenCalledWith('LINE_A');
+        expect(onAssetClick).toHaveBeenCalledWith('', 'LINE_A', 'n');
     });
 
-    it('calls onZoomToAsset with line name for N-1 overloads', async () => {
+    it('calls onAssetClick with N-1 tab for N-1 overloads', async () => {
         const user = userEvent.setup();
-        const onZoomToAsset = vi.fn();
+        const onAssetClick = vi.fn();
         render(
             <OverloadPanel
                 {...defaultProps}
                 n1Overloads={['LINE_B']}
-                onZoomToAsset={onZoomToAsset}
+                onAssetClick={onAssetClick}
             />
         );
 
         await user.click(screen.getByText('LINE_B'));
-        expect(onZoomToAsset).toHaveBeenCalledWith('LINE_B');
+        expect(onAssetClick).toHaveBeenCalledWith('', 'LINE_B', 'n-1');
     });
 
     it('renders loading percentages next to overload names when rho is provided', () => {

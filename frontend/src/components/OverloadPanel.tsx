@@ -21,12 +21,13 @@ interface OverloadPanelProps {
      */
     n1OverloadsRho?: number[];
     /**
-     * Zoom the currently-active network visualization diagram on the
-     * clicked line. Unlike the old per-tab asset click, this keeps the
-     * user on whatever tab they're currently looking at — scanning
-     * overloads without jumping between N / N-1 / Action views.
+     * Clicking an overloaded line switches to the matching diagram
+     * tab (N for N-overloads, N-1 for N-1-overloads) and zooms on
+     * the element — mirroring the old "Loading Before" behavior on
+     * action cards so the operator lands directly on the relevant
+     * network state.
      */
-    onZoomToAsset: (assetName: string) => void;
+    onAssetClick: (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void;
     showMonitoringWarning?: boolean;
     monitoredLinesCount?: number;
     totalLinesCount?: number;
@@ -45,7 +46,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
     n1Overloads,
     nOverloadsRho,
     n1OverloadsRho,
-    onZoomToAsset,
+    onAssetClick,
     showMonitoringWarning,
     monitoredLinesCount,
     totalLinesCount,
@@ -92,7 +93,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                         title={tab === 'n-1'
                             ? (isSelected ? `Zoom to ${lineName} (Double-click to unselect)` : `Zoom to ${lineName} (Double-click to select)`)
                             : `Zoom to ${lineName}`}
-                        onClick={(e) => { e.stopPropagation(); onZoomToAsset(lineName); }}
+                        onClick={(e) => { e.stopPropagation(); onAssetClick('', lineName, tab); }}
                         onDoubleClick={(e) => {
                             if (tab === 'n-1') {
                                 e.stopPropagation();

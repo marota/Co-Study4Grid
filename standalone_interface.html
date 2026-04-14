@@ -70,18 +70,26 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             background: #eee;
             border-right: 1px solid #ccc;
             /*
-              The Contingency + Overloads N-1 sections must stay visible
-              when scrolling through actions, so the sidebar itself no
-              longer scrolls — its inner `.action-feed-scroll` does.
+              A COMPACT sticky strip at the top keeps only the
+              clickable fields of interest visible (selected
+              contingency + N-1 overloads).  Everything else —
+              full Select Contingency card, full Overloads panel,
+              ActionFeed — scrolls together in `.action-feed-scroll`
+              to save vertical space.
             */
             display: flex;
             flex-direction: column;
             overflow: hidden;
         }
 
-        .action-feed-sticky {
+        .action-feed-sticky-summary {
             flex-shrink: 0;
-            padding: 15px 15px 0 15px;
+            padding: 6px 12px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #ccc;
+            font-size: 11px;
+            line-height: 1.5;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
         }
 
         .action-feed-scroll {
@@ -5812,25 +5820,56 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
                     <div className="main-content">
                         <div className="action-feed">
-                            <div className="action-feed-sticky">
-                            {/* Target Contingency selector */}
-                            {branches.length > 0 && (
-                                <div style={{ marginBottom: '10px', padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                    <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
-                                    <input list="contingencies" value={selectedBranch} onChange={e => { const val = e.target.value; if (branches.includes(val)) interactionLogger.record('contingency_selected', { element: val }); setSelectedBranch(val); }} placeholder="Search line/bus..." style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }} />
-                                    <datalist id="contingencies">{contingencyOptions}</datalist>
+                            {(selectedBranch || (n1Diagram && n1Diagram.lines_overloaded && n1Diagram.lines_overloaded.length > 0)) && (
+                                <div className="action-feed-sticky-summary">
                                     {selectedBranch && (
-                                        <div style={{ marginTop: '6px', fontSize: '11px', color: '#374151' }}>
-                                            <span style={{ marginRight: '4px' }}>Selected:</span>
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                                            <span style={{ color: '#555', fontWeight: 600, whiteSpace: 'nowrap' }}>🎯 Contingency:</span>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); zoomOnActiveTab(selectedBranch); }}
                                                 title={`Zoom to ${selectedBranch} in the current diagram`}
-                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '11px', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted' }}
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '11px', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted', textAlign: 'left' }}
                                             >
                                                 🔍 {selectedBranch}
                                             </button>
                                         </div>
                                     )}
+                                    {n1Diagram && n1Diagram.lines_overloaded && n1Diagram.lines_overloaded.length > 0 && (
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                                            <span style={{ color: '#b91c1c', fontWeight: 600, whiteSpace: 'nowrap' }}>⚠️ N-1:</span>
+                                            <span style={{ wordBreak: 'break-word' }}>
+                                                {n1Diagram.lines_overloaded.map((lvl, i) => {
+                                                    const isSelected = selectedOverloads.has(lvl);
+                                                    const rho = n1Diagram.lines_overloaded_rho && n1Diagram.lines_overloaded_rho[i];
+                                                    const rhoPct = (rho != null && !Number.isNaN(rho)) ? `${(rho * 100).toFixed(1)}%` : null;
+                                                    return (
+                                                        <React.Fragment key={lvl}>
+                                                            {i > 0 && ', '}
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleAssetClick(null, lvl, 'n-1'); }}
+                                                                title={`Open N-1 tab and zoom to ${lvl}`}
+                                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '11px', color: isSelected ? '#1e40af' : '#bdc3c7', fontWeight: isSelected ? 600 : 400, textDecoration: isSelected ? 'underline dotted' : 'none' }}
+                                                            >
+                                                                {lvl}
+                                                            </button>
+                                                            {rhoPct && <span style={{ color: isSelected ? '#374151' : '#bdc3c7', marginLeft: '2px' }}>({rhoPct})</span>}
+                                                        </React.Fragment>
+                                                    );
+                                                })}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            <div className="action-feed-scroll">
+                            {/* Target Contingency selector — full card lives in the
+                                scroll area so the compact sticky strip above stays
+                                minimal. */}
+                            {branches.length > 0 && (
+                                <div style={{ marginBottom: '10px', padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                                    <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
+                                    <input list="contingencies" value={selectedBranch} onChange={e => { const val = e.target.value; if (branches.includes(val)) interactionLogger.record('contingency_selected', { element: val }); setSelectedBranch(val); }} placeholder="Search line/bus..." style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }} />
+                                    <datalist id="contingencies">{contingencyOptions}</datalist>
                                 </div>
                             )}
 
@@ -5874,7 +5913,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                     return (
                                                         <React.Fragment key={lvl}>
                                                             {i > 0 && ', '}
-                                                            <button onClick={() => zoomOnActiveTab(lvl)} title={`Zoom to ${lvl}`} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted' }}>{lvl}</button>
+                                                            <button onClick={() => handleAssetClick(null, lvl, 'n')} title={`Open N tab and zoom to ${lvl}`} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted' }}>{lvl}</button>
                                                             {rhoPct && <span style={{ color: '#374151', fontWeight: 500, marginLeft: '2px' }}>({rhoPct})</span>}
                                                         </React.Fragment>
                                                     );
@@ -5948,7 +5987,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                         <React.Fragment key={lvl}>
                                                             {i > 0 && ', '}
                                                             <button
-                                                                onClick={(e) => { e.stopPropagation(); zoomOnActiveTab(lvl); }}
+                                                                onClick={(e) => { e.stopPropagation(); handleAssetClick(null, lvl, 'n-1'); }}
                                                                 onDoubleClick={(e) => {
                                                                     e.stopPropagation();
                                                                     const next = new Set(selectedOverloads);
@@ -5969,7 +6008,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                                     textDecoration: isSelected ? 'underline dotted' : 'none',
                                                                     display: 'inline'
                                                                 }}
-                                                                title={isSelected ? `Zoom to ${lvl} (Double-click to unselect)` : `Zoom to ${lvl} (Double-click to select)`}
+                                                                title={isSelected ? `Open N-1 tab and zoom to ${lvl} (Double-click to unselect)` : `Open N-1 tab and zoom to ${lvl} (Double-click to select)`}
                                                             >
                                                                 {lvl}
                                                             </button>
@@ -5984,8 +6023,6 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     </div>
                                 </div>
                             </div>
-                            </div>{/* /.action-feed-sticky */}
-                            <div className="action-feed-scroll">
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', position: 'relative' }}>
                                 <h3 style={{ margin: 0, flex: 1 }}>Simulated Actions</h3>

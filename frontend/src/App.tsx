@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import './App.css';
 import VisualizationPanel from './components/VisualizationPanel';
 import ActionFeed from './components/ActionFeed';
@@ -917,16 +917,100 @@ function App() {
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/*
-          Sidebar layout: Contingency + Overloads N-1 are pinned as a
-          non-scrolling header block so the operator keeps sight of the
-          contingency and its overloads while scrolling through the
-          (potentially long) action list. Only the ActionFeed scrolls.
+          Sidebar layout:
+          - A COMPACT sticky strip at the top keeps only the
+            clickable fields of interest visible while scrolling
+            (selected contingency → zoom active tab; N-1 overloads →
+            jump to N-1 tab + zoom, same behavior as the old
+            "Loading Before" link on action cards).
+          - Everything else — the full Select Contingency card with
+            the search input, the Overloads panel with its warnings
+            and N/N-1 breakdown, and the ActionFeed — scrolls
+            together in a single column below, saving vertical space.
         */}
         <div data-testid="sidebar" style={{ width: '25%', background: '#eee', borderRight: '1px solid #ccc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ flexShrink: 0, padding: '15px 15px 0 15px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            {/* Target Contingency selector */}
+          {(selectedBranch || (n1Diagram?.lines_overloaded?.length ?? 0) > 0) && (
+            <div
+              data-testid="sticky-feed-summary"
+              style={{
+                flexShrink: 0,
+                padding: '6px 12px',
+                background: '#f8f9fa',
+                borderBottom: '1px solid #ccc',
+                fontSize: '11px',
+                lineHeight: 1.5,
+                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+              }}
+            >
+              {selectedBranch && (
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                  <span style={{ color: '#555', fontWeight: 600, whiteSpace: 'nowrap' }}>🎯 Contingency:</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleZoomOnActiveTab(selectedBranch); }}
+                    title={`Zoom to ${selectedBranch} in the current diagram`}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: 0,
+                      fontSize: '11px',
+                      color: '#1e40af',
+                      fontWeight: 600,
+                      textDecoration: 'underline dotted',
+                      wordBreak: 'break-word',
+                      textAlign: 'left',
+                    }}
+                  >
+                    🔍 {selectedBranch}
+                  </button>
+                </div>
+              )}
+              {(n1Diagram?.lines_overloaded?.length ?? 0) > 0 && (
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                  <span style={{ color: '#b91c1c', fontWeight: 600, whiteSpace: 'nowrap' }}>⚠️ N-1:</span>
+                  <span style={{ wordBreak: 'break-word' }}>
+                    {n1Diagram!.lines_overloaded!.map((name, i) => {
+                      const rho = n1Diagram!.lines_overloaded_rho?.[i];
+                      const rhoPct = rho != null && !Number.isNaN(rho) ? `${(rho * 100).toFixed(1)}%` : null;
+                      const isSelected = selectedOverloads?.has(name) ?? true;
+                      return (
+                        <React.Fragment key={name}>
+                          {i > 0 && ', '}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); wrappedAssetClick('', name, 'n-1'); }}
+                            title={`Open N-1 tab and zoom to ${name}`}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: 0,
+                              fontSize: '11px',
+                              color: isSelected ? '#1e40af' : '#bdc3c7',
+                              fontWeight: isSelected ? 600 : 400,
+                              textDecoration: isSelected ? 'underline dotted' : 'none',
+                            }}
+                          >
+                            {name}
+                          </button>
+                          {rhoPct && (
+                            <span style={{ color: isSelected ? '#374151' : '#bdc3c7', marginLeft: '2px' }}>
+                              ({rhoPct})
+                            </span>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '15px', minHeight: 0, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            {/* Target Contingency selector — full card lives in the
+                scroll area so the compact sticky strip above stays
+                minimal. */}
             {branches.length > 0 && (
-              <div style={{ padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+              <div style={{ flexShrink: 0, padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
                 <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
                 <input
                   list="contingencies"
@@ -938,50 +1022,29 @@ function App() {
                 <datalist id="contingencies">
                   {contingencyOptions}
                 </datalist>
-                {selectedBranch && (
-                  <div style={{ marginTop: '6px', fontSize: '11px', color: '#374151' }}>
-                    <span style={{ marginRight: '4px' }}>Selected:</span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleZoomOnActiveTab(selectedBranch); }}
-                      title={`Zoom to ${selectedBranch} in the current diagram`}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: 0,
-                        fontSize: '11px',
-                        color: '#1e40af',
-                        fontWeight: 600,
-                        textDecoration: 'underline dotted',
-                      }}
-                    >
-                      🔍 {selectedBranch}
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 
-            <OverloadPanel
-              nOverloads={nDiagram?.lines_overloaded || []}
-              n1Overloads={n1Diagram?.lines_overloaded || []}
-              nOverloadsRho={nDiagram?.lines_overloaded_rho}
-              n1OverloadsRho={n1Diagram?.lines_overloaded_rho}
-              onZoomToAsset={handleZoomOnActiveTab}
-              showMonitoringWarning={showMonitoringWarning}
-              monitoredLinesCount={monitoredLinesCount}
-              totalLinesCount={totalLinesCount}
-              monitoringFactor={monitoringFactor}
-              preExistingOverloadThreshold={preExistingOverloadThreshold}
-              onDismissWarning={handleDismissWarning}
-              onOpenSettings={handleOpenConfigSettings}
-              selectedOverloads={selectedOverloads}
-              onToggleOverload={analysis.handleToggleOverload}
-              monitorDeselected={monitorDeselected}
-              onToggleMonitorDeselected={handleToggleMonitorDeselected}
-            />
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '15px', minHeight: 0 }}>
+            <div style={{ flexShrink: 0 }}>
+              <OverloadPanel
+                nOverloads={nDiagram?.lines_overloaded || []}
+                n1Overloads={n1Diagram?.lines_overloaded || []}
+                nOverloadsRho={nDiagram?.lines_overloaded_rho}
+                n1OverloadsRho={n1Diagram?.lines_overloaded_rho}
+                onAssetClick={wrappedAssetClick as (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void}
+                showMonitoringWarning={showMonitoringWarning}
+                monitoredLinesCount={monitoredLinesCount}
+                totalLinesCount={totalLinesCount}
+                monitoringFactor={monitoringFactor}
+                preExistingOverloadThreshold={preExistingOverloadThreshold}
+                onDismissWarning={handleDismissWarning}
+                onOpenSettings={handleOpenConfigSettings}
+                selectedOverloads={selectedOverloads}
+                onToggleOverload={analysis.handleToggleOverload}
+                monitorDeselected={monitorDeselected}
+                onToggleMonitorDeselected={handleToggleMonitorDeselected}
+              />
+            </div>
             <ActionFeed
               actions={result?.actions || {}}
               actionScores={result?.action_scores}
