@@ -10,6 +10,23 @@ import React from 'react';
 interface OverloadPanelProps {
     nOverloads: string[];
     n1Overloads: string[];
+    /**
+     * Per-line loading ratios (aligned with `nOverloads`).
+     * Rendered as "(XX.X%)" after the line name.
+     */
+    nOverloadsRho?: number[];
+    /**
+     * Per-line loading ratios (aligned with `n1Overloads`).
+     * Rendered as "(XX.X%)" after the line name.
+     */
+    n1OverloadsRho?: number[];
+    /**
+     * Clicking an overloaded line switches to the matching diagram
+     * tab (N for N-overloads, N-1 for N-1-overloads) and zooms on
+     * the element — mirroring the old "Loading Before" behavior on
+     * action cards so the operator lands directly on the relevant
+     * network state.
+     */
     onAssetClick: (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void;
     showMonitoringWarning?: boolean;
     monitoredLinesCount?: number;
@@ -27,6 +44,8 @@ interface OverloadPanelProps {
 const OverloadPanel: React.FC<OverloadPanelProps> = ({
     nOverloads,
     n1Overloads,
+    nOverloadsRho,
+    n1OverloadsRho,
     onAssetClick,
     showMonitoringWarning,
     monitoredLinesCount,
@@ -53,10 +72,14 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
         display: 'inline',
     };
 
-    const renderLinks = (lines: string[], tab: 'n' | 'n-1') => {
+    const formatRho = (v: number | undefined) =>
+        v == null || Number.isNaN(v) ? null : `${(v * 100).toFixed(1)}%`;
+
+    const renderLinks = (lines: string[], rhos: number[] | undefined, tab: 'n' | 'n-1') => {
         if (!lines || lines.length === 0) return <span style={{ color: '#888', fontStyle: 'italic' }}>None</span>;
         return lines.map((lineName, i) => {
             const isSelected = tab === 'n-1' ? (selectedOverloads?.has(lineName) ?? true) : true;
+            const rhoPct = formatRho(rhos?.[i]);
             return (
                 <React.Fragment key={i}>
                     {i > 0 && ', '}
@@ -67,19 +90,30 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                             fontWeight: isSelected ? 600 : 400,
                             textDecoration: isSelected ? 'underline dotted' : 'none'
                         }}
-                        title={tab === 'n-1' 
+                        title={tab === 'n-1'
                             ? (isSelected ? `Zoom to ${lineName} (Double-click to unselect)` : `Zoom to ${lineName} (Double-click to select)`)
                             : `Zoom to ${lineName}`}
                         onClick={(e) => { e.stopPropagation(); onAssetClick('', lineName, tab); }}
-                        onDoubleClick={(e) => { 
+                        onDoubleClick={(e) => {
                             if (tab === 'n-1') {
-                                e.stopPropagation(); 
-                                onToggleOverload?.(lineName); 
+                                e.stopPropagation();
+                                onToggleOverload?.(lineName);
                             }
                         }}
                     >
                         {lineName}
                     </button>
+                    {rhoPct && (
+                        <span
+                            style={{
+                                color: isSelected ? '#374151' : '#bdc3c7',
+                                fontWeight: 500,
+                                marginLeft: '2px',
+                            }}
+                        >
+                            ({rhoPct})
+                        </span>
+                    )}
                 </React.Fragment>
             );
         });
@@ -142,7 +176,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                 }}>
                     <strong style={{ whiteSpace: 'nowrap' }}>N Overloads:</strong>
                     <div style={{ display: 'inline', wordBreak: 'break-word' }}>
-                        {renderLinks(nOverloads, 'n')}
+                        {renderLinks(nOverloads, nOverloadsRho, 'n')}
                     </div>
                 </div>
 
@@ -200,7 +234,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                         </label>
                     )}
                     <span style={{ wordBreak: 'break-word' }}>
-                        {renderLinks(n1Overloads, 'n-1')}
+                        {renderLinks(n1Overloads, n1OverloadsRho, 'n-1')}
                     </span>
                 </div>
             </div>

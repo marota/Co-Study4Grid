@@ -397,26 +397,23 @@ describe('Overload Clearing Logic', () => {
     // VERIFY: N-1 diagram is STILL present in the panel
     expect(screen.getByTestId('visualization-panel')).toHaveAttribute('data-n1-diagram-present', 'true');
   });
-  it('verifies sidebar has unified scrollbar and no nested overflows', async () => {
+  it('pins contingency + overloads while only the action feed scrolls', async () => {
     await renderAndLoadStudy();
 
-    // The main sidebar container has the data-testid="sidebar"
+    // The sidebar itself no longer scrolls — it hosts a non-scrolling
+    // sticky header (contingency + overloads) and a scrolling body
+    // (the ActionFeed). Scrolling down in actions must leave the
+    // contingency and overload information fully visible.
     const sidebar = await screen.findByTestId('sidebar');
     expect(sidebar).toBeInTheDocument();
-    expect(sidebar).toHaveStyle({ overflowY: 'auto' });
+    expect(sidebar).toHaveStyle({ overflow: 'hidden' });
 
-    // Find the ActionFeed header within the sidebar
+    // The ActionFeed is inside a scrolling wrapper that takes the
+    // remaining sidebar height.
     const sidebarActionsHeader = await within(sidebar).findByTestId('action-feed-header');
-    
-    // ActionFeed wrapper should NOT have overflowY: auto
-    const actionFeedWrapper = sidebarActionsHeader.closest('div[style*="flex-shrink: 0"]');
-    expect(actionFeedWrapper).toBeInTheDocument();
-    expect(actionFeedWrapper).not.toHaveStyle({ overflowY: 'auto' });
-
-    // Internal ActionFeed root is the sibling of the header's container
-    const actionFeedRoot = sidebarActionsHeader.parentElement?.parentElement;
-    expect(actionFeedRoot).toBeInTheDocument();
-    expect(actionFeedRoot).not.toHaveStyle({ overflowY: 'auto' });
+    const scrollWrapper = sidebarActionsHeader.closest('div[style*="overflow-y: auto"]');
+    expect(scrollWrapper).toBeInTheDocument();
+    expect(scrollWrapper).toHaveStyle({ overflowY: 'auto' });
   });
 
   it('switches to overflow tab as soon as PDF event is received (regression test)', async () => {

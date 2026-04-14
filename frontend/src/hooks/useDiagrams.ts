@@ -17,6 +17,41 @@ import type { DiagramData, ViewBox, MetadataIndex, TabId, VlOverlay, SldTab, Ana
 import { interactionLogger } from '../utils/interactionLogger';
 import { useSldOverlay } from './useSldOverlay';
 
+/**
+ * Compute the set of equipment IDs the auto-zoom effect is allowed to
+ * target. Includes:
+ *
+ *  - `branches` — disconnectable N-1 targets (so typing "LIN"
+ *    in the inspect input is rejected until the user commits a full
+ *    equipment name).
+ *  - `voltageLevels` — same rationale.
+ *  - Every equipment ID present in any loaded NAD metadata index
+ *    (nodes + edges), which is what makes explicit asset clicks
+ *    work for elements that are NOT in the disconnectable branch
+ *    list — for instance, an action's re-distributed `max_rho_line`
+ *    (a line that is newly overloaded after a remedial action but is
+ *    not itself a contingency target).  Without these extra entries
+ *    the effect would reject the click and leave the diagram centered
+ *    on whatever element was zoomed last (typically the previous
+ *    pre-action overload), giving the impression that the
+ *    Max-loading link is "stuck".
+ *
+ * Exported for tests; consumed internally by {@link useDiagrams}.
+ */
+export function computeKnownItemsSet(
+  branches: string[],
+  voltageLevels: string[],
+  indices: (MetadataIndex | null | undefined)[],
+): Set<string> {
+  const s = new Set<string>([...branches, ...voltageLevels]);
+  for (const idx of indices) {
+    if (!idx) continue;
+    for (const k of idx.edgesByEquipmentId.keys()) s.add(k);
+    for (const k of idx.nodesByEquipmentId.keys()) s.add(k);
+  }
+  return s;
+}
+
 export interface DiagramsState {
   // Tab
   activeTab: TabId;
@@ -576,10 +611,11 @@ export function useDiagrams(
     [branches, voltageLevels]
   );
 
-  // Set for O(1) lookup used by the zoom guard
-  const knownItemsSet = useMemo(() =>
-    new Set([...branches, ...voltageLevels]),
-    [branches, voltageLevels]
+  // Set for O(1) lookup used by the zoom guard.  See
+  // `computeKnownItemsSet` for the why.
+  const knownItemsSet = useMemo(
+    () => computeKnownItemsSet(branches, voltageLevels, [nMetaIndex, n1MetaIndex, actionMetaIndex]),
+    [branches, voltageLevels, nMetaIndex, n1MetaIndex, actionMetaIndex],
   );
 
   // ===== Voltage Range Filter =====

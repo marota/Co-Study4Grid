@@ -108,6 +108,34 @@ describe('ActionCard', () => {
         expect(screen.queryByText('VIEWING')).not.toBeInTheDocument();
     });
 
+    it('renders the VIEWING marker as a vertical ribbon on the left edge', () => {
+        // The ribbon sits flush against the left border to free a full
+        // row of horizontal space inside the card header (long action
+        // IDs on a narrow sidebar).  It must be a sibling of the
+        // content column — not inside the header — and must use
+        // vertical writing mode.
+        render(<ActionCard {...defaultProps} isViewing={true} />);
+        const ribbon = screen.getByTestId('action-card-act_1-viewing-ribbon');
+        expect(ribbon).toBeInTheDocument();
+        expect(ribbon).toHaveTextContent('VIEWING');
+        expect(ribbon).toHaveStyle({ writingMode: 'vertical-rl' });
+
+        // And the inline top-right VIEWING pill is gone (the severity
+        // badge — "Solves overload" — is still rendered next to the
+        // title, but not the old rectangular "VIEWING" pill).
+        const card = screen.getByTestId('action-card-act_1');
+        const inlinePill = card.querySelectorAll('span');
+        const pillTexts = Array.from(inlinePill).map(el => el.textContent);
+        // The vertical ribbon is a <div>, not a <span>, so no <span>
+        // should contain exactly "VIEWING".
+        expect(pillTexts).not.toContain('VIEWING');
+    });
+
+    it('does not render the vertical ribbon when isViewing is false', () => {
+        render(<ActionCard {...defaultProps} isViewing={false} />);
+        expect(screen.queryByTestId('action-card-act_1-viewing-ribbon')).not.toBeInTheDocument();
+    });
+
     it('calls onActionSelect when card is clicked', () => {
         const onActionSelect = vi.fn();
         render(<ActionCard {...defaultProps} onActionSelect={onActionSelect} />);
@@ -157,9 +185,46 @@ describe('ActionCard', () => {
         expect(screen.getAllByTitle('Zoom to LINE_A').length).toBeGreaterThan(0);
     });
 
-    it('renders loading before/after rho sections', () => {
+    it('clicks on the max-loading line name zoom the new worst line, not the pre-action overload', () => {
+        // Regression: the action re-distributes flows and the new worst
+        // line (LINE_B) is NOT in linesOverloaded (which reflects the
+        // pre-action N-1 overloads — only LINE_A here). Clicking
+        // "LINE_B" in the "Max loading: X% on LINE_B" row must zoom on
+        // LINE_B, not on any of the pre-action lines.
+        const onAssetClick = vi.fn();
+        const details: ActionDetail = {
+            ...baseDetails,
+            rho_before: [1.05],
+            rho_after: [0.72],     // LINE_A is now below the limit
+            max_rho: 0.967,        // but LINE_B (newly overloaded) peaks at 96.7%
+            max_rho_line: 'LINE_B',
+            is_rho_reduction: true,
+        };
+        render(
+            <ActionCard
+                {...defaultProps}
+                details={details}
+                linesOverloaded={['LINE_A']}
+                onAssetClick={onAssetClick}
+            />
+        );
+
+        // The displayed text must mention the new worst line
+        expect(screen.getByText('96.7%')).toBeInTheDocument();
+
+        // Click specifically the "on LINE_B" button inside the Max
+        // loading row — not the rho_after button (which would be on
+        // LINE_A) and not any sticky-panel button (not in this test).
+        const maxRhoButton = screen.getByTitle('Zoom to LINE_B');
+        fireEvent.click(maxRhoButton);
+
+        expect(onAssetClick).toHaveBeenCalledTimes(1);
+        expect(onAssetClick).toHaveBeenCalledWith('act_1', 'LINE_B', 'action');
+    });
+
+    it('renders loading after rho section (loading before is shown in the sticky Overloads panel)', () => {
         render(<ActionCard {...defaultProps} />);
-        expect(screen.getByText(/Loading before/)).toBeInTheDocument();
+        expect(screen.queryByText(/Loading before/)).not.toBeInTheDocument();
         expect(screen.getByText(/Loading after/)).toBeInTheDocument();
     });
 

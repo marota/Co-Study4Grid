@@ -123,6 +123,13 @@ export interface DiagramData {
     asset_deltas?: Record<string, AssetDelta>;
     originalViewBox?: ViewBox | null;
     lines_overloaded?: string[];
+    /**
+     * Parallel to `lines_overloaded`: the per-element loading ratio
+     * (max|i|/permanent_limit, so a value > 1.0 means the branch is
+     * above its limit). Displayed in the Overloads feed as "(XX.X%)"
+     * alongside the line name. Missing for older session dumps.
+     */
+    lines_overloaded_rho?: number[];
 }
 
 export interface FlowDelta {

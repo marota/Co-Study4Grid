@@ -7,8 +7,20 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useDiagrams } from './useDiagrams';
+import { useDiagrams, computeKnownItemsSet } from './useDiagrams';
+import type { MetadataIndex, NodeMeta, EdgeMeta } from '../types';
 import { interactionLogger } from '../utils/interactionLogger';
+
+const makeIndex = (nodes: string[], edges: string[]): MetadataIndex => ({
+    nodesByEquipmentId: new Map<string, NodeMeta>(
+        nodes.map(id => [id, { equipmentId: id, svgId: `svg-${id}`, x: 0, y: 0 }]),
+    ),
+    nodesBySvgId: new Map(),
+    edgesByEquipmentId: new Map<string, EdgeMeta>(
+        edges.map(id => [id, { equipmentId: id, svgId: `svg-${id}`, node1: 'n1', node2: 'n2' }]),
+    ),
+    edgesByNode: new Map(),
+});
 
 // Mock the api module
 vi.mock('../api', () => ({
@@ -291,5 +303,56 @@ describe('useDiagrams — interaction logging', () => {
             rerender({ dt: {} });
             expect(result.current.nSvgContainerRef).toBe(nRef);
         });
+    });
+});
+
+describe('computeKnownItemsSet — auto-zoom guard', () => {
+    it('includes branches and voltage levels', () => {
+        const set = computeKnownItemsSet(['BRANCH_A', 'BRANCH_B'], ['VL1', 'VL2'], []);
+        expect(set.has('BRANCH_A')).toBe(true);
+        expect(set.has('BRANCH_B')).toBe(true);
+        expect(set.has('VL1')).toBe(true);
+        expect(set.has('VL2')).toBe(true);
+    });
+
+    it('still rejects partial / unknown text so typed-input guard works', () => {
+        const set = computeKnownItemsSet(['BRANCH_A'], ['VL1'], []);
+        expect(set.has('BRAN')).toBe(false);
+        expect(set.has('UNKNOWN_LINE')).toBe(false);
+    });
+
+    it('includes equipment IDs from metadata edge indices', () => {
+        // A line that is NOT in the disconnectable branches list
+        // (e.g. an action reshuffles flows and a different line
+        // becomes the new max_rho line) must still be zoomable via
+        // an explicit asset click.
+        const actionMeta = makeIndex([], ['CHALOL31LOUHA']);
+        const set = computeKnownItemsSet(['BEONL31CPVAN'], [], [null, null, actionMeta]);
+        expect(set.has('BEONL31CPVAN')).toBe(true);
+        expect(set.has('CHALOL31LOUHA')).toBe(true);
+    });
+
+    it('includes equipment IDs from metadata node indices', () => {
+        const nMeta = makeIndex(['VL_FOO'], []);
+        const set = computeKnownItemsSet([], [], [nMeta]);
+        expect(set.has('VL_FOO')).toBe(true);
+    });
+
+    it('is the union of branches, voltageLevels and every provided index', () => {
+        const nMeta = makeIndex(['NODE_N'], ['EDGE_N']);
+        const n1Meta = makeIndex(['NODE_N1'], ['EDGE_N1']);
+        const actionMeta = makeIndex(['NODE_A'], ['EDGE_A']);
+        const set = computeKnownItemsSet(
+            ['BRANCH_X'], ['VL_X'], [nMeta, n1Meta, actionMeta],
+        );
+        for (const k of ['BRANCH_X', 'VL_X', 'NODE_N', 'EDGE_N', 'NODE_N1', 'EDGE_N1', 'NODE_A', 'EDGE_A']) {
+            expect(set.has(k)).toBe(true);
+        }
+    });
+
+    it('tolerates null / undefined metadata indices', () => {
+        expect(() => computeKnownItemsSet([], [], [null, undefined, null])).not.toThrow();
+        const set = computeKnownItemsSet(['BRANCH_A'], [], [null]);
+        expect(set.has('BRANCH_A')).toBe(true);
     });
 });
