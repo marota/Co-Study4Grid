@@ -332,6 +332,16 @@ export interface SessionResult {
         n_overloads: string[];
         n1_overloads: string[];
         resolved_overloads: string[];   // overloads that were resolved (selected for step2)
+        // Per-element loading ratio (max|i|/permanent_limit) parallel
+        // to the n/n-1 overload arrays above. Introduced alongside the
+        // sticky feed-summary header (PR #88): the header displays
+        // "NAME (XX.X%)" for every overloaded line, and the ratios
+        // come from the backend N-1 diagram payload. Persisted here
+        // so the sticky header still renders percentages after a
+        // session reload without re-running analysis. Optional for
+        // backward compatibility with older session dumps.
+        n_overloads_rho?: number[];
+        n1_overloads_rho?: number[];
     };
     overflow_graph: {
         pdf_url: string | null;
@@ -375,6 +385,14 @@ export type InteractionType =
     | 'action_rejected'
     | 'action_unrejected'
     | 'manual_action_simulated'
+    // Re-simulation of an already-present action with edited parameters.
+    // Unlike `manual_action_simulated`, these gestures keep the action
+    // in its current bucket (suggested / manual) and only update the
+    // rho_after / load-shedding / curtailment / PST details in place.
+    // Two distinct types so a replay agent knows which input field to
+    // edit before clicking Re-simulate.
+    | 'action_mw_resimulated'
+    | 'pst_tap_resimulated'
     // Combined Actions
     | 'combine_modal_opened'
     | 'combine_modal_closed'

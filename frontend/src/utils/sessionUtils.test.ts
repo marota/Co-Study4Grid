@@ -42,6 +42,7 @@ const baseInput: SessionInput = {
     minLineDisconnections: 3.0,
     minPst: 1.0,
     minLoadShedding: 0.0,
+    minRenewableCurtailmentActions: 0.0,
     nPrioritizedActions: 10,
     linesMonitoringPath: '/data/monitoring.csv',
     monitoringFactor: 0.95,
@@ -81,6 +82,7 @@ describe('buildSessionResult — structure', () => {
             min_line_disconnections: 3.0,
             min_pst: 1.0,
             min_load_shedding: 0.0,
+            min_renewable_curtailment_actions: 0.0,
             n_prioritized_actions: 10,
             lines_monitoring_path: '/data/monitoring.csv',
             monitoring_factor: 0.95,
@@ -118,6 +120,43 @@ describe('buildSessionResult — structure', () => {
     it('sets resolved_overloads to empty when result is null', () => {
         const out = buildSessionResult({ ...baseInput, result: null });
         expect(out.overloads.resolved_overloads).toEqual([]);
+    });
+
+    it('persists lines_overloaded_rho when length matches the element list', () => {
+        // PR #88 added per-element loading ratios that feed the sticky
+        // sidebar header. They must survive save/reload so the sticky
+        // percentages render after a session restore without requiring
+        // a fresh analysis run.
+        const out = buildSessionResult({
+            ...baseInput,
+            nOverloads: ['LINE_PRE'],
+            nOverloadsRho: [1.04],
+            n1Overloads: ['LINE_B', 'LINE_C'],
+            n1OverloadsRho: [1.23, 1.07],
+        });
+        expect(out.overloads.n_overloads_rho).toEqual([1.04]);
+        expect(out.overloads.n1_overloads_rho).toEqual([1.23, 1.07]);
+    });
+
+    it('omits rho arrays when the length does not match the element list', () => {
+        // Guard against older payloads / partial backends: if the rho
+        // array is shorter than the name array, prefer omitting the
+        // field entirely over writing misaligned percentages.
+        const out = buildSessionResult({
+            ...baseInput,
+            n1Overloads: ['LINE_B', 'LINE_C'],
+            n1OverloadsRho: [1.23],
+        });
+        expect(out.overloads.n1_overloads_rho).toBeUndefined();
+    });
+
+    it('omits rho arrays when not provided at all (legacy session flow)', () => {
+        const out = buildSessionResult({
+            ...baseInput,
+            n1Overloads: ['LINE_B'],
+        });
+        expect(out.overloads.n_overloads_rho).toBeUndefined();
+        expect(out.overloads.n1_overloads_rho).toBeUndefined();
     });
 
     it('populates overflow_graph when result has pdf_url', () => {

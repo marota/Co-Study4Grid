@@ -52,7 +52,7 @@ describe('useSession — interaction logging', () => {
         layoutPath: '',
         outputFolderPath: '/tmp/output',
         minLineReconnections: 2, minCloseCoupling: 3, minOpenCoupling: 2, minLineDisconnections: 3,
-        minPst: 1, minLoadShedding: 0, nPrioritizedActions: 10,
+        minPst: 1, minLoadShedding: 0, minRenewableCurtailmentActions: 0, nPrioritizedActions: 10,
         linesMonitoringPath: '', monitoringFactor: 0.95, preExistingOverloadThreshold: 0.02,
         ignoreReconnections: false, pypowsyblFastMode: true,
         selectedBranch: 'LINE_A', selectedOverloads: new Set(['OL1']), monitorDeselected: false,

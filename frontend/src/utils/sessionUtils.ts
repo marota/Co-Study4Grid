@@ -36,9 +36,12 @@ export interface SessionInput {
     selectedOverloads: Set<string>;
     monitorDeselected: boolean;
 
-    // Overload lists from diagrams
+    // Overload lists from diagrams (parallel rho arrays are optional,
+    // backend only populates them on the N-1 payload today — see PR #88).
     nOverloads: string[];
     n1Overloads: string[];
+    nOverloadsRho?: number[];
+    n1OverloadsRho?: number[];
 
     // Analysis result (already merged from pendingAnalysisResult → result)
     result: AnalysisResult | null;
@@ -71,6 +74,7 @@ export function buildSessionResult(input: SessionInput): SessionResult {
         preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
         selectedBranch, selectedOverloads, monitorDeselected,
         nOverloads, n1Overloads,
+        nOverloadsRho, n1OverloadsRho,
         result,
         selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds,
         interactionLog,
@@ -175,6 +179,14 @@ export function buildSessionResult(input: SessionInput): SessionResult {
             n_overloads: nOverloads,
             n1_overloads: n1Overloads,
             resolved_overloads: result?.lines_overloaded ?? [],
+            // Only persist rho arrays when they match the element list
+            // length — a shorter or missing array means the diagram
+            // payload predates the rho feature (older backend / older
+            // session). Keeping them out of the JSON in that case lets
+            // session consumers know the data is unavailable rather
+            // than showing misleading zeros.
+            ...(nOverloadsRho && nOverloadsRho.length === nOverloads.length ? { n_overloads_rho: nOverloadsRho } : {}),
+            ...(n1OverloadsRho && n1OverloadsRho.length === n1Overloads.length ? { n1_overloads_rho: n1OverloadsRho } : {}),
         },
         overflow_graph: result?.pdf_url
             ? { pdf_url: result.pdf_url, pdf_path: result.pdf_path ?? null }

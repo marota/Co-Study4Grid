@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig } from '../types';
 import { api } from '../api';
+import { interactionLogger } from '../utils/interactionLogger';
 import CombinedActionsModal from './CombinedActionsModal';
 import ActionCard from './ActionCard';
 import ActionSearchDropdown from './ActionSearchDropdown';
@@ -343,6 +344,15 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     // Re-simulate an existing action with a new target MW value
     const handleResimulate = async (actionId: string, newTargetMw: number) => {
         if (!disconnectedElement) return;
+        // Log the user-edited target value so a replay agent can type
+        // the exact same MW into the card's input before clicking
+        // Re-simulate. Distinct from manual_action_simulated because
+        // re-simulation keeps the action in its current bucket
+        // (suggested vs. manually added).
+        interactionLogger.record('action_mw_resimulated', {
+            action_id: actionId,
+            target_mw: newTargetMw,
+        });
         setResimulating(actionId);
         try {
             const detail = actions[actionId];
@@ -384,6 +394,15 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     // Re-simulate an existing PST action with a new tap position
     const handleResimulateTap = async (actionId: string, newTap: number) => {
         if (!disconnectedElement) return;
+        // Log the new tap position so a replay agent can enter the
+        // same value in the PST detail input before clicking
+        // Re-simulate. Backend clamps out-of-range values to
+        // [low_tap, high_tap], but the logged value is the raw
+        // user-entered integer.
+        interactionLogger.record('pst_tap_resimulated', {
+            action_id: actionId,
+            target_tap: newTap,
+        });
         setResimulating(actionId);
         try {
             const detail = actions[actionId];

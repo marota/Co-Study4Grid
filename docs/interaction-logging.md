@@ -62,6 +62,8 @@ type InteractionType =
   | 'action_rejected'              // User rejected an action
   | 'action_unrejected'            // User un-rejected an action
   | 'manual_action_simulated'      // User simulated action via manual search
+  | 'action_mw_resimulated'        // User edited Target MW on a load-shedding / curtailment card and clicked Re-simulate
+  | 'pst_tap_resimulated'          // User edited Target Tap on a PST action card and clicked Re-simulate
   // === Combined Actions ===
   | 'combine_modal_opened'         // User opened Combine Actions modal
   | 'combine_modal_closed'         // User closed Combine Actions modal
@@ -70,6 +72,10 @@ type InteractionType =
   | 'combine_pair_simulated'       // Full simulation of combined pair
   // === Visualization ===
   | 'diagram_tab_changed'          // User switched tab (n / n-1 / action / overflow)
+  | 'tab_detached'                 // User detached a viz tab into its own browser window
+  | 'tab_reattached'               // User reattached a detached viz tab back into the main window
+  | 'tab_tied'                     // User tied a detached tab's viewBox to the main window
+  | 'tab_untied'                   // User untied a previously-tied detached tab
   | 'view_mode_changed'            // User switched Flows/Impacts mode
   | 'voltage_range_changed'        // User adjusted voltage filter slider
   | 'asset_clicked'                // User clicked a line/asset badge to zoom
@@ -97,19 +103,21 @@ Each event's `details` field contains **all parameters needed to replay** the us
 
 | Event | Details | Replay Action |
 |-------|---------|---------------|
-| `config_loaded` | `{ network_path, action_file_path, layout_path, min_line_reconnections, min_close_coupling, min_open_coupling, min_line_disconnections, min_pst, n_prioritized_actions, lines_monitoring_path, monitoring_factor, pre_existing_overload_threshold, ignore_reconnections, pypowsybl_fast_mode }` | Click "Load Study" with these config values |
+| `config_loaded` | `{ network_path, action_file_path, layout_path, output_folder_path, min_line_reconnections, min_close_coupling, min_open_coupling, min_line_disconnections, min_pst, min_load_shedding, min_renewable_curtailment_actions, n_prioritized_actions, lines_monitoring_path, monitoring_factor, pre_existing_overload_threshold, ignore_reconnections, pypowsybl_fast_mode }` | Click "Load Study" with these config values |
 | `settings_opened` | `{ tab: 'paths'\|'recommender'\|'configurations' }` | Click gear icon |
-| `settings_tab_changed` | `{ from_tab, to_tab }` | Click tab in settings modal |
-| `settings_applied` | `{ network_path, action_file_path, layout_path, output_folder_path, min_line_reconnections, min_close_coupling, min_open_coupling, min_line_disconnections, min_pst, n_prioritized_actions, lines_monitoring_path, monitoring_factor, pre_existing_overload_threshold, ignore_reconnections, pypowsybl_fast_mode }` | Fill all fields → click Apply |
+| `settings_tab_changed` | `{ from_tab: 'paths'\|'recommender'\|'configurations', to_tab: 'paths'\|'recommender'\|'configurations' }` — only emitted when `from_tab !== to_tab` | Click tab in settings modal |
+| `settings_applied` | Same payload as `config_loaded` (full settings snapshot). Treated as a wait-point: the replay agent must wait for the network reload to finish before proceeding. | Fill all fields → click Apply |
 | `settings_cancelled` | `{}` | Click Cancel / close settings |
-| `path_picked` | `{ field: 'network'\|'action'\|'layout'\|'output'\|'monitoring', picker_type: 'file'\|'dir', selected_path: string }` | Click file picker → select path |
+| `path_picked` | `{ type: 'file'\|'dir', path: string }` — the setter (network/action/layout/output/monitoring) is implicit from the preceding UI sequence (the settings modal field focused before the picker opened). | Click file picker → select path |
+
+> **Note on new recommender thresholds**: `min_load_shedding` and `min_renewable_curtailment_actions` were introduced alongside the new `loads_p` / `gens_p` power-reduction action format. They MUST be present in both `config_loaded` and `settings_applied` details so a replay agent can set the thresholds before loading the study. Older logs that predate these fields will be replayed with the backend defaults (`0.0`).
 
 ### Contingency Selection
 
 | Event | Details | Replay Action |
 |-------|---------|---------------|
 | `contingency_selected` | `{ element: string }` | Select value in branch dropdown |
-| `contingency_confirmed` | `{ element: string, dialog_type: 'contingency'\|'loadStudy' }` | Click OK in confirmation dialog |
+| `contingency_confirmed` | `{ type: 'contingency'\|'loadStudy'\|'applySettings'\|'changeNetwork', pending_branch?: string }` — `type` identifies which confirmation dialog the user clicked OK on (contingency-change / reload-study / apply-settings / change-network-path). `pending_branch` is only populated for `type: 'contingency'`. | Click OK in confirmation dialog |
 
 ### Two-Step Analysis
 
@@ -132,7 +140,9 @@ Each event's `details` field contains **all parameters needed to replay** the us
 | `action_unfavorited` | `{ action_id: string }` | Click star icon (toggle off) |
 | `action_rejected` | `{ action_id: string }` | Click reject icon |
 | `action_unrejected` | `{ action_id: string }` | Click reject icon (toggle off) |
-| `manual_action_simulated` | `{ action_id: string, description: string }` | Search action → click Simulate |
+| `manual_action_simulated` | `{ action_id: string }` | Search action → click Simulate |
+| `action_mw_resimulated` | `{ action_id: string, target_mw: number }` — the raw user-entered MW value (backend may clamp). Wait-point: the action card updates with new `rho_after`, `load_shedding_details` / `curtailment_details`. The action stays in its current bucket (suggested vs. manual). | Edit Target MW input on a load-shedding or curtailment card → click Re-simulate |
+| `pst_tap_resimulated` | `{ action_id: string, target_tap: number }` — the raw user-entered tap integer. Backend clamps to `[low_tap, high_tap]`. Wait-point: same as MW re-simulation but the `pst_details.tap_position` is updated instead. | Edit Target Tap input on a PST card → click Re-simulate |
 
 ### Combined Actions
 
@@ -148,29 +158,33 @@ Each event's `details` field contains **all parameters needed to replay** the us
 
 | Event | Details | Replay Action |
 |-------|---------|---------------|
-| `diagram_tab_changed` | `{ from_tab: TabId, to_tab: TabId }` | Click tab button |
-| `view_mode_changed` | `{ mode: 'network'\|'delta' }` | Click Flows/Impacts toggle |
-| `voltage_range_changed` | `{ min_kv: number, max_kv: number }` | Drag voltage slider |
-| `asset_clicked` | `{ asset_name: string, action_id: string, target_tab: 'n'\|'n-1'\|'action' }` | Click rho-line badge |
-| `zoom_in` | `{}` | Click + button |
-| `zoom_out` | `{}` | Click - button |
-| `zoom_reset` | `{}` | Click reset button |
-| `inspect_query_changed` | `{ query: string }` | Type in search box |
+| `diagram_tab_changed` | `{ tab: TabId }` — the destination tab the user clicked. | Click tab button |
+| `tab_detached` | `{ tab: TabId }` — the tab moved into a secondary browser window. Wait-point: the popup must be open and the portal target mounted before the next event can be replayed. Replay agents that cannot script a real popup should skip this event and keep the content in the main window. | Click the "Detach" button on a tab header |
+| `tab_reattached` | `{ tab: TabId }` | Click the "Reattach" badge in the popup (or "Reattach" in the main window placeholder) |
+| `tab_tied` | `{ tab: TabId }` — starts mirroring the detached tab's viewBox one-way into the main window's active tab. | Click "Tie" on a detached tab header |
+| `tab_untied` | `{ tab: TabId }` — stops mirroring. Also fired automatically when a tied tab is reattached. | Click "Untie" on a detached tab header |
+| `view_mode_changed` | `{ mode: 'network'\|'delta', tab: TabId, scope: 'main'\|'detached' }` — Flow/Impacts is now per-tab AND per-window: toggling in a detached popup only affects that popup's tab. | Click Flows/Impacts toggle |
+| `voltage_range_changed` | `{ min: number, max: number }` (kV) | Drag voltage slider |
+| `asset_clicked` | `{ action_id: string, asset_name: string, tab: 'n'\|'n-1'\|'action' }` — `tab` is the destination tab for the zoom. When the click comes from the sticky contingency / overloads sidebar (`handleZoomOnActiveTab`), `tab` is set to the **currently active** diagram tab and `action_id` is the empty string — meaning "zoom this asset in place without switching tabs". | Click a rho-line badge or a sticky contingency / overload link |
+| `zoom_in` | `{ tab: TabId }` | Click + button |
+| `zoom_out` | `{ tab: TabId }` | Click - button |
+| `zoom_reset` | `{ tab: TabId }` | Click reset button |
+| `inspect_query_changed` | `{ query: string, target_tab?: TabId }` — `target_tab` is only present when the inspect field was triggered from a detached-tab overlay (per-tab inspect routing). Absent = main-window active tab. | Type in search box |
 
 ### SLD Overlay
 
 | Event | Details | Replay Action |
 |-------|---------|---------------|
-| `sld_overlay_opened` | `{ vl_name: string, action_id: string\|null, initial_tab: 'n'\|'n-1'\|'action' }` | Double-click VL node |
-| `sld_overlay_tab_changed` | `{ from_tab: SldTab, to_tab: SldTab }` | Click tab in SLD overlay |
+| `sld_overlay_opened` | `{ vl_name: string, action_id: string\|null }` — the currently-selected action ID (may be empty) is always carried through, even when the active tab is N / N-1, so the SLD's internal sub-tab buttons can switch to the action view without a backend lookup error. | Double-click VL node |
+| `sld_overlay_tab_changed` | `{ tab: SldTab, vl_name: string }` — the destination SLD sub-tab. | Click tab in SLD overlay |
 | `sld_overlay_closed` | `{}` | Click close on SLD overlay |
 
 ### Session Management
 
 | Event | Details | Replay Action |
 |-------|---------|---------------|
-| `session_saved` | `{ session_name: string, output_folder: string }` | Click "Save Results" |
-| `session_reload_modal_opened` | `{ output_folder: string, available_sessions: string[] }` | Click "Reload Session" |
+| `session_saved` | `{ output_folder: string }` | Click "Save Results" |
+| `session_reload_modal_opened` | `{}` — the list of available sessions is fetched async and is not part of the event payload. | Click "Reload Session" |
 | `session_reloaded` | `{ session_name: string }` | Click session in list |
 
 ---
@@ -199,13 +213,17 @@ These events trigger async API calls. The replay agent must wait for the operati
 |---------------|----------------|
 | `config_loaded` | Network loaded, branches list populated |
 | `analysis_step1_started` | Loading spinner gone, overload list populated |
-| `analysis_step2_started` | Streaming complete, action cards visible |
+| `analysis_step2_started` | Streaming complete, action cards visible, `lines_overloaded_rho` populated on the N-1 payload for the sidebar sticky header |
 | `action_selected` | Action diagram loaded (or simulation fallback complete) |
 | `manual_action_simulated` | Action card appears in feed |
+| `action_mw_resimulated` | Action card updates with new `rho_after` and refreshed `load_shedding_details` / `curtailment_details`; the card stays in its current bucket |
+| `pst_tap_resimulated` | Action card updates with new `rho_after` and refreshed `pst_details.tap_position`; the card stays in its current bucket |
 | `combine_pair_estimated` | Estimation values appear in modal |
 | `combine_pair_simulated` | Simulation values appear in modal |
-| `session_reloaded` | Full session state restored |
+| `session_reloaded` | Full session state restored (see "Session reload fidelity" below) |
 | `settings_applied` | Network reloaded, branches refreshed |
+| `tab_detached` | Popup opened, React portal target mounted — or the event is skipped if the runner can't open real popups |
+| `tab_reattached` | Popup closed, content re-rendered in the main window |
 
 ### Handling `*_completed` Events
 
@@ -220,6 +238,52 @@ Async start/complete pairs share a `correlation_id` (UUID). This allows the agen
 - Match starts with completions
 - Handle nested async operations (e.g., analysis running while diagrams load)
 - Detect interrupted operations (start without matching complete = user cancelled/errored)
+
+---
+
+## Session reload fidelity
+
+The `session_reloaded` wait-point above is only meaningful if the saved session actually contains everything the UI needs. Because several features have been added to `session.json` incrementally, this section documents exactly what is persisted and restored so replay agents and downstream tools know which fields are trustworthy on reload.
+
+### Configuration
+
+Every field listed in `config_loaded` / `settings_applied` is persisted under `session.configuration` and restored by `useSession.handleRestoreSession`. This includes `min_load_shedding` and `min_renewable_curtailment_actions` — required for the new `loads_p` / `gens_p` power-reduction format. Older session dumps that predate these fields fall back to `0.0` on reload.
+
+On restore, `committedNetworkPathRef` is set to the restored `network_path`. This is important: it's what gates the "Change Network?" confirmation dialog when the user subsequently edits the Header network input. Without this update the dialog would either misfire (empty ref) or fire against a stale previous value.
+
+### Overloads & sticky header ratios
+
+`session.overloads` now contains:
+
+- `n_overloads: string[]`, `n1_overloads: string[]`, `resolved_overloads: string[]` — as before.
+- `n_overloads_rho?: number[]`, `n1_overloads_rho?: number[]` — the per-element loading ratios (`max|i|/permanent_limit`) that feed the sticky sidebar summary (PR #88). Persisted only when their length matches the element-name array; otherwise omitted to avoid misaligned percentages. Older session dumps that predate the sticky header simply don't have these arrays.
+
+After reload, the sidebar sticky header renders percentages for these overloaded lines without requiring a fresh analysis run. The live `n1Diagram.lines_overloaded_rho` that fills the in-memory state comes from the re-fetched N-1 diagram (after `setSelectedBranch` fires), so the persisted arrays are primarily useful for inspection of standalone `session.json` dumps and for replay agents that don't actually re-run the backend.
+
+### Action enrichment fields
+
+Saved `SavedActionEntry` objects carry the enrichment fields added by PRs #73, #78 and #83:
+
+- `lines_overloaded_after: string[]` — post-action overload list, used by SLD / NAD highlight clones on the Remedial Action tab.
+- `load_shedding_details: LoadSheddingDetail[]` — per-load MW values for the load-shedding editor card.
+- `curtailment_details: CurtailmentDetail[]` — per-generator MW values for the curtailment editor card.
+- `pst_details: PstDetail[]` — `{ pst_name, tap_position, low_tap, high_tap }` for the PST editor card.
+
+All four are now **restored** into the live `ActionDetail` objects by `handleRestoreSession`. Previously they were dropped on reload, which caused:
+
+- The PST / load-shedding / curtailment editor cards to render empty until the user re-ran analysis.
+- The Remedial Action tab to lose its post-action overload halos (`.nad-overloaded` clones) because `lines_overloaded_after` was gone.
+
+If a replay agent depends on any of those post-load side effects, the reload path is now sufficient — no re-analysis required.
+
+### Action status flags
+
+`SavedActionStatus` (`is_selected`, `is_suggested`, `is_rejected`, `is_manually_simulated`) is persisted and restored as before. No changes to this contract.
+
+### What is NOT persisted
+
+- **Per-card edit state** (`cardEditMw`, `cardEditTap`): these are the raw, uncommitted values in the action card inputs. Only the committed, re-simulated result survives — persisted as `pst_details.tap_position` / `load_shedding_details[].shedded_mw` / `curtailment_details[].curtailed_mw`. A replay agent that wants to reproduce edit keystrokes must consume the `action_mw_resimulated` / `pst_tap_resimulated` events from `interaction_log.json` instead.
+- **Detached / tied tab state** (PR #84/#85): `detachedTabs` and the tied-tab registry are deliberately ephemeral. Detaching a tab does not change any analysis result, so reload intentionally starts with all tabs attached to the main window. A replay that needs to reproduce detach / reattach / tie / untie must stream the matching events from `interaction_log.json`.
 
 ---
 
@@ -398,7 +462,7 @@ export const interactionLogger = new InteractionLogger();
 
 ### Instrumented Handlers
 
-Every user-facing handler in `App.tsx` and `CombinedActionsModal.tsx` calls `interactionLogger.record()`. Async handlers use the start/complete pattern:
+User-facing handlers across `App.tsx`, `CombinedActionsModal.tsx`, `ActionFeed.tsx`, `SettingsModal.tsx` and the hook modules (`useActions.ts`, `useAnalysis.ts`, `useDiagrams.ts`, `useSession.ts`, `useSettings.ts`, `useSldOverlay.ts`, `useTiedTabsSync.ts`) call `interactionLogger.record()`. The rule of thumb is: **log where the user gesture is handled, not inside downstream reducers**. Re-simulation events are a good example — they used to be logged from the `useActions` hook but now live in `ActionFeed.handleResimulate` / `handleResimulateTap` because that's the only place where the user-edited `target_mw` / `target_tap` values are in scope. Async handlers use the start/complete pattern:
 
 ```typescript
 const handleRunAnalysis = useCallback(async () => {

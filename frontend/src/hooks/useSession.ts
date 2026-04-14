@@ -46,6 +46,8 @@ export interface SaveParams {
   monitorDeselected: boolean;
   nOverloads: string[];
   n1Overloads: string[];
+  nOverloadsRho?: number[];
+  n1OverloadsRho?: number[];
   result: AnalysisResult | null;
   selectedActionIds: Set<string>;
   rejectedActionIds: Set<string>;
@@ -89,6 +91,13 @@ export interface RestoreContext {
   setSuggestedByRecommenderIds: Dispatch<SetStateAction<Set<string>>>;
   restoringSessionRef: MutableRefObject<boolean>;
   committedBranchRef: MutableRefObject<string>;
+  // Tracks the network path of the currently-loaded study so that
+  // subsequent edits to the Header path input know whether to prompt
+  // the "Change Network?" confirmation dialog. Must be updated on
+  // session restore — otherwise the first manual edit to the network
+  // path after a reload either silently drops the study (ref empty)
+  // or fires a spurious dialog against a stale value. See PR #83.
+  committedNetworkPathRef: MutableRefObject<string>;
   setSelectedBranch: (v: string) => void;
   setInfoMessage: (v: string) => void;
   setError: (v: string) => void;
@@ -124,6 +133,8 @@ export function useSession(): SessionState {
       monitorDeselected: params.monitorDeselected,
       nOverloads: params.nOverloads,
       n1Overloads: params.n1Overloads,
+      nOverloadsRho: params.nOverloadsRho,
+      n1OverloadsRho: params.n1OverloadsRho,
       result: params.result,
       selectedActionIds: params.selectedActionIds,
       rejectedActionIds: params.rejectedActionIds,
@@ -229,6 +240,13 @@ export function useSession(): SessionState {
 
       ctx.applyConfigResponse(configRes as Record<string, unknown>);
 
+      // Record the restored network path as the currently-committed
+      // study, so any later manual edit to the Header network input
+      // correctly routes through the "Change Network?" confirmation
+      // dialog instead of either silently dropping the study (ref
+      // empty) or misfiring against a stale previous value.
+      ctx.committedNetworkPathRef.current = cfg.network_path;
+
       // 3. Fetch study data
       const [branchesList, vlRes, nomVRes] = await Promise.all([
         api.getBranches(),
@@ -278,6 +296,16 @@ export function useSession(): SessionState {
             is_islanded: entry.is_islanded,
             n_components: entry.n_components,
             disconnected_mw: entry.disconnected_mw,
+            // Enrichment fields added by PR #73 (loads_p/gens_p format),
+            // PR #78 (PST tap re-simulation) and PR #83 (post-action
+            // overload highlighting). These were previously dropped on
+            // reload, so the PST / load-shedding / curtailment editors
+            // rendered empty and the SLD/NAD tab lost its post-action
+            // overload halos until the user re-ran analysis.
+            lines_overloaded_after: entry.lines_overloaded_after,
+            load_shedding_details: entry.load_shedding_details,
+            curtailment_details: entry.curtailment_details,
+            pst_details: entry.pst_details,
             is_manual: entry.status.is_manually_simulated,
           };
 
