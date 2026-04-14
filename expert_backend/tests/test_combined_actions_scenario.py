@@ -12,6 +12,7 @@ import re
 import pytest
 import numpy as np
 from pathlib import Path
+from unittest.mock import MagicMock
 
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -20,6 +21,23 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 expert_op4_path = Path("/home/marotant/dev/Expert_op4grid_recommender")
 if expert_op4_path.exists():
     sys.path.insert(0, str(expert_op4_path))
+
+# Real-data integration test — requires the actual pypowsybl and
+# expert_op4grid_recommender packages.  When conftest.py falls back to
+# MagicMock stubs the pipeline hits numeric comparisons on mocks and
+# fails with ``TypeError: '>' not supported between instances of
+# 'MagicMock' and 'MagicMock'``.  Skip the whole module in that case.
+import pypowsybl as _pp  # noqa: E402
+import expert_op4grid_recommender as _eor  # noqa: E402
+
+pytestmark = pytest.mark.skipif(
+    isinstance(_pp, MagicMock) or isinstance(_eor, MagicMock),
+    reason=(
+        "Real pypowsybl / expert_op4grid_recommender packages are required "
+        "for this integration test; skipping because conftest.py is using "
+        "MagicMock stubs."
+    ),
+)
 
 from expert_backend.services.recommender_service import recommender_service
 from expert_op4grid_recommender import config
