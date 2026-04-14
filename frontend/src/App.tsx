@@ -341,6 +341,23 @@ function App() {
     [diagrams, wrappedActionSelect]
   );
 
+  // Zoom the currently-active diagram tab on a named asset without
+  // switching tabs. Used by the sticky Contingency and Overloads
+  // sections: operators want to keep the view they're on (N / N-1 /
+  // Action) and just focus the clicked line in place.
+  const handleZoomOnActiveTab = useCallback((assetName: string) => {
+    if (!assetName) return;
+    const tab = diagrams.activeTab;
+    if (tab === 'overflow') return;
+    interactionLogger.record('asset_clicked', { action_id: '', asset_name: assetName, tab });
+    // Update inspectQuery (so the inspect overlay, if open, reflects
+    // the focus) AND call zoomToElement directly — the auto-zoom effect
+    // skips no-op query changes, whereas we want re-clicking the same
+    // line to re-center the view.
+    diagrams.setInspectQueryForTab(tab, assetName);
+    diagrams.zoomToElement(assetName, tab);
+  }, [diagrams]);
+
   const saveParams = useMemo(() => ({
     networkPath, actionPath, layoutPath, outputFolderPath,
     minLineReconnections, minCloseCoupling, minOpenCoupling,
@@ -899,29 +916,58 @@ function App() {
       />
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <div data-testid="sidebar" style={{ width: '25%', background: '#eee', borderRight: '1px solid #ccc', display: 'flex', flexDirection: 'column', padding: '15px', gap: '15px', overflowY: 'auto' }}>
-          {/* Target Contingency selector */}
-          {branches.length > 0 && (
-            <div style={{ padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
-              <input
-                list="contingencies"
-                value={selectedBranch}
-                onChange={handleContingencyChange}
-                placeholder="Search line/bus..."
-                style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }}
-              />
-              <datalist id="contingencies">
-                {contingencyOptions}
-              </datalist>
-            </div>
-          )}
+        {/*
+          Sidebar layout: Contingency + Overloads N-1 are pinned as a
+          non-scrolling header block so the operator keeps sight of the
+          contingency and its overloads while scrolling through the
+          (potentially long) action list. Only the ActionFeed scrolls.
+        */}
+        <div data-testid="sidebar" style={{ width: '25%', background: '#eee', borderRight: '1px solid #ccc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ flexShrink: 0, padding: '15px 15px 0 15px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            {/* Target Contingency selector */}
+            {branches.length > 0 && (
+              <div style={{ padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
+                <input
+                  list="contingencies"
+                  value={selectedBranch}
+                  onChange={handleContingencyChange}
+                  placeholder="Search line/bus..."
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }}
+                />
+                <datalist id="contingencies">
+                  {contingencyOptions}
+                </datalist>
+                {selectedBranch && (
+                  <div style={{ marginTop: '6px', fontSize: '11px', color: '#374151' }}>
+                    <span style={{ marginRight: '4px' }}>Selected:</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleZoomOnActiveTab(selectedBranch); }}
+                      title={`Zoom to ${selectedBranch} in the current diagram`}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                        fontSize: '11px',
+                        color: '#1e40af',
+                        fontWeight: 600,
+                        textDecoration: 'underline dotted',
+                      }}
+                    >
+                      🔍 {selectedBranch}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
-          <div style={{ flexShrink: 0 }}>
             <OverloadPanel
               nOverloads={nDiagram?.lines_overloaded || []}
               n1Overloads={n1Diagram?.lines_overloaded || []}
-              onAssetClick={wrappedAssetClick as (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void}
+              nOverloadsRho={nDiagram?.lines_overloaded_rho}
+              n1OverloadsRho={n1Diagram?.lines_overloaded_rho}
+              onZoomToAsset={handleZoomOnActiveTab}
               showMonitoringWarning={showMonitoringWarning}
               monitoredLinesCount={monitoredLinesCount}
               totalLinesCount={totalLinesCount}
@@ -935,7 +981,7 @@ function App() {
               onToggleMonitorDeselected={handleToggleMonitorDeselected}
             />
           </div>
-          <div style={{ flexShrink: 0 }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '15px', minHeight: 0 }}>
             <ActionFeed
               actions={result?.actions || {}}
               actionScores={result?.action_scores}

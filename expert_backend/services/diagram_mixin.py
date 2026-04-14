@@ -124,7 +124,11 @@ class DiagramMixin:
 
         try:
             diagram = self._generate_diagram(n, voltage_level_ids=voltage_level_ids, depth=depth)
-            diagram["lines_overloaded"] = self._get_overloaded_lines(n, lines_we_care_about=self._get_lines_we_care_about())
+            names, rhos = self._get_overloaded_lines(
+                n, lines_we_care_about=self._get_lines_we_care_about(), with_rho=True
+            )
+            diagram["lines_overloaded"] = names
+            diagram["lines_overloaded_rho"] = rhos
             # Cache N-state element currents for N-1 comparison
             self._n_state_currents = self._get_element_max_currents(n)
             return diagram
@@ -188,9 +192,14 @@ class DiagramMixin:
 
             # Exclude pre-existing overloads (already overloaded in N) unless worsened
             n_state_currents = getattr(self, '_n_state_currents', None)
-            diagram["lines_overloaded"] = self._get_overloaded_lines(
-                n, n_state_currents=n_state_currents, lines_we_care_about=self._get_lines_we_care_about()
+            names, rhos = self._get_overloaded_lines(
+                n,
+                n_state_currents=n_state_currents,
+                lines_we_care_about=self._get_lines_we_care_about(),
+                with_rho=True,
             )
+            diagram["lines_overloaded"] = names
+            diagram["lines_overloaded_rho"] = rhos
             return diagram
         finally:
             n.set_working_variant(original_variant) # Restore original variant
@@ -466,7 +475,7 @@ class DiagramMixin:
                 logger.warning(f"Warning: Failed to load lines_we_care_about: {e}")
         return None
 
-    def _get_overloaded_lines(self, network, n_state_currents=None, lines_we_care_about=None):
+    def _get_overloaded_lines(self, network, n_state_currents=None, lines_we_care_about=None, with_rho=False):
         """Get overloaded lines and transformers.
 
         Args:
@@ -477,6 +486,13 @@ class DiagramMixin:
                 worsening threshold.
             lines_we_care_about: If provided, set of element IDs to monitor.
                 Only these elements are checked for overloads.
+            with_rho: If True, also return a parallel list of rho (I/limit ratio)
+                values aligned with the returned overloaded element names.
+
+        Returns:
+            list[str] of overloaded element IDs by default.
+            If ``with_rho`` is True, a tuple ``(names, rhos)`` where ``rhos`` is
+            a list of floats aligned with ``names``.
         """
         import numpy as np
         limits = network.get_operational_limits()
@@ -486,8 +502,9 @@ class DiagramMixin:
             limits = limits.reset_index()
             current_limits = limits[(limits['type'] == 'CURRENT') & (limits['acceptable_duration'] == -1)]
             limit_dict = dict(zip(current_limits['element_id'], current_limits['value']))
-        
+
         overloaded = []
+        overloaded_rho = []
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
         worsening_threshold = getattr(config, 'PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD', 0.02)
         default_limit = 9999.0  # Same default as the recommender
@@ -498,12 +515,12 @@ class DiagramMixin:
                 # Skip elements not in the monitored set
                 if lines_we_care_about is not None and element_id not in lines_we_care_about:
                     continue
-                
+
                 limit = limit_dict.get(element_id)
                 if limit is None:
                     # No permanent limit found for this branch, skip monitoring
                     continue
-                    
+
                 i1 = row['i1']
                 i2 = row['i2']
                 if not np.isnan(i1) and not np.isnan(i2):
@@ -517,6 +534,10 @@ class DiagramMixin:
                                 if max_i <= n_max_i * (1 + worsening_threshold):
                                     continue
                         overloaded.append(element_id)
+                        overloaded_rho.append(float(max_i / limit) if limit else 0.0)
+
+        if with_rho:
+            return sanitize_for_json(overloaded), sanitize_for_json(overloaded_rho)
         return sanitize_for_json(overloaded)
 
     def _get_element_max_currents(self, network):

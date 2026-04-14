@@ -14,7 +14,7 @@ describe('OverloadPanel', () => {
     const defaultProps = {
         nOverloads: [] as string[],
         n1Overloads: [] as string[],
-        onAssetClick: vi.fn(),
+        onZoomToAsset: vi.fn(),
     };
 
     it('renders the Overloads heading', () => {
@@ -49,34 +49,48 @@ describe('OverloadPanel', () => {
         expect(screen.getByText('TRAFO_1')).toBeInTheDocument();
     });
 
-    it('calls onAssetClick with correct tab for N overloads', async () => {
+    it('calls onZoomToAsset with line name for N overloads', async () => {
         const user = userEvent.setup();
-        const onAssetClick = vi.fn();
+        const onZoomToAsset = vi.fn();
         render(
             <OverloadPanel
                 {...defaultProps}
                 nOverloads={['LINE_A']}
-                onAssetClick={onAssetClick}
+                onZoomToAsset={onZoomToAsset}
             />
         );
 
         await user.click(screen.getByText('LINE_A'));
-        expect(onAssetClick).toHaveBeenCalledWith('', 'LINE_A', 'n');
+        expect(onZoomToAsset).toHaveBeenCalledWith('LINE_A');
     });
 
-    it('calls onAssetClick with correct tab for N-1 overloads', async () => {
+    it('calls onZoomToAsset with line name for N-1 overloads', async () => {
         const user = userEvent.setup();
-        const onAssetClick = vi.fn();
+        const onZoomToAsset = vi.fn();
         render(
             <OverloadPanel
                 {...defaultProps}
                 n1Overloads={['LINE_B']}
-                onAssetClick={onAssetClick}
+                onZoomToAsset={onZoomToAsset}
             />
         );
 
         await user.click(screen.getByText('LINE_B'));
-        expect(onAssetClick).toHaveBeenCalledWith('', 'LINE_B', 'n-1');
+        expect(onZoomToAsset).toHaveBeenCalledWith('LINE_B');
+    });
+
+    it('renders loading percentages next to overload names when rho is provided', () => {
+        render(
+            <OverloadPanel
+                {...defaultProps}
+                nOverloads={['LINE_A']}
+                nOverloadsRho={[1.024]}
+                n1Overloads={['LINE_B']}
+                n1OverloadsRho={[1.1765]}
+            />
+        );
+        expect(screen.getByText('(102.4%)')).toBeInTheDocument();
+        expect(screen.getByText('(117.7%)')).toBeInTheDocument();
     });
 
     it('renders both N and N-1 overloads simultaneously', () => {

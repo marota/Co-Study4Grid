@@ -157,9 +157,9 @@ describe('ActionCard', () => {
         expect(screen.getAllByTitle('Zoom to LINE_A').length).toBeGreaterThan(0);
     });
 
-    it('renders loading before/after rho sections', () => {
+    it('renders loading after rho section (loading before is shown in the sticky Overloads panel)', () => {
         render(<ActionCard {...defaultProps} />);
-        expect(screen.getByText(/Loading before/)).toBeInTheDocument();
+        expect(screen.queryByText(/Loading before/)).not.toBeInTheDocument();
         expect(screen.getByText(/Loading after/)).toBeInTheDocument();
     });
 

@@ -69,8 +69,26 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             width: 25%;
             background: #eee;
             border-right: 1px solid #ccc;
-            padding: 15px;
+            /*
+              The Contingency + Overloads N-1 sections must stay visible
+              when scrolling through actions, so the sidebar itself no
+              longer scrolls — its inner `.action-feed-scroll` does.
+            */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .action-feed-sticky {
+            flex-shrink: 0;
+            padding: 15px 15px 0 15px;
+        }
+
+        .action-feed-scroll {
+            flex: 1 1 auto;
+            min-height: 0;
             overflow-y: auto;
+            padding: 15px;
         }
 
         .visualization {
@@ -3018,6 +3036,19 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 }
             };
 
+            // ===== Zoom on active tab =====
+            // Used by the sticky Contingency and Overloads sections: the
+            // operator wants to keep the current diagram view (N / N-1 /
+            // Action) and just focus the clicked asset in place rather
+            // than jumping tabs.
+            const zoomOnActiveTab = (assetName) => {
+                if (!assetName) return;
+                const tab = activeTabRef.current;
+                if (tab === 'overflow') return;
+                interactionLogger.record('asset_clicked', { asset_name: assetName, action_id: '', target_tab: tab });
+                setInspectQuery(assetName);
+            };
+
             // ===== VL Double-Click → Single Line Diagram overlay =====
             const handleVlDoubleClick = async (actionId, vlName) => {
                 setOverlayTransform({ scale: 1, tx: 0, ty: 0 });
@@ -5471,7 +5502,9 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 }
                                 <div style={{ fontSize: '12px', background: isSelected ? '#dce8f7' : '#f8f9fa', padding: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                                     <div>
-                                        <div>Loading before: {renderRho(details.rho_before, 'n-1')}</div>
+                                        {/* "Loading before" removed: the N-1 pre-action loading is
+                                             already shown in the sticky Overloads N-1 section, with
+                                             percentages next to each overloaded line. */}
                                         <div>Loading after: {renderRho(details.rho_after, 'action')}</div>
                                         {maxRhoPct != null && (
                                             <div style={{ marginTop: '3px' }}>
@@ -5779,12 +5812,25 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
                     <div className="main-content">
                         <div className="action-feed">
+                            <div className="action-feed-sticky">
                             {/* Target Contingency selector */}
                             {branches.length > 0 && (
                                 <div style={{ marginBottom: '10px', padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
                                     <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
                                     <input list="contingencies" value={selectedBranch} onChange={e => { const val = e.target.value; if (branches.includes(val)) interactionLogger.record('contingency_selected', { element: val }); setSelectedBranch(val); }} placeholder="Search line/bus..." style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }} />
                                     <datalist id="contingencies">{contingencyOptions}</datalist>
+                                    {selectedBranch && (
+                                        <div style={{ marginTop: '6px', fontSize: '11px', color: '#374151' }}>
+                                            <span style={{ marginRight: '4px' }}>Selected:</span>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); zoomOnActiveTab(selectedBranch); }}
+                                                title={`Zoom to ${selectedBranch} in the current diagram`}
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '11px', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted' }}
+                                            >
+                                                🔍 {selectedBranch}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -5822,12 +5868,17 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                         <strong style={{ whiteSpace: 'nowrap' }}>N Overloads:</strong>
                                         <div style={{ display: 'inline', wordBreak: 'break-word' }}>
                                             {nDiagram && nDiagram.lines_overloaded && nDiagram.lines_overloaded.length > 0 ? (
-                                                nDiagram.lines_overloaded.map((lvl, i) => (
-                                                    <React.Fragment key={lvl}>
-                                                        {i > 0 && ', '}
-                                                        <button onClick={() => handleAssetClick(null, lvl, 'n')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted' }}>{lvl}</button>
-                                                    </React.Fragment>
-                                                ))
+                                                nDiagram.lines_overloaded.map((lvl, i) => {
+                                                    const rho = nDiagram.lines_overloaded_rho && nDiagram.lines_overloaded_rho[i];
+                                                    const rhoPct = (rho != null && !Number.isNaN(rho)) ? `${(rho * 100).toFixed(1)}%` : null;
+                                                    return (
+                                                        <React.Fragment key={lvl}>
+                                                            {i > 0 && ', '}
+                                                            <button onClick={() => zoomOnActiveTab(lvl)} title={`Zoom to ${lvl}`} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', color: '#1e40af', fontWeight: 600, textDecoration: 'underline dotted' }}>{lvl}</button>
+                                                            {rhoPct && <span style={{ color: '#374151', fontWeight: 500, marginLeft: '2px' }}>({rhoPct})</span>}
+                                                        </React.Fragment>
+                                                    );
+                                                })
                                             ) : (
                                                 <span style={{ color: '#888', fontStyle: 'italic' }}>None</span>
                                             )}
@@ -5891,11 +5942,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                             {n1Diagram && n1Diagram.lines_overloaded && n1Diagram.lines_overloaded.length > 0 ? (
                                                 n1Diagram.lines_overloaded.map((lvl, i) => {
                                                     const isSelected = selectedOverloads.has(lvl);
+                                                    const rho = n1Diagram.lines_overloaded_rho && n1Diagram.lines_overloaded_rho[i];
+                                                    const rhoPct = (rho != null && !Number.isNaN(rho)) ? `${(rho * 100).toFixed(1)}%` : null;
                                                     return (
                                                         <React.Fragment key={lvl}>
                                                             {i > 0 && ', '}
                                                             <button
-                                                                onClick={(e) => { e.stopPropagation(); handleAssetClick(null, lvl, 'n-1'); }}
+                                                                onClick={(e) => { e.stopPropagation(); zoomOnActiveTab(lvl); }}
                                                                 onDoubleClick={(e) => {
                                                                     e.stopPropagation();
                                                                     const next = new Set(selectedOverloads);
@@ -5920,6 +5973,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                             >
                                                                 {lvl}
                                                             </button>
+                                                            {rhoPct && <span style={{ color: isSelected ? '#374151' : '#bdc3c7', fontWeight: 500, marginLeft: '2px' }}>({rhoPct})</span>}
                                                         </React.Fragment>
                                                     );
                                                 })
@@ -5930,6 +5984,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     </div>
                                 </div>
                             </div>
+                            </div>{/* /.action-feed-sticky */}
+                            <div className="action-feed-scroll">
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', position: 'relative' }}>
                                 <h3 style={{ margin: 0, flex: 1 }}>Simulated Actions</h3>
@@ -6535,6 +6591,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     {scoreTooltip.content}
                                 </div>
                             )}
+                            </div>{/* /.action-feed-scroll */}
                         </div>
                         <div className="visualization" style={{ display: 'flex', flexDirection: 'column' }}>
                             {/* Tab bar — all 4 tabs always visible; unavailable ones dimmed/italic with placeholder tooltips */}
