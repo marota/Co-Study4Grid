@@ -80,6 +80,48 @@ describe('ActionFeed', () => {
     };
 
 
+    it('shows "Make a first guess" button when the Selected Actions section is empty', () => {
+        // Regression guard: the standalone interface exposes a
+        // "💡 Make a first guess" shortcut that opens the Manual
+        // Selection search. The React frontend was missing it, so
+        // users had no obvious entry point from the empty Selected
+        // Actions slot into manual action exploration.
+        render(<ActionFeed {...defaultProps} />);
+        expect(screen.getByTestId('make-first-guess-button')).toBeInTheDocument();
+        expect(screen.getByText(/Make a first guess/)).toBeInTheDocument();
+    });
+
+    it('"Make a first guess" opens the manual search dropdown', () => {
+        render(<ActionFeed {...defaultProps} />);
+        // The dropdown search input is not present until the user
+        // opens the search.
+        expect(screen.queryByPlaceholderText(/Search action by ID/)).not.toBeInTheDocument();
+        fireEvent.click(screen.getByTestId('make-first-guess-button'));
+        expect(screen.getByPlaceholderText(/Search action by ID/)).toBeInTheDocument();
+    });
+
+    it('hides "Make a first guess" when there are already selected actions', () => {
+        const actionId = 'manual_1';
+        const props = {
+            ...defaultProps,
+            actions: {
+                [actionId]: {
+                    description_unitaire: 'Manual Action',
+                    rho_before: [1.0],
+                    rho_after: [0.8],
+                    max_rho: 0.8,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                    is_manual: true,
+                    action_topology: emptyTopo,
+                },
+            },
+            selectedActionIds: new Set([actionId]),
+        };
+        render(<ActionFeed {...props} />);
+        expect(screen.queryByTestId('make-first-guess-button')).not.toBeInTheDocument();
+    });
+
     it('renders "Scored Actions" heading when search is opened and actions are present', async () => {
         const actionId = 'act_1';
         const props = {
