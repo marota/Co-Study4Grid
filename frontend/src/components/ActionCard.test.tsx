@@ -108,6 +108,34 @@ describe('ActionCard', () => {
         expect(screen.queryByText('VIEWING')).not.toBeInTheDocument();
     });
 
+    it('renders the VIEWING marker as a vertical ribbon on the left edge', () => {
+        // The ribbon sits flush against the left border to free a full
+        // row of horizontal space inside the card header (long action
+        // IDs on a narrow sidebar).  It must be a sibling of the
+        // content column — not inside the header — and must use
+        // vertical writing mode.
+        render(<ActionCard {...defaultProps} isViewing={true} />);
+        const ribbon = screen.getByTestId('action-card-act_1-viewing-ribbon');
+        expect(ribbon).toBeInTheDocument();
+        expect(ribbon).toHaveTextContent('VIEWING');
+        expect(ribbon).toHaveStyle({ writingMode: 'vertical-rl' });
+
+        // And the inline top-right VIEWING pill is gone (the severity
+        // badge — "Solves overload" — is still rendered next to the
+        // title, but not the old rectangular "VIEWING" pill).
+        const card = screen.getByTestId('action-card-act_1');
+        const inlinePill = card.querySelectorAll('span');
+        const pillTexts = Array.from(inlinePill).map(el => el.textContent);
+        // The vertical ribbon is a <div>, not a <span>, so no <span>
+        // should contain exactly "VIEWING".
+        expect(pillTexts).not.toContain('VIEWING');
+    });
+
+    it('does not render the vertical ribbon when isViewing is false', () => {
+        render(<ActionCard {...defaultProps} isViewing={false} />);
+        expect(screen.queryByTestId('action-card-act_1-viewing-ribbon')).not.toBeInTheDocument();
+    });
+
     it('calls onActionSelect when card is clicked', () => {
         const onActionSelect = vi.fn();
         render(<ActionCard {...defaultProps} onActionSelect={onActionSelect} />);

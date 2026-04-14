@@ -191,13 +191,52 @@ const ActionCard: React.FC<ActionCardProps> = ({
                 background: (details.non_convergence || details.is_islanded) ? '#fff5f5' : (isViewing ? '#e7f1ff' : 'white'),
                 border: (details.non_convergence || details.is_islanded) ? '1px solid #dc3545' : '1px solid #ddd',
                 borderRadius: '8px',
-                padding: '10px',
                 marginBottom: '10px',
                 boxShadow: isViewing ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
                 borderLeft: `5px solid ${isViewing ? '#007bff' : sc.border}`,
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
+                display: 'flex',
+                alignItems: 'stretch',
+                overflow: 'hidden',
             }} onClick={() => onActionSelect(id)}>
+            {/*
+              When the card is the currently-viewed action, the
+              VIEWING marker is rendered as a vertical ribbon flush
+              against the left edge (between the colored border and
+              the content) — this frees up a full line of horizontal
+              space inside the header, which matters on a narrow
+              sidebar with long equipment IDs.
+
+              Implementation note: `writing-mode: vertical-rl` +
+              `transform: rotate(180deg)` yields bottom-to-top text
+              with letters rotated the "book-spine" way — the
+              cross-browser combination that works consistently on
+              Chromium / Firefox / Safari (unlike the newer
+              `sideways-lr`, which is still WebKit-patchy).
+            */}
+            {isViewing && (
+                <div
+                    data-testid={`action-card-${id}-viewing-ribbon`}
+                    style={{
+                        writingMode: 'vertical-rl',
+                        transform: 'rotate(180deg)',
+                        background: '#007bff',
+                        color: 'white',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        letterSpacing: '1.5px',
+                        padding: '8px 3px',
+                        textAlign: 'center',
+                        flexShrink: 0,
+                        userSelect: 'none',
+                    }}
+                    aria-label="Currently viewing this action"
+                >
+                    VIEWING
+                </div>
+            )}
+            <div style={{ flex: 1, padding: '10px', minWidth: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h4 style={{
                     margin: 0,
@@ -210,11 +249,6 @@ const ActionCard: React.FC<ActionCardProps> = ({
                     #{index + 1} {'\u2014'} {id}
                 </h4>
                 <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                    {isViewing && (
-                        <span style={{ fontSize: '10px', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', background: '#007bff', color: 'white' }}>
-                            VIEWING
-                        </span>
-                    )}
                     <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '12px', background: sc.badgeBg, color: sc.badgeText }}>
                         {sc.label}
                     </span>
@@ -368,6 +402,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                     )}
                 </div>
             </div>
+            </div>{/* /content column */}
         </div>
     );
 };
