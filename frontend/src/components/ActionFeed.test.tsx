@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { interactionLogger } from '../utils/interactionLogger';
 
 // Mocking dependencies
 vi.mock('../api', () => ({
@@ -1432,6 +1433,183 @@ describe('ActionFeed', () => {
                 expect(props.onActionResimulated).toHaveBeenCalledTimes(1);
             });
             expect(props.onManualActionAdded).not.toHaveBeenCalled();
+        });
+    });
+
+    // =========================================================================
+    // Re-simulation interaction logging (action_mw_resimulated / pst_tap_resimulated)
+    // =========================================================================
+    //
+    // These events carry the raw user-entered target value so a replay
+    // agent can type the same MW / tap into the card's input before
+    // clicking Re-simulate. They are emitted from
+    // ActionFeed.handleResimulate / handleResimulateTap — NOT from the
+    // useActions hook, which used to log a mistyped
+    // 'manual_action_simulated' event.
+    // -------------------------------------------------------------------------
+    describe('Re-simulation interaction logging', () => {
+        beforeEach(() => {
+            interactionLogger.clear();
+        });
+
+        const buildLsProps = () => {
+            const actionId = 'load_shedding_LOG_A1';
+            const props = {
+                ...defaultProps,
+                onActionResimulated: vi.fn(),
+                actions: {
+                    [actionId]: {
+                        description_unitaire: 'ls A1',
+                        rho_before: [0.95],
+                        rho_after: [0.7],
+                        max_rho: 0.7,
+                        max_rho_line: 'LINE_1',
+                        is_rho_reduction: true,
+                        non_convergence: null,
+                        load_shedding_details: [
+                            { load_name: 'LOG_A1', voltage_level_id: 'VL', shedded_mw: 6.4 },
+                        ],
+                        action_topology: { ...emptyTopo, loads_p: { LOG_A1: 0.0 } },
+                    } as ActionDetail,
+                },
+            };
+            const mockResult = {
+                action_id: actionId,
+                description_unitaire: 'ls A1',
+                rho_before: [0.95],
+                rho_after: [0.55],
+                max_rho: 0.55,
+                max_rho_line: 'LINE_1',
+                is_rho_reduction: true,
+                non_convergence: null,
+                lines_overloaded: ['LINE_1'],
+                lines_overloaded_after: [],
+                load_shedding_details: [
+                    { load_name: 'LOG_A1', voltage_level_id: 'VL', shedded_mw: 5.4 },
+                ],
+            };
+            return { actionId, props, mockResult };
+        };
+
+        it('records action_mw_resimulated with the exact user-entered target MW on LS re-simulate', async () => {
+            const { actionId, props, mockResult } = buildLsProps();
+            (api.simulateManualAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mockResult);
+
+            render(<ActionFeed {...props} />);
+            fireEvent.change(screen.getByTestId(`edit-mw-${actionId}`), { target: { value: '5.4' } });
+            fireEvent.click(screen.getByTestId(`resimulate-${actionId}`));
+
+            await waitFor(() => {
+                expect(props.onActionResimulated).toHaveBeenCalledTimes(1);
+            });
+
+            const log = interactionLogger.getLog();
+            const evt = log.find(e => e.type === 'action_mw_resimulated');
+            expect(evt).toBeDefined();
+            expect(evt!.details).toEqual({
+                action_id: actionId,
+                // parseFloat of the input string, before any backend
+                // clamping — matches the value the user typed.
+                target_mw: 5.4,
+            });
+        });
+
+        it('does NOT record manual_action_simulated when re-simulating load shedding', async () => {
+            const { actionId, props, mockResult } = buildLsProps();
+            (api.simulateManualAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mockResult);
+
+            render(<ActionFeed {...props} />);
+            fireEvent.change(screen.getByTestId(`edit-mw-${actionId}`), { target: { value: '5.4' } });
+            fireEvent.click(screen.getByTestId(`resimulate-${actionId}`));
+
+            await waitFor(() => {
+                expect(props.onActionResimulated).toHaveBeenCalledTimes(1);
+            });
+
+            // Regression guard: re-simulation is a distinct gesture
+            // and must NOT be logged as a manual action (which would
+            // mislead a replay agent into promoting the card into
+            // Selected Actions).
+            const log = interactionLogger.getLog();
+            expect(log.some(e => e.type === 'manual_action_simulated')).toBe(false);
+        });
+
+        it('records pst_tap_resimulated with the exact user-entered tap on PST re-simulate', async () => {
+            const pstActionId = 'pst_A1';
+            const props = {
+                ...defaultProps,
+                onActionResimulated: vi.fn(),
+                actions: {
+                    [pstActionId]: {
+                        description_unitaire: 'pst A1',
+                        rho_before: [0.95],
+                        rho_after: [0.7],
+                        max_rho: 0.7,
+                        max_rho_line: 'LINE_1',
+                        is_rho_reduction: true,
+                        non_convergence: null,
+                        pst_details: [
+                            { pst_name: 'PST_A1', tap_position: 3, low_tap: -5, high_tap: 5 },
+                        ],
+                        action_topology: { ...emptyTopo, pst_tap: { PST_A1: 0 } },
+                    } as ActionDetail,
+                },
+            };
+            const mockResult = {
+                action_id: pstActionId,
+                description_unitaire: 'pst A1',
+                rho_before: [0.95],
+                rho_after: [0.5],
+                max_rho: 0.5,
+                max_rho_line: 'LINE_1',
+                is_rho_reduction: true,
+                non_convergence: null,
+                lines_overloaded: ['LINE_1'],
+                lines_overloaded_after: [],
+                pst_details: [
+                    { pst_name: 'PST_A1', tap_position: 4, low_tap: -5, high_tap: 5 },
+                ],
+            };
+            (api.simulateManualAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mockResult);
+
+            render(<ActionFeed {...props} />);
+            fireEvent.change(screen.getByTestId(`edit-tap-${pstActionId}`), { target: { value: '4' } });
+            fireEvent.click(screen.getByTestId(`resimulate-tap-${pstActionId}`));
+
+            await waitFor(() => {
+                expect(props.onActionResimulated).toHaveBeenCalledTimes(1);
+            });
+
+            const log = interactionLogger.getLog();
+            const evt = log.find(e => e.type === 'pst_tap_resimulated');
+            expect(evt).toBeDefined();
+            expect(evt!.details).toEqual({
+                action_id: pstActionId,
+                target_tap: 4,
+            });
+
+            // And again: a PST re-simulation must not masquerade as a
+            // manual action.
+            expect(log.some(e => e.type === 'manual_action_simulated')).toBe(false);
+            expect(log.some(e => e.type === 'action_mw_resimulated')).toBe(false);
+        });
+
+        it('records target_mw as the parsed float even when the user types extra decimals', async () => {
+            const { actionId, props, mockResult } = buildLsProps();
+            (api.simulateManualAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mockResult);
+
+            render(<ActionFeed {...props} />);
+            fireEvent.change(screen.getByTestId(`edit-mw-${actionId}`), { target: { value: '5.400' } });
+            fireEvent.click(screen.getByTestId(`resimulate-${actionId}`));
+
+            await waitFor(() => {
+                expect(props.onActionResimulated).toHaveBeenCalledTimes(1);
+            });
+
+            const log = interactionLogger.getLog();
+            const evt = log.find(e => e.type === 'action_mw_resimulated');
+            expect(evt).toBeDefined();
+            expect(evt!.details.target_mw).toBe(5.4);
         });
     });
 

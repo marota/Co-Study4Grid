@@ -9,10 +9,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import SettingsModal from './SettingsModal';
 import { SettingsState } from '../../hooks/useSettings';
+import { interactionLogger } from '../../utils/interactionLogger';
 
 describe('SettingsModal', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        interactionLogger.clear();
     });
 
     const mockSettings = {
@@ -119,5 +121,84 @@ describe('SettingsModal', () => {
         const pickButtons = screen.getAllByText('📄');
         fireEvent.click(pickButtons[0]);
         expect(mockSettings.pickSettingsPath).toHaveBeenCalled();
+    });
+
+    // =====================================================================
+    // settings_tab_changed interaction log shape
+    // =====================================================================
+    //
+    // The replay contract requires { from_tab, to_tab } so an agent can
+    // assert the modal was in the expected tab before clicking the new
+    // one. Before this fix the logger emitted only { tab } (the
+    // destination), which lost the "where was the user coming from?"
+    // information needed for verification.
+    // ---------------------------------------------------------------------
+    describe('settings_tab_changed interaction log shape', () => {
+        it('logs { from_tab, to_tab } when switching from paths → recommender', () => {
+            render(<SettingsModal {...defaultProps} />);
+
+            fireEvent.click(screen.getByText('Recommender'));
+
+            const log = interactionLogger.getLog();
+            const tabChange = log.find(e => e.type === 'settings_tab_changed');
+            expect(tabChange).toBeDefined();
+            expect(tabChange!.details).toEqual({ from_tab: 'paths', to_tab: 'recommender' });
+        });
+
+        it('logs { from_tab, to_tab } when switching from paths → configurations', () => {
+            render(<SettingsModal {...defaultProps} />);
+
+            fireEvent.click(screen.getByText('Configurations'));
+
+            const log = interactionLogger.getLog();
+            const tabChange = log.find(e => e.type === 'settings_tab_changed');
+            expect(tabChange).toBeDefined();
+            expect(tabChange!.details).toEqual({ from_tab: 'paths', to_tab: 'configurations' });
+        });
+
+        it('records from_tab as the currently-active tab, not the initial one', () => {
+            // Re-render the modal already on the "recommender" tab and
+            // click "configurations": the from_tab must be 'recommender'.
+            render(
+                <SettingsModal
+                    {...defaultProps}
+                    settings={{ ...mockSettings, settingsTab: 'recommender' } as unknown as SettingsState}
+                />
+            );
+
+            fireEvent.click(screen.getByText('Configurations'));
+
+            const log = interactionLogger.getLog();
+            const tabChange = log.find(e => e.type === 'settings_tab_changed');
+            expect(tabChange).toBeDefined();
+            expect(tabChange!.details).toEqual({ from_tab: 'recommender', to_tab: 'configurations' });
+        });
+
+        it('does NOT log when the user clicks the already-active tab (no-op skip)', () => {
+            // Clicking the already-active tab is a UI no-op — it must
+            // not pollute the log with empty transitions that a replay
+            // agent would have to filter out. Regression guard.
+            render(<SettingsModal {...defaultProps} />);
+
+            fireEvent.click(screen.getByText('Paths'));
+
+            const log = interactionLogger.getLog();
+            expect(log.filter(e => e.type === 'settings_tab_changed')).toHaveLength(0);
+            // And the setter must still not have been called with the
+            // same value (idempotency in practice is fine, but we log
+            // only real transitions).
+        });
+
+        it('still calls setSettingsTab even on a no-op click (setter is unconditional)', () => {
+            // The setter is invoked for every click so React state
+            // remains consistent with the DOM — only the logger is
+            // gated on "actually changed". This test pins that exact
+            // split behaviour.
+            render(<SettingsModal {...defaultProps} />);
+
+            fireEvent.click(screen.getByText('Paths'));
+
+            expect(mockSettings.setSettingsTab).toHaveBeenCalledWith('paths');
+        });
     });
 });

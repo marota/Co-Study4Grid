@@ -3,27 +3,32 @@
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
 // you can obtain one at http://mozilla.org/MPL/2.0/.
 // SPDX-License-Identifier: MPL-2.0
-// This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
+// This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useSession } from './useSession';
+import { useSession, type RestoreContext } from './useSession';
 import { interactionLogger } from '../utils/interactionLogger';
+import type { SessionResult, AnalysisResult } from '../types';
 
 // Mock the api module
 const mockSaveSession = vi.fn();
 const mockListSessions = vi.fn();
 const mockLoadSession = vi.fn();
+const mockUpdateConfig = vi.fn();
+const mockGetBranches = vi.fn();
+const mockGetVoltageLevels = vi.fn();
+const mockGetNominalVoltages = vi.fn();
 
 vi.mock('../api', () => ({
     api: {
         saveSession: (...args: unknown[]) => mockSaveSession(...args),
         listSessions: (...args: unknown[]) => mockListSessions(...args),
         loadSession: (...args: unknown[]) => mockLoadSession(...args),
-        updateConfig: vi.fn().mockResolvedValue({}),
-        getBranches: vi.fn().mockResolvedValue([]),
-        getVoltageLevels: vi.fn().mockResolvedValue([]),
-        getNominalVoltages: vi.fn().mockResolvedValue({ mapping: {}, unique_kv: [] }),
+        updateConfig: (...args: unknown[]) => mockUpdateConfig(...args),
+        getBranches: (...args: unknown[]) => mockGetBranches(...args),
+        getVoltageLevels: (...args: unknown[]) => mockGetVoltageLevels(...args),
+        getNominalVoltages: (...args: unknown[]) => mockGetNominalVoltages(...args),
         restoreAnalysisContext: vi.fn().mockResolvedValue({}),
     },
 }));
@@ -52,7 +57,7 @@ describe('useSession — interaction logging', () => {
         layoutPath: '',
         outputFolderPath: '/tmp/output',
         minLineReconnections: 2, minCloseCoupling: 3, minOpenCoupling: 2, minLineDisconnections: 3,
-        minPst: 1, minLoadShedding: 0, nPrioritizedActions: 10,
+        minPst: 1, minLoadShedding: 0, minRenewableCurtailmentActions: 0, nPrioritizedActions: 10,
         linesMonitoringPath: '', monitoringFactor: 0.95, preExistingOverloadThreshold: 0.02,
         ignoreReconnections: false, pypowsyblFastMode: true,
         selectedBranch: 'LINE_A', selectedOverloads: new Set(['OL1']), monitorDeselected: false,
@@ -171,5 +176,547 @@ describe('useSession — interaction logging', () => {
         const buildArgs = (buildSessionResult as ReturnType<typeof vi.fn>).mock.calls[0][0];
         expect(buildArgs.interactionLog).toBeDefined();
         expect(Array.isArray(buildArgs.interactionLog)).toBe(true);
+    });
+});
+
+// ===========================================================================
+// handleRestoreSession — session reload fidelity
+// ===========================================================================
+//
+// These tests guard the fixes that land alongside PRs #73, #78, #83 and
+// #88: enrichment fields (load_shedding_details / curtailment_details /
+// pst_details / lines_overloaded_after) must survive a save/reload
+// round-trip, committedNetworkPathRef must be updated on restore so the
+// "Change Network?" confirmation dialog doesn't misfire, and the new
+// recommender thresholds (min_load_shedding,
+// min_renewable_curtailment_actions) must be restored even when the
+// session JSON predates them.
+//
+// The tests mock the api module at the top of this file; each restore
+// test wires a fresh RestoreContext with vi.fn() setters so it can
+// assert exactly which values were pushed into App state.
+// ---------------------------------------------------------------------------
+
+describe('useSession — handleRestoreSession', () => {
+    beforeEach(() => {
+        interactionLogger.clear();
+        vi.clearAllMocks();
+        mockUpdateConfig.mockResolvedValue({});
+        mockGetBranches.mockResolvedValue(['LINE_A', 'LINE_B']);
+        mockGetVoltageLevels.mockResolvedValue(['VL_1', 'VL_2']);
+        mockGetNominalVoltages.mockResolvedValue({
+            mapping: { VL_1: 400, VL_2: 225 },
+            unique_kv: [225, 400],
+        });
+    });
+
+    /** Build a minimal but valid RestoreContext with vi.fn() setters. */
+    const makeCtx = (
+        overrides: Partial<RestoreContext> = {},
+    ): RestoreContext & {
+        // Expose the refs for assertions.
+        restoringSessionRef: { current: boolean };
+        committedBranchRef: { current: string };
+        committedNetworkPathRef: { current: string };
+    } => ({
+        outputFolderPath: '/tmp/output',
+        setNetworkPath: vi.fn(),
+        setActionPath: vi.fn(),
+        setLayoutPath: vi.fn(),
+        setMinLineReconnections: vi.fn(),
+        setMinCloseCoupling: vi.fn(),
+        setMinOpenCoupling: vi.fn(),
+        setMinLineDisconnections: vi.fn(),
+        setMinPst: vi.fn(),
+        setMinLoadShedding: vi.fn(),
+        setMinRenewableCurtailmentActions: vi.fn(),
+        setNPrioritizedActions: vi.fn(),
+        setLinesMonitoringPath: vi.fn(),
+        setMonitoringFactor: vi.fn(),
+        setPreExistingOverloadThreshold: vi.fn(),
+        setIgnoreReconnections: vi.fn(),
+        setPypowsyblFastMode: vi.fn(),
+        applyConfigResponse: vi.fn(),
+        setBranches: vi.fn(),
+        setVoltageLevels: vi.fn(),
+        setNominalVoltageMap: vi.fn(),
+        setUniqueVoltages: vi.fn(),
+        setVoltageRange: vi.fn(),
+        fetchBaseDiagram: vi.fn(),
+        setMonitorDeselected: vi.fn(),
+        setSelectedOverloads: vi.fn(),
+        setResult: vi.fn(),
+        setSelectedActionIds: vi.fn(),
+        setRejectedActionIds: vi.fn(),
+        setManuallyAddedIds: vi.fn(),
+        setSuggestedByRecommenderIds: vi.fn(),
+        restoringSessionRef: { current: false },
+        committedBranchRef: { current: '' },
+        committedNetworkPathRef: { current: '' },
+        setSelectedBranch: vi.fn(),
+        setInfoMessage: vi.fn(),
+        setError: vi.fn(),
+        ...overrides,
+    } as unknown as RestoreContext & {
+        restoringSessionRef: { current: boolean };
+        committedBranchRef: { current: string };
+        committedNetworkPathRef: { current: string };
+    });
+
+    /** Minimal SessionResult builder with sensible defaults. */
+    const makeSession = (overrides: Partial<SessionResult> = {}): SessionResult => ({
+        saved_at: '2026-04-14T10:00:00.000Z',
+        configuration: {
+            network_path: '/data/net.xiidm',
+            action_file_path: '/data/actions.json',
+            layout_path: '/data/layout.json',
+            min_line_reconnections: 2.0,
+            min_close_coupling: 3.0,
+            min_open_coupling: 2.0,
+            min_line_disconnections: 3.0,
+            min_pst: 1.5,
+            min_load_shedding: 2.5,
+            min_renewable_curtailment_actions: 1.25,
+            n_prioritized_actions: 8,
+            lines_monitoring_path: '/data/monitoring.csv',
+            monitoring_factor: 0.93,
+            pre_existing_overload_threshold: 0.04,
+            ignore_reconnections: true,
+            pypowsybl_fast_mode: false,
+        },
+        contingency: {
+            disconnected_element: 'LINE_A',
+            selected_overloads: ['LINE_OL1', 'LINE_OL2'],
+            monitor_deselected: true,
+        },
+        overloads: {
+            n_overloads: [],
+            n1_overloads: ['LINE_OL1', 'LINE_OL2'],
+            resolved_overloads: ['LINE_OL1'],
+        },
+        overflow_graph: null,
+        analysis: null,
+        ...overrides,
+    });
+
+    it('restores every configuration field, including new load-shedding / curtailment thresholds', async () => {
+        mockLoadSession.mockResolvedValue(makeSession());
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('session_abc', ctx);
+        });
+
+        // Paths
+        expect(ctx.setNetworkPath).toHaveBeenCalledWith('/data/net.xiidm');
+        expect(ctx.setActionPath).toHaveBeenCalledWith('/data/actions.json');
+        expect(ctx.setLayoutPath).toHaveBeenCalledWith('/data/layout.json');
+
+        // Recommender thresholds — the two values added by PR #73 / #78
+        // are the specific regression this test is guarding against.
+        expect(ctx.setMinLineReconnections).toHaveBeenCalledWith(2.0);
+        expect(ctx.setMinCloseCoupling).toHaveBeenCalledWith(3.0);
+        expect(ctx.setMinOpenCoupling).toHaveBeenCalledWith(2.0);
+        expect(ctx.setMinLineDisconnections).toHaveBeenCalledWith(3.0);
+        expect(ctx.setMinPst).toHaveBeenCalledWith(1.5);
+        expect(ctx.setMinLoadShedding).toHaveBeenCalledWith(2.5);
+        expect(ctx.setMinRenewableCurtailmentActions).toHaveBeenCalledWith(1.25);
+        expect(ctx.setNPrioritizedActions).toHaveBeenCalledWith(8);
+
+        // Monitoring + flags
+        expect(ctx.setLinesMonitoringPath).toHaveBeenCalledWith('/data/monitoring.csv');
+        expect(ctx.setMonitoringFactor).toHaveBeenCalledWith(0.93);
+        expect(ctx.setPreExistingOverloadThreshold).toHaveBeenCalledWith(0.04);
+        expect(ctx.setIgnoreReconnections).toHaveBeenCalledWith(true);
+        expect(ctx.setPypowsyblFastMode).toHaveBeenCalledWith(false);
+    });
+
+    it('falls back to safe defaults when older sessions lack load-shedding / curtailment thresholds', async () => {
+        // Simulate a pre-PR-#73 session dump: neither new field present.
+        const legacy = makeSession();
+        delete (legacy.configuration as { min_load_shedding?: number }).min_load_shedding;
+        delete (legacy.configuration as { min_renewable_curtailment_actions?: number })
+            .min_renewable_curtailment_actions;
+        mockLoadSession.mockResolvedValue(legacy);
+
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('legacy_session', ctx);
+        });
+
+        // Defaults are 0.0 per the restore contract: "Older session
+        // dumps that predate these fields fall back to 0.0 on reload."
+        expect(ctx.setMinLoadShedding).toHaveBeenCalledWith(0.0);
+        expect(ctx.setMinRenewableCurtailmentActions).toHaveBeenCalledWith(0.0);
+    });
+
+    it('updates committedNetworkPathRef on successful restore', async () => {
+        // The bug: before this fix, the ref stayed empty after a
+        // reload, so the first manual edit to the Header network input
+        // silently dropped the study instead of prompting the "Change
+        // Network?" confirmation dialog.
+        mockLoadSession.mockResolvedValue(makeSession());
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('session_xyz', ctx);
+        });
+
+        expect(ctx.committedNetworkPathRef.current).toBe('/data/net.xiidm');
+    });
+
+    it('forwards all configuration fields to the backend via api.updateConfig', async () => {
+        mockLoadSession.mockResolvedValue(makeSession());
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('session_1', ctx);
+        });
+
+        expect(mockUpdateConfig).toHaveBeenCalledTimes(1);
+        const payload = mockUpdateConfig.mock.calls[0][0];
+        expect(payload).toMatchObject({
+            network_path: '/data/net.xiidm',
+            action_file_path: '/data/actions.json',
+            layout_path: '/data/layout.json',
+            min_line_reconnections: 2.0,
+            min_close_coupling: 3.0,
+            min_open_coupling: 2.0,
+            min_line_disconnections: 3.0,
+            min_pst: 1.5,
+            min_load_shedding: 2.5,
+            min_renewable_curtailment_actions: 1.25,
+            n_prioritized_actions: 8,
+            monitoring_factor: 0.93,
+            pre_existing_overload_threshold: 0.04,
+            ignore_reconnections: true,
+            pypowsybl_fast_mode: false,
+        });
+    });
+
+    it('records a session_reloaded interaction event on success', async () => {
+        mockLoadSession.mockResolvedValue(makeSession());
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('session_reload_42', ctx);
+        });
+
+        const log = interactionLogger.getLog();
+        const reloaded = log.find(e => e.type === 'session_reloaded');
+        expect(reloaded).toBeDefined();
+        expect(reloaded!.details).toEqual({ session_name: 'session_reload_42' });
+    });
+
+    it('short-circuits (no API call) when outputFolderPath is empty', async () => {
+        const ctx = makeCtx({ outputFolderPath: '' });
+
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('session_x', ctx);
+        });
+
+        expect(mockLoadSession).not.toHaveBeenCalled();
+        expect(ctx.setNetworkPath).not.toHaveBeenCalled();
+        expect(ctx.committedNetworkPathRef.current).toBe('');
+    });
+
+    it('surfaces backend errors via ctx.setError and leaves the ref empty', async () => {
+        mockLoadSession.mockRejectedValue({ response: { data: { detail: 'not found' } } });
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('missing', ctx);
+        });
+
+        expect(ctx.setError).toHaveBeenCalledWith(expect.stringContaining('not found'));
+        // Ref must remain untouched so the Header dialog logic still
+        // uses the pre-restore value (empty here → no false-positive).
+        expect(ctx.committedNetworkPathRef.current).toBe('');
+    });
+
+    // -----------------------------------------------------------------
+    // Action-enrichment restoration (PRs #73, #78, #83)
+    // -----------------------------------------------------------------
+
+    /**
+     * Extract the ActionDetail object the hook pushed into setResult
+     * by replaying the setter function against a null previous state.
+     * setResult is called with a functional updater, so we reach into
+     * the first call and invoke the updater to materialise the new
+     * AnalysisResult the hook computed.
+     */
+    const captureRestoredResult = (
+        setResultMock: ReturnType<typeof vi.fn>,
+    ): AnalysisResult | null => {
+        const call = setResultMock.mock.calls.find(args =>
+            typeof args[0] === 'function' || (args[0] && typeof args[0] === 'object'),
+        );
+        if (!call) return null;
+        const updater = call[0];
+        if (typeof updater === 'function') {
+            return (updater as (prev: AnalysisResult | null) => AnalysisResult | null)(null);
+        }
+        return updater as AnalysisResult | null;
+    };
+
+    it('restores load_shedding_details / curtailment_details / pst_details / lines_overloaded_after into each ActionDetail', async () => {
+        // This is the regression for the main session-reload bug: the
+        // four enrichment fields were persisted by buildSessionResult
+        // but dropped on reload, so the PST / load-shedding /
+        // curtailment editor cards rendered empty and the Remedial
+        // Action tab lost its post-action overload halos.
+        mockLoadSession.mockResolvedValue(makeSession({
+            analysis: {
+                message: 'ok',
+                dc_fallback: false,
+                action_scores: {},
+                combined_actions: {},
+                actions: {
+                    load_shed_1: {
+                        description_unitaire: 'Shed load L1',
+                        rho_before: [1.1],
+                        rho_after: [0.8],
+                        max_rho: 0.8,
+                        max_rho_line: 'LINE_OL1',
+                        is_rho_reduction: true,
+                        lines_overloaded_after: ['LINE_OL2'],
+                        load_shedding_details: [
+                            { load_name: 'L1', voltage_level_id: 'VL_1', shedded_mw: 4.2 },
+                        ],
+                        status: {
+                            is_selected: false,
+                            is_suggested: true,
+                            is_rejected: false,
+                            is_manually_simulated: false,
+                        },
+                    },
+                    curtail_1: {
+                        description_unitaire: 'Curtail wind W1',
+                        rho_before: [1.2],
+                        rho_after: [0.95],
+                        max_rho: 0.95,
+                        max_rho_line: 'LINE_OL1',
+                        is_rho_reduction: true,
+                        lines_overloaded_after: [],
+                        curtailment_details: [
+                            { gen_name: 'W1', voltage_level_id: 'VL_2', curtailed_mw: 7.5 },
+                        ],
+                        status: {
+                            is_selected: false,
+                            is_suggested: true,
+                            is_rejected: false,
+                            is_manually_simulated: false,
+                        },
+                    },
+                    pst_1: {
+                        description_unitaire: 'Move PST tap',
+                        rho_before: [1.05],
+                        rho_after: [0.9],
+                        max_rho: 0.9,
+                        max_rho_line: 'LINE_OL1',
+                        is_rho_reduction: true,
+                        pst_details: [
+                            { pst_name: 'PST_A', tap_position: 5, low_tap: -16, high_tap: 16 },
+                        ],
+                        status: {
+                            is_selected: false,
+                            is_suggested: true,
+                            is_rejected: false,
+                            is_manually_simulated: false,
+                        },
+                    },
+                },
+            },
+        }));
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('session_enriched', ctx);
+        });
+
+        const restored = captureRestoredResult(ctx.setResult as ReturnType<typeof vi.fn>);
+        expect(restored).not.toBeNull();
+
+        // Load shedding
+        const ls = restored!.actions['load_shed_1'];
+        expect(ls.load_shedding_details).toEqual([
+            { load_name: 'L1', voltage_level_id: 'VL_1', shedded_mw: 4.2 },
+        ]);
+        expect(ls.lines_overloaded_after).toEqual(['LINE_OL2']);
+
+        // Curtailment
+        const ct = restored!.actions['curtail_1'];
+        expect(ct.curtailment_details).toEqual([
+            { gen_name: 'W1', voltage_level_id: 'VL_2', curtailed_mw: 7.5 },
+        ]);
+        expect(ct.lines_overloaded_after).toEqual([]);
+
+        // PST editor card depends on pst_details
+        const pst = restored!.actions['pst_1'];
+        expect(pst.pst_details).toEqual([
+            { pst_name: 'PST_A', tap_position: 5, low_tap: -16, high_tap: 16 },
+        ]);
+    });
+
+    it('preserves action status flags (selected / suggested / rejected / manually-simulated) on restore', async () => {
+        mockLoadSession.mockResolvedValue(makeSession({
+            analysis: {
+                message: 'ok',
+                dc_fallback: false,
+                action_scores: {},
+                combined_actions: {},
+                actions: {
+                    act_fav: {
+                        description_unitaire: 'fav',
+                        rho_before: [1.1], rho_after: [0.8], max_rho: 0.8,
+                        max_rho_line: 'L1', is_rho_reduction: true,
+                        status: { is_selected: true, is_suggested: true, is_rejected: false, is_manually_simulated: false },
+                    },
+                    act_rej: {
+                        description_unitaire: 'rej',
+                        rho_before: [1.1], rho_after: [1.0], max_rho: 1.0,
+                        max_rho_line: 'L1', is_rho_reduction: false,
+                        status: { is_selected: false, is_suggested: true, is_rejected: true, is_manually_simulated: false },
+                    },
+                    act_manual: {
+                        description_unitaire: 'manual',
+                        rho_before: [1.2], rho_after: [0.9], max_rho: 0.9,
+                        max_rho_line: 'L1', is_rho_reduction: true,
+                        status: { is_selected: true, is_suggested: false, is_rejected: false, is_manually_simulated: true },
+                    },
+                },
+            },
+        }));
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('session_status', ctx);
+        });
+
+        expect(ctx.setSelectedActionIds).toHaveBeenCalledWith(
+            new Set(['act_fav', 'act_manual']),
+        );
+        expect(ctx.setRejectedActionIds).toHaveBeenCalledWith(new Set(['act_rej']));
+        expect(ctx.setManuallyAddedIds).toHaveBeenCalledWith(new Set(['act_manual']));
+        expect(ctx.setSuggestedByRecommenderIds).toHaveBeenCalledWith(
+            new Set(['act_fav', 'act_rej']),
+        );
+    });
+
+    it('does not crash when action entries omit the new enrichment fields (legacy shape)', async () => {
+        // Pre-PR-#73 action entries lack every enrichment field. The
+        // restore path must propagate the absent fields as undefined
+        // instead of throwing.
+        mockLoadSession.mockResolvedValue(makeSession({
+            analysis: {
+                message: 'ok',
+                dc_fallback: false,
+                action_scores: {},
+                combined_actions: {},
+                actions: {
+                    legacy_act: {
+                        description_unitaire: 'legacy',
+                        rho_before: [1.1], rho_after: [0.7], max_rho: 0.7,
+                        max_rho_line: 'L1', is_rho_reduction: true,
+                        status: { is_selected: false, is_suggested: true, is_rejected: false, is_manually_simulated: false },
+                    },
+                },
+            },
+        }));
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('legacy_action', ctx);
+        });
+
+        const restored = captureRestoredResult(ctx.setResult as ReturnType<typeof vi.fn>);
+        expect(restored).not.toBeNull();
+        const legacy = restored!.actions['legacy_act'];
+        expect(legacy.load_shedding_details).toBeUndefined();
+        expect(legacy.curtailment_details).toBeUndefined();
+        expect(legacy.pst_details).toBeUndefined();
+        expect(legacy.lines_overloaded_after).toBeUndefined();
+    });
+
+    it('skips estimation-only combined entries that were never simulated manually', async () => {
+        // Combined entries that are estimation-only (e.g. "act_a+act_b"
+        // with is_estimated=true and no manual simulation) are not
+        // restored as top-level actions — they live under
+        // combined_actions instead.
+        mockLoadSession.mockResolvedValue(makeSession({
+            analysis: {
+                message: 'ok',
+                dc_fallback: false,
+                action_scores: {},
+                combined_actions: {
+                    'act_a+act_b': {
+                        action1_id: 'act_a',
+                        action2_id: 'act_b',
+                        betas: [0.5, 0.5],
+                        max_rho: 0.9,
+                        max_rho_line: 'LINE_X',
+                        is_rho_reduction: true,
+                        description: 'Combined a+b',
+                        estimated_max_rho: 0.9,
+                        estimated_max_rho_line: 'LINE_X',
+                        is_simulated: false,
+                    },
+                },
+                actions: {
+                    act_a: {
+                        description_unitaire: 'a',
+                        rho_before: [1.0], rho_after: [0.95], max_rho: 0.95,
+                        max_rho_line: 'L1', is_rho_reduction: true,
+                        status: { is_selected: false, is_suggested: true, is_rejected: false, is_manually_simulated: false },
+                    },
+                    'act_a+act_b': {
+                        description_unitaire: 'a+b estimated',
+                        rho_before: null,
+                        rho_after: null,
+                        max_rho: null,
+                        max_rho_line: 'LINE_X',
+                        is_rho_reduction: true,
+                        is_estimated: true,
+                        status: { is_selected: false, is_suggested: false, is_rejected: false, is_manually_simulated: false },
+                    },
+                },
+            },
+        }));
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('combo_session', ctx);
+        });
+
+        const restored = captureRestoredResult(ctx.setResult as ReturnType<typeof vi.fn>);
+        expect(restored).not.toBeNull();
+        // Only the real action survived — the estimation-only
+        // combined entry was filtered out.
+        expect(Object.keys(restored!.actions)).toEqual(['act_a']);
+        // But the combined_actions dictionary still carries it.
+        expect(restored!.combined_actions).toHaveProperty('act_a+act_b');
     });
 });

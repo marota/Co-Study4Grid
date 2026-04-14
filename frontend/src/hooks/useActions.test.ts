@@ -215,7 +215,13 @@ describe('useActions — interaction logging', () => {
             expect(result.current.manuallyAddedIds.has('new_manual_action')).toBe(true);
         });
 
-        it('logs manual_action_simulated on resimulation too', () => {
+        it('does NOT log from the hook on resimulation (logging moved to ActionFeed)', () => {
+            // action_mw_resimulated / pst_tap_resimulated events need the
+            // user-edited target value, which is only known at the call
+            // site (ActionFeed.handleResimulate / handleResimulateTap).
+            // The hook itself must stay silent — previously it logged a
+            // misleading 'manual_action_simulated' event that conflated
+            // the two flows and made replay impossible.
             const { result } = renderHook(() => useActions());
 
             act(() => {
@@ -229,7 +235,9 @@ describe('useActions — interaction logging', () => {
             });
 
             const log = interactionLogger.getLog();
-            expect(log.some(e => e.type === 'manual_action_simulated' && e.details.action_id === 'act_7')).toBe(true);
+            expect(log.some(e => e.type === 'manual_action_simulated' && e.details.action_id === 'act_7')).toBe(false);
+            expect(log.some(e => e.type === 'action_mw_resimulated' && e.details.action_id === 'act_7')).toBe(false);
+            expect(log.some(e => e.type === 'pst_tap_resimulated' && e.details.action_id === 'act_7')).toBe(false);
         });
     });
 });

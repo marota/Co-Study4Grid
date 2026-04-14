@@ -43,7 +43,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onApply }) => {
 
   const tabButton = (id: 'paths' | 'recommender' | 'configurations', label: string) => (
     <button
-      onClick={() => { interactionLogger.record('settings_tab_changed', { tab: id }); setSettingsTab(id); }}
+      onClick={() => {
+        // Log both source and destination so a replay agent can assert
+        // the modal was in the expected tab before clicking — matches
+        // the {from_tab,to_tab} shape documented in the replay contract.
+        if (id !== settingsTab) {
+          interactionLogger.record('settings_tab_changed', { from_tab: settingsTab, to_tab: id });
+        }
+        setSettingsTab(id);
+      }}
       style={{
         flex: 1, padding: '10px', cursor: 'pointer', background: 'none',
         border: 'none', borderBottom: settingsTab === id ? '2px solid #3498db' : 'none',

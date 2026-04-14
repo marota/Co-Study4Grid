@@ -132,7 +132,13 @@ export function useActions(): ActionsState {
     setResult: React.Dispatch<React.SetStateAction<AnalysisResult | null>>,
     onSelectAction: (actionId: string) => void,
   ) => {
-    interactionLogger.record('manual_action_simulated', { action_id: actionId });
+    // NOTE: re-simulation events (action_mw_resimulated /
+    // pst_tap_resimulated) are logged at the call site in
+    // ActionFeed.tsx so the logger can capture the user-edited
+    // target value (MW or tap). This hook used to also log
+    // 'manual_action_simulated' which conflated the two flows
+    // and made replay impossible — the log entry now lives next
+    // to the actual button click instead.
     setResult(prev => {
       if (!prev) return prev;
       const existing = prev.actions[actionId];

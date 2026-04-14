@@ -368,6 +368,8 @@ function App() {
     selectedBranch, selectedOverloads, monitorDeselected,
     nOverloads: nDiagram?.lines_overloaded ?? [],
     n1Overloads: n1Diagram?.lines_overloaded ?? [],
+    nOverloadsRho: nDiagram?.lines_overloaded_rho,
+    n1OverloadsRho: n1Diagram?.lines_overloaded_rho,
     result, selectedActionIds, rejectedActionIds,
     manuallyAddedIds, suggestedByRecommenderIds,
     setError, setInfoMessage: analysis.setInfoMessage,
@@ -413,6 +415,7 @@ function App() {
     setSelectedBranch,
     restoringSessionRef: diagrams.restoringSessionRef,
     committedBranchRef: diagrams.committedBranchRef,
+    committedNetworkPathRef,
     setError, setInfoMessage: analysis.setInfoMessage,
     applyConfigResponse, setBranches, setVoltageLevels,
     setNominalVoltageMap: diagrams.setNominalVoltageMap,
@@ -441,9 +444,46 @@ function App() {
     return !!(result || pendingAnalysisResult || selectedActionId || actionDiagram || manuallyAddedIds.size > 0 || selectedActionIds.size > 0 || rejectedActionIds.size > 0);
   }, [result, pendingAnalysisResult, selectedActionId, actionDiagram, manuallyAddedIds, selectedActionIds, rejectedActionIds]);
 
+  // Full-fidelity snapshot of every parameter an agent would need to
+  // replay a config-loaded / settings-applied gesture. Per the
+  // interaction-logging replay contract each event must carry ALL
+  // inputs — "click Load Study" alone is not enough, the agent has
+  // to know which paths and recommender thresholds to type in first.
+  const buildConfigInteractionDetails = useCallback((): Record<string, unknown> => ({
+    network_path: networkPath,
+    action_file_path: actionPath,
+    layout_path: layoutPath,
+    output_folder_path: outputFolderPath,
+    min_line_reconnections: minLineReconnections,
+    min_close_coupling: minCloseCoupling,
+    min_open_coupling: minOpenCoupling,
+    min_line_disconnections: minLineDisconnections,
+    min_pst: minPst,
+    min_load_shedding: minLoadShedding,
+    min_renewable_curtailment_actions: minRenewableCurtailmentActions,
+    n_prioritized_actions: nPrioritizedActions,
+    lines_monitoring_path: linesMonitoringPath,
+    monitoring_factor: monitoringFactor,
+    pre_existing_overload_threshold: preExistingOverloadThreshold,
+    ignore_reconnections: ignoreReconnections,
+    pypowsybl_fast_mode: pypowsyblFastMode,
+  }), [
+    networkPath, actionPath, layoutPath, outputFolderPath,
+    minLineReconnections, minCloseCoupling, minOpenCoupling,
+    minLineDisconnections, minPst, minLoadShedding,
+    minRenewableCurtailmentActions, nPrioritizedActions,
+    linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold,
+    ignoreReconnections, pypowsyblFastMode,
+  ]);
+
 
   const applySettingsImmediate = useCallback(async () => {
-    interactionLogger.record('settings_applied');
+    // settings_applied carries the full settings payload so a replay
+    // agent can populate every field before clicking Apply. It's
+    // treated as a wait-point by consumers of the log: the next
+    // action must wait until the network reload (network, branches,
+    // voltage levels) has finished.
+    interactionLogger.record('settings_applied', buildConfigInteractionDetails());
     try {
       resetAllState();
 
@@ -479,14 +519,14 @@ function App() {
       diagrams.fetchBaseDiagram(vlRes.length);
 
       committedNetworkPathRef.current = networkPath;
-      interactionLogger.record('config_loaded', { network_path: networkPath, action_path: actionPath });
+      interactionLogger.record('config_loaded', buildConfigInteractionDetails());
       setSettingsBackup(createCurrentBackup());
       setIsSettingsOpen(false);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
       setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
     }
-  }, [networkPath, actionPath, buildConfigRequest, applyConfigResponse, createCurrentBackup, setError, setSettingsBackup, setIsSettingsOpen, diagrams, configFilePath, lastActiveConfigFilePath, changeConfigFilePath, resetAllState]);
+  }, [networkPath, actionPath, buildConfigRequest, applyConfigResponse, createCurrentBackup, setError, setSettingsBackup, setIsSettingsOpen, diagrams, configFilePath, lastActiveConfigFilePath, changeConfigFilePath, resetAllState, buildConfigInteractionDetails]);
 
   // Apply Settings entry point used by the Settings modal. If a study
   // is already loaded — whether or not analysis has been run yet — we
@@ -534,14 +574,14 @@ function App() {
 
       diagrams.fetchBaseDiagram(vlRes.length);
       committedNetworkPathRef.current = networkPath;
-      interactionLogger.record('config_loaded', { network_path: networkPath, action_path: actionPath });
+      interactionLogger.record('config_loaded', buildConfigInteractionDetails());
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
       setError('Failed to load config: ' + (e.response?.data?.detail || e.message));
     } finally {
       setConfigLoading(false);
     }
-  }, [buildConfigRequest, applyConfigResponse, setError, diagrams, networkPath, actionPath, configFilePath, lastActiveConfigFilePath, changeConfigFilePath, resetAllState]);
+  }, [buildConfigRequest, applyConfigResponse, setError, diagrams, networkPath, configFilePath, lastActiveConfigFilePath, changeConfigFilePath, resetAllState, buildConfigInteractionDetails]);
 
 
   const handleLoadStudyClick = useCallback(() => {
