@@ -415,6 +415,55 @@ describe('VisualizationPanel', () => {
         expect(screen.queryByPlaceholderText(/Inspect/)).not.toBeInTheDocument();
     });
 
+    it('inspect field does not rely on a native <datalist>', () => {
+        // Regression guard for the "tied detached window hides the
+        // main-window suggestions dropdown" bug: the inspect field
+        // used to pair <input list=...> with a <datalist> sibling,
+        // but that combo is unreliable when the overlay subtree is
+        // physically relocated to a popup window via
+        // DetachableTabHost. We now render a custom suggestions
+        // dropdown, so there must be no <datalist> anywhere in the
+        // tab overlays.
+        const nDiagram: DiagramData = { svg: '<svg>n</svg>', metadata: null };
+        const { container } = render(<VisualizationPanel {...createDefaultProps({
+            hasBranches: true,
+            nDiagram,
+            inspectableItems: ['LINE_A', 'LINE_B'],
+        })} />);
+        expect(container.querySelectorAll('datalist').length).toBe(0);
+        const inputs = screen.getAllByPlaceholderText(/Inspect/);
+        inputs.forEach(input => {
+            expect(input.getAttribute('list')).toBeNull();
+        });
+    });
+
+    it('inspect field shows a custom suggestions dropdown when typing matches items', async () => {
+        const user = userEvent.setup();
+        const onInspectQueryChange = vi.fn();
+        const nDiagram: DiagramData = { svg: '<svg>n</svg>', metadata: null };
+        // Use an inspectQuery value that matches some items — the
+        // custom dropdown shows once the field is focused and the
+        // query has at least one non-exact filtered match.
+        render(<VisualizationPanel {...createDefaultProps({
+            hasBranches: true,
+            nDiagram,
+            inspectableItems: ['LINE_A', 'LINE_B', 'BUS_C'],
+            inspectQuery: 'LIN',
+            onInspectQueryChange,
+        })} />);
+        // Focus the visible inspect input (the active-tab overlay's).
+        const inputs = screen.getAllByPlaceholderText(/Inspect/);
+        // Focus every overlay input so the test is tolerant to which
+        // of the (always-mounted) tab overlays the test environment
+        // exposes first.
+        for (const input of inputs) {
+            await user.click(input);
+        }
+        // Both LINE_A and LINE_B are valid custom-dropdown rows.
+        expect(screen.getAllByText('LINE_A').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('LINE_B').length).toBeGreaterThan(0);
+    });
+
     it('shows analysis loading text in overflow tab with yellow theme', () => {
         render(<VisualizationPanel {...createDefaultProps({
             activeTab: 'overflow',

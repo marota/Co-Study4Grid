@@ -194,11 +194,17 @@ export function useAnalysis(): AnalysisState {
       actions_count: Object.keys(pendingAnalysisResult.actions).length,
     });
     setResult(prev => {
+      // Preserve manually-added ("first guess") actions across the
+      // analysis display step. We select them by the `is_manual`
+      // flag rather than by `selectedActionIds` so a manual action
+      // is kept even if the `selectedActionIds` set has been
+      // trimmed by resetForAnalysisRun — mirrors the standalone
+      // interface's handleDisplayPrioritizedActions behavior.
       const manualActionsData: Record<string, ActionDetail> = {};
       if (prev?.actions) {
         for (const [id, data] of Object.entries(prev.actions)) {
-          if (selectedActionIds.has(id)) {
-            manualActionsData[id] = data;
+          if (data.is_manual || selectedActionIds.has(id)) {
+            manualActionsData[id] = { ...data, is_manual: true };
           }
         }
       }
@@ -217,6 +223,9 @@ export function useAnalysis(): AnalysisState {
       return {
         ...prev,
         ...pendingAnalysisResult,
+        // Manual entries win over their analysis-suggested twins so
+        // the user's "first guess" keeps its is_manual flag and its
+        // variant diagram stays pinned to the Selected bucket.
         actions: { ...mergedActions, ...manualActionsData },
       };
     });

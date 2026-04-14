@@ -619,7 +619,32 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         {renderActionList(selectedEntries)}
                     </>
                 ) : (
-                    <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0 15px 0' }}>Select an action manually or from suggested ones.</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '5px 0 15px 0' }}>
+                        <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: 0 }}>Select an action manually or from suggested ones.</p>
+                        <button
+                            onClick={handleOpenSearch}
+                            data-testid="make-first-guess-button"
+                            style={{
+                                padding: '10px',
+                                backgroundColor: '#f8f9fa',
+                                border: '1px dashed #007bff',
+                                color: '#007bff',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                                fontSize: '14px',
+                                transition: 'all 0.2s',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px',
+                            }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#e7f1ff'; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#f8f9fa'; }}
+                        >
+                            <span style={{ fontSize: '16px' }}>💡</span> Make a first guess
+                        </button>
+                    </div>
                 )}
             </div>
 

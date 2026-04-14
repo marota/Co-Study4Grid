@@ -200,6 +200,60 @@ function App() {
     // change trigger the zoom correctly after the new SVG is ready.
   }, [setError, actionsHook, analysis, diagrams]);
 
+  // Narrower reset used when re-running the analysis on the SAME
+  // contingency. Unlike `clearContingencyState`, this preserves any
+  // manually-added ("first guess") actions so they stay in the
+  // Selected Actions section through the analysis run — mirroring the
+  // standalone interface, which filters result.actions down to the
+  // is_manual=true subset on Analyze & Suggest instead of wiping
+  // everything.
+  //
+  // Specifically: keeps manuallyAddedIds, keeps the selected-action
+  // set restricted to manually-added IDs, and filters result.actions
+  // to the is_manual subset (with pdf / lines_overloaded cleared so
+  // the UI correctly shows the "analysis in progress" state).
+  const resetForAnalysisRun = useCallback(() => {
+    analysis.setResult(prev => {
+      if (!prev) return null;
+      const manuals: Record<string, import('./types').ActionDetail> = {};
+      for (const [id, data] of Object.entries(prev.actions || {})) {
+        if (data.is_manual) manuals[id] = data;
+      }
+      return {
+        ...prev,
+        actions: manuals,
+        lines_overloaded: [],
+        pdf_url: null,
+        pdf_path: null,
+      };
+    });
+    analysis.setPendingAnalysisResult(null);
+    analysis.setMonitorDeselected(false);
+    // Keep manuallyAddedIds intact and trim selectedActionIds down
+    // to the manually-added subset — that way any favorited
+    // recommender suggestions are dropped (the new run will
+    // re-emit them) while the user's own "first guess" stays put.
+    actionsHook.setSelectedActionIds(prev => {
+      const manuallyAdded = actionsHook.manuallyAddedIds;
+      const next = new Set<string>();
+      for (const id of prev) if (manuallyAdded.has(id)) next.add(id);
+      return next;
+    });
+    actionsHook.setRejectedActionIds(new Set());
+    actionsHook.setSuggestedByRecommenderIds(new Set());
+    // Don't wipe selectedActionId if it points to a manual action —
+    // keep the user's variant diagram around through the re-run.
+    const sel = diagrams.selectedActionId;
+    if (sel && !actionsHook.manuallyAddedIds.has(sel)) {
+      diagrams.setSelectedActionId(null);
+      diagrams.setActionDiagram(null);
+    }
+    diagrams.setVlOverlay(null);
+    setError('');
+    analysis.setInfoMessage('');
+    diagrams.setInspectQuery('');
+  }, [setError, actionsHook, analysis, diagrams]);
+
   // Full reset: contingency state + network/diagram state
   const resetAllState = useCallback(() => {
     clearContingencyState();
@@ -272,8 +326,8 @@ function App() {
   );
 
   const wrappedRunAnalysis = useCallback(
-    () => analysis.handleRunAnalysis(selectedBranch, clearContingencyState, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab),
-    [analysis, selectedBranch, clearContingencyState, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab]
+    () => analysis.handleRunAnalysis(selectedBranch, resetForAnalysisRun, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab),
+    [analysis, selectedBranch, resetForAnalysisRun, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab]
   );
 
   const wrappedDisplayPrioritized = useCallback(
