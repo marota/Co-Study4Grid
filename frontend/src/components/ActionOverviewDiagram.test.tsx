@@ -125,15 +125,12 @@ describe('ActionOverviewDiagram', () => {
         expect(svg!.getAttribute('preserveAspectRatio')).toBe('xMidYMid meet');
     });
 
-    it('adds nad-overview-dimmed CSS class to the SVG for dimming (no opacity group)', () => {
-        // The old approach wrapped children in <g opacity="0.35"> which
-        // created an SVG transparency group — Chrome had to rasterize
-        // all ~43k elements into an intermediate buffer (Layerize: 31s).
-        // Now we use a CSS class instead — no stacking context.
+    it('marks the SVG with nad-overview-dimmed class and inserts a dim rect overlay', () => {
         const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
         const host = container.querySelector('.nad-action-overview-container');
         const svg = host!.querySelector('svg');
         expect(svg!.classList.contains('nad-overview-dimmed')).toBe(true);
+        expect(svg!.querySelector('rect.nad-overview-dim-rect')).not.toBeNull();
         // Original SVG content stays at the SVG root (no wrapper group).
         expect(svg!.querySelector('.nad-edges')).not.toBeNull();
         expect(svg!.querySelector('.nad-vl-nodes')).not.toBeNull();
@@ -553,16 +550,36 @@ describe('ActionOverviewDiagram', () => {
         });
     });
 
-    describe('dim background (CSS class, no opacity group)', () => {
-        it('applies nad-overview-dimmed class instead of wrapping in an opacity group', () => {
+    describe('dim background (rect overlay, no opacity group or per-child opacity)', () => {
+        it('inserts a white dim rect overlay instead of wrapping in an opacity group or using CSS per-child opacity', () => {
             // The old <g opacity="0.35"> wrapper created an SVG
-            // transparency group that caused a 31s Layerize on large
-            // grids.  Now we use a CSS class instead.
+            // transparency group (Layerize: 31s). CSS per-child
+            // opacity still created stacking contexts (25s). Now we
+            // use a single white <rect> overlay — zero stacking contexts.
             const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
             const svg = container.querySelector('.nad-action-overview-container svg')!;
-            expect(svg.classList.contains('nad-overview-dimmed')).toBe(true);
+            const dimRect = svg.querySelector('rect.nad-overview-dim-rect');
+            expect(dimRect).not.toBeNull();
+            expect(dimRect!.getAttribute('fill')).toBe('white');
+            expect(dimRect!.getAttribute('opacity')).toBe('0.65');
+            expect(dimRect!.getAttribute('pointer-events')).toBe('none');
             // No <g> opacity wrapper should exist.
             expect(svg.querySelector('g.nad-overview-dim-layer')).toBeNull();
+        });
+
+        it('dim rect covers the viewBox with margin', () => {
+            const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
+            const svg = container.querySelector('.nad-action-overview-container svg')!;
+            const dimRect = svg.querySelector('rect.nad-overview-dim-rect')!;
+            // viewBox="-50 -50 700 700", margin = 700 * 0.1 = 70
+            const x = parseFloat(dimRect.getAttribute('x')!);
+            const y = parseFloat(dimRect.getAttribute('y')!);
+            const w = parseFloat(dimRect.getAttribute('width')!);
+            const h = parseFloat(dimRect.getAttribute('height')!);
+            expect(x).toBeCloseTo(-50 - 70, 0);
+            expect(y).toBeCloseTo(-50 - 70, 0);
+            expect(w).toBeCloseTo(700 + 140, 0);
+            expect(h).toBeCloseTo(700 + 140, 0);
         });
 
         it('pin layer is a direct child of the SVG (not nested)', () => {
@@ -570,6 +587,20 @@ describe('ActionOverviewDiagram', () => {
             const svg = container.querySelector('.nad-action-overview-container svg')!;
             const pinLayer = svg.querySelector(':scope > g.nad-action-overview-pins');
             expect(pinLayer).not.toBeNull();
+        });
+
+        it('dim rect is placed BEFORE highlights and pins in document order', () => {
+            const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
+            const svg = container.querySelector('.nad-action-overview-container svg')!;
+            const children = Array.from(svg.children);
+            const dimIdx = children.findIndex(c => c.classList.contains('nad-overview-dim-rect'));
+            const highlightIdx = children.findIndex(c => c.classList.contains('nad-overview-highlight-layer'));
+            const pinIdx = children.findIndex(c => c.classList.contains('nad-action-overview-pins'));
+            expect(dimIdx).toBeGreaterThan(-1);
+            expect(highlightIdx).toBeGreaterThan(-1);
+            expect(pinIdx).toBeGreaterThan(-1);
+            expect(dimIdx).toBeLessThan(highlightIdx);
+            expect(highlightIdx).toBeLessThan(pinIdx);
         });
     });
 

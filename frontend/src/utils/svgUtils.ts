@@ -867,14 +867,17 @@ export const buildActionOverviewPins = (
  *
  * The overview dims the NAD background via a CSS class
  * (`nad-overview-dimmed`) on the SVG root — each direct child
- * gets `opacity: 0.35` via CSS, avoiding an SVG transparency
- * group that would force Chrome to rasterize all ~43k elements
- * into an intermediate buffer (Layerize: 31s on large grids).
+ * stays at full opacity — the dimming is achieved by a single
+ * white `<rect>` overlay with `opacity: 0.65` placed between
+ * the NAD content and the highlight/pin layers, avoiding both
+ * SVG transparency groups and CSS per-child opacity stacking
+ * contexts (both cause ~25-31s Layerize on large grids).
  *
  * Visual stack (back to front):
- *   1. overview highlight layer (contingency + overload halos)
- *   2. dimmed NAD content (original SVG children at 0.35 opacity)
- *   3. action overview pin layer (Google-Maps pins on top)
+ *   1. original NAD content (full opacity)
+ *   2. dim rect (white, opacity 0.65)
+ *   3. overview highlight layer (contingency + overload halos)
+ *   4. action overview pin layer (Google-Maps pins on top)
  *
  * The clones reuse the existing `.nad-contingency-highlight` and
  * `.nad-overloaded` CSS rules from App.css so the visual encoding
@@ -906,11 +909,14 @@ export const applyActionOverviewHighlights = (
     const SVG_NS = 'http://www.w3.org/2000/svg';
     const layer = document.createElementNS(SVG_NS, 'g') as SVGGElement;
     layer.setAttribute('class', 'nad-overview-highlight-layer');
-    // Insert at the START of the SVG so the highlight clones render
-    // BEHIND the dimmed NAD content — same compositing relationship
-    // as the N-1 tab background-layer pattern.
-    if (svg.firstChild) {
-        svg.insertBefore(layer, svg.firstChild);
+    // Insert AFTER the dim rect (if present) so highlights render
+    // ABOVE the dimming overlay but BELOW the pin layer.  The dim
+    // rect has class `.nad-overview-dim-rect`; the pin layer has
+    // class `.nad-action-overview-pins`.  We insert before the pin
+    // layer if it exists, otherwise at the end of the SVG.
+    const pinLayer = svg.querySelector('.nad-action-overview-pins');
+    if (pinLayer) {
+        svg.insertBefore(layer, pinLayer);
     } else {
         svg.appendChild(layer);
     }

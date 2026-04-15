@@ -81,13 +81,6 @@ interface ActionOverviewDiagramProps {
     visible: boolean;
 }
 
-/**
- * Opacity applied to the wrapped NAD background so the pin layer
- * on top reads with high visual contrast. Chosen low enough to
- * make pins pop without completely hiding the network topology.
- */
-const DIM_BACKGROUND_OPACITY = '0.35';
-
 const ZOOM_STEP_IN = 0.8;
 const ZOOM_STEP_OUT = 1.25;
 
@@ -154,14 +147,45 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
             svg.style.height = '100%';
         }
 
-        // Dim the network background by applying a CSS class instead
-        // of wrapping in a <g opacity="0.35">.  The SVG `opacity`
-        // attribute creates a transparency group that forces Chrome
-        // to rasterize all ~43k children into an intermediate buffer
-        // before compositing — the "Layerize" step takes ~31s on
-        // large grids.  Using a CSS class avoids that by letting the
-        // browser apply the dimming as a simple style on each child
-        // without creating a stacking context.
+        // Dim the network background by inserting a semi-transparent
+        // white <rect> that covers the entire viewBox, placed AFTER
+        // all the original NAD content.  This dims everything behind
+        // it without applying `opacity` to any child element — which
+        // avoids creating stacking contexts (CSS per-child opacity)
+        // or SVG transparency groups (SVG opacity attribute on <g>),
+        // both of which force Chrome's Layerize step to composite
+        // each child individually (~25-31s on large grids).
+        //
+        // Visual stack (back to front):
+        //   1. original NAD content (full opacity)
+        //   2. white rect overlay (opacity 0.65 → dims to ~35% visible)
+        //   3. highlight layer (inserted later by applyActionOverviewHighlights)
+        //   4. pin layer (inserted later by applyActionOverviewPins)
+        const SVG_NS = 'http://www.w3.org/2000/svg';
+        const vb = svg.getAttribute('viewBox');
+        if (vb) {
+            const parts = vb.split(/[\s,]+/).map(Number);
+            if (parts.length === 4) {
+                const dimRect = document.createElementNS(SVG_NS, 'rect');
+                dimRect.setAttribute('class', 'nad-overview-dim-rect');
+                // Extend 10% beyond viewBox on each side to cover any
+                // pan-zoom overshoot — the rect is cheap, and gaps at
+                // the edges look ugly.
+                const margin = Math.max(parts[2], parts[3]) * 0.1;
+                dimRect.setAttribute('x', String(parts[0] - margin));
+                dimRect.setAttribute('y', String(parts[1] - margin));
+                dimRect.setAttribute('width', String(parts[2] + 2 * margin));
+                dimRect.setAttribute('height', String(parts[3] + 2 * margin));
+                dimRect.setAttribute('fill', 'white');
+                dimRect.setAttribute('opacity', '0.65');
+                // pointer-events: none so clicks pass through to
+                // highlights/pins above OR the NAD content below.
+                dimRect.setAttribute('pointer-events', 'none');
+                svg.appendChild(dimRect);
+            }
+        }
+        // Mark the SVG so highlight/pin insertion code knows the
+        // dimming rect is present and can insert AFTER it.
         svg.classList.add('nad-overview-dimmed');
         console.log(`[SVG] Action overview pre-parse took ${(performance.now() - start).toFixed(2)}ms`);
         return svg;

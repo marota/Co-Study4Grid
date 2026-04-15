@@ -1555,13 +1555,15 @@ describe('applyActionOverviewHighlights', () => {
         expect(clone!.classList.contains('nad-highlight-clone')).toBe(true);
     });
 
-    it('inserts the highlight layer at the START of the SVG (background-style placement)', () => {
+    it('inserts the highlight layer BEFORE the pin layer (or at the end of the SVG)', () => {
         const { container, meta } = buildContainer();
         applyActionOverviewHighlights(container, meta, 'CONT_LINE', []);
         const svg = container.querySelector('svg')!;
-        // The first <g> child of the SVG should be our highlight layer.
-        const firstG = svg.querySelector(':scope > g');
-        expect(firstG?.classList.contains('nad-overview-highlight-layer')).toBe(true);
+        // The highlight layer should be a direct child of the SVG.
+        const layer = svg.querySelector(':scope > g.nad-overview-highlight-layer');
+        expect(layer).not.toBeNull();
+        // When there is no pin layer yet, the highlight layer goes at the end.
+        expect(svg.lastElementChild).toBe(layer);
     });
 
     it('is idempotent — repeated calls wipe the previous highlight layer', () => {
@@ -1885,18 +1887,29 @@ describe('applyActionOverviewHighlights — batched DOM writes', () => {
         // With the batched DocumentFragment approach, the layer gets
         // a single appendChild(frag) at the end.
         let insertCount = 0;
-        const realInsertBefore = svg.insertBefore.bind(svg);
-        svg.insertBefore = function <T extends Node>(node: T, ref: Node | null): T {
-            const result = realInsertBefore(node, ref);
-            // The highlight layer is the <g> being inserted
+        // The highlight layer is inserted via appendChild (when no
+        // pin layer exists) or insertBefore (when pin layer exists).
+        // Spy on both paths to catch the layer insertion, then spy
+        // on the layer's appendChild to count clone insertions.
+        const spyOnLayer = (node: Node) => {
             if (node instanceof Element && node.classList?.contains('nad-overview-highlight-layer')) {
-                // After the layer is in the DOM, spy on its appendChild
                 const origAppend = node.appendChild.bind(node);
                 node.appendChild = function <U extends Node>(child: U): U {
                     insertCount++;
                     return origAppend(child);
                 };
             }
+        };
+        const realAppendChild = svg.appendChild.bind(svg);
+        svg.appendChild = function <T extends Node>(node: T): T {
+            const result = realAppendChild(node);
+            spyOnLayer(node);
+            return result;
+        };
+        const realInsertBefore = svg.insertBefore.bind(svg);
+        svg.insertBefore = function <T extends Node>(node: T, ref: Node | null): T {
+            const result = realInsertBefore(node, ref);
+            spyOnLayer(node);
             return result;
         };
 
