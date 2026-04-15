@@ -1034,15 +1034,28 @@ export const rescaleActionOverviewPins = (container: HTMLElement | null) => {
     const layer = svg.querySelector('.nad-action-overview-pins');
     if (!layer) return;
 
+    // Derive pxPerSvgUnit from the viewBox width and the container's
+    // client width — pure math, no forced layout.  The previous
+    // implementation called `getScreenCTM()` which triggers a
+    // synchronous layout recalculation on every zoom frame and was
+    // the root cause of "Page ne répondant pas" on large grids.
+    //
+    // `clientWidth` is cheap to read (it's already known to the
+    // layout engine from the last completed layout) and does NOT
+    // force a layout flush on its own — only a forced layout happens
+    // when you read geometry AFTER pending DOM writes, but here the
+    // only pending write is the `viewBox` attribute which changes the
+    // SVG viewport, not the CSS box model of the container div.
     let pxPerSvgUnit = 1;
-    try {
-        const ctm = (svg as unknown as SVGGraphicsElement).getScreenCTM?.();
-        if (ctm && Number.isFinite(ctm.a) && ctm.a !== 0) {
-            pxPerSvgUnit = Math.abs(ctm.a);
+    const vbAttr = svg.getAttribute('viewBox');
+    if (vbAttr) {
+        const parts = vbAttr.split(/[\s,]+/).map(Number);
+        if (parts.length === 4 && Number.isFinite(parts[2]) && parts[2] > 0) {
+            const containerW = container.clientWidth;
+            if (containerW > 0) {
+                pxPerSvgUnit = containerW / parts[2];
+            }
         }
-    } catch {
-        // jsdom may throw / not implement getScreenCTM — that's
-        // fine, we'll fall through with pxPerSvgUnit=1.
     }
 
     // Use cached base radius — avoids querySelectorAll('circle[r]')

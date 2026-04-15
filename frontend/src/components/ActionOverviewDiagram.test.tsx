@@ -419,10 +419,12 @@ describe('ActionOverviewDiagram', () => {
             // fast-path DOM writes and verifies the rescaler reacts.
             const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
             const svg = container.querySelector('.nad-action-overview-container svg') as unknown as SVGGraphicsElement;
+            const svgContainer = container.querySelector('.nad-action-overview-container')!;
 
-            // Mock getScreenCTM to return a tiny ratio so the rescaler
-            // upscales the body well above scale(1).
-            svg.getScreenCTM = (() => ({ a: 0.1, b: 0, c: 0, d: 0.1, e: 0, f: 0 })) as unknown as SVGGraphicsElement['getScreenCTM'];
+            // Mock clientWidth so the viewBox-based pxPerSvgUnit
+            // calculation yields 0.1 (clientWidth / viewBoxWidth).
+            // viewBox will be "0 0 99999 99999", so clientWidth = 9999.9
+            Object.defineProperty(svgContainer, 'clientWidth', { value: 9999.9, configurable: true });
 
             // Mutate the viewBox — the MutationObserver schedules
             // a rAF, so we wait one animation frame to read the
@@ -449,10 +451,11 @@ describe('ActionOverviewDiagram', () => {
 
         it('does not upscale pins when VL circles are already big enough on screen', () => {
             const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
-            const svg = container.querySelector('.nad-action-overview-container svg') as unknown as SVGGraphicsElement;
-            // pxPerSvgUnit=2 → VL circle with r=40 = 80 screen px,
-            // well above the 22-px floor. No rescale needed.
-            svg.getScreenCTM = (() => ({ a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 })) as unknown as SVGGraphicsElement['getScreenCTM'];
+            const svgContainer = container.querySelector('.nad-action-overview-container')!;
+            const svg = svgContainer.querySelector('svg') as unknown as SVGGraphicsElement;
+            // viewBox "0 0 100 100", clientWidth=200 → pxPerSvgUnit=2
+            // → VL circle with r=40 = 80 screen px, well above the 22-px floor.
+            Object.defineProperty(svgContainer, 'clientWidth', { value: 200, configurable: true });
             (svg as unknown as SVGSVGElement).setAttribute('viewBox', '0 0 100 100');
 
             return new Promise<void>(resolve => {

@@ -1706,17 +1706,17 @@ describe('rescaleActionOverviewPins', () => {
     });
 
     it('upscales the pin body when the zoom level puts VL circles below the screen-pixel floor', () => {
-        // Simulate a very zoomed-out NAD by mocking getScreenCTM to
-        // return a tiny pxPerSvgUnit (0.1 → 1 SVG unit = 0.1 px).
+        // Simulate a very zoomed-out NAD: viewBox is 1000 wide but the
+        // container is only 100 px wide → pxPerSvgUnit = 100 / 1000 = 0.1.
         // At that ratio, baseR=30 → 3 screen px, well below the
         // 22-px floor, so the rescaler must upscale the body.
         const container = renderContainer();
         applyActionOverviewPins(container, [
             { id: 'a', x: 0, y: 0, severity: 'green', label: '50%', title: '' },
         ], () => {});
-        const svg = container.querySelector('svg') as unknown as SVGGraphicsElement;
-        const fakeMatrix = { a: 0.1, b: 0, c: 0, d: 0.1, e: 0, f: 0 };
-        svg.getScreenCTM = (() => fakeMatrix) as unknown as SVGGraphicsElement['getScreenCTM'];
+        // Mock clientWidth on the container (jsdom reports 0 by default).
+        // viewBox="0 0 1000 1000", clientWidth=100 → pxPerSvgUnit = 0.1
+        Object.defineProperty(container, 'clientWidth', { value: 100, configurable: true });
 
         rescaleActionOverviewPins(container);
         const body = container.querySelector('g.nad-action-overview-pin-body')!;
@@ -1733,11 +1733,9 @@ describe('rescaleActionOverviewPins', () => {
         applyActionOverviewPins(container, [
             { id: 'a', x: 0, y: 0, severity: 'green', label: '50%', title: '' },
         ], () => {});
-        const svg = container.querySelector('svg') as unknown as SVGGraphicsElement;
-        // pxPerSvgUnit=2 → 30 units = 60 screen px, way above the
-        // 22 px floor, so no upscaling.
-        const fakeMatrix = { a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 };
-        svg.getScreenCTM = (() => fakeMatrix) as unknown as SVGGraphicsElement['getScreenCTM'];
+        // viewBox="0 0 1000 1000", clientWidth=2000 → pxPerSvgUnit = 2
+        // → 30 units = 60 screen px, way above the 22 px floor.
+        Object.defineProperty(container, 'clientWidth', { value: 2000, configurable: true });
 
         rescaleActionOverviewPins(container);
         const body = container.querySelector('g.nad-action-overview-pin-body')!;
@@ -1751,8 +1749,8 @@ describe('rescaleActionOverviewPins', () => {
             { id: 'b', x: 100, y: 0, severity: 'red', label: '110%', title: '' },
             { id: 'c', x: 200, y: 0, severity: 'orange', label: '92%', title: '' },
         ], () => {});
-        const svg = container.querySelector('svg') as unknown as SVGGraphicsElement;
-        svg.getScreenCTM = (() => ({ a: 0.1, b: 0, c: 0, d: 0.1, e: 0, f: 0 })) as unknown as SVGGraphicsElement['getScreenCTM'];
+        // viewBox="0 0 1000 1000", clientWidth=100 → pxPerSvgUnit = 0.1
+        Object.defineProperty(container, 'clientWidth', { value: 100, configurable: true });
 
         rescaleActionOverviewPins(container);
         const bodies = container.querySelectorAll('g.nad-action-overview-pin-body');

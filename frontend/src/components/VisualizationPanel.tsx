@@ -129,6 +129,11 @@ const InspectSearchField: React.FC<{
     );
 };
 
+// Module-level stable references so React.memo children don't
+// break referential equality on every parent render.
+const NOOP_ACTION_SELECT = (_id: string | null) => { /* intentional no-op */ };
+const EMPTY_STRING_ARRAY: readonly string[] = [];
+
 interface VisualizationPanelProps {
     activeTab: TabId;
     configLoading: boolean;
@@ -297,6 +302,14 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     const viewModeChangeForTabCb = onViewModeChangeForTab ?? ((_tab: TabId, mode: 'network' | 'delta') => onViewModeChange(mode));
     const isTabTiedFn = isTabTied ?? (() => false);
     const toggleTabTieCb = onToggleTabTie ?? (() => {});
+
+    // Stable fallbacks for the ActionOverviewDiagram props so that
+    // React.memo on the child doesn't break on every parent render.
+    const actionSelectCb = onActionSelect ?? NOOP_ACTION_SELECT;
+    const overloadedLinesMemo = React.useMemo(
+        () => n1Diagram?.lines_overloaded ?? result?.lines_overloaded ?? EMPTY_STRING_ARRAY,
+        [n1Diagram?.lines_overloaded, result?.lines_overloaded],
+    );
     const [warningDismissed, setWarningDismissed] = useState(false);
     const [voltageFilterExpanded, setVoltageFilterExpanded] = useState(false);
 
@@ -974,13 +987,13 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             n1MetaIndex={n1MetaIndex ?? null}
                             actions={result?.actions}
                             monitoringFactor={monitoringFactor ?? 1}
-                            onActionSelect={onActionSelect ?? (() => {})}
+                            onActionSelect={actionSelectCb}
                             onActionFavorite={onActionFavorite}
                             onActionReject={onActionReject}
                             selectedActionIds={selectedActionIds}
                             rejectedActionIds={rejectedActionIds}
                             contingency={selectedBranch || null}
-                            overloadedLines={n1Diagram?.lines_overloaded ?? result?.lines_overloaded ?? []}
+                            overloadedLines={overloadedLinesMemo}
                             inspectableItems={inspectableItems}
                             visible={!selectedActionId && !actionDiagramLoading}
                         />
