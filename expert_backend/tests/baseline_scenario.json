@@ -5,12 +5,12 @@
       "target_voltage_level": "PYMONP3",
       "flow_deltas": {
         "PYMONL31SAISS": {
-          "delta": -18.5,
+          "delta": -18.6,
           "category": "negative",
           "flip_arrow": true
         },
         "LOUHAL31PYMON": {
-          "delta": 12.5,
+          "delta": 12.3,
           "category": "positive",
           "flip_arrow": false
         },
@@ -20,20 +20,20 @@
           "flip_arrow": false
         },
         "PYMONY631": {
-          "delta": 31.0,
+          "delta": 30.9,
           "category": "positive",
           "flip_arrow": false
         }
       },
       "reactive_flow_deltas": {
         "PYMONL31SAISS": {
-          "delta": -0.4,
-          "category": "negative",
+          "delta": -0.2,
+          "category": "grey",
           "flip_arrow": false
         },
         "LOUHAL31PYMON": {
-          "delta": -0.3,
-          "category": "negative",
+          "delta": -0.5,
+          "category": "grey",
           "flip_arrow": false
         },
         "PYMONY632": {
@@ -42,7 +42,7 @@
           "flip_arrow": false
         },
         "PYMONY631": {
-          "delta": -0.6,
+          "delta": -0.7,
           "category": "negative",
           "flip_arrow": false
         }
@@ -52,44 +52,44 @@
       "target_voltage_level": "COUCHP6",
       "flow_deltas": {
         "COUCHL61CPVAN": {
-          "delta": -83.9,
+          "delta": -84.4,
           "category": "negative",
           "flip_arrow": false
         },
         "COUCHL61VIELM": {
-          "delta": -88.8,
+          "delta": -89.5,
           "category": "negative",
           "flip_arrow": false
         },
         "COUCHY631": {
-          "delta": -27.7,
+          "delta": -27.3,
           "category": "negative",
           "flip_arrow": true
         },
         "COUCHY632": {
-          "delta": 22.8,
+          "delta": 22.2,
           "category": "positive",
           "flip_arrow": false
         }
       },
       "reactive_flow_deltas": {
         "COUCHL61CPVAN": {
-          "delta": 4.6,
-          "category": "positive",
+          "delta": -2.3,
+          "category": "negative",
           "flip_arrow": false
         },
         "COUCHL61VIELM": {
-          "delta": 8.8,
+          "delta": 0.9,
           "category": "positive",
           "flip_arrow": false
         },
         "COUCHY631": {
-          "delta": 5.0,
-          "category": "positive",
+          "delta": -1.4,
+          "category": "negative",
           "flip_arrow": false
         },
         "COUCHY632": {
-          "delta": 9.2,
+          "delta": 1.8,
           "category": "positive",
           "flip_arrow": false
         }
