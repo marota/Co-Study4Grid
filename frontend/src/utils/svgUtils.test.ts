@@ -20,6 +20,7 @@ import {
     applyContingencyHighlight,
     buildActionOverviewPins,
     applyActionOverviewPins,
+    rescaleActionOverviewPins,
     computeActionOverviewFitRect,
     computeEquipmentFitRect,
 } from './svgUtils';
@@ -1346,7 +1347,10 @@ describe('applyActionOverviewPins', () => {
             { id: 'r', x: 0, y: 0, severity: 'red', label: '110%', title: '' },
             { id: 'x', x: 0, y: 0, severity: 'grey', label: 'DIV', title: '' },
         ], () => {});
-        const fills = Array.from(container.querySelectorAll('g.nad-action-overview-pin > path'))
+        // path now lives inside the inner `pin-body` wrapper so the
+        // screen-constant rescaler can upscale it on unzoom. Use a
+        // descendant selector so the assertion keeps working.
+        const fills = Array.from(container.querySelectorAll('g.nad-action-overview-pin path'))
             .map(el => el.getAttribute('fill'));
         expect(fills).toEqual(['#28a745', '#f0ad4e', '#dc3545', '#9ca3af']);
     });
@@ -1360,7 +1364,7 @@ describe('applyActionOverviewPins', () => {
         applyActionOverviewPins(container, [
             { id: 'a', x: 10, y: 10, severity: 'green', label: '50%', title: '' },
         ], () => {});
-        const path = container.querySelector('g.nad-action-overview-pin > path');
+        const path = container.querySelector('g.nad-action-overview-pin path');
         expect(path).not.toBeNull();
         expect(path!.getAttribute('stroke')).toBe('none');
         expect(path!.hasAttribute('stroke-width')).toBe(false);
@@ -1411,6 +1415,161 @@ describe('applyActionOverviewPins', () => {
         expect(() => applyActionOverviewPins(container, [
             { id: 'a', x: 0, y: 0, severity: 'green', label: '50%', title: '' },
         ], () => {})).not.toThrow();
+    });
+
+    it('wraps pin glyph inside a .nad-action-overview-pin-body subgroup for rescaling', () => {
+        const container = document.createElement('div');
+        container.innerHTML = '<svg viewBox="0 0 200 200"></svg>';
+        applyActionOverviewPins(container, [
+            { id: 'a', x: 10, y: 20, severity: 'green', label: '50%', title: 'A' },
+        ], () => {});
+        const pin = container.querySelector('g.nad-action-overview-pin')!;
+        // Outer group: translate only (no scale at this level)
+        expect(pin.getAttribute('transform')).toBe('translate(10 20)');
+        // Inner body group: carries the rescaling scale() transform
+        const body = pin.querySelector(':scope > g.nad-action-overview-pin-body');
+        expect(body).not.toBeNull();
+        expect(body!.getAttribute('transform')).toMatch(/^scale\(/);
+        // The glyph (path, inner disc, text) all live inside the body
+        expect(body!.querySelector('path')).not.toBeNull();
+        expect(body!.querySelector('circle')).not.toBeNull();
+        expect(body!.querySelector('text')).not.toBeNull();
+    });
+
+    it('uses the VL circle radius from the SVG as the pin base radius', () => {
+        // Large-grid NAD: VL circles have r=80 (after boost).
+        // The pin teardrop path must reference R=80 in its `d`
+        // attribute so it matches VL circles at 1:1 zoom.
+        const container = document.createElement('div');
+        container.innerHTML =
+            '<svg viewBox="0 0 200000 200000">' +
+            '  <g class="nad-vl-nodes"><circle r="80"/></g>' +
+            '</svg>';
+        applyActionOverviewPins(container, [
+            { id: 'a', x: 0, y: 0, severity: 'green', label: '50%', title: '' },
+        ], () => {});
+        const path = container.querySelector('g.nad-action-overview-pin path')!;
+        // Teardrop arc endpoints: A ${R} ${R} … ${R} ${-R-tail}
+        // With R=80, the d attribute must reference "80" in the arc.
+        expect(path.getAttribute('d')).toContain('A 80 80');
+    });
+
+    it('falls back to r=30 when the SVG has no usable VL circles', () => {
+        const container = document.createElement('div');
+        container.innerHTML = '<svg viewBox="0 0 200 200"></svg>';
+        applyActionOverviewPins(container, [
+            { id: 'a', x: 0, y: 0, severity: 'green', label: '50%', title: '' },
+        ], () => {});
+        const path = container.querySelector('g.nad-action-overview-pin path')!;
+        expect(path.getAttribute('d')).toContain('A 30 30');
+    });
+});
+
+describe('rescaleActionOverviewPins', () => {
+    const renderContainer = (svgInner: string = ''): HTMLElement => {
+        const container = document.createElement('div');
+        container.innerHTML =
+            '<svg viewBox="0 0 1000 1000">' +
+            '  <g class="nad-vl-nodes"><circle r="30"/></g>' +
+            svgInner +
+            '</svg>';
+        return container;
+    };
+
+    it('is a no-op when the container has no pin layer', () => {
+        const container = renderContainer();
+        // Should NOT throw even though there's no pin layer yet.
+        expect(() => rescaleActionOverviewPins(container)).not.toThrow();
+    });
+
+    it('is a no-op when the container has no <svg>', () => {
+        const container = document.createElement('div');
+        expect(() => rescaleActionOverviewPins(container)).not.toThrow();
+    });
+
+    it('applies a scale(1) body transform at 1:1 mapping (jsdom fallback)', () => {
+        // jsdom does not implement getScreenCTM, so the rescaler
+        // falls back to pxPerSvgUnit=1. With baseR=30 (VL circle)
+        // and MIN_SCREEN_RADIUS_PX=22, baseR wins as the floor and
+        // the body scale stays at 1.
+        const container = renderContainer();
+        applyActionOverviewPins(container, [
+            { id: 'a', x: 50, y: 50, severity: 'green', label: '50%', title: '' },
+        ], () => {});
+        rescaleActionOverviewPins(container);
+        const body = container.querySelector('g.nad-action-overview-pin-body')!;
+        expect(body.getAttribute('transform')).toBe('scale(1)');
+    });
+
+    it('upscales the pin body when the zoom level puts VL circles below the screen-pixel floor', () => {
+        // Simulate a very zoomed-out NAD by mocking getScreenCTM to
+        // return a tiny pxPerSvgUnit (0.1 → 1 SVG unit = 0.1 px).
+        // At that ratio, baseR=30 → 3 screen px, well below the
+        // 22-px floor, so the rescaler must upscale the body.
+        const container = renderContainer();
+        applyActionOverviewPins(container, [
+            { id: 'a', x: 0, y: 0, severity: 'green', label: '50%', title: '' },
+        ], () => {});
+        const svg = container.querySelector('svg') as unknown as SVGGraphicsElement;
+        const fakeMatrix = { a: 0.1, b: 0, c: 0, d: 0.1, e: 0, f: 0 };
+        svg.getScreenCTM = (() => fakeMatrix) as unknown as SVGGraphicsElement['getScreenCTM'];
+
+        rescaleActionOverviewPins(container);
+        const body = container.querySelector('g.nad-action-overview-pin-body')!;
+        const match = body.getAttribute('transform')!.match(/^scale\(([0-9.]+)\)$/);
+        expect(match).not.toBeNull();
+        const scale = parseFloat(match![1]);
+        // Effective SVG radius = 22 px / 0.1 px/unit = 220 units.
+        // Scale = 220 / 30 ≈ 7.33.
+        expect(scale).toBeCloseTo(220 / 30, 2);
+    });
+
+    it('keeps scale=1 when zoom level is detailed enough (VL circles already above floor)', () => {
+        const container = renderContainer();
+        applyActionOverviewPins(container, [
+            { id: 'a', x: 0, y: 0, severity: 'green', label: '50%', title: '' },
+        ], () => {});
+        const svg = container.querySelector('svg') as unknown as SVGGraphicsElement;
+        // pxPerSvgUnit=2 → 30 units = 60 screen px, way above the
+        // 22 px floor, so no upscaling.
+        const fakeMatrix = { a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 };
+        svg.getScreenCTM = (() => fakeMatrix) as unknown as SVGGraphicsElement['getScreenCTM'];
+
+        rescaleActionOverviewPins(container);
+        const body = container.querySelector('g.nad-action-overview-pin-body')!;
+        expect(body.getAttribute('transform')).toBe('scale(1)');
+    });
+
+    it('rescales EVERY pin on the layer, not just the first', () => {
+        const container = renderContainer();
+        applyActionOverviewPins(container, [
+            { id: 'a', x: 0, y: 0, severity: 'green', label: '50%', title: '' },
+            { id: 'b', x: 100, y: 0, severity: 'red', label: '110%', title: '' },
+            { id: 'c', x: 200, y: 0, severity: 'orange', label: '92%', title: '' },
+        ], () => {});
+        const svg = container.querySelector('svg') as unknown as SVGGraphicsElement;
+        svg.getScreenCTM = (() => ({ a: 0.1, b: 0, c: 0, d: 0.1, e: 0, f: 0 })) as unknown as SVGGraphicsElement['getScreenCTM'];
+
+        rescaleActionOverviewPins(container);
+        const bodies = container.querySelectorAll('g.nad-action-overview-pin-body');
+        expect(bodies.length).toBe(3);
+        const scales = Array.from(bodies).map(b => b.getAttribute('transform'));
+        // All three pins share the same screen-constant scale.
+        expect(new Set(scales).size).toBe(1);
+        expect(scales[0]).not.toBe('scale(1)');
+    });
+
+    it('is automatically invoked by applyActionOverviewPins for initial sizing', () => {
+        // If we never called rescaleActionOverviewPins directly,
+        // the pin body should still have a transform attribute —
+        // applyActionOverviewPins calls the rescaler at the end so
+        // the first paint is already compensated.
+        const container = renderContainer();
+        applyActionOverviewPins(container, [
+            { id: 'a', x: 0, y: 0, severity: 'green', label: '50%', title: '' },
+        ], () => {});
+        const body = container.querySelector('g.nad-action-overview-pin-body')!;
+        expect(body.hasAttribute('transform')).toBe(true);
     });
 });
 

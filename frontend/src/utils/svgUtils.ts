@@ -862,6 +862,82 @@ export const buildActionOverviewPins = (
 };
 
 /**
+ * Read a sensible base radius for the pin glyph from the SVG.
+ *
+ * We want pins to be "similar in size to voltage-level circles when
+ * zoomed" (as the operator sees other highlights in the NAD), so we
+ * pick up the radius of the first VL circle in the diagram and use
+ * it as the pin body radius. Falls back to 30 user units when the
+ * SVG has no circles (e.g. a handcrafted test fixture).
+ */
+const readPinBaseRadius = (svg: SVGSVGElement): number => {
+    // Prefer circles under the voltage-level nodes group; fall back
+    // to any circle that has an explicit `r` attribute.
+    const vlCircle =
+        svg.querySelector('.nad-vl-nodes circle[r]') ??
+        svg.querySelector('circle[r]');
+    if (vlCircle) {
+        const attr = vlCircle.getAttribute('r');
+        const n = attr ? parseFloat(attr) : NaN;
+        if (Number.isFinite(n) && n > 0) return n;
+    }
+    return 30;
+};
+
+/**
+ * Minimum pin body radius in SCREEN pixels. Enforced by
+ * {@link rescaleActionOverviewPins} so that pins remain readable
+ * when the operator zooms far out to inspect a large grid — the
+ * rescaler upscales the pin body in SVG-space as the viewBox grows.
+ */
+const PIN_MIN_SCREEN_RADIUS_PX = 22;
+
+/**
+ * Rescale the action-overview pin glyphs so that, as the viewBox
+ * grows (user zooms out), they grow proportionally in SVG-space to
+ * stay at least `PIN_MIN_SCREEN_RADIUS_PX` pixels wide on screen —
+ * mirroring the non-scaling-stroke trick used on contingency and
+ * overload circle halos in App.css.
+ *
+ * The per-pin transform is applied to the inner `<g>` wrapping the
+ * glyph, leaving the outer `translate(x y)` and the click listener
+ * intact. Reads `getScreenCTM()` on the SVG to map SVG units back
+ * to screen pixels. No-ops gracefully when the CTM is unavailable
+ * (e.g. in jsdom or when the element is detached), falling back to
+ * a 1:1 mapping which keeps the pins at their base radius.
+ */
+export const rescaleActionOverviewPins = (container: HTMLElement | null) => {
+    if (!container) return;
+    const svg = container.querySelector('svg') as SVGSVGElement | null;
+    if (!svg) return;
+    const layer = svg.querySelector('.nad-action-overview-pins');
+    if (!layer) return;
+
+    let pxPerSvgUnit = 1;
+    try {
+        const ctm = (svg as unknown as SVGGraphicsElement).getScreenCTM?.();
+        if (ctm && Number.isFinite(ctm.a) && ctm.a !== 0) {
+            pxPerSvgUnit = Math.abs(ctm.a);
+        }
+    } catch {
+        // jsdom may throw / not implement getScreenCTM — that's
+        // fine, we'll fall through with pxPerSvgUnit=1.
+    }
+
+    const baseR = readPinBaseRadius(svg);
+    const minSvgR = PIN_MIN_SCREEN_RADIUS_PX / pxPerSvgUnit;
+    // Keep `baseR` as the floor — this is what makes pins match VL
+    // circles at normal zoom. When the user zooms far out, minSvgR
+    // exceeds baseR and the pins grow to stay visible.
+    const effectiveR = Math.max(baseR, minSvgR);
+    const scale = effectiveR / baseR;
+
+    layer.querySelectorAll('.nad-action-overview-pin-body').forEach(body => {
+        body.setAttribute('transform', `scale(${scale})`);
+    });
+};
+
+/**
  * Inject (or refresh) the action-overview pin layer inside the
  * given container's SVG. Clicking a pin invokes `onPinClick` with
  * the action id, which should trigger the existing action-select
@@ -873,7 +949,7 @@ export const applyActionOverviewPins = (
     onPinClick: (actionId: string) => void,
 ) => {
     if (!container) return;
-    const svg = container.querySelector('svg');
+    const svg = container.querySelector('svg') as SVGSVGElement | null;
     if (!svg) return;
 
     // Purge any existing layer so repeated calls stay idempotent.
@@ -881,19 +957,12 @@ export const applyActionOverviewPins = (
 
     if (pins.length === 0) return;
 
-    // Pins are sized relative to the viewBox so they remain
-    // visually stable across large and small grids.
-    const vbAttr = svg.getAttribute('viewBox');
-    let diagramSize = 1000;
-    if (vbAttr) {
-        const parts = vbAttr.split(/\s+|,/).map(parseFloat);
-        if (parts.length === 4) {
-            diagramSize = Math.max(parts[2], parts[3]);
-        }
-    }
-    // Pin body radius ~ 2% of the diagram span, clamped so the
-    // pin is always legible without swamping small grids.
-    const r = Math.max(12, Math.min(60, diagramSize * 0.018));
+    // Base pin body radius = radius of a voltage-level circle. This
+    // is the "when zoomed in" size — at typical detail zoom, pins
+    // appear roughly the same size as the VL glyphs they sit on.
+    // {@link rescaleActionOverviewPins} then enforces a screen-pixel
+    // floor so pins stay visible when the operator unzooms.
+    const r = readPinBaseRadius(svg);
     const labelFont = Math.max(9, r * 0.8);
 
     const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -903,15 +972,28 @@ export const applyActionOverviewPins = (
     svg.appendChild(layer);
 
     pins.forEach(pin => {
+        // OUTER group: anchor translate + click handler. The click
+        // listener is scoped here so the inner body can be
+        // rescaled on every zoom change without reattaching.
         const g = document.createElementNS(SVG_NS, 'g');
         g.setAttribute('class', 'nad-action-overview-pin');
         g.setAttribute('transform', `translate(${pin.x} ${pin.y})`);
         g.setAttribute('data-action-id', pin.id);
         (g as unknown as SVGGElement).style.cursor = 'pointer';
 
+        // INNER group: the glyph itself. Its `transform` attribute
+        // is re-written by `rescaleActionOverviewPins` whenever the
+        // viewBox changes, so the pin grows in SVG-space as the
+        // user zooms out (keeping its on-screen size roughly
+        // constant) and shrinks back to `r` at normal zoom.
+        const body = document.createElementNS(SVG_NS, 'g');
+        body.setAttribute('class', 'nad-action-overview-pin-body');
+        body.setAttribute('transform', 'scale(1)');
+        g.appendChild(body);
+
         const title = document.createElementNS(SVG_NS, 'title');
         title.textContent = pin.title;
-        g.appendChild(title);
+        body.appendChild(title);
 
         // Google-Maps style teardrop: a circle bubble with a
         // triangular tail ending at the anchor point (0,0). The
@@ -927,7 +1009,7 @@ export const applyActionOverviewPins = (
         // network SVG and matches the action card's left-border
         // accent instead of competing with the NAD line strokes.
         path.setAttribute('stroke', 'none');
-        g.appendChild(path);
+        body.appendChild(path);
 
         // Inner white disc to host the label.
         const inner = document.createElementNS(SVG_NS, 'circle');
@@ -937,7 +1019,7 @@ export const applyActionOverviewPins = (
         inner.setAttribute('fill', '#ffffff');
         inner.setAttribute('fill-opacity', '0.92');
         inner.setAttribute('pointer-events', 'none');
-        g.appendChild(inner);
+        body.appendChild(inner);
 
         const text = document.createElementNS(SVG_NS, 'text');
         text.setAttribute('x', '0');
@@ -950,7 +1032,7 @@ export const applyActionOverviewPins = (
         text.setAttribute('fill', severityFill[pin.severity]);
         text.setAttribute('pointer-events', 'none');
         text.textContent = pin.label;
-        g.appendChild(text);
+        body.appendChild(text);
 
         g.addEventListener('click', (evt) => {
             evt.stopPropagation();
@@ -959,6 +1041,12 @@ export const applyActionOverviewPins = (
 
         layer.appendChild(g);
     });
+
+    // Apply the initial scale compensation so the pins come up at
+    // the right size on the very first paint, before the user has
+    // panned or zoomed. Safe to call here — the layer is already in
+    // the DOM (we just appended it).
+    rescaleActionOverviewPins(container);
 };
 
 /**

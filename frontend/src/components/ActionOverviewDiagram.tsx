@@ -12,6 +12,7 @@ import {
     buildActionOverviewPins,
     computeActionOverviewFitRect,
     computeEquipmentFitRect,
+    rescaleActionOverviewPins,
 } from '../utils/svgUtils';
 import { usePanZoom } from '../hooks/usePanZoom';
 
@@ -172,6 +173,40 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
         if (!container) return;
         applyActionOverviewPins(container, pins, onActionSelect);
     }, [pins, onActionSelect, svgReady, svgString]);
+
+    // Screen-constant pin compensation.
+    //
+    // The pin glyph is drawn in SVG-space at a base radius equal to
+    // the voltage-level circle radius (so at normal zoom they match
+    // the VL glyphs). As the operator zooms OUT, the SVG units map
+    // to fewer screen pixels and the pins would become tiny dots on
+    // large grids. To fight that we upscale the pin body in
+    // SVG-space whenever the viewBox changes — same spirit as the
+    // non-scaling-stroke trick used on overload / contingency
+    // circle halos in App.css.
+    //
+    // A MutationObserver on the svg's `viewBox` attribute catches
+    // every update: the wheel-zoom path in usePanZoom writes the
+    // DOM directly (bypassing React state for perf), so a plain
+    // `pz.viewBox` useEffect dep would lag behind the live drag.
+    useEffect(() => {
+        if (!svgReady || !visible) return;
+        const container = containerRef.current;
+        if (!container) return;
+        const svg = container.querySelector('svg');
+        if (!svg) return;
+
+        // Initial compensation — pins are already mounted by the
+        // applyActionOverviewPins effect above; make sure they
+        // come up at the right size on the first paint.
+        rescaleActionOverviewPins(container);
+
+        const observer = new MutationObserver(() => {
+            rescaleActionOverviewPins(container);
+        });
+        observer.observe(svg, { attributes: true, attributeFilter: ['viewBox'] });
+        return () => observer.disconnect();
+    }, [svgReady, visible, svgString, pins]);
 
     // When the view becomes visible for the first time (or again
     // after a round-trip through an action drill-down), re-assert

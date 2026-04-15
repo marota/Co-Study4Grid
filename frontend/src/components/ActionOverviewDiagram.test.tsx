@@ -53,9 +53,14 @@ const makeAction = (overrides: Partial<ActionDetail> = {}): ActionDetail => ({
 
 // A minimal NAD-like SVG background — the test component
 // parses this via innerHTML and queries for the injected pin
-// layer. We keep it tiny so the assertions stay focussed.
+// layer. Includes a `.nad-vl-nodes circle[r="40"]` so the pin
+// sizing logic (which reads the VL circle radius) has something
+// realistic to latch on.
 const makeN1Diagram = (): DiagramData => ({
-    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 700 700"></svg>',
+    svg:
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 700 700">' +
+        '  <g class="nad-vl-nodes"><circle r="40"/></g>' +
+        '</svg>',
     metadata: null,
     lines_overloaded: ['LINE_B'],
     lines_overloaded_rho: [1.03],
@@ -121,7 +126,9 @@ describe('ActionOverviewDiagram', () => {
 
     it('draws pins WITHOUT a stroke outline', () => {
         const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
-        const paths = container.querySelectorAll('g.nad-action-overview-pin > path');
+        // path lives inside the inner .nad-action-overview-pin-body
+        // wrapper so the rescaler can upscale it on unzoom.
+        const paths = container.querySelectorAll('g.nad-action-overview-pin path');
         expect(paths.length).toBeGreaterThan(0);
         paths.forEach(p => {
             expect(p.getAttribute('stroke')).toBe('none');
@@ -131,7 +138,7 @@ describe('ActionOverviewDiagram', () => {
 
     it('each pin displays the rounded max loading as its label', () => {
         const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
-        const texts = Array.from(container.querySelectorAll('g.nad-action-overview-pin > text'))
+        const texts = Array.from(container.querySelectorAll('g.nad-action-overview-pin text'))
             .map(t => t.textContent);
         // 0.5 → "50%", 1.1 → "110%"
         expect(texts).toEqual(expect.arrayContaining(['50%', '110%']));
@@ -343,6 +350,76 @@ describe('ActionOverviewDiagram', () => {
             fireEvent.change(input, { target: { value: 'VL_FAR' } });
             const focusedVb2 = svg.getAttribute('viewBox')!;
             expect(focusedVb2).toBe(focusedVb1);
+        });
+    });
+
+    describe('pin sizing and screen-constant rescaling', () => {
+        it('sizes pins from the VL circle radius (40 in the fixture)', () => {
+            const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
+            // The teardrop path uses the VL circle radius R=40
+            // from makeN1Diagram(), so the arc command must
+            // reference "A 40 40" in its `d` attribute.
+            const path = container.querySelector('g.nad-action-overview-pin path');
+            expect(path).not.toBeNull();
+            expect(path!.getAttribute('d')).toContain('A 40 40');
+        });
+
+        it('wraps every pin glyph in a rescalable .nad-action-overview-pin-body', () => {
+            const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
+            const bodies = container.querySelectorAll('g.nad-action-overview-pin-body');
+            expect(bodies.length).toBe(2);
+            // Outer translate stays clean, body carries the scale.
+            bodies.forEach(b => {
+                expect(b.getAttribute('transform')).toMatch(/^scale\(/);
+            });
+        });
+
+        it('rescales pins when the svg viewBox attribute changes', () => {
+            // MutationObserver on the svg's viewBox attribute is
+            // what keeps pins screen-constant during wheel/drag.
+            // Directly mutating viewBox here simulates usePanZoom's
+            // fast-path DOM writes and verifies the rescaler reacts.
+            const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
+            const svg = container.querySelector('.nad-action-overview-container svg') as unknown as SVGGraphicsElement;
+
+            // Mock getScreenCTM to return a tiny ratio so the rescaler
+            // upscales the body well above scale(1).
+            svg.getScreenCTM = (() => ({ a: 0.1, b: 0, c: 0, d: 0.1, e: 0, f: 0 })) as unknown as SVGGraphicsElement['getScreenCTM'];
+
+            // Mutate the viewBox — MutationObserver fires on the
+            // next microtask, so flush with a manual wait.
+            (svg as unknown as SVGSVGElement).setAttribute('viewBox', '0 0 99999 99999');
+
+            return new Promise<void>(resolve => {
+                // MutationObserver callbacks are scheduled as microtasks
+                queueMicrotask(() => {
+                    const body = container.querySelector('g.nad-action-overview-pin-body')!;
+                    const match = body.getAttribute('transform')!.match(/^scale\(([0-9.]+)\)$/);
+                    expect(match).not.toBeNull();
+                    const scale = parseFloat(match![1]);
+                    // pxPerSvgUnit=0.1, MIN_SCREEN_RADIUS_PX=22,
+                    // baseR=40 → effectiveR=max(40, 220)=220 → scale=5.5
+                    expect(scale).toBeCloseTo(220 / 40, 2);
+                    resolve();
+                });
+            });
+        });
+
+        it('does not upscale pins when VL circles are already big enough on screen', () => {
+            const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
+            const svg = container.querySelector('.nad-action-overview-container svg') as unknown as SVGGraphicsElement;
+            // pxPerSvgUnit=2 → VL circle with r=40 = 80 screen px,
+            // well above the 22-px floor. No rescale needed.
+            svg.getScreenCTM = (() => ({ a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 })) as unknown as SVGGraphicsElement['getScreenCTM'];
+            (svg as unknown as SVGSVGElement).setAttribute('viewBox', '0 0 100 100');
+
+            return new Promise<void>(resolve => {
+                queueMicrotask(() => {
+                    const body = container.querySelector('g.nad-action-overview-pin-body')!;
+                    expect(body.getAttribute('transform')).toBe('scale(1)');
+                    resolve();
+                });
+            });
         });
     });
 });
