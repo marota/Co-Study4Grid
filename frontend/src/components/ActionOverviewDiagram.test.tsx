@@ -236,28 +236,12 @@ describe('ActionOverviewDiagram', () => {
         expect(container.textContent).toContain('2 pins on the N-1 network');
     });
 
-    it('hides itself when visible=false (before first show: display:none)', () => {
+    it('hides itself when visible=false', () => {
         const { container } = render(
             <ActionOverviewDiagram {...defaultProps()} visible={false} />,
         );
         const root = container.querySelector('[data-testid="action-overview-diagram"]') as HTMLElement;
-        // Before the component has ever been visible, it uses
-        // display:none for zero rendering cost.
         expect(root.style.display).toBe('none');
-        expect(root.style.pointerEvents).toBe('none');
-    });
-
-    it('uses visibility:hidden after first show (keeps composite layer)', () => {
-        const { container, rerender } = render(
-            <ActionOverviewDiagram {...defaultProps()} visible={true} />,
-        );
-        // Show it once, then hide — should switch to visibility:hidden
-        // so the painted SVG stays in its GPU layer for instant re-show.
-        rerender(<ActionOverviewDiagram {...defaultProps()} visible={false} />);
-        const root = container.querySelector('[data-testid="action-overview-diagram"]') as HTMLElement;
-        expect(root.style.display).toBe('flex');
-        expect(root.style.visibility).toBe('hidden');
-        expect(root.style.pointerEvents).toBe('none');
     });
 
     it('shows the "no analysis yet" empty state when there are no actions', () => {

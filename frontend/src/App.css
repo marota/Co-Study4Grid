@@ -503,13 +503,6 @@ circle.nad-highlight {
 .nad-action-overview-pin:hover > path {
     stroke-width: 2.5;
 }
-.nad-action-overview-container {
-    /* Promote to its own composite layer so toggling visibility
-       is a compositor-only repaint (~1ms) instead of a full
-       re-rasterise of the 11k-element SVG subtree (~11s). */
-    will-change: visibility;
-    transform: translateZ(0);
-}
 .nad-action-overview-container svg {
     display: block;
     /* Trade anti-aliasing quality for rendering speed.  On a

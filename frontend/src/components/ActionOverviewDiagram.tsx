@@ -114,15 +114,6 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     visible,
 }) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
-
-    // Track whether the component has been shown at least once.
-    // Before the first show we use `display: none` (zero rendering
-    // cost).  After that we switch to `visibility: hidden` so the
-    // SVG stays in its composite layer and subsequent tab-switches
-    // are instant (~1ms compositor-only vs ~11s full repaint).
-    const hasBeenVisibleRef = useRef(false);
-    if (visible) hasBeenVisibleRef.current = true;
-
     // Pull the svg string into a local so the React Compiler can
     // see that both the injection effect and the initialViewBox memo
     // depend on the same primitive, not on the full `n1Diagram`
@@ -513,20 +504,13 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
             style={{
                 position: 'absolute',
                 inset: 0,
+                display: visible ? 'flex' : 'none',
                 flexDirection: 'column',
                 background: 'white',
-                // Before the first show: display:none → zero cost.
-                // After the first show: visibility:hidden keeps the SVG
-                // painted in its composite layer so re-showing is a
-                // compositor-only operation (~1ms vs ~11s full repaint).
-                ...(hasBeenVisibleRef.current
-                    ? { display: 'flex', visibility: visible ? 'visible' as const : 'hidden' as const }
-                    : { display: visible ? 'flex' : 'none' }),
-                pointerEvents: visible ? 'auto' : 'none',
                 // Sit above the hidden MemoizedSvgContainer for
                 // actionDiagram (which stays mounted to preserve
                 // zoom state) so clicks land on the overview.
-                zIndex: visible ? 15 : -1,
+                zIndex: 15,
             }}
         >
             {/* Header strip — title + severity legend, mirrors the
