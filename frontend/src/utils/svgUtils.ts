@@ -959,3 +959,133 @@ export const applyActionOverviewPins = (
         layer.appendChild(g);
     });
 };
+
+/**
+ * Collect SVG (x, y) coordinates for a single equipment id, looking
+ * it up first as an edge (accumulating both endpoints) and then as
+ * a voltage-level node. Silently no-ops if nothing matches —
+ * callers accumulate into a shared xs/ys array.
+ */
+const pushEquipmentPoints = (
+    metaIndex: MetadataIndex,
+    equipmentId: string,
+    xs: number[],
+    ys: number[],
+) => {
+    const edge = metaIndex.edgesByEquipmentId.get(equipmentId);
+    if (edge) {
+        const lookupNode = (ref: unknown): NodeMeta | undefined => {
+            if (typeof ref !== 'string') return undefined;
+            return metaIndex.nodesBySvgId.get(ref) ?? metaIndex.nodesByEquipmentId.get(ref);
+        };
+        const n1 = lookupNode(edge.node1);
+        const n2 = lookupNode(edge.node2);
+        if (n1 && Number.isFinite(n1.x)) { xs.push(n1.x); ys.push(n1.y); }
+        if (n2 && Number.isFinite(n2.x)) { xs.push(n2.x); ys.push(n2.y); }
+        if (n1 || n2) return;
+    }
+    const node = metaIndex.nodesByEquipmentId.get(equipmentId);
+    if (node && Number.isFinite(node.x)) {
+        xs.push(node.x);
+        ys.push(node.y);
+    }
+};
+
+/**
+ * Compute a padded bounding rectangle that contains the contingency
+ * edge, all overloaded lines, and every action-overview pin. Used by
+ * the action-overview auto-zoom when the Remedial Action tab opens
+ * without any card selected. Returns `null` when nothing can be
+ * located (in which case the caller typically falls back to the
+ * full NAD viewBox).
+ */
+export const computeActionOverviewFitRect = (
+    metaIndex: MetadataIndex | null,
+    contingency: string | null,
+    overloads: readonly string[],
+    pins: readonly { x: number; y: number }[],
+    padRatio: number = 0.15,
+): ViewBox | null => {
+    if (!metaIndex) return null;
+    const xs: number[] = [];
+    const ys: number[] = [];
+
+    if (contingency) pushEquipmentPoints(metaIndex, contingency, xs, ys);
+    overloads.forEach(o => pushEquipmentPoints(metaIndex, o, xs, ys));
+    pins.forEach(p => {
+        if (Number.isFinite(p.x) && Number.isFinite(p.y)) {
+            xs.push(p.x);
+            ys.push(p.y);
+        }
+    });
+
+    if (xs.length === 0) return null;
+
+    let minX = Math.min(...xs);
+    let maxX = Math.max(...xs);
+    let minY = Math.min(...ys);
+    let maxY = Math.max(...ys);
+
+    // A single point (or a degenerate line) would give a zero-size
+    // viewBox that the browser refuses to render — clamp it to a
+    // minimum span scaled loosely on the overall diagram.
+    let w = maxX - minX;
+    let h = maxY - minY;
+    const MIN_SPAN = 200;
+    if (w < MIN_SPAN) {
+        const cx = (minX + maxX) / 2;
+        minX = cx - MIN_SPAN / 2;
+        maxX = cx + MIN_SPAN / 2;
+        w = MIN_SPAN;
+    }
+    if (h < MIN_SPAN) {
+        const cy = (minY + maxY) / 2;
+        minY = cy - MIN_SPAN / 2;
+        maxY = cy + MIN_SPAN / 2;
+        h = MIN_SPAN;
+    }
+
+    const padX = w * padRatio;
+    const padY = h * padRatio;
+    return { x: minX - padX, y: minY - padY, w: w + 2 * padX, h: h + 2 * padY };
+};
+
+/**
+ * Compute a padded viewBox centred on a single equipment id — used
+ * by the action-overview's inspect-search asset focus. Reuses the
+ * same point-collection helper as the fit-rect.
+ */
+export const computeEquipmentFitRect = (
+    metaIndex: MetadataIndex | null,
+    equipmentId: string,
+    padRatio: number = 0.35,
+): ViewBox | null => {
+    if (!metaIndex || !equipmentId) return null;
+    const xs: number[] = [];
+    const ys: number[] = [];
+    pushEquipmentPoints(metaIndex, equipmentId, xs, ys);
+    if (xs.length === 0) return null;
+
+    let minX = Math.min(...xs);
+    let maxX = Math.max(...xs);
+    let minY = Math.min(...ys);
+    let maxY = Math.max(...ys);
+    let w = maxX - minX;
+    let h = maxY - minY;
+    const MIN_SPAN = 150;
+    if (w < MIN_SPAN) {
+        const cx = (minX + maxX) / 2;
+        minX = cx - MIN_SPAN / 2;
+        maxX = cx + MIN_SPAN / 2;
+        w = MIN_SPAN;
+    }
+    if (h < MIN_SPAN) {
+        const cy = (minY + maxY) / 2;
+        minY = cy - MIN_SPAN / 2;
+        maxY = cy + MIN_SPAN / 2;
+        h = MIN_SPAN;
+    }
+    const padX = w * padRatio;
+    const padY = h * padRatio;
+    return { x: minX - padX, y: minY - padY, w: w + 2 * padX, h: h + 2 * padY };
+};

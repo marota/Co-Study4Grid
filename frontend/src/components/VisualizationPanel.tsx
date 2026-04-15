@@ -855,6 +855,9 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             actions={result?.actions}
                             monitoringFactor={monitoringFactor ?? 1}
                             onActionSelect={onActionSelect ?? (() => {})}
+                            contingency={selectedBranch || null}
+                            overloadedLines={n1Diagram?.lines_overloaded ?? result?.lines_overloaded ?? []}
+                            inspectableItems={inspectableItems}
                             visible={!selectedActionId && !actionDiagramLoading}
                         />
                         {actionDiagramLoading && (
