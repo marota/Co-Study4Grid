@@ -29,3 +29,4 @@ env/
 *.docx
 config_*.json
 .idea/
+*DS_Store
