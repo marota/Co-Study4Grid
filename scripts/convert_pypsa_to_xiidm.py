@@ -495,17 +495,46 @@ log.info(f"  Round-trip: {len(n2.get_buses())} buses, {len(n2.get_lines())} line
 # ─────────────────────────────────────────────────────────────────────────────
 log.info("Step 9 — Writing grid_layout.json …")
 
-# pypowsybl electrical bus ids take the form "{VL_id}_0", "{VL_id}_1", etc.
-# We write multiple forms so the backend (network_service.py) finds them.
-layout = {}
+# pypowsybl NAD fixed_positions expects **voltage-level IDs** (e.g. "VL_{sid}")
+# as keys, with [x, y] in screen coordinates (y increasing downward).
+#
+# We project WGS-84 lon/lat to Web Mercator, negate Y so north is up, then
+# rescale so the x-span ≈ 8 000 units — matching pypowsybl's natural
+# force-layout scale where circle radii (20–27.5 px) and text are readable.
+import math
+
+EARTH_RADIUS = 6_378_137.0  # WGS-84 semi-major axis (metres)
+_TARGET_WIDTH = 8_000.0      # target x-span matching pypowsybl force-layout
+
+def _lon_lat_to_mercator(lon, lat):
+    x = math.radians(lon) * EARTH_RADIUS
+    y = math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)) * EARTH_RADIUS
+    return x, y
+
+# First pass: project all points and collect bounds
+raw_positions = {}
 for bus_id, row in buses.iterrows():
     sid = safe_id(bus_id)
     lon = float(row["x"])
     lat = float(row["y"])
-    layout[sid]           = [lon, lat]
-    # Cover electrical bus naming up to a generous index
-    for idx in range(10):
-        layout[f"VL_{sid}_{idx}"] = [lon, lat]
+    mx, my = _lon_lat_to_mercator(lon, lat)
+    raw_positions[f"VL_{sid}"] = (mx, -my)  # negate Y for screen coords
+
+raw_xs = [v[0] for v in raw_positions.values()]
+raw_ys = [v[1] for v in raw_positions.values()]
+p_cx = (min(raw_xs) + max(raw_xs)) / 2
+p_cy = (min(raw_ys) + max(raw_ys)) / 2
+p_xrange = max(raw_xs) - min(raw_xs) or 1.0
+
+# Uniform scale (preserves aspect ratio)
+scale = _TARGET_WIDTH / p_xrange
+
+# Second pass: rescale to NAD-friendly coordinate space
+layout = {}
+for vl_id, (rx, ry) in raw_positions.items():
+    nx = (rx - p_cx) * scale
+    ny = (ry - p_cy) * scale
+    layout[vl_id] = [round(nx, 2), round(ny, 2)]
 
 layout_path = os.path.join(OUT_DIR, "grid_layout.json")
 with open(layout_path, "w") as f:
