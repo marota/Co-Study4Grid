@@ -832,4 +832,59 @@ describe('VisualizationPanel', () => {
             document.body.removeChild(mountNode);
         });
     });
+
+    describe('detached action overview Tie button', () => {
+        it('shows the Tie button in detached overview (no action selected, n1Diagram present)', () => {
+            const mountNode = document.createElement('div');
+            document.body.appendChild(mountNode);
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'action',
+                selectedActionId: null,
+                n1Diagram: { svg: '<svg></svg>' },
+                detachedTabs: { action: { window: {} as Window, mountNode } },
+                isTabTied: () => false,
+                onToggleTabTie: vi.fn(),
+            })} />);
+            const btn = mountNode.querySelector('[data-testid="detached-overview-tie"]');
+            expect(btn).not.toBeNull();
+            expect(btn!.textContent).toContain('Tie');
+            document.body.removeChild(mountNode);
+        });
+
+        it('does NOT show the overview Tie button when an action is selected (regular overlay handles it)', () => {
+            const mountNode = document.createElement('div');
+            document.body.appendChild(mountNode);
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'action',
+                selectedActionId: 'act_42',
+                n1Diagram: { svg: '<svg></svg>' },
+                actionDiagram: { svg: '<svg></svg>' },
+                detachedTabs: { action: { window: {} as Window, mountNode } },
+                isTabTied: () => false,
+                onToggleTabTie: vi.fn(),
+            })} />);
+            // The overview-specific Tie button should not appear;
+            // the regular renderTabOverlay provides its own.
+            expect(mountNode.querySelector('[data-testid="detached-overview-tie"]')).toBeNull();
+            document.body.removeChild(mountNode);
+        });
+
+        it('calls onToggleTabTie("action") when clicked', () => {
+            const mountNode = document.createElement('div');
+            document.body.appendChild(mountNode);
+            const onToggleTabTie = vi.fn();
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'action',
+                selectedActionId: null,
+                n1Diagram: { svg: '<svg></svg>' },
+                detachedTabs: { action: { window: {} as Window, mountNode } },
+                isTabTied: () => false,
+                onToggleTabTie,
+            })} />);
+            const btn = mountNode.querySelector('[data-testid="detached-overview-tie"]') as HTMLElement;
+            fireEvent.click(btn);
+            expect(onToggleTabTie).toHaveBeenCalledWith('action');
+            document.body.removeChild(mountNode);
+        });
+    });
 });

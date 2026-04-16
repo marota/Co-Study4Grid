@@ -1025,14 +1025,37 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             inspectableItems={inspectableItems}
                             visible={!selectedActionId && !actionDiagramLoading}
                         />
-                        {/*
-                          The "back to overview" affordance now lives
-                          inside the tab label as a clickable chip
-                          around the action id (see the action tab
-                          definition above). The previous top-right ✕
-                          button was removed because it overlapped
-                          with the Flow/Impacts toggle.
-                        */}
+                        {/* Tie button for the detached overview — the
+                            regular renderTabOverlay only shows the Tie
+                            button when actionDiagram exists, but the
+                            overview uses n1Diagram instead.  Render a
+                            standalone Tie button here so the operator
+                            can couple zoom/focus between the detached
+                            overview and the main window. */}
+                        {detachedTabs['action'] && !selectedActionId && !!n1Diagram?.svg && (
+                            <div style={{
+                                position: 'absolute', bottom: '12px', left: '12px',
+                                zIndex: 100,
+                            }}>
+                                <button
+                                    data-testid="detached-overview-tie"
+                                    onClick={() => toggleTabTieCb('action')}
+                                    title={isTabTiedFn('action')
+                                        ? 'Untie: pan/zoom and asset focus no longer mirror between this window and the main window'
+                                        : 'Tie: pan/zoom and asset focus will be mirrored between this window and the main window\'s active tab'}
+                                    style={{
+                                        padding: '4px 10px', border: `1px solid ${isTabTiedFn('action') ? '#2c7be5' : '#ccc'}`,
+                                        borderRadius: '6px', cursor: 'pointer',
+                                        backgroundColor: isTabTiedFn('action') ? '#e8f0fe' : '#fff',
+                                        color: isTabTiedFn('action') ? '#2c7be5' : '#555',
+                                        fontSize: '12px', fontWeight: 600,
+                                        boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
+                                    }}
+                                >
+                                    {isTabTiedFn('action') ? '\u{1F517} Tied' : '\u{26D3} Tie'}
+                                </button>
+                            </div>
+                        )}
                         {actionDiagramLoading && (
                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>
                                 Generating Action Variant Diagram...
