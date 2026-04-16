@@ -61,8 +61,13 @@ function App() {
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [branches, setBranches] = useState<string[]>([]);
   const [voltageLevels, setVoltageLevels] = useState<string[]>([]);
+  /** ID → human-readable name for branches (lines + transformers) and VLs. */
+  const [nameMap, setNameMap] = useState<Record<string, string>>({});
   const [configLoading, setConfigLoading] = useState(false);
   const [error, setError] = useState('');
+
+  /** Resolve an element or VL ID to its display name. Falls back to the ID. */
+  const displayName = useCallback((id: string) => nameMap[id] || id, [nameMap]);
 
   // ===== Detached Visualization Tabs (must be instantiated BEFORE useDiagrams
   // so that the detached-tabs map can be threaded into useDiagrams → usePanZoom,
@@ -167,14 +172,20 @@ function App() {
       opts.push(...branches.slice(0, 50));
     } else {
       for (const b of branches) {
-        if (b.toUpperCase().includes(q)) {
+        const name = nameMap[b] || '';
+        if (b.toUpperCase().includes(q) || name.toUpperCase().includes(q)) {
           opts.push(b);
           if (opts.length >= 50) break;
         }
       }
     }
-    return opts.map(b => <option key={b} value={b} />);
-  }, [branches, selectedBranch]);
+    // Show "DisplayName (ID)" as the visible label so the user sees real names,
+    // while `value` stays the raw ID that gets submitted.
+    return opts.map(b => {
+      const name = nameMap[b];
+      return <option key={b} value={b} label={name ? `${name}  —  ${b}` : b} />;
+    });
+  }, [branches, selectedBranch, nameMap]);
 
   const recommenderConfig = useMemo<RecommenderDisplayConfig>(() => ({
     minLineReconnections, minCloseCoupling, minOpenCoupling,
@@ -458,7 +469,7 @@ function App() {
     committedBranchRef: diagrams.committedBranchRef,
     committedNetworkPathRef,
     setError, setInfoMessage: analysis.setInfoMessage,
-    applyConfigResponse, setBranches, setVoltageLevels,
+    applyConfigResponse, setBranches, setVoltageLevels, setNameMap,
     setNominalVoltageMap: diagrams.setNominalVoltageMap,
     setUniqueVoltages: diagrams.setUniqueVoltages,
     fetchBaseDiagram: diagrams.fetchBaseDiagram,
@@ -472,7 +483,7 @@ function App() {
     setLinesMonitoringPath, setMonitoringFactor, setPreExistingOverloadThreshold,
     setIgnoreReconnections, setPypowsyblFastMode,
     analysis, actionsHook, setResult, setSelectedBranch,
-    diagrams, setError, applyConfigResponse, setBranches, setVoltageLevels,
+    diagrams, setError, applyConfigResponse, setBranches, setVoltageLevels, setNameMap,
   ]);
 
   const wrappedRestoreSession = useCallback(
@@ -541,14 +552,16 @@ function App() {
       const configRes = await api.updateConfig(buildConfigRequest());
       applyConfigResponse(configRes as Record<string, unknown>);
 
-      const [branchesList, vlRes, nomVRes] = await Promise.all([
+      const [branchRes, vlRes, nomVRes] = await Promise.all([
         api.getBranches(),
         api.getVoltageLevels(),
         api.getNominalVoltages(),
       ]);
 
-      setBranches(branchesList);
-      setVoltageLevels(vlRes);
+      setBranches(branchRes.branches);
+      setVoltageLevels(vlRes.voltage_levels);
+      // Merge element + VL name maps into a single lookup
+      setNameMap({ ...branchRes.name_map, ...vlRes.name_map });
       setSelectedBranch('');
 
       diagrams.setNominalVoltageMap(nomVRes.mapping);
@@ -557,7 +570,7 @@ function App() {
         diagrams.setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
       }
 
-      diagrams.fetchBaseDiagram(vlRes.length);
+      diagrams.fetchBaseDiagram(vlRes.voltage_levels.length);
 
       committedNetworkPathRef.current = networkPath;
       interactionLogger.record('config_loaded', buildConfigInteractionDetails());
@@ -597,14 +610,15 @@ function App() {
       const configRes = await api.updateConfig(buildConfigRequest());
       applyConfigResponse(configRes as Record<string, unknown>);
 
-      const [branchesList, vlRes, nomVRes] = await Promise.all([
+      const [branchRes, vlRes, nomVRes] = await Promise.all([
         api.getBranches(),
         api.getVoltageLevels(),
         api.getNominalVoltages(),
       ]);
 
-      setBranches(branchesList);
-      setVoltageLevels(vlRes);
+      setBranches(branchRes.branches);
+      setVoltageLevels(vlRes.voltage_levels);
+      setNameMap({ ...branchRes.name_map, ...vlRes.name_map });
       setSelectedBranch('');
 
       diagrams.setNominalVoltageMap(nomVRes.mapping);
@@ -613,7 +627,7 @@ function App() {
         diagrams.setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
       }
 
-      diagrams.fetchBaseDiagram(vlRes.length);
+      diagrams.fetchBaseDiagram(vlRes.voltage_levels.length);
       committedNetworkPathRef.current = networkPath;
       interactionLogger.record('config_loaded', buildConfigInteractionDetails());
     } catch (err: unknown) {
@@ -1058,7 +1072,7 @@ function App() {
                       textAlign: 'left',
                     }}
                   >
-                    🔍 {selectedBranch}
+                    🔍 {displayName(selectedBranch)}
                   </button>
                 </div>
               )}
@@ -1087,7 +1101,7 @@ function App() {
                               textDecoration: isSelected ? 'underline dotted' : 'none',
                             }}
                           >
-                            {name}
+                            {displayName(name)}
                           </button>
                           {rhoPct && (
                             <span style={{ color: isSelected ? '#374151' : '#bdc3c7', marginLeft: '2px' }}>
@@ -1140,6 +1154,7 @@ function App() {
                 onToggleOverload={analysis.handleToggleOverload}
                 monitorDeselected={monitorDeselected}
                 onToggleMonitorDeselected={handleToggleMonitorDeselected}
+                displayName={displayName}
               />
             </div>
             <ActionFeed
@@ -1173,6 +1188,7 @@ function App() {
               actionDictStats={actionDictStats}
               onOpenSettings={handleOpenSettings}
               onUpdateCombinedEstimation={handleUpdateCombinedEstimation}
+              displayName={displayName}
             />
           </div>
         </div>
@@ -1231,6 +1247,7 @@ function App() {
             onPinPreview={handlePinPreview}
             onOverviewPzChange={handleOverviewPzChange}
             monitoringFactor={monitoringFactor}
+            displayName={displayName}
           />
         </div>
       </div>

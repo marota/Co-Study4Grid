@@ -340,14 +340,20 @@ with open(actions_path) as f:
 
 original_count = len(actions)
 
+# Load VL names for human-readable descriptions
+vls_df = n.get_voltage_levels()
+
 for vl_id in sorted(eligible_vls.keys()):
     coupler_bk_id = f"{vl_id}_COUPL"
     action_id = f"open_coupler_{vl_id}"
     n_branches = len(eligible_vls[vl_id])
 
+    # Use the VL's name (e.g. "BOUTRE 400kV") if available
+    vl_display = vls_df.loc[vl_id, "name"] if vl_id in vls_df.index and pd.notna(vls_df.loc[vl_id, "name"]) else vl_id
+
     actions[action_id] = {
-        "description": f"Opening coupling breaker in '{vl_id}' ({n_branches} branches, split into 2 nodes)",
-        "description_unitaire": f"Ouverture du couplage '{coupler_bk_id}' dans le poste '{vl_id}'",
+        "description": f"Opening coupling breaker in '{vl_display}' ({n_branches} branches, split into 2 nodes)",
+        "description_unitaire": f"Ouverture du couplage '{coupler_bk_id}' dans le poste '{vl_display}'",
         "switches": {coupler_bk_id: True},
         "VoltageLevelId": vl_id,
     }

@@ -50,6 +50,8 @@ interface ActionFeedProps {
     actionDictStats?: { reco: number; disco: number; pst: number; open_coupling: number; close_coupling: number; total: number } | null;
     combinedActions: Record<string, CombinedAction> | null;
     onUpdateCombinedEstimation?: (pairId: string, estimation: { estimated_max_rho: number; estimated_max_rho_line: string }) => void;
+    /** Resolve an element/VL ID to its human-readable display name. Falls back to the ID. */
+    displayName?: (id: string) => string;
 }
 
 const ActionFeed: React.FC<ActionFeedProps> = ({
@@ -83,6 +85,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     actionDictStats,
     combinedActions,
     onUpdateCombinedEstimation,
+    displayName = (id: string) => id,
 }) => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -599,6 +602,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     onCardEditTapChange={(actionId, value) => setCardEditTap(prev => ({ ...prev, [actionId]: value }))}
                     onResimulate={handleResimulate}
                     onResimulateTap={handleResimulateTap}
+                    displayName={displayName}
                 />
             );
         });
@@ -913,6 +917,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 onSimulateSingleAction={onActionResimulated}
                 monitoringFactor={monitoringFactor}
                 linesOverloaded={linesOverloaded}
+                displayName={displayName}
             />
         </div>
     );

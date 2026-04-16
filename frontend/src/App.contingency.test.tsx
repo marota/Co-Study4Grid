@@ -109,8 +109,8 @@ vi.mock('./utils/svgUtils', () => ({
 // Mock API — use vi.hoisted to define mock before vi.mock hoists
 const mockApi = vi.hoisted(() => ({
   updateConfig: vi.fn().mockResolvedValue({ monitored_lines_count: 10, total_lines_count: 10 }),
-  getBranches: vi.fn().mockResolvedValue(['BRANCH_A', 'BRANCH_B', 'BRANCH_C']),
-  getVoltageLevels: vi.fn().mockResolvedValue(['VL1', 'VL2']),
+  getBranches: vi.fn().mockResolvedValue({ branches: ['BRANCH_A', 'BRANCH_B', 'BRANCH_C'], name_map: {} }),
+  getVoltageLevels: vi.fn().mockResolvedValue({ voltage_levels: ['VL1', 'VL2'], name_map: {} }),
   getNominalVoltages: vi.fn().mockResolvedValue({ mapping: {}, unique_kv: [63, 225] }),
   getNetworkDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
   getN1Diagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] }),
@@ -303,8 +303,8 @@ describe('Overload Clearing Logic', () => {
     });
     // Restore defaults after reset
     mockApi.updateConfig.mockResolvedValue({ monitored_lines_count: 10, total_lines_count: 10 });
-    mockApi.getBranches.mockResolvedValue(['BRANCH_A', 'BRANCH_B', 'BRANCH_C']);
-    mockApi.getVoltageLevels.mockResolvedValue(['VL1', 'VL2']);
+    mockApi.getBranches.mockResolvedValue({ branches: ['BRANCH_A', 'BRANCH_B', 'BRANCH_C'], name_map: {} });
+    mockApi.getVoltageLevels.mockResolvedValue({ voltage_levels: ['VL1', 'VL2'], name_map: {} });
     mockApi.getNominalVoltages.mockResolvedValue({ mapping: {}, unique_kv: [63, 225] });
     mockApi.getNetworkDiagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null });
     mockApi.getN1Diagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] });
@@ -491,8 +491,8 @@ describe('N-1 overload state is populated before action analysis', () => {
       if (vi.isMockFunction(m)) m.mockReset();
     });
     mockApi.updateConfig.mockResolvedValue({ monitored_lines_count: 10, total_lines_count: 10 });
-    mockApi.getBranches.mockResolvedValue(['BRANCH_A', 'BRANCH_B', 'BRANCH_C']);
-    mockApi.getVoltageLevels.mockResolvedValue(['VL1', 'VL2']);
+    mockApi.getBranches.mockResolvedValue({ branches: ['BRANCH_A', 'BRANCH_B', 'BRANCH_C'], name_map: {} });
+    mockApi.getVoltageLevels.mockResolvedValue({ voltage_levels: ['VL1', 'VL2'], name_map: {} });
     mockApi.getNominalVoltages.mockResolvedValue({ mapping: {}, unique_kv: [63, 225] });
     mockApi.getNetworkDiagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null });
     mockApi.getN1Diagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] });

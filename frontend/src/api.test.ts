@@ -46,25 +46,25 @@ describe('api client', () => {
     describe('getBranches', () => {
         it('sends GET to /api/branches and returns branches array', async () => {
             mockedAxios.get.mockResolvedValue({
-                data: { branches: ['LINE_A', 'LINE_B'] },
+                data: { branches: ['LINE_A', 'LINE_B'], name_map: {} },
             });
 
             const result = await api.getBranches();
             expect(mockedAxios.get).toHaveBeenCalledWith(
                 'http://127.0.0.1:8000/api/branches',
             );
-            expect(result).toEqual(['LINE_A', 'LINE_B']);
+            expect(result).toEqual({ branches: ['LINE_A', 'LINE_B'], name_map: {} });
         });
     });
 
     describe('getVoltageLevels', () => {
         it('returns voltage levels array', async () => {
             mockedAxios.get.mockResolvedValue({
-                data: { voltage_levels: ['VL1', 'VL2'] },
+                data: { voltage_levels: ['VL1', 'VL2'], name_map: {} },
             });
 
             const result = await api.getVoltageLevels();
-            expect(result).toEqual(['VL1', 'VL2']);
+            expect(result).toEqual({ voltage_levels: ['VL1', 'VL2'], name_map: {} });
         });
     });
 

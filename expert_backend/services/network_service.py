@@ -34,18 +34,45 @@ class NetworkService:
     def get_disconnectable_elements(self):
         if not self.network:
             raise ValueError("Network not loaded")
-        
+
         # get lines and two winding transformers
         lines = self.network.get_lines()
         transformers = self.network.get_2_windings_transformers()
-        
+
         elements = []
         if lines is not None and not lines.empty:
             elements.extend(lines.index.tolist())
         if transformers is not None and not transformers.empty:
             elements.extend(transformers.index.tolist())
-            
+
         return sorted(elements)
+
+    def get_element_names(self):
+        """Return {element_id: display_name} for all lines and transformers.
+
+        The display name is the pypowsybl ``name`` field when it is set and
+        differs from the element ID; otherwise the ID itself.
+        """
+        if not self.network:
+            raise ValueError("Network not loaded")
+
+        name_map: dict[str, str] = {}
+
+        lines = self.network.get_lines()
+        if lines is not None and not lines.empty and 'name' in lines.columns:
+            for eid, row in lines.iterrows():
+                n = row.get('name')
+                if n and str(n) != str(eid) and str(n) != 'nan':
+                    name_map[eid] = str(n)
+
+        transformers = self.network.get_2_windings_transformers()
+        if transformers is not None and not transformers.empty and 'name' in transformers.columns:
+            for eid, row in transformers.iterrows():
+                n = row.get('name')
+                if n and str(n) != str(eid) and str(n) != 'nan':
+                    name_map[eid] = str(n)
+
+        return name_map
 
     def get_monitored_elements(self):
         """Return the list of element IDs that have at least one permanent operational limit."""
@@ -75,6 +102,21 @@ class NetworkService:
         if voltage_levels is not None and not voltage_levels.empty:
             return sorted(voltage_levels.index.tolist())
         return []
+
+    def get_voltage_level_names(self):
+        """Return {vl_id: display_name} for all voltage levels."""
+        if not self.network:
+            raise ValueError("Network not loaded")
+
+        name_map: dict[str, str] = {}
+        voltage_levels = self.network.get_voltage_levels()
+        if voltage_levels is not None and not voltage_levels.empty and 'name' in voltage_levels.columns:
+            for vl_id, row in voltage_levels.iterrows():
+                n = row.get('name')
+                if n and str(n) != str(vl_id) and str(n) != 'nan':
+                    name_map[vl_id] = str(n)
+
+        return name_map
 
     def get_nominal_voltages(self):
         """Return {vl_id: nominal_v_kv} mapping for all voltage levels, snapped to detected grid values."""

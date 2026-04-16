@@ -202,8 +202,8 @@ describe('useSession — handleRestoreSession', () => {
         interactionLogger.clear();
         vi.clearAllMocks();
         mockUpdateConfig.mockResolvedValue({});
-        mockGetBranches.mockResolvedValue(['LINE_A', 'LINE_B']);
-        mockGetVoltageLevels.mockResolvedValue(['VL_1', 'VL_2']);
+        mockGetBranches.mockResolvedValue({ branches: ['LINE_A', 'LINE_B'], name_map: {} });
+        mockGetVoltageLevels.mockResolvedValue({ voltage_levels: ['VL_1', 'VL_2'], name_map: {} });
         mockGetNominalVoltages.mockResolvedValue({
             mapping: { VL_1: 400, VL_2: 225 },
             unique_kv: [225, 400],
@@ -239,6 +239,7 @@ describe('useSession — handleRestoreSession', () => {
         applyConfigResponse: vi.fn(),
         setBranches: vi.fn(),
         setVoltageLevels: vi.fn(),
+        setNameMap: vi.fn(),
         setNominalVoltageMap: vi.fn(),
         setUniqueVoltages: vi.fn(),
         setVoltageRange: vi.fn(),

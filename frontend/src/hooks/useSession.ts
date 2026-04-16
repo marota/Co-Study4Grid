@@ -78,6 +78,7 @@ export interface RestoreContext {
   applyConfigResponse: (configRes: Record<string, unknown>) => void;
   setBranches: (v: string[]) => void;
   setVoltageLevels: (v: string[]) => void;
+  setNameMap: (v: Record<string, string>) => void;
   setNominalVoltageMap: (v: Record<string, number>) => void;
   setUniqueVoltages: (v: number[]) => void;
   setVoltageRange: (v: [number, number]) => void;
@@ -248,13 +249,14 @@ export function useSession(): SessionState {
       ctx.committedNetworkPathRef.current = cfg.network_path;
 
       // 3. Fetch study data
-      const [branchesList, vlRes, nomVRes] = await Promise.all([
+      const [branchRes, vlRes, nomVRes] = await Promise.all([
         api.getBranches(),
         api.getVoltageLevels(),
         api.getNominalVoltages(),
       ]);
-      ctx.setBranches(branchesList);
-      ctx.setVoltageLevels(vlRes);
+      ctx.setBranches(branchRes.branches);
+      ctx.setVoltageLevels(vlRes.voltage_levels);
+      ctx.setNameMap({ ...branchRes.name_map, ...vlRes.name_map });
       ctx.setNominalVoltageMap(nomVRes.mapping);
       ctx.setUniqueVoltages(nomVRes.unique_kv);
       if (nomVRes.unique_kv.length > 0) {
@@ -262,7 +264,7 @@ export function useSession(): SessionState {
       }
 
       // 4. Fetch base diagram
-      ctx.fetchBaseDiagram(vlRes.length);
+      ctx.fetchBaseDiagram(vlRes.voltage_levels.length);
 
       // 5. Restore contingency
       const contingency = session.contingency;

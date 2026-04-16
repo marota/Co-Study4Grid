@@ -109,6 +109,44 @@ slack_bus = bus_list[0]
 log.info(f"  Final: {len(buses)} buses, {len(lines)} lines, {len(trafos)} trafos")
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Step 3b: Load OSM names for human-readable labels
+# ─────────────────────────────────────────────────────────────────────────────
+OSM_NAMES_FILE = os.path.join(OUT_DIR, "osm_names.json")
+bus_display_names = {}   # bus_index -> display name (e.g. "BOUTRE")
+line_display_names = {}  # line_index -> display name (e.g. "Avelin - Weppes 1")
+
+if os.path.exists(OSM_NAMES_FILE):
+    log.info("Step 3b — Loading OSM names for real labels …")
+    with open(OSM_NAMES_FILE, encoding="utf-8") as f:
+        osm_names = json.load(f)
+
+    for bus_idx, info in osm_names.get("bus_to_name", {}).items():
+        name = info.get("display_name", "")
+        if name:
+            bus_display_names[bus_idx] = name
+
+    for line_idx, info in osm_names.get("line_to_name", {}).items():
+        # Prefer human-readable 'name' over RTE code
+        name = info.get("name") or info.get("display_name", "")
+        if name:
+            line_display_names[line_idx] = name
+
+    log.info(f"  Loaded {len(bus_display_names)} bus names, {len(line_display_names)} line names")
+else:
+    log.warning(f"  osm_names.json not found — using raw IDs. Run fetch_osm_names.py first.")
+
+
+def _bus_name(bus_id: str) -> str:
+    """Get a human-readable name for a bus/substation."""
+    return bus_display_names.get(bus_id, safe_id(bus_id))
+
+
+def _line_name(line_id: str) -> str:
+    """Get a human-readable name for a line/circuit."""
+    return line_display_names.get(line_id, str(line_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Step 4: Build pypowsybl Network
 #
 # IIDM rule: 2-winding transformers must have both VLs in the SAME substation.
@@ -129,14 +167,31 @@ for _, row in trafos.iterrows():
 unique_ss = sorted(set(bus_to_ss.values()))
 log.info(f"  Substations: {len(unique_ss)} (merged trafo pairs)")
 
-# Substations
+# Substations — use real RTE names where available
+# Build SS id → display name: derive from the first bus mapped to that SS
+ss_name_map = {}
+for b in bus_list:
+    ss_id = bus_to_ss[b]
+    if ss_id not in ss_name_map:
+        ss_name_map[ss_id] = _bus_name(b)
+
 ss_df = pd.DataFrame(
-    {"country": ["FR"] * len(unique_ss), "name": unique_ss},
+    {
+        "country": ["FR"] * len(unique_ss),
+        "name": [ss_name_map.get(ss, ss) for ss in unique_ss],
+    },
     index=unique_ss
 )
 n.create_substations(ss_df)
 
 # Voltage levels (one per bus) — all NODE_BREAKER topology
+# Name: "BOUTRE 400kV" (human-readable name + voltage)
+vl_names = []
+for b in bus_list:
+    display = _bus_name(b)
+    kv = int(buses.loc[b, "voltage"])
+    vl_names.append(f"{display} {kv}kV")
+
 vl_df = pd.DataFrame(
     {
         "substation_id":      [bus_to_ss[b] for b in bus_list],
@@ -144,6 +199,7 @@ vl_df = pd.DataFrame(
         "nominal_v":          [float(buses.loc[b, "voltage"]) for b in bus_list],
         "high_voltage_limit": [float(buses.loc[b, "voltage"]) * 1.10 for b in bus_list],
         "low_voltage_limit":  [float(buses.loc[b, "voltage"]) * 0.90 for b in bus_list],
+        "name":               vl_names,
     },
     index=[f"VL_{safe_id(b)}" for b in bus_list]
 )
@@ -154,7 +210,7 @@ bbs_df = pd.DataFrame(
     {
         "voltage_level_id": [f"VL_{safe_id(b)}" for b in bus_list],
         "node":             [0] * len(bus_list),
-        "name":             ["Busbar 1"] * len(bus_list),
+        "name":             [f"{_bus_name(b)} JdB1" for b in bus_list],
     },
     index=[f"VL_{safe_id(b)}_BBS1" for b in bus_list]
 )
@@ -325,7 +381,7 @@ for line_id, row in lines.iterrows():
         line_data["b2"].append(b / 2)
         line_data["g1"].append(0.0)
         line_data["g2"].append(0.0)
-        line_data["name"].append(line_id)
+        line_data["name"].append(_line_name(line_id))
     except Exception as e:
         log.debug(f"  Skipping line {line_id}: {e}")
         skipped += 1
@@ -402,7 +458,10 @@ if len(trafos) > 0:
         t_data["node1"].append(node_e1)
         t_data["voltage_level2_id"].append(vl2_id)
         t_data["node2"].append(node_e2)
-        t_data["name"].append(tid)
+        # Name: "SUBST1 - SUBST2" using endpoint substation names
+        t_name_1 = _bus_name(row["bus0"])
+        t_name_2 = _bus_name(row["bus1"])
+        t_data["name"].append(f"{t_name_1} - {t_name_2}")
 
     n.create_switches(pd.DataFrame(t_sw_data, index=t_sw_ids))
     n.create_2_windings_transformers(pd.DataFrame(t_data, index=t_ids))
@@ -461,6 +520,54 @@ mapping_path = os.path.join(OUT_DIR, "bus_id_mapping.json")
 with open(mapping_path, "w") as f:
     json.dump(mapping, f, indent=2)
 log.info(f"  Written: {mapping_path}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 11: Generate disconnection actions (actions.json)
+# ─────────────────────────────────────────────────────────────────────────────
+log.info("Step 11 — Generating disconnection actions …")
+
+# Build IIDM line id → display name mapping (for this script and downstream)
+line_id_to_name = {}
+for uid, name in zip(line_ids, line_data["name"]):
+    line_id_to_name[uid] = name
+
+actions = {}
+
+# Line disconnection actions
+for uid in line_ids:
+    display = line_id_to_name.get(uid, uid)
+    vl1 = None
+    vl2 = None
+    # Look up VL names from the line data
+    idx = line_ids.index(uid)
+    vl1_id = line_data["voltage_level1_id"][idx]
+    vl2_id = line_data["voltage_level2_id"][idx]
+    vl1_name = vl_df.loc[vl1_id, "name"] if vl1_id in vl_df.index else vl1_id
+    vl2_name = vl_df.loc[vl2_id, "name"] if vl2_id in vl_df.index else vl2_id
+
+    actions[f"disco_{uid}"] = {
+        "description": f"Disconnection of line '{display}' ({vl1_name} — {vl2_name})",
+        "description_unitaire": f"Ouverture de la ligne '{display}'",
+    }
+
+# Transformer disconnection actions
+if len(trafos) > 0:
+    for t_id, t_name in zip(t_ids, t_data["name"]):
+        actions[f"disco_{t_id}"] = {
+            "description": f"Disconnection of transformer '{t_name}'",
+            "description_unitaire": f"Ouverture du transformateur '{t_name}'",
+        }
+
+actions_path = os.path.join(OUT_DIR, "actions.json")
+with open(actions_path, "w", encoding="utf-8") as f:
+    json.dump(actions, f, indent=2, ensure_ascii=False)
+log.info(f"  Written: {actions_path}  ({len(actions)} actions)")
+
+# Save line id → display name mapping for downstream scripts
+line_names_path = os.path.join(OUT_DIR, "line_id_names.json")
+with open(line_names_path, "w", encoding="utf-8") as f:
+    json.dump(line_id_to_name, f, indent=2, ensure_ascii=False)
+log.info(f"  Written: {line_names_path}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary

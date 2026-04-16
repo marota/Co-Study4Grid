@@ -54,11 +54,11 @@ export const api = {
     },
     getBranches: async () => {
         const response = await axios.get<BranchResponse>(`${API_BASE_URL}/api/branches`);
-        return response.data.branches;
+        return response.data;
     },
-    getVoltageLevels: async (): Promise<string[]> => {
-        const response = await axios.get<{ voltage_levels: string[] }>(`${API_BASE_URL}/api/voltage-levels`);
-        return response.data.voltage_levels;
+    getVoltageLevels: async (): Promise<{ voltage_levels: string[]; name_map?: Record<string, string> }> => {
+        const response = await axios.get<{ voltage_levels: string[]; name_map?: Record<string, string> }>(`${API_BASE_URL}/api/voltage-levels`);
+        return response.data;
     },
     getNominalVoltages: async (): Promise<{ mapping: Record<string, number>; unique_kv: number[] }> => {
         const response = await axios.get<{ mapping: Record<string, number>; unique_kv: number[] }>(

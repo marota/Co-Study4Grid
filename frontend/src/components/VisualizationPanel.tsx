@@ -239,6 +239,8 @@ interface VisualizationPanelProps {
      * colour, kept in sync with the card palette.
      */
     monitoringFactor?: number;
+    /** Resolve an element/VL ID to its human-readable display name. */
+    displayName?: (id: string) => string;
 }
 
 
@@ -296,6 +298,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onPinPreview,
     onOverviewPzChange,
     monitoringFactor,
+    displayName,
 }) => {
     // No-op fallbacks so conditional branches don't need to guard.
     const detachTabCb = onDetachTab ?? (() => {});
@@ -1032,6 +1035,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             isTied={isTabTiedFn('action')}
                             onToggleTie={() => toggleTabTieCb('action')}
                             isDetached={!!detachedTabs['action']}
+                            displayName={displayName}
                         />
                         {actionDiagramLoading && (
                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>

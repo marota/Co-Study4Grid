@@ -265,7 +265,8 @@ def update_config(config: ConfigRequest):
 def get_branches():
     try:
         branches = network_service.get_disconnectable_elements()
-        return {"branches": branches}
+        name_map = network_service.get_element_names()
+        return {"branches": branches, "name_map": name_map}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -273,7 +274,8 @@ def get_branches():
 def get_voltage_levels():
     try:
         voltage_levels = network_service.get_voltage_levels()
-        return {"voltage_levels": voltage_levels}
+        name_map = network_service.get_voltage_level_names()
+        return {"voltage_levels": voltage_levels, "name_map": name_map}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

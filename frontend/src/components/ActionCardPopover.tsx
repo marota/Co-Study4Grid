@@ -80,6 +80,8 @@ interface ActionCardPopoverProps {
      * decision on the DOM for its unit tests.
      */
     extraDataAttributes?: Record<string, string>;
+    /** Resolve an element/VL ID to its human-readable display name. */
+    displayName?: (id: string) => string;
 }
 
 const NOOP = () => { /* intentional no-op */ };
@@ -101,6 +103,7 @@ const ActionCardPopover: React.FC<ActionCardPopoverProps> = ({
     popoverRef,
     testId = 'action-card-popover',
     extraDataAttributes,
+    displayName,
 }) => {
     // Wrap the "activate the action" intent so both the card
     // body click and any future explicit affordance flow through
@@ -171,6 +174,7 @@ const ActionCardPopover: React.FC<ActionCardPopoverProps> = ({
                 onCardEditTapChange={NOOP}
                 onResimulate={NOOP}
                 onResimulateTap={NOOP}
+                displayName={displayName}
             />
         </div>
     );
