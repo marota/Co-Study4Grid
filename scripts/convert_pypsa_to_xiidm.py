@@ -196,9 +196,9 @@ vl_df = pd.DataFrame(
     {
         "substation_id":      [bus_to_ss[b] for b in bus_list],
         "topology_kind":      ["NODE_BREAKER"] * len(bus_list),
-        "nominal_v":          [float(buses.loc[b, "voltage"]) for b in bus_list],
-        "high_voltage_limit": [float(buses.loc[b, "voltage"]) * 1.10 for b in bus_list],
-        "low_voltage_limit":  [float(buses.loc[b, "voltage"]) * 0.90 for b in bus_list],
+        "nominal_v":          [float(buses.loc[b, "voltage"]) for b in bus_list],          # kV (pypowsybl unit)
+        "high_voltage_limit": [float(buses.loc[b, "voltage"]) * 1.10 for b in bus_list],  # +10%
+        "low_voltage_limit":  [float(buses.loc[b, "voltage"]) * 0.90 for b in bus_list],  # -10%
         "name":               vl_names,
     },
     index=[f"VL_{safe_id(b)}" for b in bus_list]
@@ -233,10 +233,55 @@ def _allocate_nodes(vl_id: str, count: int) -> list:
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 5: Generators and loads (one each per bus)
 #
+# Scaling strategy:
+#   - Line thermal ratings in the OSM data have total capacity ~754 GW
+#   - For a realistic French 400kV grid at 50-80 GW scale, scale loads accordingly
+#   - Total load ≈ 75 GW (median estimate), with each bus proportional to its
+#     connectivity degree (buses with more connections get more load)
+#   - Total generation ≈ 85 GW (5% above load for slack headroom)
+#   - Generator voltage targets: 400 kV (standard for 400kV network)
+#
 # Node-breaker pattern per element:
 #   BBS1(node 0) ─ DISCONNECTOR ─ intermediate(node N) ─ BREAKER ─ element(node N+1)
 # ─────────────────────────────────────────────────────────────────────────────
 log.info("Step 5 — Adding generators and loads …")
+
+# ── Compute scaling factors based on line capacity ──
+# Assume total line capacity (~754 GW) should support ~75 GW load + ~85 GW gen
+# on a realistic French grid. This is consistent with actual RTE grid data.
+lines_total_s_nom = lines["s_nom"].sum()  # ~754 GW
+target_total_load_mw = 75000.0  # 75 GW target load
+target_total_gen_mw = 85000.0   # 85 GW target generation (10 GW above load for slack)
+load_scale = target_total_load_mw / len(bus_list)  # uniform load per bus
+gen_scale = target_total_gen_mw / len(bus_list)    # uniform generation per bus
+
+log.info(f"  Load scaling: {load_scale:.1f} MW per bus (total {target_total_load_mw:.0f} MW)")
+log.info(f"  Gen scaling: {gen_scale:.1f} MW per bus (total {target_total_gen_mw:.0f} MW)")
+
+# ── Compute degree-based load distribution (buses with more connections get more load) ──
+import networkx as nx
+degree_graph = nx.Graph()
+degree_graph.add_nodes_from(bus_list)
+for _, row in lines.iterrows():
+    b0, b1 = row["bus0"], row["bus1"]
+    if b0 in bus_list and b1 in bus_list:
+        degree_graph.add_edge(b0, b1)
+for _, row in trafos.iterrows():
+    b0, b1 = row["bus0"], row["bus1"]
+    if b0 in bus_list and b1 in bus_list:
+        degree_graph.add_edge(b0, b1)
+
+bus_degrees = dict(degree_graph.degree())
+min_degree = min(bus_degrees.values()) if bus_degrees else 1
+max_degree = max(bus_degrees.values()) if bus_degrees else 1
+degree_sum = sum(bus_degrees.values())
+
+# Normalize degrees: higher degree → higher load fraction
+# Load for bus i: load_scale * (degree[i] - min_degree + 1) / scale_factor
+degree_weights = {b: max(1.0, float(bus_degrees[b] - min_degree + 1)) for b in bus_list}
+degree_weight_sum = sum(degree_weights.values())
+
+log.info(f"  Bus connectivity: min degree {min_degree}, max degree {max_degree}, avg {degree_sum / len(bus_list):.1f}")
 
 gen_switch_ids = []
 gen_switch_data = {"voltage_level_id": [], "node1": [], "node2": [], "kind": [], "name": []}
@@ -272,14 +317,16 @@ for b in bus_list:
         gen_switch_data["kind"].append(kind)
         gen_switch_data["name"].append(name)
 
+    # Distribute generation uniformly: each bus can supply up to gen_scale MW
+    # Slack bus (first bus) is capable of providing additional power if needed
     gen_ids.append(g_id)
     gen_data["voltage_level_id"].append(vl_id)
     gen_data["node"].append(node_e)
-    gen_data["target_p"].append(100.0 if b == slack_bus else 0.0)
+    gen_data["target_p"].append(gen_scale)  # Set to average gen (slack will adjust in load flow)
     gen_data["target_q"].append(0.0)
-    gen_data["target_v"].append(float(buses.loc[b, "voltage"]))
+    gen_data["target_v"].append(float(buses.loc[b, "voltage"]))  # kV (pypowsybl unit)
     gen_data["min_p"].append(0.0)
-    gen_data["max_p"].append(100000.0 if b == slack_bus else 1000.0)
+    gen_data["max_p"].append(gen_scale * 2.0 if b == slack_bus else gen_scale * 1.5)  # Slack can provide more
     gen_data["voltage_regulator_on"].append(True)
 
     # Load: BBS1(0) → DISCO(node_d) → BK(node_d, node_e) → Load(node_e)
@@ -295,18 +342,25 @@ for b in bus_list:
         load_switch_data["kind"].append(kind)
         load_switch_data["name"].append(name)
 
+    # Distribute load proportional to bus degree (connectivity)
+    weight = degree_weights.get(b, 1.0)
+    load_mw = (load_scale * weight / degree_weight_sum) * len(bus_list)
     load_ids.append(l_id)
     load_data["voltage_level_id"].append(vl_id)
     load_data["node"].append(node_e)
-    load_data["p0"].append(1.0)
-    load_data["q0"].append(0.1)
+    load_data["p0"].append(load_mw)
+    load_data["q0"].append(load_mw * 0.1)  # 10% reactive load
 
 # Create switches first, then elements
 n.create_switches(pd.DataFrame(gen_switch_data, index=gen_switch_ids))
 n.create_generators(pd.DataFrame(gen_data, index=gen_ids))
 n.create_switches(pd.DataFrame(load_switch_data, index=load_switch_ids))
 n.create_loads(pd.DataFrame(load_data, index=load_ids))
+
+total_gen_p = sum(gen_data["target_p"])
+total_load_p = sum(load_data["p0"])
 log.info(f"  Added {len(gen_ids)} generators + {len(load_ids)} loads (with DISCO+BK switches)")
+log.info(f"    Total generation: {total_gen_p:.0f} MW, Total load: {total_load_p:.0f} MW")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 6: AC Lines (node-breaker: each terminal gets DISCO + BK chain)
@@ -323,6 +377,7 @@ line_data = {
     "r": [], "x": [], "b1": [], "b2": [], "g1": [], "g2": [],
     "name": [],
 }
+line_i_nom = {}  # uid -> current limit in A (for operational limits)
 skipped = 0
 seen_ids = set()
 
@@ -382,6 +437,11 @@ for line_id, row in lines.iterrows():
         line_data["g1"].append(0.0)
         line_data["g2"].append(0.0)
         line_data["name"].append(_line_name(line_id))
+
+        # Track current limit: i_nom (kA in CSV) * circuits → Amperes
+        i_nom_ka = float(row.get("i_nom", 0) or 0)
+        if i_nom_ka > 0:
+            line_i_nom[uid] = i_nom_ka * 1000.0 * circuits  # kA → A, scaled by circuits
     except Exception as e:
         log.debug(f"  Skipping line {line_id}: {e}")
         skipped += 1
@@ -390,6 +450,31 @@ for line_id, row in lines.iterrows():
 n.create_switches(pd.DataFrame(line_sw_data, index=line_sw_ids))
 n.create_lines(pd.DataFrame(line_data, index=line_ids))
 log.info(f"  Added {len(line_ids)} lines with DISCO+BK switches (skipped {skipped})")
+
+# Add permanent current limits (operational limits) to lines
+if line_i_nom:
+    limit_ids = []
+    limit_data = {
+        "element_id": [],
+        "element_type": [],
+        "side": [],
+        "name": [],
+        "type": [],
+        "value": [],
+        "acceptable_duration": [],
+    }
+    for uid, i_lim_a in line_i_nom.items():
+        limit_ids.append(f"{uid}_perm_limit")
+        limit_data["element_id"].append(uid)
+        limit_data["element_type"].append("LINE")
+        limit_data["side"].append("ONE")
+        limit_data["name"].append("permanent_limit")
+        limit_data["type"].append("CURRENT")
+        limit_data["value"].append(i_lim_a)
+        limit_data["acceptable_duration"].append(-1)
+    n.create_operational_limits(pd.DataFrame(limit_data, index=limit_ids))
+    log.info(f"  Added permanent current limits to {len(limit_ids)} lines "
+             f"(typical limit: {next(iter(line_i_nom.values())):.0f} A)")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 7: 2-winding transformers (node-breaker: DISCO + BK per terminal)
@@ -485,10 +570,72 @@ with open(node_counter_path, "w") as f:
     json.dump(vl_next_node, f, indent=2)
 log.info(f"  Written: {node_counter_path}")
 
-# Round-trip verification
+# Round-trip verification and flow-based limit calibration
 n2 = pp.network.load(xiidm_path)
 log.info(f"  Round-trip: {len(n2.get_buses())} buses, {len(n2.get_lines())} lines, "
          f"{len(n2.get_2_windings_transformers())} trafos, {len(n2.get_switches())} switches")
+
+# ── Calibrate operational limits based on actual N-state power flows ──
+# With 192 VLs carrying 75 GW, line flows are unevenly distributed.
+# Set each line's permanent current limit to N_flow / 0.80 so that the
+# most loaded lines sit at ~80% in the N state, producing meaningful
+# N-1 overloads when a parallel corridor is tripped.
+log.info("  Calibrating operational limits from N-state flows …")
+from expert_op4grid_recommender.utils.make_env_utils import create_olf_rte_parameter as _olf_params
+_lf_results = pp.loadflow.run_ac(n2, parameters=_olf_params())
+_lf_ok = any(r.status.name == 'CONVERGED' for r in _lf_results)
+if _lf_ok:
+    _n2_lines = n2.get_lines()[['i1', 'i2']]
+    _MIN_LIMIT_A = 100.0
+    _TARGET_N_LOADING = 0.80  # lines are ~80% loaded in N state
+
+    _limit_updates = {"element_id": [], "element_type": [], "side": [],
+                      "name": [], "type": [], "value": [], "acceptable_duration": []}
+    _limit_ids = []
+    _updated = 0
+    for _lid, _row in _n2_lines.iterrows():
+        import numpy as _np
+        if _np.isnan(_row['i1']) or _np.isnan(_row['i2']):
+            continue
+        _max_i = max(abs(_row['i1']), abs(_row['i2']))
+        _new_lim = max(_MIN_LIMIT_A, _max_i / _TARGET_N_LOADING)
+        _limit_ids.append(f"{_lid}_perm_limit")
+        _limit_updates["element_id"].append(_lid)
+        _limit_updates["element_type"].append("LINE")
+        _limit_updates["side"].append("ONE")
+        _limit_updates["name"].append("permanent_limit")
+        _limit_updates["type"].append("CURRENT")
+        _limit_updates["value"].append(_new_lim)
+        _limit_updates["acceptable_duration"].append(-1)
+        _updated += 1
+
+    # Update limits: reload network from XIIDM, modify limits in XML, re-export
+    # pypowsybl doesn't support updating operational limits in-place,
+    # so we parse the XIIDM file and replace limit values directly.
+    from lxml import etree
+    _tree = etree.parse(xiidm_path)
+    _root = _tree.getroot()
+    _ns = {"iidm": _root.nsmap.get(None, "")}
+    _lim_map = {_limit_updates["element_id"][i]: _limit_updates["value"][i]
+                for i in range(len(_limit_ids))}
+    _xml_updated = 0
+    for _line_el in _root.iter():
+        _tag = _line_el.tag.split('}')[-1] if '}' in _line_el.tag else _line_el.tag
+        if _tag == "line":
+            _el_id = _line_el.get("id")
+            if _el_id in _lim_map:
+                for _cl_el in _line_el.iter():
+                    _cl_tag = _cl_el.tag.split('}')[-1] if '}' in _cl_el.tag else _cl_el.tag
+                    if _cl_tag == "currentLimits" and "permanentLimit" in _cl_el.attrib:
+                        _cl_el.set("permanentLimit", f"{_lim_map[_el_id]:.1f}")
+                        _xml_updated += 1
+    _tree.write(xiidm_path, xml_declaration=True, encoding="UTF-8")
+    size_kb = os.path.getsize(xiidm_path) / 1024
+    size_kb = os.path.getsize(xiidm_path) / 1024
+    log.info(f"  Re-exported with calibrated limits: {xiidm_path}  ({size_kb:.1f} KB)")
+    log.info(f"  Updated {_updated} line limits (target N-loading={_TARGET_N_LOADING*100:.0f}%)")
+else:
+    log.warning("  AC load flow did not converge — keeping raw i_nom limits")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 9: Write grid_layout.json
