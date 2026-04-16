@@ -332,7 +332,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     // rest of the layout (MemoizedSvgContainer, warning banners, etc.)
     // is the exact same React tree that lives in the main window, which
     // is why refs and zoom state survive the detach/reattach round-trip.
-    const renderDetachedHeader = (tabId: TabId, label: string, accentColor: string) => (
+    const renderDetachedHeader = (tabId: TabId, label: string, accentColor: string, onDeselect?: () => void) => (
         <div style={{
             position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
             zIndex: 400, display: 'flex', alignItems: 'center', gap: '8px',
@@ -343,6 +343,24 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
         }}>
             <span style={{ color: accentColor }}>●</span>
             <span>{label}</span>
+            {/* Deselect chip — shown when an action is focused so
+                the operator can return to the overview without
+                reattaching the tab first. */}
+            {onDeselect && (
+                <button
+                    data-testid="detached-action-deselect"
+                    onClick={onDeselect}
+                    title="Return to the action overview"
+                    style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        border: '1.5px solid #ec407a', background: '#fce4ec',
+                        color: '#ad1457', borderRadius: '10px',
+                        padding: '2px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+                    }}
+                >
+                    {'\u2715 Overview'}
+                </button>
+            )}
             <button
                 onClick={() => reattachTabCb(tabId)}
                 title="Reattach this tab to the main window"
@@ -964,7 +982,12 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         width: '100%', height: '100%',
                         position: 'absolute', top: 0, left: 0,
                     }}>
-                        {detachedTabs['action'] && renderDetachedHeader('action', selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial action: overview', '#ff4081')}
+                        {detachedTabs['action'] && renderDetachedHeader(
+    'action',
+    selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial action: overview',
+    '#ff4081',
+    selectedActionId ? () => onActionSelect?.(null) : undefined,
+)}
                         {/* Convergence warning banner */}
                         {actionDiagram && actionDiagram.lf_converged === false && (
                             <div style={{

@@ -781,4 +781,55 @@ describe('VisualizationPanel', () => {
             expect(onActionSelect).toHaveBeenCalledWith(null);
         });
     });
+
+    describe('detached action tab deselect', () => {
+        it('shows a deselect button in the detached header when an action is selected', () => {
+            const mountNode = document.createElement('div');
+            document.body.appendChild(mountNode);
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'action',
+                selectedActionId: 'act_42',
+                n1Diagram: { svg: '<svg></svg>' },
+                actionDiagram: { svg: '<svg></svg>' },
+                detachedTabs: { action: { window: {} as Window, mountNode } },
+                onActionSelect: vi.fn(),
+            })} />);
+            // The deselect button lives inside the portal target
+            // (mountNode), not in testing-library's container.
+            const btn = mountNode.querySelector('[data-testid="detached-action-deselect"]');
+            expect(btn).not.toBeNull();
+            document.body.removeChild(mountNode);
+        });
+
+        it('does NOT show a deselect button when no action is selected', () => {
+            const mountNode = document.createElement('div');
+            document.body.appendChild(mountNode);
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'action',
+                selectedActionId: null,
+                n1Diagram: { svg: '<svg></svg>' },
+                detachedTabs: { action: { window: {} as Window, mountNode } },
+            })} />);
+            expect(mountNode.querySelector('[data-testid="detached-action-deselect"]')).toBeNull();
+            document.body.removeChild(mountNode);
+        });
+
+        it('calls onActionSelect(null) when the detached deselect button is clicked', () => {
+            const mountNode = document.createElement('div');
+            document.body.appendChild(mountNode);
+            const onActionSelect = vi.fn();
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'action',
+                selectedActionId: 'act_42',
+                n1Diagram: { svg: '<svg></svg>' },
+                actionDiagram: { svg: '<svg></svg>' },
+                detachedTabs: { action: { window: {} as Window, mountNode } },
+                onActionSelect,
+            })} />);
+            const btn = mountNode.querySelector('[data-testid="detached-action-deselect"]') as HTMLElement;
+            fireEvent.click(btn);
+            expect(onActionSelect).toHaveBeenCalledWith(null);
+            document.body.removeChild(mountNode);
+        });
+    });
 });
