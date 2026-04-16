@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import type { ActionDetail, DiagramData, MetadataIndex, ViewBox } from '../types';
 import {
     applyActionOverviewHighlights,
@@ -85,6 +85,19 @@ interface ActionOverviewDiagramProps {
     /** Searchable equipment ids for the inspect field. */
     inspectableItems: readonly string[];
     visible: boolean;
+    /**
+     * Optional ref that the parent can use to read the overview's
+     * `usePanZoom` instance.  This lets the tied-tabs sync hook
+     * mirror the overview's viewBox when the action tab is detached
+     * and no action card is focused.
+     */
+    pzRef?: MutableRefObject<ReturnType<typeof usePanZoom> | null>;
+    /** Whether the action tab is currently tied (zoom-sync with main window). */
+    isTied?: boolean;
+    /** Toggle the tied state for the action tab. */
+    onToggleTie?: () => void;
+    /** Whether the action tab is currently detached (controls Tie button visibility). */
+    isDetached?: boolean;
 }
 
 const ZOOM_STEP_IN = 0.8;
@@ -112,6 +125,10 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     overloadedLines,
     inspectableItems,
     visible,
+    pzRef,
+    isTied,
+    onToggleTie,
+    isDetached,
 }) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     // Pull the svg string into a local so the React Compiler can
@@ -261,6 +278,14 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     // `active` gates the event listeners so an invisible overview
     // doesn't steal wheel events from other tabs.
     const pz = usePanZoom(containerRef, initialViewBox, visible && svgReady);
+
+    // Expose the PZ instance to the parent so the tied-tabs sync
+    // hook can mirror the overview's viewBox when the action tab
+    // is detached without an action focused.
+    useEffect(() => {
+        if (pzRef) pzRef.current = pz;
+        return () => { if (pzRef) pzRef.current = null; };
+    }, [pz, pzRef]);
 
     // Asset-focus "consume once" tracking — declared up here so
     // `handleReset` (defined just below) can clear it.
@@ -611,7 +636,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                 search. Rendered inside the overview's own flex
                 layout (not via renderTabOverlay) so they are
                 trivially shown/hidden with the overview itself. */}
-            {svgReady && (
+            {svgReady && visible && (
                 <div
                     data-testid="overview-controls"
                     style={{
@@ -626,6 +651,27 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                         pointerEvents: 'none',
                     }}
                 >
+                    {isDetached && onToggleTie && (
+                        <div style={{ pointerEvents: 'auto' }}>
+                            <button
+                                data-testid="overview-tie-button"
+                                onClick={onToggleTie}
+                                title={isTied
+                                    ? 'Untie: pan/zoom and asset focus no longer mirror between this window and the main window'
+                                    : 'Tie: pan/zoom and asset focus will be mirrored between this window and the main window\'s active tab'}
+                                style={{
+                                    ...controlButtonStyle,
+                                    padding: '4px 10px',
+                                    fontSize: 12,
+                                    border: `1px solid ${isTied ? '#2c7be5' : '#ccc'}`,
+                                    backgroundColor: isTied ? '#e8f0fe' : '#fff',
+                                    color: isTied ? '#2c7be5' : '#555',
+                                }}
+                            >
+                                {isTied ? '\u{1F517} Tied' : '\u{26D3} Tie'}
+                            </button>
+                        </div>
+                    )}
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', pointerEvents: 'auto' }}>
                         <button
                             onClick={handleZoomIn}
@@ -639,7 +685,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                             title="Reset view to auto-fit (contingency + overloads + pins)"
                             style={{ ...controlButtonStyle, padding: '5px 14px', fontSize: 12 }}
                         >
-                            {'\uD83D\uDD0D Fit'}
+                            {'\uD83D\uDD0D Unzoom'}
                         </button>
                         <button
                             onClick={handleZoomOut}

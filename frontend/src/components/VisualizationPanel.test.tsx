@@ -840,12 +840,14 @@ describe('VisualizationPanel', () => {
             render(<VisualizationPanel {...createDefaultProps({
                 activeTab: 'action',
                 selectedActionId: null,
-                n1Diagram: { svg: '<svg></svg>' },
+                n1Diagram: { svg: '<svg viewBox="0 0 100 100"></svg>' },
                 detachedTabs: { action: { window: {} as Window, mountNode } },
                 isTabTied: () => false,
                 onToggleTabTie: vi.fn(),
             })} />);
-            const btn = mountNode.querySelector('[data-testid="detached-overview-tie"]');
+            // The Tie button now lives inside ActionOverviewDiagram's
+            // control cluster (above the Unzoom button).
+            const btn = mountNode.querySelector('[data-testid="overview-tie-button"]');
             expect(btn).not.toBeNull();
             expect(btn!.textContent).toContain('Tie');
             document.body.removeChild(mountNode);
@@ -857,15 +859,16 @@ describe('VisualizationPanel', () => {
             render(<VisualizationPanel {...createDefaultProps({
                 activeTab: 'action',
                 selectedActionId: 'act_42',
-                n1Diagram: { svg: '<svg></svg>' },
+                n1Diagram: { svg: '<svg viewBox="0 0 100 100"></svg>' },
                 actionDiagram: { svg: '<svg></svg>' },
                 detachedTabs: { action: { window: {} as Window, mountNode } },
                 isTabTied: () => false,
                 onToggleTabTie: vi.fn(),
             })} />);
-            // The overview-specific Tie button should not appear;
-            // the regular renderTabOverlay provides its own.
-            expect(mountNode.querySelector('[data-testid="detached-overview-tie"]')).toBeNull();
+            // The overview is hidden when an action is selected, so
+            // the Tie button inside the overview should not be visible.
+            // The regular renderTabOverlay provides its own Tie button.
+            expect(mountNode.querySelector('[data-testid="overview-tie-button"]')).toBeNull();
             document.body.removeChild(mountNode);
         });
 
@@ -876,12 +879,12 @@ describe('VisualizationPanel', () => {
             render(<VisualizationPanel {...createDefaultProps({
                 activeTab: 'action',
                 selectedActionId: null,
-                n1Diagram: { svg: '<svg></svg>' },
+                n1Diagram: { svg: '<svg viewBox="0 0 100 100"></svg>' },
                 detachedTabs: { action: { window: {} as Window, mountNode } },
                 isTabTied: () => false,
                 onToggleTabTie,
             })} />);
-            const btn = mountNode.querySelector('[data-testid="detached-overview-tie"]') as HTMLElement;
+            const btn = mountNode.querySelector('[data-testid="overview-tie-button"]') as HTMLElement;
             fireEvent.click(btn);
             expect(onToggleTabTie).toHaveBeenCalledWith('action');
             document.body.removeChild(mountNode);

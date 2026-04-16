@@ -12,6 +12,7 @@ import SldOverlay from './SldOverlay';
 import DetachableTabHost from './DetachableTabHost';
 import ActionOverviewDiagram from './ActionOverviewDiagram';
 import type { DetachedTabsMap } from '../hooks/useDetachedTabs';
+import type { PZInstance } from '../hooks/useTiedTabsSync';
 
 /**
  * Inspect text field + custom suggestions dropdown.
@@ -231,6 +232,8 @@ interface VisualizationPanelProps {
     rejectedActionIds?: Set<string>;
     /** Called when a pin is single-clicked on the overview (scroll sidebar to card). */
     onPinPreview?: (actionId: string) => void;
+    /** Ref to the overview's usePanZoom instance (for tied-tab sync). */
+    overviewPzRef?: React.MutableRefObject<PZInstance | null>;
     /**
      * Monitoring factor used to derive each action's severity
      * colour, kept in sync with the card palette.
@@ -291,6 +294,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     selectedActionIds,
     rejectedActionIds,
     onPinPreview,
+    overviewPzRef,
     monitoringFactor,
 }) => {
     // No-op fallbacks so conditional branches don't need to guard.
@@ -1024,38 +1028,11 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             overloadedLines={overloadedLinesMemo}
                             inspectableItems={inspectableItems}
                             visible={!selectedActionId && !actionDiagramLoading}
+                            pzRef={overviewPzRef}
+                            isTied={isTabTiedFn('action')}
+                            onToggleTie={() => toggleTabTieCb('action')}
+                            isDetached={!!detachedTabs['action']}
                         />
-                        {/* Tie button for the detached overview — the
-                            regular renderTabOverlay only shows the Tie
-                            button when actionDiagram exists, but the
-                            overview uses n1Diagram instead.  Render a
-                            standalone Tie button here so the operator
-                            can couple zoom/focus between the detached
-                            overview and the main window. */}
-                        {detachedTabs['action'] && !selectedActionId && !!n1Diagram?.svg && (
-                            <div style={{
-                                position: 'absolute', bottom: '12px', left: '12px',
-                                zIndex: 100,
-                            }}>
-                                <button
-                                    data-testid="detached-overview-tie"
-                                    onClick={() => toggleTabTieCb('action')}
-                                    title={isTabTiedFn('action')
-                                        ? 'Untie: pan/zoom and asset focus no longer mirror between this window and the main window'
-                                        : 'Tie: pan/zoom and asset focus will be mirrored between this window and the main window\'s active tab'}
-                                    style={{
-                                        padding: '4px 10px', border: `1px solid ${isTabTiedFn('action') ? '#2c7be5' : '#ccc'}`,
-                                        borderRadius: '6px', cursor: 'pointer',
-                                        backgroundColor: isTabTiedFn('action') ? '#e8f0fe' : '#fff',
-                                        color: isTabTiedFn('action') ? '#2c7be5' : '#555',
-                                        fontSize: '12px', fontWeight: 600,
-                                        boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
-                                    }}
-                                >
-                                    {isTabTiedFn('action') ? '\u{1F517} Tied' : '\u{26D3} Tie'}
-                                </button>
-                            </div>
-                        )}
                         {actionDiagramLoading && (
                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>
                                 Generating Action Variant Diagram...

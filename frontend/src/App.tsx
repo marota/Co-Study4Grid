@@ -25,7 +25,7 @@ import { useAnalysis } from './hooks/useAnalysis';
 import { useDiagrams } from './hooks/useDiagrams';
 import { useSession } from './hooks/useSession';
 import { useDetachedTabs } from './hooks/useDetachedTabs';
-import { useTiedTabsSync } from './hooks/useTiedTabsSync';
+import { useTiedTabsSync, type PZInstance } from './hooks/useTiedTabsSync';
 import { interactionLogger } from './utils/interactionLogger';
 
 function App() {
@@ -74,6 +74,21 @@ function App() {
 
   const diagrams = useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs);
 
+  // ===== Action Overview PZ (for tied-tab sync) =====
+  // The action overview has its own independent usePanZoom instance
+  // (it renders the N-1 NAD as a background with pins).  We need to
+  // include it in the tie system so that when the action tab is
+  // detached and showing the overview (no selectedActionId), zoom /
+  // focus changes are mirrored to the main window.
+  const overviewPzRef = useRef<PZInstance | null>(null);
+
+  // When the overview is visible (no selected action), use its PZ
+  // for the 'action' slot in the tie map.  Otherwise fall back to
+  // the action-variant diagram's PZ.
+  const actionPZForTie = (!diagrams.selectedActionId && overviewPzRef.current)
+    ? overviewPzRef.current
+    : diagrams.actionPZ;
+
   // ===== Tied Detached Tabs =====
   // When a detached tab is "tied", its viewBox is mirrored one-way
   // into the main window's active tab on every pan/zoom change —
@@ -81,7 +96,7 @@ function App() {
   // docs/detachable-viz-tabs.md#tied-detached-tabs for the full
   // design rationale.
   const tiedTabsHook = useTiedTabsSync(
-    { 'n': diagrams.nPZ, 'n-1': diagrams.n1PZ, 'action': diagrams.actionPZ },
+    { 'n': diagrams.nPZ, 'n-1': diagrams.n1PZ, 'action': actionPZForTie },
     diagrams.activeTab,
     detachedTabs,
   );
@@ -1202,6 +1217,7 @@ function App() {
             selectedActionIds={selectedActionIds}
             rejectedActionIds={rejectedActionIds}
             onPinPreview={handlePinPreview}
+            overviewPzRef={overviewPzRef}
             monitoringFactor={monitoringFactor}
           />
         </div>
