@@ -874,9 +874,10 @@ export const buildActionOverviewPins = (
  * contexts (both cause ~25-31s Layerize on large grids).
  *
  * Visual stack (back to front):
- *   1. original NAD content (full opacity)
- *   2. dim rect (white, opacity 0.65)
- *   3. overview highlight layer (contingency + overload halos)
+ *   1. overview highlight layer (contingency + overload halos —
+ *      behind NAD content, matching N-1 tab's background-layer)
+ *   2. original NAD content (full opacity)
+ *   3. dim rect (white, opacity 0.65 — dims NAD + highlights)
  *   4. action overview pin layer (Google-Maps pins on top)
  *
  * The clones reuse the existing `.nad-contingency-highlight` and
@@ -909,17 +910,17 @@ export const applyActionOverviewHighlights = (
     const SVG_NS = 'http://www.w3.org/2000/svg';
     const layer = document.createElementNS(SVG_NS, 'g') as SVGGElement;
     layer.setAttribute('class', 'nad-overview-highlight-layer');
-    // Insert AFTER the dim rect but BEFORE the pin layer, so
-    // highlights render ABOVE the dimmed background (fully visible
-    // and undimmed) but BELOW the pins.  The thick halo strokes
-    // (120-150px) visually extend well beyond the network lines,
-    // giving the "background glow" effect even though the layer
-    // sits above the dimmed NAD in paint order.
+    // Insert at the START of the SVG so highlights render BEHIND
+    // the NAD content, matching the N-1 tab's getBackgroundLayer()
+    // pattern.  The dim rect (which sits above NAD content) will
+    // partially dim the highlights, but the thick halo strokes
+    // (120-150px) with bright colours still show through, creating
+    // a visible "background glow" behind the network lines — the
+    // same visual effect as the N-1 diagram.
     //
-    // Visual stack: NAD content → dim rect → highlights → pins.
-    const pinLayer = svg.querySelector('.nad-action-overview-pins');
-    if (pinLayer) {
-        svg.insertBefore(layer, pinLayer);
+    // Visual stack: highlights → NAD content → dim rect → pins.
+    if (svg.firstChild) {
+        svg.insertBefore(layer, svg.firstChild);
     } else {
         svg.appendChild(layer);
     }

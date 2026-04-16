@@ -157,9 +157,10 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
         // each child individually (~25-31s on large grids).
         //
         // Visual stack (back to front):
-        //   1. original NAD content (full opacity)
-        //   2. white rect overlay (opacity 0.65 → dims to ~35% visible)
-        //   3. highlight layer (inserted later by applyActionOverviewHighlights)
+        //   1. highlight layer (inserted later by applyActionOverviewHighlights
+        //      at SVG start — behind NAD, matching N-1 tab behaviour)
+        //   2. original NAD content (full opacity)
+        //   3. white rect overlay (opacity 0.65 → dims NAD + highlights)
         //   4. pin layer (inserted later by applyActionOverviewPins)
         const SVG_NS = 'http://www.w3.org/2000/svg';
         const vb = svg.getAttribute('viewBox');
@@ -185,7 +186,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
             }
         }
         // Mark the SVG so highlight/pin insertion code knows the
-        // dimming rect is present and can insert AFTER it.
+        // dimming rect is present.
         svg.classList.add('nad-overview-dimmed');
         console.log(`[SVG] Action overview pre-parse took ${(performance.now() - start).toFixed(2)}ms`);
         return svg;
@@ -312,9 +313,9 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     // contingency or the N-1 overload set changes.  Mirrors what
     // the N-1 tab shows so the operator keeps the same situational
     // awareness on the overview.  The helper inserts a dedicated
-    // `.nad-overview-highlight-layer` as a sibling of the dim layer
-    // so the halos render at full opacity above the faded
-    // background but below the pin layer.
+    // `.nad-overview-highlight-layer` at the START of the SVG so
+    // the halos render behind the NAD content, matching the N-1
+    // tab's getBackgroundLayer() pattern.
     useEffect(() => {
         if (!svgReady) return;
         const container = containerRef.current;

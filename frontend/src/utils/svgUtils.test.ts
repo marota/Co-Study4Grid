@@ -1555,14 +1555,49 @@ describe('applyActionOverviewHighlights', () => {
         expect(clone!.classList.contains('nad-highlight-clone')).toBe(true);
     });
 
-    it('inserts the highlight layer AFTER the dim rect (above dimmed NAD, below pins)', () => {
+    it('inserts the highlight layer at the START of the SVG (behind NAD content)', () => {
         const { container, meta } = buildContainer();
         applyActionOverviewHighlights(container, meta, 'CONT_LINE', []);
         const svg = container.querySelector('svg')!;
         const layer = svg.querySelector(':scope > g.nad-overview-highlight-layer');
         expect(layer).not.toBeNull();
-        // When there is no pin layer, the highlight layer goes at the end.
-        expect(svg.lastElementChild).toBe(layer);
+        // Highlight layer should be the first child (behind everything).
+        expect(svg.firstElementChild).toBe(layer);
+    });
+
+    it('inserts highlight layer BEFORE existing dim rect and pin layer', () => {
+        const { container, meta } = buildContainer();
+        const svg = container.querySelector('svg')!;
+        const SVG_NS = 'http://www.w3.org/2000/svg';
+
+        // Simulate dim rect and pin layer already present (as in the real component).
+        const dimRect = document.createElementNS(SVG_NS, 'rect');
+        dimRect.setAttribute('class', 'nad-overview-dim-rect');
+        svg.appendChild(dimRect);
+
+        const pinLayer = document.createElementNS(SVG_NS, 'g');
+        pinLayer.setAttribute('class', 'nad-action-overview-pins');
+        svg.appendChild(pinLayer);
+
+        applyActionOverviewHighlights(container, meta, 'CONT_LINE', ['OVL_1']);
+        const children = Array.from(svg.children);
+        const highlightIdx = children.findIndex(c => c.classList.contains('nad-overview-highlight-layer'));
+        const dimIdx = children.findIndex(c => c.classList.contains('nad-overview-dim-rect'));
+        const pinIdx = children.findIndex(c => c.classList.contains('nad-action-overview-pins'));
+        // Highlights behind NAD content (at start), dim rect and pins after
+        expect(highlightIdx).toBe(0);
+        expect(highlightIdx).toBeLessThan(dimIdx);
+        expect(dimIdx).toBeLessThan(pinIdx);
+    });
+
+    it('re-inserts highlight layer at SVG start on idempotent re-call', () => {
+        const { container, meta } = buildContainer();
+        applyActionOverviewHighlights(container, meta, 'CONT_LINE', ['OVL_1']);
+        applyActionOverviewHighlights(container, meta, 'CONT_LINE', ['OVL_1', 'OVL_2']);
+        const svg = container.querySelector('svg')!;
+        const layer = svg.querySelector(':scope > g.nad-overview-highlight-layer');
+        // Should still be at the start after the second call.
+        expect(svg.firstElementChild).toBe(layer);
     });
 
     it('is idempotent — repeated calls wipe the previous highlight layer', () => {

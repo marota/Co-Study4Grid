@@ -504,9 +504,12 @@ circle.nad-highlight {
     stroke-width: 2.5;
 }
 /* The dim effect is achieved by a single white <rect> with
-   opacity 0.65 inserted ABOVE the NAD content but BELOW the
-   highlight and pin layers — no per-child opacity or stacking
-   contexts needed.  See ActionOverviewDiagram.tsx preparedSvg. */
+   opacity 0.65 inserted ABOVE the NAD content.  Highlights are
+   inserted at the START of the SVG (behind NAD content), matching
+   the N-1 tab's background-layer pattern.  Pins sit on top.
+   Visual stack: highlights → NAD content → dim rect → pins.
+   No per-child opacity or stacking contexts needed.
+   See ActionOverviewDiagram.tsx preparedSvg. */
 .nad-action-overview-container svg {
     display: block;
     /* Trade anti-aliasing quality for rendering speed.  On a
