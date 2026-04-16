@@ -43,9 +43,14 @@ The SVG layers are ordered as follows (back to front):
 
 Highlights are placed **behind** the NAD content (same background-layer pattern as the N-1 tab) so the halo peeks out around the line strokes. The dim rect sits on top of both, and pins ride above everything.
 
-### Why a `<rect>` instead of `<g opacity>`?
+### Why a `<rect>` instead of `<g opacity>` or CSS opacity?
 
-Earlier iterations wrapped the NAD children in a `<g opacity="0.35">`. On large grids (11k+ elements) this caused Chrome's Layerize compositor step to create individual layers for every child element — a ~25-31 second penalty. The `<rect>` overlay achieves the same dim effect at zero compositing cost because the browser only needs to paint one extra element.
+Earlier iterations tried two approaches that both failed on large grids (11k+ elements, ~43k SVG children):
+
+1. **SVG transparency group** (`<g opacity="0.35">`): Forces Chrome to rasterise every child into an intermediate buffer before compositing — ~31s Layerize penalty.
+2. **CSS per-child opacity** (`.nad-overview-dimmed > * { opacity: 0.35 }`): Each child element with `opacity < 1` creates its own stacking context — ~25s Layerize penalty.
+
+The single white `<rect>` overlay (`opacity: 0.65`) achieves the same dim effect at zero compositing cost because the browser only needs to paint one extra element with no stacking contexts.
 
 ---
 
@@ -164,7 +169,7 @@ Both the sidebar feed and the pin-click popover render the **same `ActionCard` c
 
 | Test file | Cases | Covers |
 |---|---|---|
-| `utils/svgUtils.test.ts` | `buildActionOverviewPins` (8), `applyActionOverviewPins` (12), `applyActionOverviewHighlights` (8), `rescaleActionOverviewPins` (6), `computeActionOverviewFitRect` (5), `computeEquipmentFitRect` (4) | Pin resolution, severity, label, palette, idempotence, click semantics, mousedown stopPropagation, no-outline, dark label text, highlight cloning + ordering, pin rescale + rAF throttle, fit-rect geometry |
+| `utils/svgUtils.test.ts` | `buildActionOverviewPins` (8), `applyActionOverviewPins` (12), `applyActionOverviewHighlights` (10), `rescaleActionOverviewPins` (6), `computeActionOverviewFitRect` (5), `computeEquipmentFitRect` (4) | Pin resolution, severity, label, palette, idempotence, click semantics, mousedown stopPropagation, no-outline, dark label text, highlight cloning + background-layer ordering (behind NAD content) + idempotent re-insertion at SVG start, pin rescale + rAF throttle + viewBox-fraction floor, fit-rect geometry |
 | `components/ActionOverviewDiagram.test.tsx` | 40 | SVG injection, dim rect, pins + palette, no-outline, anchor positions, double-click → onActionSelect, auto-fit, legend, pin count, visibility toggle, empty states, zoom +/−/Fit, inspect asset-focus + sticking regression, popover open/close/Escape/card-body-activate/placement, highlights ordering + refresh, pin rescale + rAF throttle |
 | `components/ActionCardPopover.test.tsx` | 8 | Shared ActionCard rendering, extraDataAttributes forwarding, custom testId, close ✕, stopPropagation, card-body activation, no-op stubs |
 | `utils/popoverPlacement.test.ts` | 16 | Vertical + horizontal placement rules, top/bottom/left anchoring, viewport clamping, end-to-end corner cases |
@@ -178,7 +183,7 @@ Both the sidebar feed and the pin-click popover render the **same `ActionCard` c
 | Concern | Mitigation |
 |---|---|
 | SVG injection on large grids (>10k elements) | Pre-parsed via `DOMParser` in a `useMemo`, injected with `replaceChildren()` — zero double-parse |
-| Dim layer compositing (Chrome Layerize) | Single `<rect>` overlay instead of `<g opacity>` wrapper — avoids per-child layer creation (~25s savings on 11k-element NADs) |
+| Dim layer compositing (Chrome Layerize) | Single `<rect>` overlay instead of `<g opacity>` wrapper or CSS per-child `opacity` — both alternatives force Chrome to create individual composite layers for every child element (~25-31s Layerize penalty on 11k-element NADs). The `<rect>` approach has zero stacking-context cost. |
 | Highlight CTM reads | Batched: `cachedLayerCTM` is computed once per `applyActionOverviewHighlights` call, not per-clone |
 | Pin rescale during wheel-zoom | `MutationObserver` + `requestAnimationFrame` throttle — at most one `getScreenCTM`-equivalent per frame. The rescaler now reads `viewBox` + `clientWidth` directly (pure math) instead of calling `getScreenCTM()` to avoid forced layouts entirely |
 | ID-map lookups | `getIdMap` uses a `WeakMap` cache keyed on the container element, invalidated only when the SVG content changes |
