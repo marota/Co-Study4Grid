@@ -41,14 +41,17 @@ Co-Study4Grid/
 │       │   ├── sessionUtils.ts       # Session snapshot building (buildSessionResult)
 │       │   ├── sessionUtils.test.ts  # Unit tests for session serialization
 │       │   ├── interactionLogger.ts  # Singleton interaction event logger (replay-ready)
-│       │   └── interactionLogger.test.ts # Unit tests for interaction logger
+│       │   ├── interactionLogger.test.ts # Unit tests for interaction logger
+│       │   └── popoverPlacement.ts   # Pure helpers for pin-popover positioning
 │       └── components/
 │           ├── Header.tsx              # Top bar: logo, network path input, Load/Save/Reload/Settings buttons
 │           ├── Header.test.tsx         # Unit tests for Header
-│           ├── ActionFeed.tsx          # Prioritized action results display with search/filter
-│           ├── VisualizationPanel.tsx  # SVG diagram rendering (NAD + SLD overlay)
-│           ├── OverloadPanel.tsx       # Two-step analysis: detect → select → resolve
-│           ├── CombinedActionsModal.tsx # Superposition pair computation modal
+│           ├── ActionFeed.tsx              # Prioritized action results display with search/filter + auto-scroll on selection
+│           ├── ActionOverviewDiagram.tsx  # N-1 NAD with pin overlay (overview of all actions)
+│           ├── ActionCardPopover.tsx      # Shared floating ActionCard wrapper (pin click preview)
+│           ├── VisualizationPanel.tsx     # SVG diagram rendering (NAD + SLD overlay)
+│           ├── OverloadPanel.tsx          # Two-step analysis: detect → select → resolve
+│           ├── CombinedActionsModal.tsx   # Superposition pair computation modal
 │           └── modals/
 │               ├── SettingsModal.tsx           # 3-tab settings dialog (paths, recommender, config)
 │               ├── SettingsModal.test.tsx      # Unit tests for SettingsModal
@@ -207,7 +210,7 @@ npm run test         # Run Vitest test suite
 - **Load**: `POST /api/load-session` reads `session.json` -> frontend restores all state without re-simulating actions
 - **Output folder**: `<output_folder>/costudy4grid_session_<contingency>_<timestamp>/` contains `session.json` + overflow PDF
 - **Interaction logging**: Every user interaction is logged as a timestamped, replay-ready event via `interactionLogger`. Saved as `interaction_log.json` alongside `session.json`.
-- See `docs/save-results.md` for session save/load and `docs/interaction-logging.md` for the replay contract
+- See `docs/save-results.md` for session save/load, `docs/interaction-logging.md` for the replay contract, and `docs/action-overview-diagram.md` for the Remedial Action overview (pin overlay on N-1 network)
 
 ### SVG Visualization (standalone_interface.html)
 The standalone interface includes advanced SVG rendering for pypowsybl network-area diagrams:

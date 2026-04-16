@@ -126,6 +126,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     // here as well (moving children into a `<g>` with reduced
     // opacity) so the DOM mutation happens on the detached element
     // before it enters the live document — no forced layout.
+    /* eslint-disable react-hooks/purity -- performance.now() is side-effect-free in practice (timing only) */
     const preparedSvg = useMemo<SVGSVGElement | null>(() => {
         if (!svgString) return null;
         const start = performance.now();
@@ -191,6 +192,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
         console.log(`[SVG] Action overview pre-parse took ${(performance.now() - start).toFixed(2)}ms`);
         return svg;
     }, [svgString]);
+    /* eslint-enable react-hooks/purity */
 
     const pins = useMemo(() => {
         if (!n1MetaIndex || !actions) return [];

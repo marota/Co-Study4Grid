@@ -131,6 +131,7 @@ const InspectSearchField: React.FC<{
 
 // Module-level stable references so React.memo children don't
 // break referential equality on every parent render.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const NOOP_ACTION_SELECT = (_id: string | null) => { /* intentional no-op */ };
 const EMPTY_STRING_ARRAY: readonly string[] = [];
 
