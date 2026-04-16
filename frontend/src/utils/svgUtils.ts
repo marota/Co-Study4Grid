@@ -744,12 +744,58 @@ export interface ActionPinInfo {
     title: string;
 }
 
+/**
+ * Descriptor for a combined-action pin — rendered at the midpoint of
+ * a curved connection between the two unitary action pins it combines.
+ */
+export interface CombinedPinInfo {
+    /** Pair key, e.g. "action1+action2". */
+    pairId: string;
+    /** The two unitary action ids. */
+    action1Id: string;
+    action2Id: string;
+    /** Anchor positions of the two unitary pins (endpoints of the curve). */
+    p1: { x: number; y: number };
+    p2: { x: number; y: number };
+    /** Midpoint of the curve (where the combined pin sits). */
+    x: number;
+    y: number;
+    /** Max loading after combined application. */
+    label: string;
+    title: string;
+    severity: ActionPinInfo['severity'];
+}
+
 const severityFill: Record<ActionPinInfo['severity'], string> = {
     green: '#28a745',
     orange: '#f0ad4e',
     red: '#dc3545',
     grey: '#9ca3af',
 };
+
+/**
+ * Dimmed fill colours for rejected actions — each severity hue is
+ * shifted toward grey and lowered in saturation so the pin recedes
+ * visually while still being colour-identifiable.
+ */
+const severityFillDimmed: Record<ActionPinInfo['severity'], string> = {
+    green: '#a3c9ab',
+    orange: '#dcd0b8',
+    red: '#d4a5ab',
+    grey: '#c8cdd2',
+};
+
+/**
+ * Highlighted (selected) fill colours — slightly more vivid/brighter
+ * versions of the severity palette so the pin stands out.
+ */
+const severityFillHighlighted: Record<ActionPinInfo['severity'], string> = {
+    green: '#1e9e3a',
+    orange: '#e89e20',
+    red: '#c82333',
+    grey: '#7b8a96',
+};
+
 
 const computeActionSeverity = (
     details: ActionDetail,
@@ -783,6 +829,24 @@ const resolveActionAnchor = (
         if (typeof nodeRef !== 'string') return undefined;
         return nodesBySvgId.get(nodeRef) ?? nodesByEquipmentId.get(nodeRef);
     };
+
+    // Load shedding / curtailment actions carry an explicit
+    // voltage_level_id in their detail objects — use it directly
+    // so the pin lands on the VL node, not on an unrelated line.
+    if (details.load_shedding_details?.length) {
+        const vlId = details.load_shedding_details[0].voltage_level_id;
+        if (vlId) {
+            const node = nodesByEquipmentId.get(vlId);
+            if (node && Number.isFinite(node.x)) return { x: node.x, y: node.y };
+        }
+    }
+    if (details.curtailment_details?.length) {
+        const vlId = details.curtailment_details[0].voltage_level_id;
+        if (vlId) {
+            const node = nodesByEquipmentId.get(vlId);
+            if (node && Number.isFinite(node.x)) return { x: node.x, y: node.y };
+        }
+    }
 
     // Try line targets first
     const lineTargets = getActionTargetLines(details, actionId, edgesByEquipmentId);
@@ -835,6 +899,10 @@ export const buildActionOverviewPins = (
     const pins: ActionPinInfo[] = [];
     for (const [actionId, details] of Object.entries(actions)) {
         if (allowed && !allowed.has(actionId)) continue;
+        // Skip combined-action entries (key contains '+') — those are
+        // rendered separately by buildCombinedActionPins with a curved
+        // connection between their constituent unitary pins.
+        if (actionId.includes('+')) continue;
         const anchor = resolveActionAnchor(actionId, details, metaIndex);
         if (!anchor) continue;
         const severity = computeActionSeverity(details, monitoringFactor);
@@ -858,7 +926,128 @@ export const buildActionOverviewPins = (
         ].filter(Boolean).join(' \u2014 ');
         pins.push({ id: actionId, x: anchor.x, y: anchor.y, severity, label, title });
     }
+
+    // Fan out pins that share the same anchor position so they don't
+    // stack on top of each other and remain individually clickable.
+    // Group by position (rounded to avoid floating-point near-misses),
+    // then distribute each group in a circle around the shared centre.
+    const bucketKey = (p: ActionPinInfo) =>
+        `${Math.round(p.x * 100)}:${Math.round(p.y * 100)}`;
+    const groups = new Map<string, number[]>();
+    pins.forEach((p, i) => {
+        const k = bucketKey(p);
+        const arr = groups.get(k);
+        if (arr) arr.push(i);
+        else groups.set(k, [i]);
+    });
+    for (const indices of groups.values()) {
+        if (indices.length < 2) continue;
+        // Offset radius: 1.2x the base VL circle radius — just enough
+        // to expose each pin's clickable area without scattering them
+        // too far from the original anchor.
+        const offsetR = 30 * 1.2; // conservative default
+        const angleStep = (2 * Math.PI) / indices.length;
+        indices.forEach((idx, i) => {
+            const angle = -Math.PI / 2 + i * angleStep;
+            pins[idx] = {
+                ...pins[idx],
+                x: pins[idx].x + offsetR * Math.cos(angle),
+                y: pins[idx].y + offsetR * Math.sin(angle),
+            };
+        });
+    }
+
     return pins;
+};
+
+/**
+ * Build descriptors for combined-action pins. A simulated combined
+ * action is identified by an action key containing '+' in the
+ * `actions` dict (e.g. "disco_X+reco_Y"). For each such entry the
+ * function locates the two constituent unitary pins and produces a
+ * `CombinedPinInfo` with a curved connection between them and a
+ * dedicated pin at the curve midpoint.
+ *
+ * NOTE: simulated pairs land in `actions` (not `combined_actions`)
+ * — see CombinedActionsModal's handleSimulate. That is why this
+ * function scans `actions` for '+' keys rather than iterating over
+ * `combined_actions`.
+ *
+ * Pure function — no DOM access.
+ */
+export const buildCombinedActionPins = (
+    actions: Record<string, ActionDetail> | null | undefined,
+    unitaryPins: readonly ActionPinInfo[],
+    monitoringFactor: number,
+): CombinedPinInfo[] => {
+    if (!actions) return [];
+    const pinById = new Map(unitaryPins.map(p => [p.id, p]));
+    const result: CombinedPinInfo[] = [];
+
+    const combinedKeys = Object.keys(actions).filter(k => k.includes('+'));
+    if (combinedKeys.length > 0) {
+        console.log('[buildCombinedActionPins] combined keys in actions:', combinedKeys);
+        console.log('[buildCombinedActionPins] unitary pin ids:', [...pinById.keys()]);
+    }
+
+    for (const [actionId, detail] of Object.entries(actions)) {
+        if (!actionId.includes('+')) continue;
+
+        const parts = actionId.split('+');
+        if (parts.length !== 2) continue;
+        const [id1, id2] = parts;
+
+        const pin1 = pinById.get(id1);
+        const pin2 = pinById.get(id2);
+        if (!pin1 || !pin2) {
+            console.warn(`[buildCombinedActionPins] skipping "${actionId}": pin1(${id1})=${!!pin1}, pin2(${id2})=${!!pin2}`);
+            continue;
+        }
+
+        // Midpoint of the quadratic curve control point offset.
+        // The control point is offset perpendicular to the line
+        // between the two pins.
+        const dx = pin2.x - pin1.x;
+        const dy = pin2.y - pin1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const offsetFraction = 0.3;
+        const ctrlX = (pin1.x + pin2.x) / 2 + (-dy / dist) * dist * offsetFraction;
+        const ctrlY = (pin1.y + pin2.y) / 2 + (dx / dist) * dist * offsetFraction;
+        // Midpoint of quadratic Bezier: B(0.5)
+        const t = 0.5;
+        const midX = (1 - t) * (1 - t) * pin1.x + 2 * t * (1 - t) * ctrlX + t * t * pin2.x;
+        const midY = (1 - t) * (1 - t) * pin1.y + 2 * t * (1 - t) * ctrlY + t * t * pin2.y;
+
+        const severity = computeActionSeverity(detail, monitoringFactor);
+
+        const label = detail.max_rho != null
+            ? `${(detail.max_rho * 100).toFixed(0)}%`
+            : detail.non_convergence ? 'DIV'
+                : detail.is_islanded ? 'ISL' : '\u2014';
+
+        const title = [
+            `${id1} + ${id2}`,
+            detail.description_unitaire,
+            detail.max_rho != null
+                ? `max loading ${(detail.max_rho * 100).toFixed(1)}%${detail.max_rho_line ? ` on ${detail.max_rho_line}` : ''}`
+                : detail.non_convergence ? 'load-flow divergent'
+                    : detail.is_islanded ? 'islanding' : '',
+        ].filter(Boolean).join(' \u2014 ');
+
+        result.push({
+            pairId: actionId,
+            action1Id: id1,
+            action2Id: id2,
+            p1: { x: pin1.x, y: pin1.y },
+            p2: { x: pin2.x, y: pin2.y },
+            x: midX,
+            y: midY,
+            label,
+            title,
+            severity,
+        });
+    }
+    return result;
 };
 
 /**
@@ -1111,6 +1300,10 @@ export const rescaleActionOverviewPins = (container: HTMLElement | null) => {
         body.setAttribute('transform', `scale(${scale})`);
     });
 
+    // Curves use a fixed stroke width that matches the network edges
+    // — no dynamic rescaling needed since they live in SVG-space and
+    // scale naturally with the viewBox, just like the edges do.
+
     performance.mark('aod:rescalePins:end');
     const entry = performance.measure('aod:rescalePins', 'aod:rescalePins:start', 'aod:rescalePins:end');
     if (entry.duration > 5) console.log(`[PERF] aod:rescalePins: ${entry.duration.toFixed(2)}ms`);
@@ -1126,6 +1319,51 @@ export const rescaleActionOverviewPins = (container: HTMLElement | null) => {
 export const PIN_SINGLE_CLICK_DELAY_MS = 250;
 
 /**
+ * Build a 5-pointed star SVG path string centred at (cx, cy) with
+ * the given outer radius. Used as the "selected" status symbol.
+ */
+const starPath = (cx: number, cy: number, outerR: number): string => {
+    const innerR = outerR * 0.4;
+    const pts: string[] = [];
+    for (let i = 0; i < 10; i++) {
+        const angle = (Math.PI / 2) + (i * Math.PI / 5);
+        const r = i % 2 === 0 ? outerR : innerR;
+        pts.push(`${cx + r * Math.cos(angle)},${cy - r * Math.sin(angle)}`);
+    }
+    return `M ${pts.join(' L ')} Z`;
+};
+
+/**
+ * Build an X (cross) SVG path string centred at (cx, cy) with the
+ * given half-width. Used as the "rejected" status symbol.
+ */
+const crossPath = (cx: number, cy: number, halfW: number): string => {
+    const t = halfW * 0.25; // arm thickness
+    return [
+        `M ${cx - halfW} ${cy - halfW + t}`,
+        `L ${cx - t} ${cy}`,
+        `L ${cx - halfW} ${cy + halfW - t}`,
+        `L ${cx - halfW + t} ${cy + halfW}`,
+        `L ${cx} ${cy + t}`,
+        `L ${cx + halfW - t} ${cy + halfW}`,
+        `L ${cx + halfW} ${cy + halfW - t}`,
+        `L ${cx + t} ${cy}`,
+        `L ${cx + halfW} ${cy - halfW + t}`,
+        `L ${cx + halfW - t} ${cy - halfW}`,
+        `L ${cx} ${cy - t}`,
+        `L ${cx - halfW + t} ${cy - halfW}`,
+        'Z',
+    ].join(' ');
+};
+
+/** Options bag for {@link applyActionOverviewPins}. */
+export interface ApplyPinsOptions {
+    selectedActionIds?: Set<string>;
+    rejectedActionIds?: Set<string>;
+    combinedPins?: readonly CombinedPinInfo[];
+}
+
+/**
  * Inject (or refresh) the action-overview pin layer inside the
  * given container's SVG.
  *
@@ -1137,6 +1375,17 @@ export const PIN_SINGLE_CLICK_DELAY_MS = 250;
  *    invokes `onPinDoubleClick` instead — the caller typically
  *    uses that to activate the action drill-down view.
  *
+ * Status decorations:
+ *  - **selected** pins get a highlighted fill and a gold star symbol
+ *    rendered above the teardrop bubble;
+ *  - **rejected** pins get a dimmed fill and a red cross symbol
+ *    rendered above the teardrop bubble.
+ *
+ * Combined action connections:
+ *  - For each combined action, a curved SVG path is drawn between
+ *    the two unitary pins, and a dedicated combined-action pin sits
+ *    at the midpoint of the curve.
+ *
  * Calling this with an empty `pins` array wipes the layer.
  */
 export const applyActionOverviewPins = (
@@ -1144,6 +1393,7 @@ export const applyActionOverviewPins = (
     pins: ActionPinInfo[],
     onPinClick: (actionId: string, screenPos: { x: number; y: number }) => void,
     onPinDoubleClick?: (actionId: string) => void,
+    opts?: ApplyPinsOptions,
 ) => {
     if (!container) return;
     const svg = container.querySelector('svg') as SVGSVGElement | null;
@@ -1152,7 +1402,11 @@ export const applyActionOverviewPins = (
     // Purge any existing layer so repeated calls stay idempotent.
     svg.querySelectorAll('.nad-action-overview-pins').forEach(el => el.remove());
 
-    if (pins.length === 0) return;
+    const combinedPins = opts?.combinedPins ?? [];
+    if (pins.length === 0 && combinedPins.length === 0) return;
+
+    const selectedIds = opts?.selectedActionIds;
+    const rejectedIds = opts?.rejectedActionIds;
 
     // Base pin body radius = radius of a voltage-level circle. This
     // is the "when zoomed in" size — at typical detail zoom, pins
@@ -1165,6 +1419,19 @@ export const applyActionOverviewPins = (
     pinBaseRadiusCache.set(svg, r);
     const labelFont = Math.max(9, r * 0.8);
 
+    // Read the actual edge stroke width from the network SVG so
+    // combined-action curves match the underlying edge thickness.
+    // Falls back to 3 SVG units if no edge path is found.
+    let edgeStrokeW = 3;
+    const edgePath = svg.querySelector('.nad-edge-paths path[style*="stroke-width"], .nad-edge-paths path') as SVGElement | null;
+    if (edgePath) {
+        const sw = edgePath.style?.strokeWidth || edgePath.getAttribute('stroke-width');
+        if (sw) {
+            const n = parseFloat(sw);
+            if (Number.isFinite(n) && n > 0) edgeStrokeW = n;
+        }
+    }
+
     const SVG_NS = 'http://www.w3.org/2000/svg';
     const layer = document.createElementNS(SVG_NS, 'g');
     layer.setAttribute('class', 'nad-action-overview-pins');
@@ -1174,47 +1441,59 @@ export const applyActionOverviewPins = (
     // reflow.
     const frag = document.createDocumentFragment();
 
-    pins.forEach(pin => {
-        // OUTER group: anchor translate + click handler. The click
-        // listener is scoped here so the inner body can be
-        // rescaled on every zoom change without reattaching.
-        const g = document.createElementNS(SVG_NS, 'g');
-        g.setAttribute('class', 'nad-action-overview-pin');
-        g.setAttribute('transform', `translate(${pin.x} ${pin.y})`);
-        g.setAttribute('data-action-id', pin.id);
-        (g as unknown as SVGGElement).style.cursor = 'pointer';
+    // ── Helper: attach click/dblclick listeners to a pin group ──
+    const attachClickListeners = (
+        g: SVGGElement,
+        pinId: string,
+        clickCb: typeof onPinClick,
+        dblClickCb: typeof onPinDoubleClick,
+    ) => {
+        let clickTimer: ReturnType<typeof setTimeout> | null = null;
+        g.addEventListener('mousedown', (evt) => { evt.stopPropagation(); });
+        g.addEventListener('click', (evt) => {
+            evt.stopPropagation();
+            if (clickTimer !== null) return;
+            const rect = (evt.currentTarget as SVGGElement).getBoundingClientRect();
+            const screenPos = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+            clickTimer = setTimeout(() => {
+                clickTimer = null;
+                clickCb(pinId, screenPos);
+            }, PIN_SINGLE_CLICK_DELAY_MS);
+        });
+        g.addEventListener('dblclick', (evt) => {
+            evt.stopPropagation();
+            if (clickTimer !== null) { clearTimeout(clickTimer); clickTimer = null; }
+            if (dblClickCb) dblClickCb(pinId);
+        });
+    };
 
-        // INNER group: the glyph itself. Its `transform` attribute
-        // is re-written by `rescaleActionOverviewPins` whenever the
-        // viewBox changes, so the pin grows in SVG-space as the
-        // user zooms out (keeping its on-screen size roughly
-        // constant) and shrinks back to `r` at normal zoom.
-        const body = document.createElementNS(SVG_NS, 'g');
-        body.setAttribute('class', 'nad-action-overview-pin-body');
-        body.setAttribute('transform', 'scale(1)');
-        g.appendChild(body);
-
+    // ── Helper: create a teardrop pin glyph ──
+    const buildPinGlyph = (
+        body: SVGGElement,
+        R: number,
+        fill: string,
+        label: string,
+        titleText: string,
+        strokeColor?: string,
+        strokeWidth?: number,
+    ) => {
+        const tail = R * 0.9;
         const title = document.createElementNS(SVG_NS, 'title');
-        title.textContent = pin.title;
+        title.textContent = titleText;
         body.appendChild(title);
 
-        // Google-Maps style teardrop: a circle bubble with a
-        // triangular tail ending at the anchor point (0,0). The
-        // glyph is drawn in a local coord system where (0,0) is
-        // the pointer tip and the bubble sits above it.
-        const R = r;
-        const tail = R * 0.9;
         const path = document.createElementNS(SVG_NS, 'path');
         const d = `M ${-R} ${-R - tail} A ${R} ${R} 0 1 1 ${R} ${-R - tail} L 0 0 Z`;
         path.setAttribute('d', d);
-        path.setAttribute('fill', severityFill[pin.severity]);
-        // No outline — the fill-only pin blends cleanly with the
-        // network SVG and matches the action card's left-border
-        // accent instead of competing with the NAD line strokes.
-        path.setAttribute('stroke', 'none');
+        path.setAttribute('fill', fill);
+        if (strokeColor) {
+            path.setAttribute('stroke', strokeColor);
+            path.setAttribute('stroke-width', String(strokeWidth ?? R * 0.12));
+        } else {
+            path.setAttribute('stroke', 'none');
+        }
         body.appendChild(path);
 
-        // Inner white disc to host the label.
         const inner = document.createElementNS(SVG_NS, 'circle');
         inner.setAttribute('cx', '0');
         inner.setAttribute('cy', String(-R - tail));
@@ -1232,66 +1511,156 @@ export const applyActionOverviewPins = (
         text.setAttribute('font-size', String(labelFont));
         text.setAttribute('font-weight', '800');
         text.setAttribute('font-family', 'system-ui, -apple-system, Arial, sans-serif');
-        // Use a high-contrast slate colour instead of the severity
-        // hue — when the label text slightly overflows the inner
-        // white disc it would otherwise blend into the coloured
-        // teardrop. Dark slate reads clearly against both the
-        // white disc AND every severity fill.
         text.setAttribute('fill', '#1f2937');
         text.setAttribute('pointer-events', 'none');
-        text.textContent = pin.label;
+        text.textContent = label;
         body.appendChild(text);
+    };
 
-        // Click vs. double-click arbitration.
-        //
-        // A real browser double-click fires two `click` events in a
-        // row followed by `dblclick`. We defer the single-click
-        // action (the popover) so the dblclick has a chance to
-        // cancel it — matching Google Maps and similar UIs.
-        //
-        // Tests may use `fireEvent.doubleClick` which only fires
-        // the `dblclick` event; that still works because the
-        // dblclick handler no-ops when the timer is null.
-        let clickTimer: ReturnType<typeof setTimeout> | null = null;
+    // ── 1. Combined action curved connections + midpoint pins ──
+    combinedPins.forEach(cp => {
+        // Curved connection line between the two unitary pins.
+        const dx = cp.p2.x - cp.p1.x;
+        const dy = cp.p2.y - cp.p1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const offsetFraction = 0.3;
+        const ctrlX = (cp.p1.x + cp.p2.x) / 2 + (-dy / dist) * dist * offsetFraction;
+        const ctrlY = (cp.p1.y + cp.p2.y) / 2 + (dx / dist) * dist * offsetFraction;
 
-        // CRITICAL: stop mousedown propagation so the container's
-        // pan/zoom drag handler (registered by `usePanZoom`) does
-        // not start a drag and call `setInteracting(true)` — that
-        // adds `.svg-interacting` to the container which, via the
-        // App.css rule `.svg-container.svg-interacting svg *
-        // { pointer-events: none !important }`, would disable
-        // pointer events on ALL svg children before the click
-        // event can land on the pin. The hover tooltip would
-        // still work (pointer-events is briefly disabled and
-        // re-enabled), but click would silently never fire.
-        g.addEventListener('mousedown', (evt) => {
-            evt.stopPropagation();
-        });
+        const curvePath = document.createElementNS(SVG_NS, 'path');
+        curvePath.setAttribute('d',
+            `M ${cp.p1.x} ${cp.p1.y} Q ${ctrlX} ${ctrlY} ${cp.p2.x} ${cp.p2.y}`);
+        curvePath.setAttribute('class', 'nad-combined-action-curve');
+        curvePath.setAttribute('fill', 'none');
+        curvePath.setAttribute('stroke', severityFill[cp.severity]);
+        curvePath.setAttribute('stroke-width', String(edgeStrokeW));
+        curvePath.setAttribute('stroke-dasharray', `${edgeStrokeW * 2.5} ${edgeStrokeW * 1.5}`);
+        curvePath.setAttribute('stroke-linecap', 'round');
+        curvePath.setAttribute('pointer-events', 'none');
+        frag.appendChild(curvePath);
 
-        g.addEventListener('click', (evt) => {
-            evt.stopPropagation();
-            if (clickTimer !== null) return;
-            // Compute screen-space anchor NOW (before React rerenders)
-            // so the popover lands exactly next to the pin.
-            const rect = (evt.currentTarget as SVGGElement).getBoundingClientRect();
-            const screenPos = {
-                x: rect.left + rect.width / 2,
-                y: rect.top + rect.height / 2,
-            };
-            clickTimer = setTimeout(() => {
-                clickTimer = null;
-                onPinClick(pin.id, screenPos);
-            }, PIN_SINGLE_CLICK_DELAY_MS);
-        });
-        g.addEventListener('dblclick', (evt) => {
-            evt.stopPropagation();
-            if (clickTimer !== null) {
-                clearTimeout(clickTimer);
-                clickTimer = null;
-            }
-            if (onPinDoubleClick) onPinDoubleClick(pin.id);
-        });
+        // Combined-action pin at the midpoint.
+        const g = document.createElementNS(SVG_NS, 'g');
+        g.setAttribute('class', 'nad-action-overview-pin nad-combined-action-pin');
+        g.setAttribute('transform', `translate(${cp.x} ${cp.y})`);
+        g.setAttribute('data-action-id', cp.pairId);
+        (g as unknown as SVGGElement).style.cursor = 'pointer';
 
+        const body = document.createElementNS(SVG_NS, 'g');
+        body.setAttribute('class', 'nad-action-overview-pin-body');
+        body.setAttribute('transform', 'scale(1)');
+        g.appendChild(body);
+
+        // Use the severity palette (same as unitary pins) so the
+        // combined pin colour matches the action card.
+        let fill: string;
+        let stroke: string | undefined;
+        if (selectedIds?.has(cp.pairId)) {
+            fill = severityFillHighlighted[cp.severity];
+            stroke = '#eab308';
+        } else if (rejectedIds?.has(cp.pairId)) {
+            fill = severityFillDimmed[cp.severity];
+        } else {
+            fill = severityFill[cp.severity];
+        }
+
+        buildPinGlyph(body, r, fill, cp.label, cp.title, stroke, stroke ? r * 0.12 : undefined);
+
+        // "+" badge on the bubble top to indicate it's a combined pin
+        const tail = r * 0.9;
+        const badgeCy = -r - tail - r * 0.95;
+        const badge = document.createElementNS(SVG_NS, 'circle');
+        badge.setAttribute('cx', '0');
+        badge.setAttribute('cy', String(badgeCy));
+        badge.setAttribute('r', String(r * 0.35));
+        badge.setAttribute('fill', severityFill[cp.severity]);
+        badge.setAttribute('stroke', 'white');
+        badge.setAttribute('stroke-width', String(r * 0.06));
+        badge.setAttribute('pointer-events', 'none');
+        body.appendChild(badge);
+
+        const plusText = document.createElementNS(SVG_NS, 'text');
+        plusText.setAttribute('x', '0');
+        plusText.setAttribute('y', String(badgeCy));
+        plusText.setAttribute('text-anchor', 'middle');
+        plusText.setAttribute('dominant-baseline', 'central');
+        plusText.setAttribute('font-size', String(r * 0.5));
+        plusText.setAttribute('font-weight', '900');
+        plusText.setAttribute('font-family', 'system-ui, -apple-system, Arial, sans-serif');
+        plusText.setAttribute('fill', 'white');
+        plusText.setAttribute('pointer-events', 'none');
+        plusText.textContent = '+';
+        body.appendChild(plusText);
+
+        attachClickListeners(g, cp.pairId, onPinClick, onPinDoubleClick);
+        frag.appendChild(g);
+    });
+
+    // ── 2. Unitary action pins ──
+    pins.forEach(pin => {
+        const isSelected = selectedIds?.has(pin.id) ?? false;
+        const isRejected = rejectedIds?.has(pin.id) ?? false;
+
+        // OUTER group: anchor translate + click handler.
+        const g = document.createElementNS(SVG_NS, 'g');
+        g.setAttribute('class', 'nad-action-overview-pin');
+        g.setAttribute('transform', `translate(${pin.x} ${pin.y})`);
+        g.setAttribute('data-action-id', pin.id);
+        (g as unknown as SVGGElement).style.cursor = 'pointer';
+
+        // INNER group: the glyph itself.
+        const body = document.createElementNS(SVG_NS, 'g');
+        body.setAttribute('class', 'nad-action-overview-pin-body');
+        body.setAttribute('transform', 'scale(1)');
+        g.appendChild(body);
+
+        // Choose fill based on status.
+        let fill: string;
+        let strokeColor: string | undefined;
+        let strokeWidth: number | undefined;
+        if (isSelected) {
+            fill = severityFillHighlighted[pin.severity];
+            strokeColor = '#eab308';    // gold border for emphasis
+            strokeWidth = r * 0.12;
+        } else if (isRejected) {
+            fill = severityFillDimmed[pin.severity];
+        } else {
+            fill = severityFill[pin.severity];
+        }
+
+        const R = r;
+        const tail = R * 0.9;
+
+        buildPinGlyph(body, R, fill, pin.label, pin.title, strokeColor, strokeWidth);
+
+        // ── Status symbol above the teardrop bubble ──
+        const symbolCy = -R - tail - R * 0.95;
+        if (isSelected) {
+            // Gold star
+            const starEl = document.createElementNS(SVG_NS, 'path');
+            starEl.setAttribute('d', starPath(0, symbolCy, R * 0.45));
+            starEl.setAttribute('fill', '#eab308');
+            starEl.setAttribute('stroke', '#a16207');
+            starEl.setAttribute('stroke-width', String(R * 0.05));
+            starEl.setAttribute('pointer-events', 'none');
+            body.appendChild(starEl);
+        } else if (isRejected) {
+            // Red cross
+            const crossEl = document.createElementNS(SVG_NS, 'path');
+            crossEl.setAttribute('d', crossPath(0, symbolCy, R * 0.35));
+            crossEl.setAttribute('fill', '#ef4444');
+            crossEl.setAttribute('stroke', '#b91c1c');
+            crossEl.setAttribute('stroke-width', String(R * 0.05));
+            crossEl.setAttribute('pointer-events', 'none');
+            body.appendChild(crossEl);
+        }
+
+        // Dim the whole pin group for rejected actions.
+        if (isRejected) {
+            g.setAttribute('opacity', '0.55');
+        }
+
+        attachClickListeners(g, pin.id, onPinClick, onPinDoubleClick);
         frag.appendChild(g);
     });
 

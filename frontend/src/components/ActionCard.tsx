@@ -240,7 +240,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h4 style={{
                     margin: 0,
-                    fontSize: '14px',
+                    fontSize: '12px',
                     color: isViewing ? '#0056b3' : undefined,
                     flex: 1,
                     minWidth: 0,
@@ -256,7 +256,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', margin: '4px 0 5px' }}>
                 <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: '13px', margin: 0 }}>{details.description_unitaire}</p>
+                    <p style={{ fontSize: '12px', margin: 0 }}>{details.description_unitaire}</p>
                     {details.load_shedding_details && details.load_shedding_details.length > 0 && (
                         <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: '#fef3c7', color: '#92400e', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #fcd34d', fontWeight: 500 }}>
                             {details.load_shedding_details.map((ls, i) => (
