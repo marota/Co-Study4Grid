@@ -888,6 +888,10 @@ export const buildActionOverviewPins = (
     const pins: ActionPinInfo[] = [];
     for (const [actionId, details] of Object.entries(actions)) {
         if (allowed && !allowed.has(actionId)) continue;
+        // Skip combined-action entries (key contains '+') — those are
+        // rendered separately by buildCombinedActionPins with a curved
+        // connection between their constituent unitary pins.
+        if (actionId.includes('+')) continue;
         const anchor = resolveActionAnchor(actionId, details, metaIndex);
         if (!anchor) continue;
         const severity = computeActionSeverity(details, monitoringFactor);
@@ -938,7 +942,8 @@ export const buildCombinedActionPins = (
     for (const [pairId, combined] of Object.entries(combinedActions)) {
         // Skip estimation-only pairs: only render if the pair has
         // been fully simulated (its key exists in the actions dict).
-        if (simulatedActions && !simulatedActions[pairId]) continue;
+        const simDetail = simulatedActions?.[pairId];
+        if (simulatedActions && !simDetail) continue;
 
         const pin1 = pinById.get(combined.action1_id);
         const pin2 = pinById.get(combined.action2_id);
@@ -960,23 +965,34 @@ export const buildCombinedActionPins = (
         const midX = (1 - t) * (1 - t) * pin1.x + 2 * t * (1 - t) * ctrlX + t * t * pin2.x;
         const midY = (1 - t) * (1 - t) * pin1.y + 2 * t * (1 - t) * ctrlY + t * t * pin2.y;
 
+        // Prefer simulated data (more accurate) over estimation data.
+        const maxRho = simDetail?.max_rho ?? combined.max_rho;
+        const maxRhoLine = simDetail?.max_rho_line ?? combined.max_rho_line;
+        const isIslanded = simDetail?.is_islanded ?? combined.is_islanded;
+        const nonConvergence = simDetail?.non_convergence;
+        const description = simDetail?.description_unitaire ?? combined.description;
+
         let severity: ActionPinInfo['severity'];
-        if (combined.is_islanded) severity = 'grey';
+        if (nonConvergence || isIslanded) severity = 'grey';
         else if (combined.error) severity = 'grey';
-        else if (combined.max_rho > monitoringFactor) severity = 'red';
-        else if (combined.max_rho > monitoringFactor - 0.05) severity = 'orange';
+        else if (maxRho != null && maxRho > monitoringFactor) severity = 'red';
+        else if (maxRho != null && maxRho > monitoringFactor - 0.05) severity = 'orange';
         else severity = 'green';
 
-        const label = combined.max_rho != null
-            ? `${(combined.max_rho * 100).toFixed(0)}%`
-            : combined.error ? 'ERR' : '\u2014';
+        const label = maxRho != null
+            ? `${(maxRho * 100).toFixed(0)}%`
+            : nonConvergence ? 'DIV'
+                : isIslanded ? 'ISL'
+                    : combined.error ? 'ERR' : '\u2014';
 
         const title = [
             `${combined.action1_id} + ${combined.action2_id}`,
-            combined.description,
-            combined.max_rho != null
-                ? `max loading ${(combined.max_rho * 100).toFixed(1)}%${combined.max_rho_line ? ` on ${combined.max_rho_line}` : ''}`
-                : combined.error ?? '',
+            description,
+            maxRho != null
+                ? `max loading ${(maxRho * 100).toFixed(1)}%${maxRhoLine ? ` on ${maxRhoLine}` : ''}`
+                : nonConvergence ? 'load-flow divergent'
+                    : isIslanded ? 'islanding'
+                        : combined.error ?? '',
         ].filter(Boolean).join(' \u2014 ');
 
         result.push({
