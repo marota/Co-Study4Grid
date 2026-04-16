@@ -837,6 +837,24 @@ const resolveActionAnchor = (
         return nodesBySvgId.get(nodeRef) ?? nodesByEquipmentId.get(nodeRef);
     };
 
+    // Load shedding / curtailment actions carry an explicit
+    // voltage_level_id in their detail objects — use it directly
+    // so the pin lands on the VL node, not on an unrelated line.
+    if (details.load_shedding_details?.length) {
+        const vlId = details.load_shedding_details[0].voltage_level_id;
+        if (vlId) {
+            const node = nodesByEquipmentId.get(vlId);
+            if (node && Number.isFinite(node.x)) return { x: node.x, y: node.y };
+        }
+    }
+    if (details.curtailment_details?.length) {
+        const vlId = details.curtailment_details[0].voltage_level_id;
+        if (vlId) {
+            const node = nodesByEquipmentId.get(vlId);
+            if (node && Number.isFinite(node.x)) return { x: node.x, y: node.y };
+        }
+    }
+
     // Try line targets first
     const lineTargets = getActionTargetLines(details, actionId, edgesByEquipmentId);
     for (const lineName of lineTargets) {
@@ -915,6 +933,37 @@ export const buildActionOverviewPins = (
         ].filter(Boolean).join(' \u2014 ');
         pins.push({ id: actionId, x: anchor.x, y: anchor.y, severity, label, title });
     }
+
+    // Fan out pins that share the same anchor position so they don't
+    // stack on top of each other and remain individually clickable.
+    // Group by position (rounded to avoid floating-point near-misses),
+    // then distribute each group in a circle around the shared centre.
+    const bucketKey = (p: ActionPinInfo) =>
+        `${Math.round(p.x * 100)}:${Math.round(p.y * 100)}`;
+    const groups = new Map<string, number[]>();
+    pins.forEach((p, i) => {
+        const k = bucketKey(p);
+        const arr = groups.get(k);
+        if (arr) arr.push(i);
+        else groups.set(k, [i]);
+    });
+    for (const indices of groups.values()) {
+        if (indices.length < 2) continue;
+        // Offset radius: 1.2x the base VL circle radius — just enough
+        // to expose each pin's clickable area without scattering them
+        // too far from the original anchor.
+        const offsetR = 30 * 1.2; // conservative default
+        const angleStep = (2 * Math.PI) / indices.length;
+        indices.forEach((idx, i) => {
+            const angle = -Math.PI / 2 + i * angleStep;
+            pins[idx] = {
+                ...pins[idx],
+                x: pins[idx].x + offsetR * Math.cos(angle),
+                y: pins[idx].y + offsetR * Math.sin(angle),
+            };
+        });
+    }
+
     return pins;
 };
 
@@ -942,6 +991,12 @@ export const buildCombinedActionPins = (
     const pinById = new Map(unitaryPins.map(p => [p.id, p]));
     const result: CombinedPinInfo[] = [];
 
+    const combinedKeys = Object.keys(actions).filter(k => k.includes('+'));
+    if (combinedKeys.length > 0) {
+        console.log('[buildCombinedActionPins] combined keys in actions:', combinedKeys);
+        console.log('[buildCombinedActionPins] unitary pin ids:', [...pinById.keys()]);
+    }
+
     for (const [actionId, detail] of Object.entries(actions)) {
         if (!actionId.includes('+')) continue;
 
@@ -951,7 +1006,10 @@ export const buildCombinedActionPins = (
 
         const pin1 = pinById.get(id1);
         const pin2 = pinById.get(id2);
-        if (!pin1 || !pin2) continue;
+        if (!pin1 || !pin2) {
+            console.warn(`[buildCombinedActionPins] skipping "${actionId}": pin1(${id1})=${!!pin1}, pin2(${id2})=${!!pin2}`);
+            continue;
+        }
 
         // Midpoint of the quadratic curve control point offset.
         // The control point is offset perpendicular to the line
