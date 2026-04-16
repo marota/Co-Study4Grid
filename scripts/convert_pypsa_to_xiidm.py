@@ -576,48 +576,93 @@ log.info(f"  Round-trip: {len(n2.get_buses())} buses, {len(n2.get_lines())} line
          f"{len(n2.get_2_windings_transformers())} trafos, {len(n2.get_switches())} switches")
 
 # ── Calibrate operational limits based on actual N-state power flows ──
-# With 192 VLs carrying 75 GW, line flows are unevenly distributed.
-# Set each line's permanent current limit to N_flow / 0.80 so that the
-# most loaded lines sit at ~80% in the N state, producing meaningful
-# N-1 overloads when a parallel corridor is tripped.
+#
+# Strategy: produce a realistic *spread* of N-state loadings rather than
+# pinning every line at the same percentage.
+#
+# The OSM i_nom (2580 A for 400 kV lines) is far above actual flows (~50-900 A),
+# so using raw i_nom gives <30% loading everywhere.  Instead we:
+#
+# 1. Run AC load flow → get N-state current per line.
+# 2. Set each line's limit proportional to its flow but with randomised headroom
+#    drawn from an exponential-like distribution centred at the flow value:
+#       limit = flow / target_loading(line)
+#    where target_loading is drawn from a distribution with:
+#       - ~50% of lines at ≤50% loading (generous headroom)
+#       - some lines at 55-65% (tight corridors that will overload in N-1)
+#       - absolute cap: no line above 65% in N state
+#       - absolute floor: limit ≥ MIN_LIMIT_A
+# 3. The distribution is *deterministic* (seeded by line ID hash) so the
+#    same conversion run always produces the same limits.
+#
+# With this spread, N-1 contingencies on tight corridors produce overloads
+# in the 100-130% range when flow redistributes to parallel paths.
+#
 log.info("  Calibrating operational limits from N-state flows …")
 from expert_op4grid_recommender.utils.make_env_utils import create_olf_rte_parameter as _olf_params
 _lf_results = pp.loadflow.run_ac(n2, parameters=_olf_params())
 _lf_ok = any(r.status.name == 'CONVERGED' for r in _lf_results)
 if _lf_ok:
+    import numpy as _np
+    import hashlib as _hashlib
     _n2_lines = n2.get_lines()[['i1', 'i2']]
     _MIN_LIMIT_A = 100.0
-    _TARGET_N_LOADING = 0.80  # lines are ~80% loaded in N state
 
-    _limit_updates = {"element_id": [], "element_type": [], "side": [],
-                      "name": [], "type": [], "value": [], "acceptable_duration": []}
-    _limit_ids = []
-    _updated = 0
+    # Target loading distribution parameters
+    # Lines get a target N-state loading drawn from a distribution:
+    #   - base range: 20% to 65%
+    #   - skewed towards lower values (many lightly loaded lines)
+    _LOADING_MIN = 0.20   # lightest loaded lines: 20%
+    _LOADING_MAX = 0.65   # tightest loaded lines: 65%
+
+    # Compute N-state flow per line
+    _line_flows = {}
     for _lid, _row in _n2_lines.iterrows():
-        import numpy as _np
         if _np.isnan(_row['i1']) or _np.isnan(_row['i2']):
             continue
-        _max_i = max(abs(_row['i1']), abs(_row['i2']))
-        _new_lim = max(_MIN_LIMIT_A, _max_i / _TARGET_N_LOADING)
-        _limit_ids.append(f"{_lid}_perm_limit")
-        _limit_updates["element_id"].append(_lid)
-        _limit_updates["element_type"].append("LINE")
-        _limit_updates["side"].append("ONE")
-        _limit_updates["name"].append("permanent_limit")
-        _limit_updates["type"].append("CURRENT")
-        _limit_updates["value"].append(_new_lim)
-        _limit_updates["acceptable_duration"].append(-1)
-        _updated += 1
+        _line_flows[_lid] = max(abs(_row['i1']), abs(_row['i2']))
 
-    # Update limits: reload network from XIIDM, modify limits in XML, re-export
-    # pypowsybl doesn't support updating operational limits in-place,
-    # so we parse the XIIDM file and replace limit values directly.
+    # Sort lines by flow (highest flow = tightest limit)
+    _sorted_lines = sorted(_line_flows.items(), key=lambda x: x[1], reverse=True)
+
+    # Assign target loadings: top-loaded lines get higher loading %,
+    # lightly loaded lines get lower loading %.
+    # Use a power-law-like distribution: rank-based assignment.
+    _n_lines = len(_sorted_lines)
+    _lim_map = {}
+    _loadings = []
+    for _rank, (_lid, _flow) in enumerate(_sorted_lines):
+        # Normalised rank: 0 = highest flow, 1 = lowest flow
+        _t = _rank / max(1, _n_lines - 1)
+        # Target loading: high-flow lines get ~60-65%, low-flow get ~20-30%
+        # Use a smooth curve: loading = MAX - (MAX-MIN) * t^0.6
+        # (exponent <1 skews distribution towards lower loadings)
+        _target_loading = _LOADING_MAX - (_LOADING_MAX - _LOADING_MIN) * (_t ** 0.6)
+
+        # Add per-line jitter (±5%) based on deterministic hash
+        _hash_val = int(_hashlib.md5(_lid.encode()).hexdigest()[:8], 16)
+        _jitter = ((_hash_val % 1000) / 1000.0 - 0.5) * 0.10  # ±5%
+        _target_loading = max(_LOADING_MIN, min(_LOADING_MAX, _target_loading + _jitter))
+
+        _new_lim = max(_MIN_LIMIT_A, _flow / _target_loading)
+        _lim_map[_lid] = _new_lim
+        if _new_lim > 0:
+            _loadings.append(_flow / _new_lim * 100.0)
+
+    _loadings.sort()
+    _pct_below_50 = sum(1 for x in _loadings if x <= 50.0) / len(_loadings) * 100
+    log.info(f"  N-state loading distribution:")
+    log.info(f"    min={_loadings[0]:.1f}%, median={_loadings[len(_loadings)//2]:.1f}%, "
+             f"max={_loadings[-1]:.1f}%")
+    log.info(f"    {_pct_below_50:.0f}% of lines at ≤50% loading")
+    log.info(f"    P25={_loadings[len(_loadings)//4]:.1f}%, "
+             f"P75={_loadings[3*len(_loadings)//4]:.1f}%, "
+             f"P90={_loadings[int(len(_loadings)*0.9)]:.1f}%")
+
+    # Update limits in XIIDM XML (pypowsybl doesn't support in-place update)
     from lxml import etree
     _tree = etree.parse(xiidm_path)
     _root = _tree.getroot()
-    _ns = {"iidm": _root.nsmap.get(None, "")}
-    _lim_map = {_limit_updates["element_id"][i]: _limit_updates["value"][i]
-                for i in range(len(_limit_ids))}
     _xml_updated = 0
     for _line_el in _root.iter():
         _tag = _line_el.tag.split('}')[-1] if '}' in _line_el.tag else _line_el.tag
@@ -630,10 +675,85 @@ if _lf_ok:
                         _cl_el.set("permanentLimit", f"{_lim_map[_el_id]:.1f}")
                         _xml_updated += 1
     _tree.write(xiidm_path, xml_declaration=True, encoding="UTF-8")
-    size_kb = os.path.getsize(xiidm_path) / 1024
-    size_kb = os.path.getsize(xiidm_path) / 1024
-    log.info(f"  Re-exported with calibrated limits: {xiidm_path}  ({size_kb:.1f} KB)")
-    log.info(f"  Updated {_updated} line limits (target N-loading={_TARGET_N_LOADING*100:.0f}%)")
+    _size_kb = os.path.getsize(xiidm_path) / 1024
+    log.info(f"  Re-exported with calibrated limits: {xiidm_path}  ({_size_kb:.1f} KB)")
+    log.info(f"  Updated {_xml_updated} line limits in XML")
+
+    # ── N-1 verification pass: cap overloads at MAX_N1_LOADING ──
+    # Run each contingency, find lines exceeding the cap, bump their limits.
+    # Iterate until no line exceeds the cap (typically 1-2 passes).
+    _MAX_N1_LOADING = 1.30  # no line above 130% in any N-1 state
+    _MAX_N1_PASSES = 3
+    for _pass_num in range(1, _MAX_N1_PASSES + 1):
+        log.info(f"  N-1 verification pass {_pass_num} (cap={_MAX_N1_LOADING*100:.0f}%) …")
+        _n1_net = pp.network.load(xiidm_path)
+        _n1_lines_list = list(_n1_net.get_lines().index)
+        _bumps = {}  # line_id -> needed limit (max across all contingencies)
+
+        for _cont_id in _n1_lines_list:
+            _nc = pp.network.load(xiidm_path)
+            try:
+                _nc.update_lines(id=[_cont_id], connected1=[False], connected2=[False])
+            except Exception:
+                continue
+            _lf_c = pp.loadflow.run_ac(_nc, parameters=_olf_params())
+            if not any(_r.status.name == 'CONVERGED' for _r in _lf_c):
+                continue
+            _c_lines = _nc.get_lines()[['i1', 'i2']]
+            for _clid, _crow in _c_lines.iterrows():
+                if _clid == _cont_id or _np.isnan(_crow['i1']):
+                    continue
+                _c_flow = max(abs(_crow['i1']), abs(_crow['i2']))
+                _c_lim = _lim_map.get(_clid, 0)
+                if _c_lim > 0 and _c_flow / _c_lim > _MAX_N1_LOADING:
+                    # Add 2% margin to account for XML rounding (1 decimal place)
+                    _needed = _c_flow / (_MAX_N1_LOADING - 0.02)
+                    if _clid not in _bumps or _needed > _bumps[_clid]:
+                        _bumps[_clid] = _needed
+
+        if not _bumps:
+            log.info(f"    No lines exceed {_MAX_N1_LOADING*100:.0f}% — verification passed ✓")
+            break
+
+        log.info(f"    Bumping limits on {len(_bumps)} lines to stay under {_MAX_N1_LOADING*100:.0f}%")
+        for _bid, _new_val in _bumps.items():
+            _lim_map[_bid] = _new_val
+            log.info(f"      {_bid}: → {_new_val:.1f} A")
+
+        # Re-write XML with bumped limits
+        _tree2 = etree.parse(xiidm_path)
+        _root2 = _tree2.getroot()
+        for _line_el2 in _root2.iter():
+            _tag2 = _line_el2.tag.split('}')[-1] if '}' in _line_el2.tag else _line_el2.tag
+            if _tag2 == "line":
+                _el_id2 = _line_el2.get("id")
+                if _el_id2 in _bumps:
+                    for _cl_el2 in _line_el2.iter():
+                        _cl_tag2 = _cl_el2.tag.split('}')[-1] if '}' in _cl_el2.tag else _cl_el2.tag
+                        if _cl_tag2 == "currentLimits" and "permanentLimit" in _cl_el2.attrib:
+                            _cl_el2.set("permanentLimit", f"{_lim_map[_el_id2]:.1f}")
+        _tree2.write(xiidm_path, xml_declaration=True, encoding="UTF-8")
+    else:
+        log.warning(f"  N-1 verification did not converge after {_MAX_N1_PASSES} passes")
+
+    # Final N-state loading summary after all limit adjustments
+    _n_final = pp.network.load(xiidm_path)
+    pp.loadflow.run_ac(_n_final, parameters=_olf_params())
+    _final_lines = _n_final.get_lines()[['i1', 'i2']]
+    _final_loadings = []
+    for _flid, _frow in _final_lines.iterrows():
+        if _np.isnan(_frow['i1']):
+            continue
+        _f_flow = max(abs(_frow['i1']), abs(_frow['i2']))
+        _f_lim = _lim_map.get(_flid, 0)
+        if _f_lim > 0:
+            _final_loadings.append(_f_flow / _f_lim * 100.0)
+    _final_loadings.sort()
+    _f_pct50 = sum(1 for x in _final_loadings if x <= 50.0) / len(_final_loadings) * 100
+    log.info(f"  Final N-state loading: min={_final_loadings[0]:.1f}%, "
+             f"median={_final_loadings[len(_final_loadings)//2]:.1f}%, "
+             f"max={_final_loadings[-1]:.1f}%, "
+             f"{_f_pct50:.0f}% at ≤50%")
 else:
     log.warning("  AC load flow did not converge — keeping raw i_nom limits")
 
