@@ -172,6 +172,21 @@ Expected before the change:
 
 Measured: ~24.0 s → **~21.2 s** (−12 %). On target.
 
+### v8-v10 follow-up: NAD prefetch + network mutualisation (separate commits)
+
+Cumulative gains delivered by subsequent commits on the same branch
+(documented in their own files — `docs/perf-nad-prefetch.md`,
+`docs/perf-shared-network.md`, `docs/perf-grid2op-shared-network.md`):
+
+| Trace | Last XHR end | Δ vs v7 | Key change |
+|---|---|---|---|
+| v7 | 21 174 ms | baseline | parallel XHRs + text-format |
+| v8 | 20 535 ms | −639 ms | NAD prefetch during `/api/config` |
+| v9 | 17 966 ms | −3 208 ms | mutualise `_base_network` ↔ `network_service.network` |
+| v10 | **17 384 ms** | **−3 790 ms (−18 %)** | share Network with grid2op backend (eliminate 3rd parse) |
+
+Critical path v6 → v10: **24.0 s → 17.4 s (−6.6 s / −28 %)**.
+
 ## What this does NOT change
 
 - **Server compute time**: pypowsybl network load + NAD generation are

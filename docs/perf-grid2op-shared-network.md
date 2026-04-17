@@ -74,6 +74,44 @@ détenteurs :
 `SimulationEnvironment` reçoit une deep-copy. Coût ~500 ms vs ~3 s de
 parse frais — toujours un gain net si on doit y recourir un jour.
 
+## Garde « variant-state » (commit suivant)
+
+Le partage du Network introduit un risque théorique : si un endpoint
+d'analyse ou de simulation arrive pendant que le worker NAD est
+encore en train de modifier le variant (même brièvement), la
+lecture d'observation côté grid2op peut voir un état incohérent.
+Pour éliminer ce risque, chaque entrée d'analyse/simulation passe
+désormais par un garde :
+
+```python
+def _ensure_n_state_ready(self):
+    """Drain the NAD prefetch worker and position the shared Network
+    on the N variant before the caller starts reading observations."""
+    self._drain_pending_base_nad_prefetch()
+    if self._base_network is None and config.ENV_PATH is None:
+        return  # No study loaded yet; noop.
+    try:
+        n = self._get_base_network()
+        n.set_working_variant(self._get_n_variant())
+    except Exception as e:
+        logger.warning(f"Could not position N variant: {e}")
+```
+
+Appelé au tout début de :
+
+- `run_analysis` (full analysis legacy)
+- `run_analysis_step1` (overload detection)
+- `run_analysis_step2` (action resolution)
+- `simulate_manual_action` (manual/combined action simulation)
+- `compute_superposition` (on-demand pair estimation)
+
+Complément : `_get_n_variant` et `_get_n1_variant` encapsulent maintenant
+leur `set_working_variant` + AC load-flow dans un `try/finally` pour
+garantir la restauration du variant d'origine même si le LF lève.
+Avant, une divergence LF laissait le Network bloqué sur le variant
+`*_cached`, ce que les autres consommateurs (network_service, grid2op)
+voyaient silencieusement.
+
 ## Invariants (testés)
 
 **Upstream** (`tests/test_environment_pypowsybl.py`) :

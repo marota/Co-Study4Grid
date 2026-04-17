@@ -509,10 +509,18 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         if variant_id not in n.get_variant_ids():
             original_variant = n.get_working_variant_id()
             n.clone_variant(original_variant, variant_id)
-            n.set_working_variant(variant_id)
-            params = create_olf_rte_parameter()
-            self._run_ac_with_fallback(n, params)
-            n.set_working_variant(original_variant)
+            # Use try/finally so an exception during the AC load flow cannot
+            # leave the shared Network stuck on `variant_id` — the base
+            # Network is now shared with `network_service` and grid2op's
+            # backend (see docs/perf-grid2op-shared-network.md) so leaving
+            # it on an unexpected variant would silently corrupt reads
+            # from those consumers.
+            try:
+                n.set_working_variant(variant_id)
+                params = create_olf_rte_parameter()
+                self._run_ac_with_fallback(n, params)
+            finally:
+                n.set_working_variant(original_variant)
         return variant_id
 
     def _get_n1_variant(self, contingency: str):
@@ -531,16 +539,65 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
             # may have been left on a simulation variant with modified topology.
             n_variant_id = self._get_n_variant()
             n.clone_variant(n_variant_id, variant_id)
-            n.set_working_variant(variant_id)
-            if contingency:
-                try:
-                    n.disconnect(contingency)
-                except Exception as e:
-                    logger.warning(f"Failed to disconnect {contingency} for N-1 variant: {e}")
-            params = create_olf_rte_parameter()
-            self._run_ac_with_fallback(n, params)
-            n.set_working_variant(original_variant)
+            # try/finally protects shared-Network consumers from being stuck
+            # on an N-1 variant if the AC load flow raises — same rationale
+            # as in `_get_n_variant` above.
+            try:
+                n.set_working_variant(variant_id)
+                if contingency:
+                    try:
+                        n.disconnect(contingency)
+                    except Exception as e:
+                        logger.warning(f"Failed to disconnect {contingency} for N-1 variant: {e}")
+                params = create_olf_rte_parameter()
+                self._run_ac_with_fallback(n, params)
+            finally:
+                n.set_working_variant(original_variant)
         return variant_id
+
+    # ------------------------------------------------------------------
+    # Variant-state guard for analyze/simulate entry points
+    # ------------------------------------------------------------------
+
+    def _ensure_n_state_ready(self):
+        """Guarantee the shared pypowsybl Network is positioned on the N
+        variant with no background work still touching it.
+
+        Called at the entry of every analyze/suggest/simulate HTTP endpoint
+        so concurrent background work (specifically the NAD prefetch worker
+        spawned by `update_config`) cannot leave the shared Network on an
+        unexpected variant when the endpoint's first variant read executes.
+
+        Steps:
+
+        1. `_drain_pending_base_nad_prefetch()` — joins the NAD worker if
+           still alive. After this, no other thread is mutating the Network.
+        2. Resolve the N variant (creating it if this is the first call
+           post-config) and set it as the working variant on the shared
+           Network. Subsequent `env.get_obs()` / pypowsybl reads see the
+           N state without races.
+
+        Safe to call multiple times (idempotent) and safe to call before
+        `_base_network` is populated — in that case the guard is a no-op
+        and the caller's later `_get_base_network()` will raise its own
+        clear error.
+        """
+        self._drain_pending_base_nad_prefetch()
+        # If /api/config was never called (e.g. a test that bypasses it,
+        # or an HTTP call before the first study is loaded), `_base_network`
+        # is None and there is nothing meaningful to guard. Let the caller
+        # produce its own error when it actually needs the network.
+        if self._base_network is None and getattr(config, 'ENV_PATH', None) is None:
+            return
+        try:
+            n = self._get_base_network()
+            n_variant = self._get_n_variant()
+            n.set_working_variant(n_variant)
+        except Exception as e:
+            # Don't swallow the caller's error if the network really isn't
+            # loadable — log and let downstream code raise with a clearer
+            # message.
+            logger.warning(f"[_ensure_n_state_ready] Could not position N variant: {e}")
 
     def _get_simulation_env(self):
         """Return a SimulationEnvironment instance, caching it."""

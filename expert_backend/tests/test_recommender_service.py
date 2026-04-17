@@ -446,3 +446,82 @@ class TestUpdateConfigSharesNetworkWithGrid2op:
 
 
 
+
+
+class TestEnsureNStateReady:
+    """Guard that runs at the entry of every analyze/suggest/simulate
+    endpoint: must drain any pending NAD prefetch AND position the shared
+    pypowsybl Network on the N variant. See docs/perf-grid2op-shared-network.md
+    ("variant-state guard")."""
+
+    def test_drains_prefetch_then_positions_n_variant(self):
+        service = RecommenderService()
+        fake_net = MagicMock(name="shared_network")
+        fake_net.get_variant_ids.return_value = ["N_state_cached"]
+        service._base_network = fake_net
+
+        with patch.object(service, "_drain_pending_base_nad_prefetch") as drain, \
+             patch.object(service, "_get_n_variant", return_value="N_state_cached"):
+            service._ensure_n_state_ready()
+
+            drain.assert_called_once()
+            fake_net.set_working_variant.assert_called_once_with("N_state_cached")
+
+    def test_is_noop_before_any_network_is_loaded(self):
+        """Calling the guard before /api/config has run at all must not
+        raise — callers downstream will produce their own error when
+        they actually need the network."""
+        service = RecommenderService()
+        assert service._base_network is None
+        saved_env_path = getattr(config, "ENV_PATH", None)
+        try:
+            config.ENV_PATH = None
+            service._ensure_n_state_ready()  # Must not raise.
+        finally:
+            config.ENV_PATH = saved_env_path
+
+    def test_swallows_and_logs_variant_positioning_errors(self):
+        """If `_get_n_variant` fails (e.g. LF diverged), the guard must not
+        propagate — downstream code produces a clearer error on its first
+        variant access."""
+        service = RecommenderService()
+        service._base_network = MagicMock(name="net")
+        with patch.object(service, "_drain_pending_base_nad_prefetch"), \
+             patch.object(service, "_get_n_variant", side_effect=RuntimeError("LF diverged")):
+            service._ensure_n_state_ready()  # Must not re-raise.
+
+
+class TestVariantRestorationIsSafeOnException:
+    """`_get_n_variant` and `_get_n1_variant` must restore the original
+    working variant even when the AC load flow raises. Otherwise the
+    shared Network (used by network_service and grid2op) gets stuck on
+    a `*_cached` variant and silently corrupts concurrent reads."""
+
+    def test_get_n_variant_restores_original_on_lf_failure(self):
+        service = RecommenderService()
+        fake_net = MagicMock(name="net")
+        fake_net.get_working_variant_id.return_value = "InitialState"
+        fake_net.get_variant_ids.return_value = []  # variant doesn't exist → create path
+        service._base_network = fake_net
+
+        with patch.object(service, "_run_ac_with_fallback", side_effect=RuntimeError("LF boom")):
+            with pytest.raises(RuntimeError, match="LF boom"):
+                service._get_n_variant()
+
+        # MUST have been called to restore the original variant, even
+        # though the LF raised inside the try block.
+        fake_net.set_working_variant.assert_any_call("InitialState")
+
+    def test_get_n1_variant_restores_original_on_lf_failure(self):
+        service = RecommenderService()
+        fake_net = MagicMock(name="net")
+        fake_net.get_working_variant_id.return_value = "InitialState"
+        # N variant already exists → _get_n_variant is a fast path (no LF).
+        fake_net.get_variant_ids.return_value = ["N_state_cached"]
+        service._base_network = fake_net
+
+        with patch.object(service, "_run_ac_with_fallback", side_effect=RuntimeError("LF boom")):
+            with pytest.raises(RuntimeError, match="LF boom"):
+                service._get_n1_variant("LINE_A")
+
+        fake_net.set_working_variant.assert_any_call("InitialState")

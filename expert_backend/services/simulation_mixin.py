@@ -131,6 +131,12 @@ class SimulationMixin:
         if not self._dict_action:
             raise ValueError("No action dictionary loaded. Load a config first.")
 
+        # Ensure the shared pypowsybl Network is on the N variant before we
+        # start reading observations — guards against variant races with the
+        # NAD prefetch worker from /api/config. See
+        # docs/perf-grid2op-shared-network.md ("variant-state guard").
+        self._ensure_n_state_ready()
+
         action_id = self._canonicalize_id(raw_action_id.strip())
         if lines_overloaded is None:
             lines_overloaded = []
@@ -710,6 +716,8 @@ class SimulationMixin:
         This computes it on-demand, which is useful for actions that weren't part of the
         initial analysis results (e.g. manually simulated actions).
         """
+        # Variant-state guard — same rationale as `simulate_manual_action`.
+        self._ensure_n_state_ready()
         if not self._last_result or "prioritized_actions" not in self._last_result:
             # If no analysis run, we might need to get observations first.
             # But usually this is called when we have some actions already simulated.

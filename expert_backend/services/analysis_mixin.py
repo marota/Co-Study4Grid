@@ -793,6 +793,10 @@ class AnalysisMixin:
 
     def run_analysis_step1(self, disconnected_element: str):
         """Runs the first step of analysis: contingency simulation and overload detection."""
+        # Drain any in-flight NAD prefetch + position the shared Network on
+        # the N variant before grid2op starts switching variants itself.
+        # See docs/perf-grid2op-shared-network.md ("variant-state guard").
+        self._ensure_n_state_ready()
         try:
             res_step1, context = run_analysis_step1(
                 analysis_date=config.DATE,
@@ -827,6 +831,9 @@ class AnalysisMixin:
 
     def run_analysis_step2(self, selected_overloads: list[str], all_overloads: list[str] = None, monitor_deselected: bool = False):
         """Runs the second step of analysis: graph generation and action discovery."""
+        # Same guard as step1: any stray variant mutations from NAD prefetch
+        # or a prior suggestion run must be settled before we read obs.
+        self._ensure_n_state_ready()
         if not self._analysis_context:
             raise ValueError("Analysis context not found. Run step 1 first.")
         
@@ -937,6 +944,11 @@ class AnalysisMixin:
         import io
         import threading
         from contextlib import redirect_stdout
+
+        # Legacy full-analysis endpoint — still shares the same Network with
+        # the NAD prefetch worker and grid2op. Must ensure the variant is
+        # on N before kicking off the background analysis thread.
+        self._ensure_n_state_ready()
 
         analysis_start_time = time.time()
         shared_state = {
