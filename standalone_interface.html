@@ -4939,12 +4939,16 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             </div>
                         )}
 
-                        {/* N Container — always mounted, hidden via CSS to preserve zoom state */}
+                        {/* N Container — always mounted, but `display: none` when
+                            inactive so its SVG is excluded from Blink's layout &
+                            paint passes. With `visibility: hidden`, Layout still
+                            walked the union of all three tab SVGs; this change
+                            keeps only the active tab in the layout tree. */}
                         <div style={{
                             width: '100%', height: '100%',
                             position: 'absolute', top: 0, left: 0,
                             zIndex: activeTab === 'n' ? 10 : -1,
-                            visibility: activeTab === 'n' ? 'visible' : 'hidden',
+                            display: activeTab === 'n' ? 'block' : 'none',
                             pointerEvents: activeTab === 'n' ? 'auto' : 'none'
                         }}>
                             {configLoading ?
@@ -4955,12 +4959,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 )}
                         </div>
 
-                        {/* N-1 Container — always mounted, hidden via CSS to preserve zoom state */}
+                        {/* N-1 Container — always mounted, but `display: none` when
+                            inactive so its SVG stays out of Blink's layout tree.
+                            See the comment on the N tab above for the rationale. */}
                         <div style={{
                             width: '100%', height: '100%',
                             position: 'absolute', top: 0, left: 0,
                             zIndex: activeTab === 'n-1' ? 10 : -1,
-                            visibility: activeTab === 'n-1' ? 'visible' : 'hidden',
+                            display: activeTab === 'n-1' ? 'block' : 'none',
                             pointerEvents: activeTab === 'n-1' ? 'auto' : 'none'
                         }}>
                             {/* Convergence warning banner */}
@@ -4983,12 +4989,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             }
                         </div>
 
-                        {/* Action Variant Container — always mounted, hidden via CSS to preserve zoom state */}
+                        {/* Action Variant Container — always mounted, but `display: none`
+                            when inactive so its SVG stays out of Blink's layout tree.
+                            See the comment on the N tab above for the rationale. */}
                         <div style={{
                             width: '100%', height: '100%',
                             position: 'absolute', top: 0, left: 0,
                             zIndex: activeTab === 'action' ? 10 : -1,
-                            visibility: activeTab === 'action' ? 'visible' : 'hidden',
+                            display: activeTab === 'action' ? 'block' : 'none',
                             pointerEvents: activeTab === 'action' ? 'auto' : 'none'
                         }}>
                             {/* Convergence warning banner */}
