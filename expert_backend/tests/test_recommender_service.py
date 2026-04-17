@@ -392,4 +392,57 @@ class TestPrefetchBaseNad:
                 service._prefetched_base_nad_thread.join(timeout=5)
 
 
+class TestUpdateConfigSharesNetworkWithGrid2op:
+    """`update_config` must pass the already-loaded Network to the upstream
+    `setup_environment_configs_pypowsybl(network=...)` so grid2op does not
+    re-parse the same .xiidm file. See docs/perf-grid2op-shared-network.md."""
+
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("expert_backend.services.network_service.network_service")
+    @patch("expert_backend.services.recommender_service.load_actions")
+    @patch("expert_backend.services.recommender_service.enrich_actions_lazy")
+    def test_update_config_injects_preloaded_network_into_upstream(
+        self, mock_enrich, mock_load, mock_ns, mock_file
+    ):
+        mock_load.return_value = {"disco_line1": {}}  # skip disco auto-gen
+        mock_ns.get_disconnectable_elements.return_value = []
+        mock_ns.get_monitored_elements.return_value = []
+
+        service = RecommenderService()
+        # Pre-populate the base network so `prefetch_base_nad_async` doesn't
+        # try the real load. The same sentinel must land in the upstream call.
+        preloaded = MagicMock(name="preloaded_network")
+        service._base_network = preloaded
+
+        settings = ConfigRequest(
+            network_path="/tmp/net.xiidm",
+            action_file_path="/tmp/actions.json",
+        )
+
+        with patch(
+            "expert_op4grid_recommender.environment_pypowsybl.setup_environment_configs_pypowsybl"
+        ) as mock_setup, patch.object(
+            service, "prefetch_base_nad_async"
+        ):
+            mock_setup.return_value = (
+                MagicMock(),  # env
+                MagicMock(),  # obs
+                "/tmp/env",   # env_path
+                "chronic",    # chronic_name
+                None,         # custom_layout
+                {},           # raw_dict
+                [],           # lines_non_reconnectable
+                [],           # lines_we_care_about
+            )
+
+            service.update_config(settings)
+
+            # Upstream helper MUST receive the pre-loaded Network to skip
+            # its own pp.network.load() — this is the whole point of the
+            # perf-grid2op-shared-network optimisation.
+            mock_setup.assert_called_once()
+            call_kwargs = mock_setup.call_args.kwargs
+            assert call_kwargs.get("network") is preloaded
+
+
 

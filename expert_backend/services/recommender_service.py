@@ -368,10 +368,17 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
 
         # Pre-build SimulationEnvironment so run_analysis_step1 can reuse it
         # (avoids ~4s network load + AC/DC LF + ~3.8s detect_non_reconnectable_lines on every call)
+        #
+        # We inject the already-loaded pypowsybl Network (`self._base_network`,
+        # pre-warmed above by `prefetch_base_nad_async`) so the upstream
+        # helper skips its own `pp.network.load()` call — saves ~1-5 s of
+        # duplicate XML parse on large grids. Requires
+        # expert_op4grid_recommender >= 0.2.0.post1 (the `network=` kwarg).
+        # See docs/perf-grid2op-shared-network.md.
         try:
             from expert_op4grid_recommender.environment_pypowsybl import setup_environment_configs_pypowsybl
             env, _obs, env_path, chronic_name, custom_layout, _raw_dict, lines_non_reconnectable, lines_we_care_about = \
-                setup_environment_configs_pypowsybl()
+                setup_environment_configs_pypowsybl(network=self._base_network)
             self._cached_env_context = {
                 'env': env,
                 'path_chronic': env_path,
