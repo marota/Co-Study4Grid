@@ -1,36 +1,29 @@
-# Fast path pour `detect_non_reconnectable_lines` (upstream)
+# Fast path pour `detect_non_reconnectable_lines` (upstream) — défensif, sans gain mesurable
 
 ## Contexte
 
 Le profilage de `setup_environment_configs_pypowsybl` sur la grille
-PyPSA-EUR France 400 kV (113 MB .xiidm) a identifié
-`env.network_manager.detect_non_reconnectable_lines()` comme le plus
-gros contributeur du temps de `/api/config` : **2 856 ms sur 7 084 ms
-(~40 %)** du total env setup.
+PyPSA-EUR France 400 kV (113 MB .xiidm) a révélé deux choses :
 
-## Cause racine
+1. `env.network_manager.detect_non_reconnectable_lines()` apparaissait
+   comme un gros contributeur (**~2.8 s dans un premier micro-bench**).
+2. En inspectant le code de
+   `expert_op4grid_recommender.utils.helpers_pypowsybl.detect_non_reconnectable_lines`,
+   on a découvert que le "fast path global" annoncé dans la docstring
+   **ne se déclenchait jamais** parce que le check de colonnes était faux :
 
-La fonction `expert_op4grid_recommender.utils.helpers_pypowsybl.detect_non_reconnectable_lines`
-annonçait un "fast path global" (~0.6 s), mais son **check de
-colonnes était incorrect** pour les versions actuelles de pypowsybl :
-
-- Cherchait `connectable_id` + `node_id` dans `get_terminals()` →
-  ces colonnes ne sont **pas populées** par pypowsybl.
-- Cherchait `node1_id` + `node2_id` dans `get_switches()` → pypowsybl
-  expose `node1` / `node2` (**sans suffixe `_id`**) quand
-  `all_attributes=True` est demandé.
-
-Conséquence : le fast path était du **dead code**. Toutes les invocations
-tombaient sur le fallback qui appelle
-`network.get_node_breaker_topology(vl_id)` **par voltage level impacté**
-— **2 094 appels** sur France 400 kV pour ~255 non-reconnectables
-détectés.
+   - Il cherchait `connectable_id` + `node_id` dans `get_terminals()` →
+     ces colonnes **ne sont pas populées** par pypowsybl (même avec
+     `all_attributes=True`).
+   - Il cherchait `node1_id` + `node2_id` dans `get_switches()` → pypowsybl
+     expose `node1` / `node2` (**sans suffixe `_id`**) quand
+     `all_attributes=True` est demandé.
 
 ## Correction upstream (`expert_op4grid_recommender == 0.2.0.post2`)
 
 Commit amont : `0fb4e62f`
 
-### Changement clé
+### Changement
 
 Au lieu d'utiliser `get_terminals()` (qui n'expose pas les colonnes
 nécessaires), utiliser :
@@ -41,15 +34,10 @@ nécessaires), utiliser :
 - `get_switches(all_attributes=True)` → expose `node1` / `node2` des
   switches
 
-Le `connectable_map` est bâti directement depuis ces colonnes en un seul
-batch, sans passer par `get_node_breaker_topology()`.
-
-### Fallback préservé
-
-Si aucune colonne `node1` / `node2` n'est présente (grille purement
-bus-breaker) OU si le fast path produit une `connectable_map` vide
-(cas pathologique NaN partout), le code retombe sur l'ancien chemin
-per-VL — préserve la compat rétrograde.
+Le `connectable_map` est bâti directement depuis ces colonnes en un
+seul batch. Le fallback per-VL (`get_node_breaker_topology`) est
+préservé pour les grilles purement bus-breaker ou les versions
+pypowsybl qui n'exposeraient pas `node1`/`node2`.
 
 ### Tests upstream ajoutés
 
@@ -68,34 +56,80 @@ Le test d'intégration existant (`test_environment_detection::test_non_reconnect
 passe sur la petite grille node-breaker réelle — valide la correction
 numérique avec physique réelle.
 
-## Mesure sur la grille France 400 kV
+## ⚠️ Gain réel : nul sur les conditions mesurées
 
-| | Avant | Après | Δ |
+Le micro-bench initial (single-process, OLD appelé AVANT NEW dans le
+même process) montrait :
+
+- OLD : 3 239 ms
+- NEW : 683 ms
+- → **4.7× speedup annoncé**
+
+Le benchmark propre (3 processes × 5 répétitions chacun, chaque
+process démarrant avec une JVM fresh) raconte une autre histoire :
+
+| | Process 1 (median) | Process 2 (median) | Process 3 (median) |
 |---|---|---|---|
-| `detect_non_reconnectable_lines` | 3 239 ms | **683 ms** | **−2 556 ms** (**−78 %**) |
-| 255 non-reconnectables détectés | ✓ | ✓ (0 diff) | — |
-| Total env setup | 7 084 ms | 4 924 ms | **−2 160 ms** (−30 %) |
+| **OLD** (per-VL fallback) | 825 ms | 845 ms | 762 ms |
+| **NEW** (fast path) | 812 ms | 764 ms | 765 ms |
 
-## Impact projeté sur Load Study
+**Les deux versions sont équivalentes à ~30 ms près, soit dans le bruit.**
 
-| | v10 | v13 attendu |
-|---|---|---|
-| `/api/config` | 15 966 ms | **~13.7 s** (−2.2 s) |
-| 4 XHRs parallèles | ~1.4 s (slowest) | ~1.4 s (inchangé) |
-| **Fin dernier XHR** | 17 384 ms | **~15.2 s** (−2.2 s) |
-| **Load Study v6 → v13** | −28 % | **~−37 %** |
+### Explication
 
-À confirmer avec trace v13.
+Le 3 239 ms du premier bench était un **artefact JIT cold-start** :
+la toute première invocation de `get_node_breaker_topology()` dans
+un processus Python force la JVM pypowsybl à JIT-compiler le chemin
+de topologie node-breaker — coût unique de 2-3 s payé UNE FOIS. Les
+appels suivants tombent à ~0.25 ms chacun.
 
-## Pourquoi ça n'a pas été détecté plus tôt
+Une fois le backend Co-Study4Grid démarré et warm, les deux chemins
+de code sont équivalents : la JVM a JIT-compilé ce qu'il fallait.
+L'inspection de la trace v13 a confirmé ça — aucun gain visible sur
+`/api/config` par rapport à v10.
 
-Le profilage détaillé (étape par étape) n'était pas en place. Les
-timings globaux montraient "env setup prend 6-10 s" sans breakdown
-— facile de supposer que c'est tout de grid2op. Une fois le script
-`profile_env_setup.py` écrit, `detect_non_reconnectable_lines` a
-ressorti comme poste dominant et le fast path cassé a été identifié
-en lisant son code.
+## Pourquoi on garde quand même le patch
+
+Le patch reste en place parce qu'il **corrige un dead code path** :
+le "fast path" annoncé dans la docstring d'origine ne se déclenchait
+jamais sur une pypowsybl moderne (1.13+). Le fix :
+
+1. Rétablit un comportement conforme à la docstring du code d'origine.
+2. Ne régresse pas (performance équivalente au fallback).
+3. Pourrait apporter un gain réel sur **d'autres grilles** ou futures
+   versions pypowsybl où le coût de `get_node_breaker_topology` par VL
+   scale-rait moins bien (grilles avec node-breaker très profond,
+   beaucoup de substations impactées, etc.).
+4. Les 6 tests unitaires + 1 intégration préservent la sémantique.
+
+## Leçon méthodologique
+
+**Toujours benchmarker dans un processus Python frais avec JVM
+froide, en moyenne sur plusieurs répétitions et plusieurs processes**.
+Un micro-bench dans un process déjà chauffé par des mesures
+précédentes peut mentir de 4× sur un algorithme JVM-based.
+
+Snippet de benchmark clean à garder pour l'avenir :
+
+```python
+import subprocess, sys
+script = '''
+import time, pypowsybl as pp
+from X import func_to_benchmark
+net = pp.network.load("grid.xiidm")
+ts = []
+for _ in range(5):
+    t0 = time.perf_counter()
+    func_to_benchmark(net)
+    ts.append((time.perf_counter()-t0)*1000)
+print(f"min={min(ts):.0f} median={sorted(ts)[2]:.0f}")
+'''
+for i in range(3):
+    subprocess.run([sys.executable, "-c", script])
+```
 
 ## Dépendance
 
-Co-Study4Grid requiert maintenant `expert_op4grid_recommender >= 0.2.0.post2`.
+Co-Study4Grid fonctionne indifféremment avec ou sans ce patch.
+`expert_op4grid_recommender >= 0.2.0.post2` (avec le patch) est
+équivalent à 0.2.0 + 0.2.0.post1 côté performance réelle.
