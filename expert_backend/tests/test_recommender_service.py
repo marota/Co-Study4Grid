@@ -233,4 +233,108 @@ class TestGetMonitoringParametersWithContext:
         assert lines == ["L1", "L2", "L3"]
 
 
+class TestPrefetchBaseNad:
+    """Tests for the base-NAD prefetch (perf #2 — see docs/perf-nad-prefetch.md).
+
+    The prefetch runs concurrently with `setup_environment_configs_pypowsybl`
+    inside `update_config` so the subsequent `/api/network-diagram` XHR can
+    skip the ~6 s of pypowsybl NAD regeneration entirely.
+    """
+
+    def test_initial_state_has_no_prefetch(self):
+        service = RecommenderService()
+        assert service._prefetched_base_nad is None
+        assert service._prefetched_base_nad_event is None
+        assert service.get_prefetched_base_nad() is None
+
+    def test_prefetch_populates_cache_on_success(self):
+        service = RecommenderService()
+
+        expected = {"svg": "<svg>prefetched</svg>", "metadata": None}
+        # `_get_base_network()` is called in the main thread to pre-warm
+        # the network cache; the worker then calls `get_network_diagram`
+        # on the hot cache. Patch both so we don't need pypowsybl.
+        with patch.object(service, "_get_base_network", return_value=MagicMock()), \
+             patch.object(service, "get_network_diagram", return_value=expected):
+            service.prefetch_base_nad_async()
+            # Block until the worker completes.
+            result = service.get_prefetched_base_nad(timeout=10)
+
+        assert result == expected
+        assert service._prefetched_base_nad_error is None
+
+    def test_prefetch_surfaces_worker_exception(self):
+        service = RecommenderService()
+
+        boom = RuntimeError("pypowsybl exploded")
+        with patch.object(service, "_get_base_network", return_value=MagicMock()), \
+             patch.object(service, "get_network_diagram", side_effect=boom):
+            service.prefetch_base_nad_async()
+            with pytest.raises(RuntimeError, match="pypowsybl exploded"):
+                service.get_prefetched_base_nad(timeout=10)
+
+    def test_prefetch_records_network_load_error_without_spawning_worker(self):
+        """If `_get_base_network()` fails in the main thread, no worker
+        should be started — the error is recorded directly and the event
+        is pre-set so the next `get_prefetched_base_nad()` re-raises
+        instantly."""
+        service = RecommenderService()
+
+        boom = FileNotFoundError("network file gone")
+        with patch.object(service, "_get_base_network", side_effect=boom):
+            service.prefetch_base_nad_async()
+        # Worker thread was never started.
+        assert service._prefetched_base_nad_thread is None
+        # Event is pre-set so there is no wait.
+        assert service._prefetched_base_nad_event is not None
+        assert service._prefetched_base_nad_event.is_set()
+        with pytest.raises(FileNotFoundError):
+            service.get_prefetched_base_nad(timeout=0.1)
+
+    def test_reset_drains_pending_prefetch_and_clears_state(self):
+        """A dangling worker thread that finishes after reset() would
+        otherwise write stale SVG into the next study's cache. `reset()`
+        must join the worker and then zero the fields."""
+        service = RecommenderService()
+        expected = {"svg": "<svg>first_study</svg>", "metadata": None}
+        with patch.object(service, "_get_base_network", return_value=MagicMock()), \
+             patch.object(service, "get_network_diagram", return_value=expected):
+            service.prefetch_base_nad_async()
+            # Make sure the worker ran to completion before reset.
+            service.get_prefetched_base_nad(timeout=10)
+
+        service.reset()
+        assert service._prefetched_base_nad is None
+        assert service._prefetched_base_nad_error is None
+        assert service._prefetched_base_nad_event is None
+        assert service._prefetched_base_nad_thread is None
+        assert service.get_prefetched_base_nad() is None
+
+    def test_timeout_returns_none_without_raising(self):
+        """When the caller runs out of patience, `get_prefetched_base_nad`
+        returns None (signalling 'fall through to fresh compute') rather
+        than raising, so the endpoint stays usable. The worker keeps
+        running — its eventual result will be discarded on the next reset."""
+        service = RecommenderService()
+
+        import threading
+        release = threading.Event()
+
+        def slow_get_diagram():
+            release.wait(timeout=5)
+            return {"svg": "<svg/>", "metadata": None}
+
+        try:
+            with patch.object(service, "_get_base_network", return_value=MagicMock()), \
+                 patch.object(service, "get_network_diagram", side_effect=slow_get_diagram):
+                service.prefetch_base_nad_async()
+                result = service.get_prefetched_base_nad(timeout=0.05)
+                assert result is None
+        finally:
+            # Let the worker finish so the daemon thread doesn't linger.
+            release.set()
+            if service._prefetched_base_nad_thread is not None:
+                service._prefetched_base_nad_thread.join(timeout=5)
+
+
 

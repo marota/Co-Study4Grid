@@ -94,6 +94,9 @@ class TestGetElementVoltageLevels:
 class TestGetNetworkDiagram:
     def test_success(self, client, mock_services):
         _, mock_rs = mock_services
+        # No NAD prefetch was queued by update_config (or the test doesn't
+        # exercise the prefetch path) — fall through to fresh compute.
+        mock_rs.get_prefetched_base_nad.return_value = None
         mock_rs.get_network_diagram.return_value = {
             "svg": "<svg>diagram</svg>",
             "metadata": '{"nodes":[],"edges":[]}',
@@ -107,10 +110,66 @@ class TestGetNetworkDiagram:
 
     def test_error_returns_400(self, client, mock_services):
         _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None
         mock_rs.get_network_diagram.side_effect = Exception("No network loaded")
 
         response = client.get("/api/network-diagram")
         assert response.status_code == 400
+
+    def test_uses_prefetched_nad_when_available(self, client, mock_services):
+        """When `prefetch_base_nad_async` has populated the cache during
+        `/api/config`, `/api/network-diagram` serves the cached NAD and
+        does NOT re-run the expensive `get_network_diagram()` pypowsybl
+        code path. This is the core of the perf #2 optimisation — see
+        docs/perf-nad-prefetch.md.
+        """
+        _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = {
+            "svg": "<svg>prefetched</svg>",
+            "metadata": '{"from":"prefetch"}',
+        }
+
+        response = client.get("/api/network-diagram")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["svg"] == "<svg>prefetched</svg>"
+        # The fresh compute path MUST NOT have been taken.
+        mock_rs.get_network_diagram.assert_not_called()
+
+    def test_falls_through_to_fresh_compute_on_prefetch_timeout(self, client, mock_services):
+        """If `get_prefetched_base_nad` returns None (timeout or never
+        started), the endpoint falls back to the synchronous path. Keeps
+        the endpoint usable when `update_config` was never called (e.g.
+        external callers, process restart)."""
+        _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None  # timed out / not queued
+        mock_rs.get_network_diagram.return_value = {
+            "svg": "<svg>fresh</svg>",
+            "metadata": None,
+        }
+
+        response = client.get("/api/network-diagram")
+        assert response.status_code == 200
+        assert response.json()["svg"] == "<svg>fresh</svg>"
+        mock_rs.get_network_diagram.assert_called_once()
+
+    def test_prefetched_path_supports_text_format(self, client, mock_services):
+        """format=text must work with the prefetched payload too."""
+        _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = {
+            "svg": "<svg>prefetched</svg>",
+            "metadata": None,
+            "lines_overloaded": ["L1"],
+            "lines_overloaded_rho": [1.05],
+        }
+
+        response = client.get("/api/network-diagram?format=text")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        body = response.text
+        nl = body.index("\n")
+        assert body[nl + 1:] == "<svg>prefetched</svg>"
+        mock_rs.get_network_diagram.assert_not_called()
 
     def test_text_format_returns_header_plus_svg(self, client, mock_services):
         """format=text returns a small JSON header on the first line,
@@ -119,6 +178,7 @@ class TestGetNetworkDiagram:
         import json as json_module
 
         _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None
         mock_rs.get_network_diagram.return_value = {
             "svg": "<svg>diagram</svg>",
             "metadata": '{"nodes":[]}',
@@ -145,6 +205,7 @@ class TestGetNetworkDiagram:
         import gzip as gzip_module
 
         _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None
         big_svg = "<svg>" + ("x" * 20_000) + "</svg>"
         mock_rs.get_network_diagram.return_value = {
             "svg": big_svg,
@@ -911,6 +972,7 @@ class TestDiagramGzipCompression:
 
     def test_network_diagram_gzip_when_accepted(self, client, mock_services):
         _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None
         mock_rs.get_network_diagram.return_value = {
             "svg": self._BIG_SVG,
             "metadata": "{}",
@@ -923,6 +985,7 @@ class TestDiagramGzipCompression:
 
     def test_network_diagram_no_gzip_when_not_accepted(self, client, mock_services):
         _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None
         mock_rs.get_network_diagram.return_value = {
             "svg": self._BIG_SVG,
             "metadata": "{}",
@@ -963,6 +1026,7 @@ class TestDiagramGzipCompression:
 
     def test_small_payload_below_threshold_is_not_compressed(self, client, mock_services):
         _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None
         # Tiny SVG — well below _GZIP_MIN_BYTES (10 kB).
         mock_rs.get_network_diagram.return_value = {
             "svg": "<svg/>",

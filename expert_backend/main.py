@@ -614,9 +614,16 @@ def get_network_diagram(http_request: Request, format: str = Query("json")):
     `JSON.parse` on large grids where the SVG is 20-25 MB. The default
     `format=json` keeps the legacy `{"svg": "...", ...}` shape so
     external callers and standalone_interface.html keep working.
+
+    Returns a pre-fetched NAD when available (populated by
+    `RecommenderService.prefetch_base_nad_async()` during `/api/config`
+    — see docs/perf-nad-prefetch.md). On cache hit this endpoint skips
+    the ~5-6 s pypowsybl NAD regeneration entirely.
     """
     try:
-        diagram = recommender_service.get_network_diagram()
+        diagram = recommender_service.get_prefetched_base_nad()
+        if diagram is None:
+            diagram = recommender_service.get_network_diagram()
         if format == "text":
             return _maybe_gzip_svg_text(diagram, http_request)
         return _maybe_gzip_json(diagram, http_request)

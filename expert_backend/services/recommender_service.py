@@ -75,9 +75,22 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._cached_env_context = None
         # N-state PST tap positions captured at network load time
         self._initial_pst_taps = None  # dict: pst_name -> {tap, low_tap, high_tap}
+        # Pre-fetched base NAD (populated by `prefetch_base_nad_async` during
+        # `update_config`, consumed by `/api/network-diagram`). See
+        # docs/perf-nad-prefetch.md.
+        self._prefetched_base_nad = None       # dict result (see DiagramMixin.get_network_diagram)
+        self._prefetched_base_nad_error = None  # Exception if the prefetch thread failed
+        self._prefetched_base_nad_event = None  # threading.Event signalling completion
+        self._prefetched_base_nad_thread = None # threading.Thread handle (join on reset)
 
     def reset(self):
         """Clear all cached analysis state. Called when loading a new study."""
+        # Drain any in-flight NAD prefetch thread BEFORE we tear down the
+        # network it depends on. A dangling thread that finishes after
+        # reset() would write into the next study's `_prefetched_base_nad`
+        # and serve stale SVG.
+        self._drain_pending_base_nad_prefetch()
+
         self._last_result = None
         self._is_running = False
         self._generator = None
@@ -94,6 +107,112 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._cached_obs_n1_id = None
         self._cached_env_context = None
         self._initial_pst_taps = None
+
+        self._prefetched_base_nad = None
+        self._prefetched_base_nad_error = None
+        self._prefetched_base_nad_event = None
+        self._prefetched_base_nad_thread = None
+
+    # ------------------------------------------------------------------
+    # Base-NAD prefetch (concurrent with update_config's env-setup phase)
+    # ------------------------------------------------------------------
+
+    def _drain_pending_base_nad_prefetch(self):
+        """Wait for the in-flight NAD prefetch thread to finish and discard
+        its result. Called on `reset()` so a still-running prefetch cannot
+        leak into the next study by writing into fresh prefetch state."""
+        thread = self._prefetched_base_nad_thread
+        if thread is not None and thread.is_alive():
+            # join is safe here — the thread only calls pypowsybl and
+            # returns; it has no other blocking I/O.
+            thread.join(timeout=60)
+
+    def prefetch_base_nad_async(self):
+        """Kick off base-NAD generation in a background thread.
+
+        Designed to be called from `update_config` just before the expensive
+        `setup_environment_configs_pypowsybl()` step, so the two pieces of
+        pypowsybl work overlap and the client's subsequent
+        `/api/network-diagram` XHR becomes a near-instant cache hit.
+
+        Thread-safety notes:
+          - `self._base_network` is pre-loaded in the main thread *before*
+            the worker starts (see below), so the worker never races on the
+            lazy-init path of `_get_base_network()`.
+          - The grid2op environment built in parallel uses its own
+            pypowsybl network instance (grid2op backends wrap their own
+            `pp.network.load()`), so variant switching inside
+            `_generate_diagram` does not collide with env setup.
+          - We swallow exceptions in the worker and surface them on the
+            foreground call to `get_prefetched_base_nad()`; the foreground
+            thread MUST NOT see a partially-populated cache.
+        """
+        import threading
+
+        # Cancel any in-flight previous prefetch (defensive; reset() normally
+        # runs first, but a direct re-call of update_config would bypass it).
+        self._drain_pending_base_nad_prefetch()
+
+        # Pre-warm the network cache in the main thread so the worker only
+        # sees an O(1) attribute access — eliminates the lazy-init race.
+        try:
+            self._get_base_network()
+        except Exception as e:
+            # If we can't even load the network, don't spawn a worker that
+            # will fail the same way — record the error directly and mark
+            # the prefetch as already-completed.
+            self._prefetched_base_nad = None
+            self._prefetched_base_nad_error = e
+            ev = threading.Event()
+            ev.set()
+            self._prefetched_base_nad_event = ev
+            self._prefetched_base_nad_thread = None
+            return
+
+        event = threading.Event()
+        self._prefetched_base_nad = None
+        self._prefetched_base_nad_error = None
+        self._prefetched_base_nad_event = event
+
+        def _worker():
+            try:
+                diagram = self.get_network_diagram()
+                self._prefetched_base_nad = diagram
+            except Exception as exc:  # noqa: BLE001 — any failure is surfaced to the caller
+                logger.warning(f"[prefetch_base_nad_async] NAD prefetch failed: {exc}")
+                self._prefetched_base_nad_error = exc
+            finally:
+                event.set()
+
+        t = threading.Thread(target=_worker, name="NADPrefetch", daemon=True)
+        self._prefetched_base_nad_thread = t
+        t.start()
+
+    def get_prefetched_base_nad(self, timeout=60):
+        """Return the prefetched NAD if one was queued, else None.
+
+        If the prefetch is still running, waits up to `timeout` seconds for
+        it to finish. If the prefetch failed, re-raises the stored exception.
+        Returns None when no prefetch was ever started (e.g. update_config
+        was not called in this process, or a direct test bypasses it).
+        """
+        event = self._prefetched_base_nad_event
+        if event is None:
+            return None
+        finished = event.wait(timeout=timeout)
+        if not finished:
+            # Prefetch is still running after `timeout`; fall back to fresh
+            # compute in the caller. Leave the prefetch running — it will
+            # complete eventually and its result will be discarded on the
+            # next `reset()`.
+            logger.warning(
+                "[get_prefetched_base_nad] Prefetch did not complete within "
+                f"{timeout}s; caller should fall back to fresh compute."
+            )
+            return None
+        if self._prefetched_base_nad_error is not None:
+            raise self._prefetched_base_nad_error
+        return self._prefetched_base_nad
 
     def restore_analysis_context(self, lines_we_care_about, disconnected_element=None, lines_overloaded=None, computed_pairs=None):
         """Restore analysis context from a saved session.
@@ -236,6 +355,16 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         config.SAVE_FOLDER_VISUALIZATION = Path(os.getcwd()) / "Overflow_Graph"
         if not config.SAVE_FOLDER_VISUALIZATION.exists():
             config.SAVE_FOLDER_VISUALIZATION.mkdir(parents=True, exist_ok=True)
+
+        # Kick off base-NAD prefetch in a background thread. The grid2op
+        # env setup immediately below is the ~5-10 s bottleneck of
+        # update_config; NAD generation (another ~5-6 s of pypowsybl work)
+        # previously ran only on the subsequent /api/network-diagram XHR,
+        # serialised AFTER the config response. Running them in parallel
+        # collapses that gap: by the time config returns, the NAD is
+        # already cached and /api/network-diagram becomes near-instant.
+        # See docs/perf-nad-prefetch.md.
+        self.prefetch_base_nad_async()
 
         # Pre-build SimulationEnvironment so run_analysis_step1 can reuse it
         # (avoids ~4s network load + AC/DC LF + ~3.8s detect_non_reconnectable_lines on every call)
