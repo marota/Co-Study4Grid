@@ -302,15 +302,47 @@ class TestPrefetchBaseNad:
         assert service._prefetched_base_nad_event is None
         assert service.get_prefetched_base_nad() is None
 
+    def _prefetch_mocks(self, service, *, diagram_result=None, diagram_side_effect=None):
+        """Return a context manager patching the isolated-worker pypowsybl
+        calls (`_resolve_xiidm_path`, `pypowsybl.network.load`, and
+        `service.get_network_diagram`) so the worker never touches real
+        pypowsybl. Mimics the post-isolation behaviour —
+        docs/perf-isolated-nad-worker.md."""
+        from contextlib import ExitStack
+        from unittest.mock import patch as _patch, MagicMock as _MM
+
+        stack = ExitStack()
+        # Bypass the `config.ENV_PATH`-based file discovery.
+        stack.enter_context(_patch(
+            "expert_backend.services.recommender_service._resolve_xiidm_path",
+            return_value=_MM(name="fake_xiidm"),
+        ))
+        # Make sure `config.ENV_PATH is None` gate passes.
+        stack.enter_context(_patch(
+            "expert_backend.services.recommender_service.config.ENV_PATH",
+            _MM(name="env_path"),
+        ))
+        # Fake the worker's `pp.network.load`.
+        stack.enter_context(_patch(
+            "pypowsybl.network.load",
+            return_value=_MM(name="isolated_worker_network"),
+        ))
+        kwargs = {}
+        if diagram_result is not None:
+            kwargs["return_value"] = diagram_result
+        if diagram_side_effect is not None:
+            kwargs["side_effect"] = diagram_side_effect
+        stack.enter_context(_patch.object(service, "get_network_diagram", **kwargs))
+        return stack
+
     def test_prefetch_populates_cache_on_success(self):
         service = RecommenderService()
 
         expected = {"svg": "<svg>prefetched</svg>", "metadata": None}
-        # `_get_base_network()` is called in the main thread to pre-warm
-        # the network cache; the worker then calls `get_network_diagram`
-        # on the hot cache. Patch both so we don't need pypowsybl.
-        with patch.object(service, "_get_base_network", return_value=MagicMock()), \
-             patch.object(service, "get_network_diagram", return_value=expected):
+        # Worker loads an isolated Network (mocked) and calls
+        # `get_network_diagram(network=<isolated>)` — see
+        # docs/perf-isolated-nad-worker.md.
+        with self._prefetch_mocks(service, diagram_result=expected):
             service.prefetch_base_nad_async()
             # Block until the worker completes.
             result = service.get_prefetched_base_nad(timeout=10)
@@ -322,25 +354,29 @@ class TestPrefetchBaseNad:
         service = RecommenderService()
 
         boom = RuntimeError("pypowsybl exploded")
-        with patch.object(service, "_get_base_network", return_value=MagicMock()), \
-             patch.object(service, "get_network_diagram", side_effect=boom):
+        with self._prefetch_mocks(service, diagram_side_effect=boom):
             service.prefetch_base_nad_async()
             with pytest.raises(RuntimeError, match="pypowsybl exploded"):
                 service.get_prefetched_base_nad(timeout=10)
 
-    def test_prefetch_records_network_load_error_without_spawning_worker(self):
-        """If `_get_base_network()` fails in the main thread, no worker
-        should be started — the error is recorded directly and the event
-        is pre-set so the next `get_prefetched_base_nad()` re-raises
+    def test_prefetch_records_path_resolution_error_without_spawning_worker(self):
+        """If resolving the .xiidm path fails in the main thread (e.g.
+        `config.ENV_PATH` is None or the file was moved), no worker should
+        be started — the error is recorded directly and the event is
+        pre-set so the next `get_prefetched_base_nad()` re-raises
         instantly."""
         service = RecommenderService()
 
         boom = FileNotFoundError("network file gone")
-        with patch.object(service, "_get_base_network", side_effect=boom):
+        with patch(
+            "expert_backend.services.recommender_service._resolve_xiidm_path",
+            side_effect=boom,
+        ), patch(
+            "expert_backend.services.recommender_service.config.ENV_PATH",
+            MagicMock(name="env_path"),
+        ):
             service.prefetch_base_nad_async()
-        # Worker thread was never started.
         assert service._prefetched_base_nad_thread is None
-        # Event is pre-set so there is no wait.
         assert service._prefetched_base_nad_event is not None
         assert service._prefetched_base_nad_event.is_set()
         with pytest.raises(FileNotFoundError):
@@ -352,8 +388,7 @@ class TestPrefetchBaseNad:
         must join the worker and then zero the fields."""
         service = RecommenderService()
         expected = {"svg": "<svg>first_study</svg>", "metadata": None}
-        with patch.object(service, "_get_base_network", return_value=MagicMock()), \
-             patch.object(service, "get_network_diagram", return_value=expected):
+        with self._prefetch_mocks(service, diagram_result=expected):
             service.prefetch_base_nad_async()
             # Make sure the worker ran to completion before reset.
             service.get_prefetched_base_nad(timeout=10)
@@ -375,13 +410,12 @@ class TestPrefetchBaseNad:
         import threading
         release = threading.Event()
 
-        def slow_get_diagram():
+        def slow_get_diagram(**kwargs):
             release.wait(timeout=5)
             return {"svg": "<svg/>", "metadata": None}
 
         try:
-            with patch.object(service, "_get_base_network", return_value=MagicMock()), \
-                 patch.object(service, "get_network_diagram", side_effect=slow_get_diagram):
+            with self._prefetch_mocks(service, diagram_side_effect=slow_get_diagram):
                 service.prefetch_base_nad_async()
                 result = service.get_prefetched_base_nad(timeout=0.05)
                 assert result is None
@@ -576,3 +610,72 @@ class TestEnsureN1StateReady:
         with patch.object(service, "_drain_pending_base_nad_prefetch"), \
              patch.object(service, "_get_n1_variant", side_effect=RuntimeError("LF diverged")):
             service._ensure_n1_state_ready("LINE_A")  # Must not re-raise.
+
+
+class TestPrefetchWorkerUsesIsolatedNetwork:
+    """The NAD prefetch worker must load its OWN pypowsybl Network and
+    pass it as `network=` to `get_network_diagram` — if it reused
+    `self._base_network`, its variant switches would serialise on the
+    same Java-side lock as the main thread's grid2op env setup. See
+    docs/perf-isolated-nad-worker.md."""
+
+    def test_worker_calls_pp_network_load_and_forwards_to_get_network_diagram(self):
+        service = RecommenderService()
+
+        loaded_net = MagicMock(name="isolated_worker_network")
+
+        with patch(
+            "expert_backend.services.recommender_service._resolve_xiidm_path",
+            return_value="/fake/grid.xiidm",
+        ), patch(
+            "expert_backend.services.recommender_service.config.ENV_PATH",
+            MagicMock(name="env_path"),
+        ), patch(
+            "pypowsybl.network.load", return_value=loaded_net,
+        ) as mock_pp_load, patch.object(
+            service, "get_network_diagram", return_value={"svg": "<svg/>", "metadata": None},
+        ) as mock_get_diag:
+            service.prefetch_base_nad_async()
+            service.get_prefetched_base_nad(timeout=10)
+
+            # Worker loaded its own Network.
+            mock_pp_load.assert_called_once_with("/fake/grid.xiidm")
+            # And forwarded it as `network=` to get_network_diagram.
+            mock_get_diag.assert_called_once()
+            _, kwargs = mock_get_diag.call_args
+            assert kwargs.get("network") is loaded_net, (
+                "Worker must pass its isolated Network as network= kwarg, "
+                "not rely on `self._base_network`."
+            )
+
+    def test_worker_does_not_touch_base_network(self):
+        """Regression guard: the worker must NOT use `self._base_network`
+        (the shared instance held by `network_service` + grid2op).
+        Using it would re-introduce the Java-side variant-lock contention
+        the isolated-Network approach exists to eliminate."""
+        service = RecommenderService()
+        # Poison: if the worker touches `_base_network`, it will crash.
+        service._base_network = MagicMock()
+        service._base_network.set_working_variant.side_effect = AssertionError(
+            "Worker touched _base_network instead of its isolated Network"
+        )
+        service._base_network.get_variant_ids.side_effect = AssertionError(
+            "Worker touched _base_network instead of its isolated Network"
+        )
+
+        loaded_net = MagicMock(name="isolated_worker_network")
+        with patch(
+            "expert_backend.services.recommender_service._resolve_xiidm_path",
+            return_value="/fake/grid.xiidm",
+        ), patch(
+            "expert_backend.services.recommender_service.config.ENV_PATH",
+            MagicMock(name="env_path"),
+        ), patch(
+            "pypowsybl.network.load", return_value=loaded_net,
+        ), patch.object(
+            service, "get_network_diagram", return_value={"svg": "<svg/>", "metadata": None},
+        ):
+            service.prefetch_base_nad_async()
+            # Must complete without raising — _base_network was never touched.
+            result = service.get_prefetched_base_nad(timeout=10)
+            assert result == {"svg": "<svg/>", "metadata": None}

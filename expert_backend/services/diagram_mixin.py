@@ -115,11 +115,26 @@ class DiagramMixin:
             "metadata": meta,
         }
 
-    def get_network_diagram(self, voltage_level_ids=None, depth=0):
+    def get_network_diagram(self, voltage_level_ids=None, depth=0, network=None):
+        """Generate the base-state NAD.
+
+        When `network` is provided, operates on that Network instance instead
+        of the shared `self._base_network`. Used by the NAD prefetch worker
+        thread which owns its own isolated Network to escape variant lock
+        contention with the main thread's grid2op env setup. See
+        docs/perf-isolated-nad-worker.md.
+
+        The `_n_state_currents` cache is only populated when operating on the
+        shared Network: the isolated worker's currents would be numerically
+        identical (same .xiidm, same LF) but are bound to a different Java
+        handle; letting them leak into the shared cache would confuse
+        downstream N-1 comparison logic that reads from the shared Network.
+        """
         import pypowsybl as pp
-        n = self._get_base_network()
+        is_isolated = network is not None
+        n = network if is_isolated else self._get_base_network()
         original_variant = n.get_working_variant_id()
-        n_variant_id = self._get_n_variant()
+        n_variant_id = self._get_n_variant(network=n if is_isolated else None)
         n.set_working_variant(n_variant_id)
 
         try:
@@ -129,8 +144,9 @@ class DiagramMixin:
             )
             diagram["lines_overloaded"] = names
             diagram["lines_overloaded_rho"] = rhos
-            # Cache N-state element currents for N-1 comparison
-            self._n_state_currents = self._get_element_max_currents(n)
+            if not is_isolated:
+                # Cache N-state element currents for N-1 comparison
+                self._n_state_currents = self._get_element_max_currents(n)
             return diagram
         finally:
             n.set_working_variant(original_variant) # Restore original variant

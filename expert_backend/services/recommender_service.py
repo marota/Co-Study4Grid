@@ -47,6 +47,37 @@ from expert_backend.services.simulation_mixin import SimulationMixin
 logger = logging.getLogger(__name__)
 
 
+def _resolve_xiidm_path(env_path):
+    """Resolve a `config.ENV_PATH`-style path to a concrete .xiidm/.iidm/.xml file.
+
+    Accepts either a file or a directory. When a directory, looks inside it
+    (and inside `<dir>/grid/` as a secondary fallback) for the first
+    `.xiidm` / `.iidm` / `.xml` file. Raises `FileNotFoundError` if nothing
+    matches.
+
+    Used by the NAD prefetch worker to load its own isolated Network from
+    the same path as `network_service.load_network()`. The main-thread
+    path (`_get_base_network`) duplicates this logic internally; keep them
+    in sync.
+    """
+    if env_path is None:
+        raise FileNotFoundError("Network path is None")
+    network_file = env_path
+    if network_file.is_dir():
+        files = [f for f in network_file.iterdir() if f.suffix.lower() in ['.xiidm', '.iidm', '.xml']]
+        if files:
+            network_file = files[0]
+        else:
+            grid_folder = network_file / "grid"
+            if grid_folder.is_dir():
+                files = [f for f in grid_folder.iterdir() if f.suffix.lower() in ['.xiidm', '.iidm', '.xml']]
+                if files:
+                    network_file = files[0]
+    if not network_file.exists():
+        raise FileNotFoundError(f"Network file not found: {network_file}")
+    return network_file
+
+
 class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
     """Central service for grid contingency analysis and remedial action recommendation.
 
@@ -135,17 +166,33 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         pypowsybl work overlap and the client's subsequent
         `/api/network-diagram` XHR becomes a near-instant cache hit.
 
-        Thread-safety notes:
-          - `self._base_network` is pre-loaded in the main thread *before*
-            the worker starts (see below), so the worker never races on the
-            lazy-init path of `_get_base_network()`.
-          - The grid2op environment built in parallel uses its own
-            pypowsybl network instance (grid2op backends wrap their own
-            `pp.network.load()`), so variant switching inside
-            `_generate_diagram` does not collide with env setup.
-          - We swallow exceptions in the worker and surface them on the
-            foreground call to `get_prefetched_base_nad()`; the foreground
-            thread MUST NOT see a partially-populated cache.
+        Concurrency model — the worker owns its own **isolated** pypowsybl
+        Network instance, loaded independently from the same .xiidm file.
+        This is NOT a simple mutualisation tweak:
+
+          - The shared `network_service.network` / `self._base_network`
+            used by the main thread (grid2op env setup, read-only endpoints)
+            has a per-Network Java-side variant lock. Without isolation,
+            the worker's `set_working_variant` + AC LF serialise against
+            the main thread's env setup → the parallelism gain collapses.
+          - By giving the worker its own `pp.network.load(...)` call, it
+            has its own Java-side Network handle and its own lock. The two
+            threads no longer contend.
+          - Cost: a second pypowsybl parse (~3-5 s on large grids) running
+            concurrently with the env setup. Absorbed entirely by the
+            parallelism — grid2op env setup takes ~6-10 s, so the worker
+            load + NAD gen (~8-11 s) fits without lengthening the main
+            thread's critical path.
+          - Variant state: the worker mutates its ISOLATED Network, never
+            `self._base_network`. The variant-state guards
+            (`_ensure_n_state_ready` / `_ensure_n1_state_ready`) operate
+            on the shared Network and are unaffected.
+
+        See docs/perf-isolated-nad-worker.md for the full rationale.
+
+        Exceptions in the worker are swallowed and surfaced on the
+        foreground call to `get_prefetched_base_nad()`; the foreground
+        thread MUST NOT see a partially-populated cache.
         """
         import threading
 
@@ -153,14 +200,19 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         # runs first, but a direct re-call of update_config would bypass it).
         self._drain_pending_base_nad_prefetch()
 
-        # Pre-warm the network cache in the main thread so the worker only
-        # sees an O(1) attribute access — eliminates the lazy-init race.
+        # Capture the network file path while we're still on the main thread
+        # (reading `config.ENV_PATH` inside the worker would race against a
+        # subsequent `update_config`). The worker will load its OWN Network
+        # from this path.
         try:
-            self._get_base_network()
+            env_path = config.ENV_PATH
+            if env_path is None:
+                raise FileNotFoundError("config.ENV_PATH is None; update_config not run yet")
+            # Resolve directory → concrete .xiidm file (same logic as
+            # `_get_base_network`'s fallback) so the worker doesn't have to
+            # repeat the discovery.
+            network_file = _resolve_xiidm_path(env_path)
         except Exception as e:
-            # If we can't even load the network, don't spawn a worker that
-            # will fail the same way — record the error directly and mark
-            # the prefetch as already-completed.
             self._prefetched_base_nad = None
             self._prefetched_base_nad_error = e
             ev = threading.Event()
@@ -176,7 +228,13 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
 
         def _worker():
             try:
-                diagram = self.get_network_diagram()
+                import pypowsybl as pp
+                # Worker-owned Network instance. Own Java handle, own lock.
+                worker_net = pp.network.load(str(network_file))
+                # `get_network_diagram(network=worker_net)` runs the whole
+                # N-variant + LF + NAD on the isolated Network — no
+                # contention with the main thread's env setup.
+                diagram = self.get_network_diagram(network=worker_net)
                 self._prefetched_base_nad = diagram
             except Exception as exc:  # noqa: BLE001 — any failure is surfaced to the caller
                 logger.warning(f"[prefetch_base_nad_async] NAD prefetch failed: {exc}")
@@ -455,21 +513,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
 
         import pypowsybl as pp
 
-        network_file = config.ENV_PATH
-        if network_file.is_dir():
-            files = [f for f in network_file.iterdir() if f.suffix.lower() in ['.xiidm', '.iidm', '.xml']]
-            if files:
-                network_file = files[0]
-            else:
-                # Also check in grid/ subfolder
-                grid_folder = network_file / "grid"
-                if grid_folder.is_dir():
-                    files = [f for f in grid_folder.iterdir() if f.suffix.lower() in ['.xiidm', '.iidm', '.xml']]
-                    if files:
-                        network_file = files[0]
-
-        if not network_file.exists():
-            raise FileNotFoundError(f"Network file not found: {network_file}")
+        network_file = _resolve_xiidm_path(config.ENV_PATH)
 
         n = pp.network.load(str(network_file))
         # Convenience method not in pypowsybl API: return line IDs as a list
@@ -502,9 +546,16 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         except Exception as e:
             logger.warning(f"[_capture_initial_pst_taps] Warning: could not read phase tap changers: {e}")
 
-    def _get_n_variant(self):
-        """Return the variant ID for the N state, creating and simulating it if necessary."""
-        n = self._get_base_network()
+    def _get_n_variant(self, network=None):
+        """Return the variant ID for the N state, creating and simulating it if necessary.
+
+        When `network` is provided, operates on that Network instance instead
+        of the shared `self._base_network`. Used by `prefetch_base_nad_async`'s
+        worker thread which owns its own isolated Network to avoid variant
+        lock contention with the main thread's grid2op env setup — see
+        docs/perf-isolated-nad-worker.md.
+        """
+        n = network if network is not None else self._get_base_network()
         variant_id = "N_state_cached"
         if variant_id not in n.get_variant_ids():
             original_variant = n.get_working_variant_id()
