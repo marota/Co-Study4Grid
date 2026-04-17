@@ -134,24 +134,86 @@ A new `TestDiagramGzipCompression` class in
 This last test is the regression guard against the prior
 global-middleware failure mode.
 
-## Expected wire-time impact
+## Measured impact (v3 traces)
 
-On the N-1 trace captured earlier, the `/api/n1-diagram` XHR took
-**~7.6 s wall-clock** for ~28 MB of payload (server side is the dominant
-portion — pypowsybl NAD generation). With gzip, the payload on the wire
-drops to ~2.5 MB, so the transfer + browser `ParseHTML`/JSON-parse time
-on the client drops proportionally. Rough breakdown of the 7.6 s:
+Same PyPSA-EUR France 400 kV scenario / same contingency / same manual
+action as the earlier traces. All numbers are on-wire or main-thread on
+the client.
 
-- Server compute (pypowsybl): ~6.3 s — unchanged
-- Server compress (new, level 5): +~0.12 s
-- Network transfer + client decompress + parse: was ~1 s on localhost,
-  now ~0.2 s
+### Compression ratios observed
 
-On localhost the savings are modest (~600–700 ms) because loopback is
-essentially free. Off-box (a real deployment) the same change typically
-buys 2–5 s per call at ordinary LAN speeds.
+| Endpoint | v1/v2 decoded | v3 encoded | Ratio | `Content-Encoding` |
+|---|---|---|---|---|
+| `/api/network-diagram` | 24 836 KB | **2 555 KB** | **9.7 ×** | `gzip` |
+| `/api/n1-diagram` | 27 764 KB | **2 789 KB** | **10.0 ×** | `gzip` |
+| `/api/action-variant-diagram` | 27 764 KB | **2 790 KB** | **10.0 ×** | `gzip` |
+| `/api/actions` | 2 756 KB | **349 KB** | **7.9 ×** | `gzip` |
 
-The change does NOT affect `totalObjects`, Layout, Paint or any of the
-frontend rendering metrics — those are floored by the one-remaining
-200 k-node active-tab SVG, which is the target of step 4 (server-side
-SVG slimming).
+### Load study (v2 → v3 delta is attributable to step 2 alone)
+
+| Metric | v2 | v3 | Δ |
+|---|---|---|---|
+| Long tasks total | 7 138 ms | **6 125 ms** | **-14 %** |
+| Max Layout | 288 ms | 260 ms | -10 % |
+| Paint total | 1 670 ms | **1 139 ms** | **-32 %** |
+| Commit max | 43 ms | 36 ms | -16 % |
+| XHR `/api/network-diagram` | 7 167 ms | 7 451 ms | +4 % (server compress CPU) |
+
+Step 2 is the **first** change to improve load study — step 1 couldn't
+because only one SVG is ever loaded at that point.
+
+### N-1 contingency (v2 → v3)
+
+| Metric | v2 | v3 | Δ |
+|---|---|---|---|
+| Long tasks total | 11 591 ms | **9 404 ms** | **-19 % (-2.2 s)** |
+| Max Layout (`totalObjects`) | 248 ms (204 k) | 303 ms (204 k) | stable |
+| Paint total | 4 176 ms | **2 588 ms** | **-38 %** |
+| **Commit max** | **1 562 ms** | **46 ms** | **-97 %** |
+| XHR `/api/n1-diagram` | 6 337 ms | 6 528 ms | +3 % (noise) |
+
+The 1.56 s Commit regression from step 1 is **gone**. Counter-intuitive
+at first glance (step 2 is a server change), but the explanation is
+straightforward: the one-time layer-promotion Commit in v2 was paying
+the cost of handling a 27 MB JSON string in memory at the exact moment
+the browser also had to composite a brand-new 200 k-node layer. With
+the body compressed to 2.8 MB on the wire, peak memory pressure during
+that Commit dropped enough that the compositor no longer stalls.
+
+### Manual action simulation (v2 → v3)
+
+| Metric | v2 | v3 | Δ |
+|---|---|---|---|
+| Long tasks total | 16 010 ms | **13 957 ms** | **-13 % (-2.0 s)** |
+| Max Layout (`totalObjects`) | 233 ms (204 k) | 239 ms (204 k) | stable |
+| Paint total | 7 917 ms | **5 335 ms** | **-33 %** |
+| Commit max | 72 ms | 111 ms | +54 ms (within noise) |
+| XHR `/api/action-variant-diagram` | 5 210 ms | **4 933 ms** | **-5 %** |
+| XHR `/api/actions` | 353 ms | 379 ms | stable |
+
+### Cumulative across v1 → v3
+
+| Scenario | v1 baseline | v3 (step 1+2) | Absolute saved | % |
+|---|---|---|---|---|
+| Load study | 6 782 ms | 6 125 ms | **-0.7 s** | -10 % |
+| N-1 contingency | 15 984 ms | 9 404 ms | **-6.6 s** | **-41 %** |
+| Manual action | 24 938 ms | 13 957 ms | **-10.9 s** | **-44 %** |
+
+Manual-action — the most frequent interaction and previously the worst
+offender — is now ~44 % faster on the main thread.
+
+### Verified invariants
+
+- `Content-Encoding: gzip` on all 4 targeted endpoints.
+- `/api/run-analysis-step2` still serves `application/x-ndjson` with
+  no `Content-Encoding: gzip`, and the `{"type":"pdf"}` event still
+  arrives ahead of the `{"type":"result"}` event. The rollback-cause
+  from commit `26bc49d` does not recur.
+
+## Remaining ceiling
+
+Paint is still ~5.3 s on action, ~2.6 s on N-1. This is bounded by the
+~200 k-node SVG that's in the active tab. That floor is the target of
+**step 4 — server-side SVG slimming** (round coordinates, drop unused
+`<title>`/`<desc>`, fold inline styles). Step 4 benefits all three paths
+including load study, and compounds with the gzip ratio above.
