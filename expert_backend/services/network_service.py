@@ -28,6 +28,19 @@ class NetworkService:
         else:
             file_path = network_path
 
+        # NOTE: pypowsybl exposes `allow_variant_multi_thread_access=True`
+        # on `pn.load()` which looks like a silver bullet for the
+        # `/api/config` contention between the NAD prefetch worker and
+        # grid2op env setup. It is NOT safe to enable here, see
+        # docs/perf-concurrent-variants.md: when ON, every thread that
+        # touches the Network must FIRST call `n.set_working_variant(...)`,
+        # otherwise pypowsybl raises "Variant index not set for current
+        # thread". FastAPI serves each request on a thread-pool worker
+        # whose identity is unstable — the read-only endpoints
+        # (`/api/branches`, `/api/voltage-levels`, `/api/nominal-voltages`)
+        # would need a per-endpoint variant-set guard, which we currently
+        # do NOT have. Keeping the default (False) preserves correctness;
+        # the contention (~2-3 s) is an accepted residual cost.
         self.network = pn.load(file_path)
         return {"message": "Network loaded successfully", "id": self.network.id}
 
