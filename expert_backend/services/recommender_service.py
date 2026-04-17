@@ -308,7 +308,19 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
             except Exception as e:
                 logger.warning(f"Failed to count lines in {config.LINES_MONITORING_FILE}: {e}")
                 config.MONITORED_LINES_COUNT = -1
-        
+
+        # Kick off the base-NAD prefetch worker here — at the earliest point
+        # where all the config globals the worker depends on are set
+        # (ENV_PATH, LAYOUT_FILE_PATH, IGNORE_LINES_MONITORING, MONITORING_FACTOR_*).
+        # The worker runs in parallel with THE REST of update_config (action
+        # dict load + enrich_actions_lazy ≈ 2 s, then env setup ≈ 2 s), giving
+        # it ~4 s of parallel runtime instead of ~2 s when spawned later.
+        # NAD compute is ~6 s → by the time /api/config returns, the worker
+        # is ~2 s from done instead of ~4 s, so the subsequent
+        # /api/network-diagram XHR wait drops from ~2 s to ~0-1 s on large
+        # grids. See docs/perf-nad-prefetch-earlier-spawn.md.
+        self.prefetch_base_nad_async()
+
         # Load and cache the action dictionary immediately if path changed or not loaded
         new_action_path = Path(settings.action_file_path)
         if getattr(self, '_last_action_path', None) != new_action_path or self._dict_action is None:
@@ -356,15 +368,10 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         if not config.SAVE_FOLDER_VISUALIZATION.exists():
             config.SAVE_FOLDER_VISUALIZATION.mkdir(parents=True, exist_ok=True)
 
-        # Kick off base-NAD prefetch in a background thread. The grid2op
-        # env setup immediately below is the ~5-10 s bottleneck of
-        # update_config; NAD generation (another ~5-6 s of pypowsybl work)
-        # previously ran only on the subsequent /api/network-diagram XHR,
-        # serialised AFTER the config response. Running them in parallel
-        # collapses that gap: by the time config returns, the NAD is
-        # already cached and /api/network-diagram becomes near-instant.
-        # See docs/perf-nad-prefetch.md.
-        self.prefetch_base_nad_async()
+        # (base-NAD prefetch was kicked off earlier — right after the
+        # monitoring config block — so it has more parallel runtime with
+        # the enrich + env-setup work below. See docstring above in
+        # `update_config` for the rationale.)
 
         # Pre-build SimulationEnvironment so run_analysis_step1 can reuse it
         # (avoids ~4s network load + AC/DC LF + ~3.8s detect_non_reconnectable_lines on every call)
