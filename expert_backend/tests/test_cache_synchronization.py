@@ -119,13 +119,25 @@ class TestCacheSynchronization:
         service._cached_obs_n1 = MagicMock()
         service._cached_obs_n_id = "v1"
         service._cached_obs_n1_id = "v2"
-        
+        # N-1 diagram fast-path (commit d220d61): LF status cache per
+        # N-1 variant must be cleared when loading a new study,
+        # otherwise stale convergence flags from the previous grid
+        # would leak.
+        service._lf_status_by_variant = {
+            "N_1_state_DISCO_A": {"converged": True, "lf_status": "CONVERGED"},
+            "N_1_state_DISCO_B": {"converged": False, "lf_status": "FAILED"},
+        }
+
         service.reset()
-        
+
         assert service._cached_obs_n is None
         assert service._cached_obs_n1 is None
         assert service._cached_obs_n_id is None
         assert service._cached_obs_n1_id is None
+        # The LF-status cache dict must be emptied (not replaced with
+        # None) so later `_get_n1_variant` calls on the fresh study
+        # can still use `dict.get()` / `dict[key] = ...` safely.
+        assert service._lf_status_by_variant == {}
 
     @patch.object(RecommenderService, '_get_simulation_env')
     def test_isolation_simulation_does_not_modify_cache_fields(self, mock_get_env):
