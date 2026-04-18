@@ -75,6 +75,13 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._cached_env_context = None
         # N-state PST tap positions captured at network load time
         self._initial_pst_taps = None  # dict: pst_name -> {tap, low_tap, high_tap}
+        # LF status cache keyed by N-1 variant id (populated when
+        # `_get_n1_variant` runs the AC LF on a fresh variant).
+        # `get_n1_diagram` can read this instead of re-running AC LF
+        # for the sole purpose of getting the status — saves ~600 ms
+        # per N-1 diagram on the PyPSA-EUR France grid (cold path) and
+        # ~1 s on the warm path (repeat views of same contingency).
+        self._lf_status_by_variant = {}
         # Pre-fetched base NAD (populated by `prefetch_base_nad_async` during
         # `update_config`, consumed by `/api/network-diagram`). See
         # docs/perf-nad-prefetch.md.
@@ -107,6 +114,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._cached_obs_n1_id = None
         self._cached_env_context = None
         self._initial_pst_taps = None
+        self._lf_status_by_variant = {}
 
         self._prefetched_base_nad = None
         self._prefetched_base_nad_error = None
@@ -567,7 +575,19 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
                     except Exception as e:
                         logger.warning(f"Failed to disconnect {contingency} for N-1 variant: {e}")
                 params = create_olf_rte_parameter()
-                self._run_ac_with_fallback(n, params)
+                results = self._run_ac_with_fallback(n, params)
+                # Cache the LF result so `get_n1_diagram` doesn't need
+                # to re-run AC LF just to extract convergence status.
+                # Saves ~600 ms per diagram on PyPSA-EUR France.
+                try:
+                    converged = any(r.status.name == 'CONVERGED' for r in results)
+                    status_name = results[0].status.name if results else "UNKNOWN"
+                    self._lf_status_by_variant[variant_id] = {
+                        "converged": converged,
+                        "lf_status": status_name,
+                    }
+                except Exception as e:
+                    logger.debug(f"Could not cache LF status for {variant_id}: {e}")
             finally:
                 n.set_working_variant(original_variant)
         return variant_id
