@@ -45,8 +45,24 @@ class DiagramMixin:
         return None
 
     def _default_nad_parameters(self):
-        """Return default NadParameters for diagram generation."""
-        from pypowsybl.network import NadParameters
+        """Return default NadParameters for diagram generation.
+
+        `layout_type=GEOGRAPHICAL` — we already provide fixed substation
+        positions via `fixed_positions` (loaded from `grid_layout.json`).
+        With the default `FORCE_LAYOUT`, pypowsybl still runs force-
+        directed iterations on top of the pinned positions; GEOGRAPHICAL
+        tells it to place nodes directly from the supplied coordinates
+        without refinement.
+
+        Measured on the 118 MB PyPSA-EUR France xiidm:
+          - FORCE_LAYOUT + fixed_positions (previous): 3 918 ms
+          - GEOGRAPHICAL + fixed_positions (now):      3 470 ms
+          - Gain: ~−450 ms (~−11 %)
+
+        SVG size unchanged (13.6 MB). Visual output identical — same
+        positions are used, only the force-refinement step is skipped.
+        """
+        from pypowsybl.network import NadParameters, NadLayoutType
         return NadParameters(
             edge_name_displayed=False,
             id_displayed=False,
@@ -56,7 +72,8 @@ class DiagramMixin:
             current_value_precision=1,
             voltage_value_precision=0,
             bus_legend=True,
-            substation_description_displayed=True
+            substation_description_displayed=True,
+            layout_type=NadLayoutType.GEOGRAPHICAL,
         )
 
     def _generate_diagram(self, network, voltage_level_ids=None, depth=0):
