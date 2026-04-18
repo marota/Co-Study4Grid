@@ -15,6 +15,7 @@ vi.mock('../api', () => ({
     api: {
         getAvailableActions: vi.fn(async () => []),
         simulateManualAction: vi.fn(),
+        simulateAndVariantDiagramStream: vi.fn(),
         getNetworkDiagram: vi.fn(),
         computeSuperposition: vi.fn(),
     }
@@ -2519,6 +2520,143 @@ describe('ActionFeed', () => {
             );
             await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
             expect(card.scrollIntoView).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    // Regression coverage for the "Add manual action → click card" pre-fetch
+    // flow. When the parent wires `onActionDiagramPrimed` + `voltageLevelsLength`,
+    // ActionFeed streams the combined `/api/simulate-and-variant-diagram`
+    // endpoint instead of firing `simulateManualAction` on its own: the
+    // metrics event feeds `onManualActionAdded` as before, AND the diagram
+    // event is pushed into the useDiagrams cache so the next click on the
+    // card paints the SVG without a second XHR. See
+    // docs/perf-combined-action-endpoint.md "Option B".
+    describe('Pre-fetch diagram on Add (option B)', () => {
+        const buildNdjsonResponse = (events: Array<Record<string, unknown>>) => {
+            const body = events.map(e => JSON.stringify(e)).join('\n') + '\n';
+            const bytes = new TextEncoder().encode(body);
+            let pushed = false;
+            return {
+                ok: true,
+                body: {
+                    getReader: () => ({
+                        read: async () => {
+                            if (pushed) return { done: true, value: undefined } as const;
+                            pushed = true;
+                            return { done: false, value: bytes } as const;
+                        },
+                    }),
+                },
+            } as unknown as Response;
+        };
+
+        beforeEach(() => {
+            vi.clearAllMocks();
+        });
+
+        it('uses the streamed endpoint, calls onManualActionAdded with metrics, and primes the diagram', async () => {
+            const metricsEvent = {
+                type: 'metrics',
+                action_id: 'manual_act',
+                description_unitaire: 'Open LINE_Z',
+                rho_before: [0.95],
+                rho_after: [0.80],
+                max_rho: 0.80,
+                max_rho_line: 'LINE_1',
+                is_rho_reduction: true,
+                non_convergence: null,
+                lines_overloaded: ['LINE_1'],
+            };
+            const diagramEvent = {
+                type: 'diagram',
+                svg: '<svg>post-action</svg>',
+                metadata: '{}',
+                action_id: 'manual_act',
+                lf_converged: true,
+                lf_status: 'CONVERGED',
+            };
+            vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
+            (api.simulateAndVariantDiagramStream as ReturnType<typeof vi.fn>)
+                .mockResolvedValueOnce(buildNdjsonResponse([metricsEvent, diagramEvent]));
+
+            const onActionDiagramPrimed = vi.fn();
+            const onManualActionAdded = vi.fn();
+
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    onManualActionAdded={onManualActionAdded}
+                    onActionDiagramPrimed={onActionDiagramPrimed}
+                    voltageLevelsLength={42}
+                />
+            );
+
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            const searchInput = await screen.findByPlaceholderText(/Search action/i);
+            fireEvent.change(searchInput, { target: { value: 'manual_act' } });
+            const manualOption = await screen.findByText(/Simulate manual ID:/);
+            fireEvent.click(manualOption);
+
+            await waitFor(() => {
+                expect(api.simulateAndVariantDiagramStream).toHaveBeenCalledTimes(1);
+            });
+            // Legacy single-shot endpoint must NOT be called on this path.
+            expect(api.simulateManualAction).not.toHaveBeenCalled();
+
+            await waitFor(() => {
+                expect(onManualActionAdded).toHaveBeenCalledTimes(1);
+            });
+            const [, detail, linesOvl] = (onManualActionAdded.mock.calls[0] as unknown) as [string, ActionDetail, string[]];
+            expect(detail.rho_after).toEqual([0.80]);
+            expect(detail.max_rho_line).toBe('LINE_1');
+            expect(linesOvl).toEqual(['LINE_1']);
+
+            // Diagram event was forwarded to the cache primer.
+            await waitFor(() => {
+                expect(onActionDiagramPrimed).toHaveBeenCalledTimes(1);
+            });
+            expect(onActionDiagramPrimed.mock.calls[0][0]).toBe('manual_act');
+            expect((onActionDiagramPrimed.mock.calls[0][1] as { svg: string }).svg).toBe('<svg>post-action</svg>');
+            expect(onActionDiagramPrimed.mock.calls[0][2]).toBe(42);
+        });
+
+        it('falls back to simulateManualAction when the primer prop is not wired', async () => {
+            // Without `onActionDiagramPrimed`, the legacy single-shot path
+            // is preserved — this is what older tests and the existing
+            // backward-compatible callers rely on.
+            const mockResult = {
+                action_id: 'manual_act',
+                description_unitaire: 'Open LINE_Z',
+                rho_before: [0.95],
+                rho_after: [0.80],
+                max_rho: 0.80,
+                max_rho_line: 'LINE_1',
+                is_rho_reduction: true,
+                non_convergence: null,
+                lines_overloaded: ['LINE_1'],
+            };
+            vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
+            (api.simulateManualAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mockResult);
+
+            const onManualActionAdded = vi.fn();
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    onManualActionAdded={onManualActionAdded}
+                    // intentionally no onActionDiagramPrimed
+                />
+            );
+
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            const searchInput = await screen.findByPlaceholderText(/Search action/i);
+            fireEvent.change(searchInput, { target: { value: 'manual_act' } });
+            const manualOption = await screen.findByText(/Simulate manual ID:/);
+            fireEvent.click(manualOption);
+
+            await waitFor(() => {
+                expect(api.simulateManualAction).toHaveBeenCalledTimes(1);
+            });
+            expect(api.simulateAndVariantDiagramStream).not.toHaveBeenCalled();
         });
     });
 });

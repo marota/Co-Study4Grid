@@ -29,6 +29,9 @@ vi.mock('../api', () => ({
         getN1Diagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
         getActionVariantDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
         simulateManualAction: vi.fn().mockResolvedValue({}),
+        simulateAndVariantDiagramStream: vi.fn().mockResolvedValue({
+            body: { getReader: () => ({ read: async () => ({ done: true, value: undefined }) }) },
+        }),
         getNSld: vi.fn().mockResolvedValue({ svg: '<svg></svg>' }),
         getN1Sld: vi.fn().mockResolvedValue({ svg: '<svg></svg>' }),
         getActionVariantSld: vi.fn().mockResolvedValue({ svg: '<svg></svg>' }),
@@ -389,7 +392,13 @@ describe('useDiagrams — interaction logging', () => {
                 expect(result.current.activeTab).toBe('n');
             });
 
-            it('still falls back to "n-1" on deselect when action tab is NOT detached', async () => {
+            it('stays on the action tab on deselect so the overview view takes over', async () => {
+                // Previous behaviour was to force-switch to n-1 on deselect,
+                // which erased the pin-overview view the user was effectively
+                // returning to. The new contract: deselect simply nulls
+                // selectedActionId and lets VisualizationPanel's action tab
+                // fall back to the ActionOverviewDiagram (pin view) — same
+                // UX as clicking the ✕ chip on the action tab header.
                 const { result } = renderHook(() => useDiagrams([], [], '', {}));
 
                 act(() => { result.current.setSelectedActionId('act_1'); });
@@ -400,7 +409,7 @@ describe('useDiagrams — interaction logging', () => {
                 });
 
                 expect(result.current.selectedActionId).toBe(null);
-                expect(result.current.activeTab).toBe('n-1');
+                expect(result.current.activeTab).toBe('action');
             });
         });
 

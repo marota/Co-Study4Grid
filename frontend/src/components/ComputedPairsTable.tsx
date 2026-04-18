@@ -36,6 +36,7 @@ interface ComputedPairsTableProps {
     monitoringFactor: number;
     simulating: boolean;
     onSimulate: (actionId: string) => void;
+    displayName?: (id: string) => string;
 }
 
 const ComputedPairsTable: React.FC<ComputedPairsTableProps> = ({
@@ -43,6 +44,7 @@ const ComputedPairsTable: React.FC<ComputedPairsTableProps> = ({
     monitoringFactor,
     simulating,
     onSimulate,
+    displayName = (id: string) => id,
 }) => {
     return (
         <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
@@ -92,7 +94,7 @@ const ComputedPairsTable: React.FC<ComputedPairsTableProps> = ({
                                         </span>
                                     ) : '—'}
                                 </td>
-                                <td style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>{p.estimated_max_rho_line || 'N/A'}</td>
+                                <td style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>{p.estimated_max_rho_line ? displayName(p.estimated_max_rho_line) : 'N/A'}</td>
 
                                 <td style={{ textAlign: 'center' }}>
                                     {isSimulated && simMaxRho != null ? (
@@ -110,7 +112,7 @@ const ComputedPairsTable: React.FC<ComputedPairsTableProps> = ({
                                     )}
                                 </td>
                                 <td style={{ fontSize: '11px', color: '#333', fontWeight: isSimulated ? 'bold' : 'normal' }}>
-                                    {isSimulated ? p.simulated_max_rho_line : '-'}
+                                    {isSimulated && p.simulated_max_rho_line ? displayName(p.simulated_max_rho_line) : '-'}
                                 </td>
 
                                 <td>

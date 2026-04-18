@@ -9,7 +9,7 @@ import { useState, useCallback, useMemo, type Dispatch, type SetStateAction, typ
 import { api } from '../api';
 import { buildSessionResult } from '../utils/sessionUtils';
 import { interactionLogger } from '../utils/interactionLogger';
-import type { AnalysisResult, CombinedAction, ActionDetail, SessionResult } from '../types';
+import type { AnalysisResult, CombinedAction, ActionDetail, SessionResult, DiagramData } from '../types';
 
 export interface SessionState {
   showReloadModal: boolean;
@@ -78,10 +78,12 @@ export interface RestoreContext {
   applyConfigResponse: (configRes: Record<string, unknown>) => void;
   setBranches: (v: string[]) => void;
   setVoltageLevels: (v: string[]) => void;
+  setNameMap: (v: Record<string, string>) => void;
   setNominalVoltageMap: (v: Record<string, number>) => void;
   setUniqueVoltages: (v: number[]) => void;
   setVoltageRange: (v: [number, number]) => void;
   fetchBaseDiagram: (vlCount: number) => void;
+  ingestBaseDiagram: (raw: DiagramData, vlCount: number) => void;
   setMonitorDeselected: (v: boolean) => void;
   setSelectedOverloads: (v: Set<string>) => void;
   setResult: Dispatch<SetStateAction<AnalysisResult | null>>;
@@ -247,22 +249,27 @@ export function useSession(): SessionState {
       // empty) or misfiring against a stale previous value.
       ctx.committedNetworkPathRef.current = cfg.network_path;
 
-      // 3. Fetch study data
-      const [branchesList, vlRes, nomVRes] = await Promise.all([
+      // 3. Fetch study data — all 4 XHRs in parallel. The base-diagram
+      // call is the slowest (server-side NAD), so overlapping it with
+      // branches/voltage-levels/nominal-voltages shaves the branches gap
+      // off the critical path. See docs/perf-loading-parallel.md.
+      const [branchRes, vlRes, nomVRes, diagramRaw] = await Promise.all([
         api.getBranches(),
         api.getVoltageLevels(),
         api.getNominalVoltages(),
+        api.getNetworkDiagram(),
       ]);
-      ctx.setBranches(branchesList);
-      ctx.setVoltageLevels(vlRes);
+      ctx.setBranches(branchRes.branches);
+      ctx.setVoltageLevels(vlRes.voltage_levels);
+      ctx.setNameMap({ ...branchRes.name_map, ...vlRes.name_map });
       ctx.setNominalVoltageMap(nomVRes.mapping);
       ctx.setUniqueVoltages(nomVRes.unique_kv);
       if (nomVRes.unique_kv.length > 0) {
         ctx.setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
       }
 
-      // 4. Fetch base diagram
-      ctx.fetchBaseDiagram(vlRes.length);
+      // 4. Consume base diagram
+      ctx.ingestBaseDiagram(diagramRaw, vlRes.voltage_levels.length);
 
       // 5. Restore contingency
       const contingency = session.contingency;

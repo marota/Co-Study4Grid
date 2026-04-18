@@ -793,6 +793,10 @@ class AnalysisMixin:
 
     def run_analysis_step1(self, disconnected_element: str):
         """Runs the first step of analysis: contingency simulation and overload detection."""
+        # Drain any in-flight NAD prefetch + position the shared Network on
+        # the N variant before grid2op starts switching variants itself.
+        # See docs/perf-grid2op-shared-network.md ("variant-state guard").
+        self._ensure_n_state_ready()
         try:
             res_step1, context = run_analysis_step1(
                 analysis_date=config.DATE,
@@ -826,7 +830,13 @@ class AnalysisMixin:
             raise e
 
     def run_analysis_step2(self, selected_overloads: list[str], all_overloads: list[str] = None, monitor_deselected: bool = False):
-        """Runs the second step of analysis: graph generation and action discovery."""
+        """Runs the second step of analysis: graph generation and action discovery.
+
+        No `_ensure_*_state_ready` guard here: step2 inherits the
+        `_analysis_context` (observations, monitored lines, …) that
+        step1 has already positioned. The NAD prefetch worker was
+        already drained by step1's guard earlier in the same session.
+        """
         if not self._analysis_context:
             raise ValueError("Analysis context not found. Run step 1 first.")
         
@@ -892,7 +902,27 @@ class AnalysisMixin:
             enriched_actions = {aid: data for aid, data in enriched_actions.items() if "+" not in aid}
 
             # Compute MW at start for score tables
-            action_scores = self._compute_mw_start_for_scores(results.get("action_scores", {}))
+            action_scores = results.get("action_scores", {})
+            # Debug: log disco scores for diagnosis
+            _disco_scores = action_scores.get("line_disconnection", {}).get("scores", {})
+            _disco_params = action_scores.get("line_disconnection", {}).get("params", {})
+            logger.info(f"[DEBUG step2] line_disconnection scores: {len(_disco_scores)} entries, params={_disco_params}")
+            for _aid, _s in list(_disco_scores.items())[:10]:
+                logger.info(f"[DEBUG step2]   {_aid}: {_s}")
+            if not _disco_scores:
+                logger.info("[DEBUG step2] No disco scores found — checking overflow graph edges…")
+                try:
+                    import networkx as _nx
+                    _g = results.get("_g_overflow_debug")
+                    if _g is None:
+                        logger.info("[DEBUG step2] No overflow graph in results (expected)")
+                except Exception:
+                    pass
+            # Log all action score types and counts
+            for _type, _data in action_scores.items():
+                _cnt = len(_data.get("scores", {})) if isinstance(_data, dict) else 0
+                logger.info(f"[DEBUG step2] action_scores[{_type}]: {_cnt} entries")
+            action_scores = self._compute_mw_start_for_scores(action_scores)
 
             logger.info(f"[Step 2] Yielding final result event with {len(enriched_actions)} enriched actions")
             # Yield result
@@ -917,6 +947,11 @@ class AnalysisMixin:
         import io
         import threading
         from contextlib import redirect_stdout
+
+        # Legacy full-analysis endpoint — still shares the same Network with
+        # the NAD prefetch worker and grid2op. Must ensure the variant is
+        # on N before kicking off the background analysis thread.
+        self._ensure_n_state_ready()
 
         analysis_start_time = time.time()
         shared_state = {
@@ -1033,6 +1068,12 @@ class AnalysisMixin:
             lines_overloaded = result.get("lines_overloaded_names", [])
             prioritized = result.get("prioritized_actions", {})
             action_scores = sanitize_for_json(result.get("action_scores", {}))
+            # Debug: log disco scores for diagnosis
+            _disco_scores = action_scores.get("line_disconnection", {}).get("scores", {})
+            _disco_params = action_scores.get("line_disconnection", {}).get("params", {})
+            logger.info(f"[DEBUG] line_disconnection scores: {len(_disco_scores)} entries, params={_disco_params}")
+            for _aid, _s in list(_disco_scores.items())[:5]:
+                logger.info(f"[DEBUG]   {_aid}: {_s}")
             action_scores = self._compute_mw_start_for_scores(action_scores)
 
             enriched_actions = self._enrich_actions(

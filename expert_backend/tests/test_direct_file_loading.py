@@ -64,25 +64,36 @@ class TestDirectFileLoading(unittest.TestCase):
     @patch("pypowsybl.network.load")
     def test_get_base_network_with_file_path(self, mock_load):
         service = RecommenderService()
-        
+
         # Setup scenario where ENV_PATH is a direct file
         network_path = "/path/to/data/grid.xiidm"
         direct_path = Path(network_path)
-        
+
         recommender_config.ENV_PATH = direct_path
-        
+
         mock_net = MagicMock()
         mock_load.return_value = mock_net
-        
-        with patch.object(Path, "exists", return_value=True), \
-             patch.object(Path, "is_dir", return_value=False):
-            
-            # Call the internal method (no arguments)
-            n = service._get_base_network()
-            
-            # Verify pypowsybl.network.load was called with the direct file path
-            mock_load.assert_called_once_with(str(direct_path))
-            self.assertEqual(n, mock_net)
+
+        # Force the fallback path by making `network_service.network` None.
+        # Normally `_get_base_network` prefers the network already loaded
+        # by network_service (mutualisation — see recommender_service.py).
+        # This test exercises the standalone pypowsybl load path for
+        # callers that bypass /api/config.
+        from expert_backend.services.network_service import network_service
+        saved_network = network_service.network
+        network_service.network = None
+        try:
+            with patch.object(Path, "exists", return_value=True), \
+                 patch.object(Path, "is_dir", return_value=False):
+
+                # Call the internal method (no arguments)
+                n = service._get_base_network()
+
+                # Verify pypowsybl.network.load was called with the direct file path
+                mock_load.assert_called_once_with(str(direct_path))
+                self.assertEqual(n, mock_net)
+        finally:
+            network_service.network = saved_network
 
 if __name__ == "__main__":
     unittest.main()

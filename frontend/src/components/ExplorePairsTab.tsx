@@ -41,6 +41,7 @@ interface ExplorePairsTabProps {
     onEstimate: () => void;
     onSimulate: () => void;
     onSimulateSingle: (actionId: string) => void;
+    displayName?: (id: string) => string;
 }
 
 const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
@@ -60,6 +61,7 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
     onEstimate,
     onSimulate,
     onSimulateSingle,
+    displayName = (id: string) => id,
 }) => {
     const [exploreFilter, setExploreFilter] = useState<string>('all');
 
@@ -331,7 +333,7 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                                         )}
                                     </div>
                                     <div style={{ fontSize: '12px', color: '#666' }}>
-                                        Line: {preview.estimated_max_rho_line ?? preview.max_rho_line}
+                                        Line: {displayName(preview.estimated_max_rho_line ?? preview.max_rho_line)}
                                     </div>
                                 </div>
                                 <div style={{ flex: 1 }}>
@@ -347,7 +349,7 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                                                 Actual Max Loading: <strong style={{ color: (simulationFeedback.max_rho ?? 1) <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{simulationFeedback.max_rho != null ? `${(simulationFeedback.max_rho * 100).toFixed(1)}%` : 'N/A'}</strong>
                                             </div>
                                             <div style={{ fontSize: '12px', color: '#666' }}>
-                                                Line: {simulationFeedback.max_rho_line}
+                                                Line: {displayName(simulationFeedback.max_rho_line)}
                                             </div>
                                             {simulationFeedback.is_islanded && (
                                                 <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>

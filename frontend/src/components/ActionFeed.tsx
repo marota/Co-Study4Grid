@@ -6,7 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig } from '../types';
+import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig, DiagramData } from '../types';
 import { api } from '../api';
 import { interactionLogger } from '../utils/interactionLogger';
 import CombinedActionsModal from './CombinedActionsModal';
@@ -50,6 +50,23 @@ interface ActionFeedProps {
     actionDictStats?: { reco: number; disco: number; pst: number; open_coupling: number; close_coupling: number; total: number } | null;
     combinedActions: Record<string, CombinedAction> | null;
     onUpdateCombinedEstimation?: (pairId: string, estimation: { estimated_max_rho: number; estimated_max_rho_line: string }) => void;
+    /** Resolve an element/VL ID to its human-readable display name. Falls back to the ID. */
+    displayName?: (id: string) => string;
+    /**
+     * Optional pre-fetch hook. When provided, the Add-action / target-MW /
+     * target-tap handlers stream both the simulation metrics AND the
+     * post-action NAD in a single request, and invoke this callback with
+     * the ready-to-render diagram. A subsequent click on the action card
+     * reads this cache (see useDiagrams.handleActionSelect) and paints
+     * instantly — saving ~5-7 s of pypowsybl NAD regeneration on large
+     * grids. When the prop is absent, the legacy `simulateManualAction`
+     * single-shot call is used, preserving backward compat for tests and
+     * call sites that do not wire the cache through.
+     */
+    onActionDiagramPrimed?: (actionId: string, diagram: DiagramData, voltageLevelsLength: number) => void;
+    /** Current voltage-levels count, forwarded to the primer callback's
+     * `processSvg` pass. Unused when onActionDiagramPrimed is absent. */
+    voltageLevelsLength?: number;
 }
 
 const ActionFeed: React.FC<ActionFeedProps> = ({
@@ -83,6 +100,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     actionDictStats,
     combinedActions,
     onUpdateCombinedEstimation,
+    displayName = (id: string) => id,
+    onActionDiagramPrimed,
+    voltageLevelsLength,
 }) => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -113,6 +133,75 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         setTooltip({ content, x: rect.left, y: rect.bottom + 5 });
     };
     const hideTooltip = () => setTooltip(null);
+
+    // Shared helper: simulate a manual action and — when the parent hook
+    // provided `onActionDiagramPrimed` — also pre-fetch the post-action NAD
+    // in the same streamed request. Returns the same `simulate_manual_action`
+    // shape used downstream so the three call sites (Add / target_mw /
+    // target_tap re-sim) stay structurally identical to the pre-stream code.
+    //
+    // When `onActionDiagramPrimed` is not wired up (older tests, call sites
+    // that don't care about the cache), this transparently falls back to
+    // the single-shot `api.simulateManualAction` endpoint.
+    // Whether the parent hook wired up the pre-fetch primer. When false we
+    // keep firing the legacy single-shot `api.simulateManualAction` directly
+    // from each call site (preserving exact call arity for tests that assert
+    // on it). When true each call site funnels through
+    // `streamSimulateAndPrimeDiagram` instead, which consumes the NDJSON
+    // stream, returns the metrics event shape (same as
+    // `simulate_manual_action`), and pushes the diagram event into the
+    // `useDiagrams` cache so a subsequent click on the action card paints
+    // the SVG instantly.
+    const canPrimeDiagram = !!onActionDiagramPrimed && voltageLevelsLength != null;
+    const streamSimulateAndPrimeDiagram = async (
+        actionId: string,
+        disconnectedEl: string,
+        actionContent: Record<string, unknown> | null,
+        linesOvl: string[] | null,
+        targetMw: number | null | undefined,
+        targetTap: number | null | undefined,
+    ): Promise<Awaited<ReturnType<typeof api.simulateManualAction>>> => {
+        const response = await api.simulateAndVariantDiagramStream({
+            action_id: actionId,
+            disconnected_element: disconnectedEl,
+            action_content: actionContent,
+            lines_overloaded: linesOvl,
+            target_mw: targetMw ?? null,
+            target_tap: targetTap ?? null,
+        });
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let metrics: Awaited<ReturnType<typeof api.simulateManualAction>> | null = null;
+        let streamErr: string | null = null;
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop()!;
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                let event: Record<string, unknown>;
+                try { event = JSON.parse(line); } catch { continue; }
+                if (event.type === 'metrics') {
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                    const { type: _t, ...rest } = event;
+                    metrics = rest as Awaited<ReturnType<typeof api.simulateManualAction>>;
+                } else if (event.type === 'diagram') {
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                    const { type: _t, ...rest } = event;
+                    // `canPrimeDiagram` is verified before this helper is called.
+                    onActionDiagramPrimed!(actionId, rest as unknown as DiagramData, voltageLevelsLength!);
+                } else if (event.type === 'error') {
+                    streamErr = (event.message as string) || 'stream error';
+                }
+            }
+        }
+        if (streamErr) throw new Error(streamErr);
+        if (!metrics) throw new Error('Stream ended without metrics event');
+        return metrics;
+    };
 
     // Fetch available actions when search is opened
     const handleOpenSearch = async () => {
@@ -283,7 +372,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 }
             }
 
-            const result = await api.simulateManualAction(trimmedId, disconnectedElement, actionContent, linesOverloaded, targetMw, targetTap);
+            const result = canPrimeDiagram
+                ? await streamSimulateAndPrimeDiagram(trimmedId, disconnectedElement, actionContent, linesOverloaded, targetMw, targetTap)
+                : await api.simulateManualAction(trimmedId, disconnectedElement, actionContent, linesOverloaded, targetMw, targetTap);
             const detail: ActionDetail = {
                 description_unitaire: result.description_unitaire,
                 rho_before: result.rho_before,
@@ -365,7 +456,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         try {
             const detail = actions[actionId];
             const actionContent = detail?.action_topology ? detail.action_topology as unknown as Record<string, unknown> : null;
-            const result = await api.simulateManualAction(actionId, disconnectedElement, actionContent, linesOverloaded, newTargetMw);
+            const result = canPrimeDiagram
+                ? await streamSimulateAndPrimeDiagram(actionId, disconnectedElement, actionContent, linesOverloaded, newTargetMw, undefined)
+                : await api.simulateManualAction(actionId, disconnectedElement, actionContent, linesOverloaded, newTargetMw);
             const newDetail: ActionDetail = {
                 description_unitaire: result.description_unitaire,
                 rho_before: result.rho_before,
@@ -415,7 +508,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         try {
             const detail = actions[actionId];
             const actionContent = detail?.action_topology ? detail.action_topology as unknown as Record<string, unknown> : null;
-            const result = await api.simulateManualAction(actionId, disconnectedElement, actionContent, linesOverloaded, null, newTap);
+            const result = canPrimeDiagram
+                ? await streamSimulateAndPrimeDiagram(actionId, disconnectedElement, actionContent, linesOverloaded, null, newTap)
+                : await api.simulateManualAction(actionId, disconnectedElement, actionContent, linesOverloaded, null, newTap);
             const newDetail: ActionDetail = {
                 description_unitaire: result.description_unitaire,
                 rho_before: result.rho_before,
@@ -599,6 +694,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     onCardEditTapChange={(actionId, value) => setCardEditTap(prev => ({ ...prev, [actionId]: value }))}
                     onResimulate={handleResimulate}
                     onResimulateTap={handleResimulateTap}
+                    displayName={displayName}
                 />
             );
         });
@@ -913,6 +1009,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 onSimulateSingleAction={onActionResimulated}
                 monitoringFactor={monitoringFactor}
                 linesOverloaded={linesOverloaded}
+                displayName={displayName}
             />
         </div>
     );

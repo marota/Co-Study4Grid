@@ -46,6 +46,30 @@ class TestLoadNetwork:
         assert service.network is mock_network
 
     @patch("expert_backend.services.network_service.pn")
+    def test_load_network_keeps_multi_thread_variant_flag_off(self, mock_pn, tmp_path):
+        """Regression guard for the `allow_variant_multi_thread_access` path.
+
+        pypowsybl exposes this flag to unlock concurrent variant ops, but
+        enabling it requires every thread that touches the Network to
+        explicitly set its working variant first — otherwise pypowsybl
+        raises "Variant index not set for current thread".
+
+        FastAPI serves each read-only endpoint (`/api/branches`, …) on an
+        arbitrary thread-pool worker without a variant-set guard, so the
+        flag MUST stay off. See docs/perf-concurrent-variants.md."""
+        xiidm = tmp_path / "grid.xiidm"
+        xiidm.write_text("<network/>")
+
+        mock_pn.load.return_value = MagicMock(id="x")
+
+        NetworkService().load_network(str(xiidm))
+
+        _, kwargs = mock_pn.load.call_args
+        assert kwargs.get("allow_variant_multi_thread_access") in (None, False), (
+            "Flag must remain OFF — see docs/perf-concurrent-variants.md."
+        )
+
+    @patch("expert_backend.services.network_service.pn")
     def test_load_network_from_directory(self, mock_pn, tmp_path):
         # Create a directory with a xiidm file inside
         xiidm = tmp_path / "grid.xiidm"

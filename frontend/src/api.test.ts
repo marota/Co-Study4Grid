@@ -46,25 +46,25 @@ describe('api client', () => {
     describe('getBranches', () => {
         it('sends GET to /api/branches and returns branches array', async () => {
             mockedAxios.get.mockResolvedValue({
-                data: { branches: ['LINE_A', 'LINE_B'] },
+                data: { branches: ['LINE_A', 'LINE_B'], name_map: {} },
             });
 
             const result = await api.getBranches();
             expect(mockedAxios.get).toHaveBeenCalledWith(
                 'http://127.0.0.1:8000/api/branches',
             );
-            expect(result).toEqual(['LINE_A', 'LINE_B']);
+            expect(result).toEqual({ branches: ['LINE_A', 'LINE_B'], name_map: {} });
         });
     });
 
     describe('getVoltageLevels', () => {
         it('returns voltage levels array', async () => {
             mockedAxios.get.mockResolvedValue({
-                data: { voltage_levels: ['VL1', 'VL2'] },
+                data: { voltage_levels: ['VL1', 'VL2'], name_map: {} },
             });
 
             const result = await api.getVoltageLevels();
-            expect(result).toEqual(['VL1', 'VL2']);
+            expect(result).toEqual({ voltage_levels: ['VL1', 'VL2'], name_map: {} });
         });
     });
 
@@ -82,12 +82,39 @@ describe('api client', () => {
     });
 
     describe('getNetworkDiagram', () => {
-        it('returns diagram data', async () => {
-            const diagramData = { svg: '<svg/>', metadata: '{}' };
-            mockedAxios.get.mockResolvedValue({ data: diagramData });
+        it('parses the text/plain header+SVG response', async () => {
+            // Server now returns:  {json header}\n<svg>...</svg>
+            // The client splits on the first newline rather than doing
+            // a JSON.parse of the full body (saves ~500 ms on 25 MB
+            // grids — see docs/perf-loading-parallel.md).
+            const header = { metadata: null, lines_overloaded: ['X'], lines_overloaded_rho: [1.05] };
+            const svg = '<svg id="n"/>';
+            const body = JSON.stringify(header) + '\n' + svg;
+            const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                text: async () => body,
+            } as Response);
 
             const result = await api.getNetworkDiagram();
-            expect(result).toEqual(diagramData);
+            expect(fetchSpy).toHaveBeenCalledWith(
+                'http://127.0.0.1:8000/api/network-diagram?format=text'
+            );
+            expect(result).toEqual({ ...header, svg });
+            fetchSpy.mockRestore();
+        });
+
+        it('throws on non-ok status', async () => {
+            const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+                ok: false,
+                status: 500,
+                statusText: 'Server Error',
+                text: async () => 'boom',
+            } as Response);
+
+            await expect(api.getNetworkDiagram()).rejects.toThrow(/HTTP 500/);
+            fetchSpy.mockRestore();
         });
     });
 

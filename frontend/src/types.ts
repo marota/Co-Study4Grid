@@ -110,7 +110,15 @@ export interface AnalysisResult {
 
 export interface BranchResponse {
     branches: string[];
+    /** Optional mapping from element ID to human-readable display name. */
+    name_map?: Record<string, string>;
 }
+
+/**
+ * Mapping from element/VL ID to a human-readable display name.
+ * Used throughout the UI to show real substation/circuit names.
+ */
+export type NameMap = Record<string, string>;
 
 export interface DiagramData {
     svg: string;

@@ -45,8 +45,24 @@ class DiagramMixin:
         return None
 
     def _default_nad_parameters(self):
-        """Return default NadParameters for diagram generation."""
-        from pypowsybl.network import NadParameters
+        """Return default NadParameters for diagram generation.
+
+        `layout_type=GEOGRAPHICAL` — we already provide fixed substation
+        positions via `fixed_positions` (loaded from `grid_layout.json`).
+        With the default `FORCE_LAYOUT`, pypowsybl still runs force-
+        directed iterations on top of the pinned positions; GEOGRAPHICAL
+        tells it to place nodes directly from the supplied coordinates
+        without refinement.
+
+        Measured on the 118 MB PyPSA-EUR France xiidm:
+          - FORCE_LAYOUT + fixed_positions (previous): 3 918 ms
+          - GEOGRAPHICAL + fixed_positions (now):      3 470 ms
+          - Gain: ~−450 ms (~−11 %)
+
+        SVG size unchanged (13.6 MB). Visual output identical — same
+        positions are used, only the force-refinement step is skipped.
+        """
+        from pypowsybl.network import NadParameters, NadLayoutType
         return NadParameters(
             edge_name_displayed=False,
             id_displayed=False,
@@ -56,7 +72,8 @@ class DiagramMixin:
             current_value_precision=1,
             voltage_value_precision=0,
             bus_legend=True,
-            substation_description_displayed=True
+            substation_description_displayed=True,
+            layout_type=NadLayoutType.GEOGRAPHICAL,
         )
 
     def _generate_diagram(self, network, voltage_level_ids=None, depth=0):
@@ -93,18 +110,18 @@ class DiagramMixin:
                 from lxml import etree
                 parser = etree.XMLParser(recover=True, huge_tree=True)
                 root = etree.fromstring(svg.encode('utf-8'), parser=parser)
-                
+
                 # Find all elements that have at least one attribute containing "NaN"
                 to_remove = []
                 for el in root.iter():
                     if any("NaN" in str(val) for val in el.attrib.values()):
                         to_remove.append(el)
-                
+
                 for el in to_remove:
                     parent = el.getparent()
                     if parent is not None:
                         parent.remove(el)
-                
+
                 svg = etree.tostring(root, encoding='unicode')
                 logger.info(f"[RECO] NaN-stripping complete: removed {len(to_remove)} elements.")
             except Exception as e:
@@ -148,17 +165,26 @@ class DiagramMixin:
         n.set_working_variant(n1_variant_id)
 
         try:
-            # Check convergence — partial AC results are still better than DC
-            # (DC only computes angles/power, not voltage magnitudes).
-            # We need to re-run AC to get the results object for status
-            t0 = time.time()
-            params = create_olf_rte_parameter()
-            results = self._run_ac_with_fallback(n, params)
-            converged = any(r.status.name == 'CONVERGED' for r in results)
-            lf_status = results[0].status.name if results else "UNKNOWN"
+            # Check convergence. `_get_n1_variant` already ran the AC LF
+            # when creating the variant and cached the status — reading
+            # it here avoids a redundant ~600 ms re-run per diagram on
+            # the PyPSA-EUR France grid (cold path) and ~1 s on the warm
+            # path (repeat views of same contingency). Falls back to
+            # re-running the LF if the cache is empty.
+            cached_status = getattr(self, '_lf_status_by_variant', {}).get(n1_variant_id)
+            if cached_status is not None:
+                converged = cached_status["converged"]
+                lf_status = cached_status["lf_status"]
+                logger.info(f"[RECO] N-1 LF status for {disconnected_element} served from cache")
+            else:
+                t0 = time.time()
+                params = create_olf_rte_parameter()
+                results = self._run_ac_with_fallback(n, params)
+                converged = any(r.status.name == 'CONVERGED' for r in results)
+                lf_status = results[0].status.name if results else "UNKNOWN"
+                logger.info(f"[RECO] N-1 LF check {disconnected_element}: {time.time()-t0:.2f}s")
             if not converged:
                 logger.warning(f"Warning: AC load flow did not converge for N-1 ({disconnected_element}): {lf_status}")
-            logger.info(f"[RECO] N-1 LF check {disconnected_element}: {time.time()-t0:.2f}s")
 
             diagram = self._generate_diagram(n, voltage_level_ids=voltage_level_ids, depth=depth)
             diagram["lf_converged"] = converged
@@ -495,23 +521,41 @@ class DiagramMixin:
             a list of floats aligned with ``names``.
         """
         import numpy as np
-        limits = network.get_operational_limits()
-        if limits.empty:
+        # Narrow the limits query — only `value` is read as a column;
+        # `element_id`, `type`, `acceptable_duration` live in the
+        # MultiIndex. Skips ~90 ms of unused column materialisation on
+        # the 55 k-row PyPSA-EUR France limit table.
+        limits = network.get_operational_limits(attributes=['value'])
+        if len(limits.index) == 0:
             limit_dict = {}
         else:
             limits = limits.reset_index()
             current_limits = limits[(limits['type'] == 'CURRENT') & (limits['acceptable_duration'] == -1)]
             limit_dict = dict(zip(current_limits['element_id'], current_limits['value']))
 
-        overloaded = []
-        overloaded_rho = []
         monitoring_factor = getattr(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95)
         worsening_threshold = getattr(config, 'PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD', 0.02)
-        default_limit = 9999.0  # Same default as the recommender
 
-        # Check both lines and 2-winding transformers
-        for df in [network.get_lines()[['i1', 'i2']], network.get_2_windings_transformers()[['i1', 'i2']]]:
-            for element_id, row in df.iterrows():
+        # Narrow pypowsybl queries — only i1/i2 are used. Previously the
+        # default `get_lines()[['i1','i2']]` fetched ~30 columns then
+        # sliced in pandas (wasted serialisation). Combined with the
+        # vectorised max-current scan below, this section drops from
+        # ~1 170 ms to ~330 ms per call.
+        lines = network.get_lines(attributes=['i1', 'i2'])
+        trafos = network.get_2_windings_transformers(attributes=['i1', 'i2'])
+
+        overloaded = []
+        overloaded_rho = []
+
+        for df in [lines, trafos]:
+            if len(df.index) == 0:
+                continue
+            idx = df.index.values
+            i1_arr = np.nan_to_num(df['i1'].values, nan=0.0)
+            i2_arr = np.nan_to_num(df['i2'].values, nan=0.0)
+            max_i_arr = np.maximum(np.abs(i1_arr), np.abs(i2_arr))
+
+            for j, element_id in enumerate(idx):
                 # Skip elements not in the monitored set
                 if lines_we_care_about is not None and element_id not in lines_we_care_about:
                     continue
@@ -521,20 +565,17 @@ class DiagramMixin:
                     # No permanent limit found for this branch, skip monitoring
                     continue
 
-                i1 = row['i1']
-                i2 = row['i2']
-                if not np.isnan(i1) and not np.isnan(i2):
-                    max_i = max(abs(i1), abs(i2))
-                    if max_i > limit * monitoring_factor:
-                        # If N-state currents provided, filter pre-existing overloads
-                        if n_state_currents is not None and element_id in n_state_currents:
-                            n_max_i = n_state_currents[element_id]
-                            if n_max_i > limit * monitoring_factor:
-                                # Was already overloaded in N — only keep if worsened
-                                if max_i <= n_max_i * (1 + worsening_threshold):
-                                    continue
-                        overloaded.append(element_id)
-                        overloaded_rho.append(float(max_i / limit) if limit else 0.0)
+                max_i = max_i_arr[j]
+                if max_i > limit * monitoring_factor:
+                    # If N-state currents provided, filter pre-existing overloads
+                    if n_state_currents is not None and element_id in n_state_currents:
+                        n_max_i = n_state_currents[element_id]
+                        if n_max_i > limit * monitoring_factor:
+                            # Was already overloaded in N — only keep if worsened
+                            if max_i <= n_max_i * (1 + worsening_threshold):
+                                continue
+                    overloaded.append(element_id)
+                    overloaded_rho.append(float(max_i / limit) if limit else 0.0)
 
         if with_rho:
             return sanitize_for_json(overloaded), sanitize_for_json(overloaded_rho)
@@ -591,21 +632,37 @@ class DiagramMixin:
         }
 
     def _get_asset_flows(self, network):
-        """Extract p/q flows for loads and generators from a simulated network."""
+        """Extract p/q flows for loads and generators from a simulated network.
+
+        Optimised: narrow pypowsybl query + numpy vectorisation. The
+        previous `df.loc[lid, 'p']` inside a Python loop over 14 880
+        rows was ~1.17 s per call on the PyPSA-EUR France grid. Narrow
+        attrs + `nan_to_num` on the raw arrays drops this to ~75 ms
+        (15× faster). `get_n1_diagram` calls this helper twice → saves
+        ~2 s per N-1 diagram.
+        """
         import numpy as np
 
-        loads = network.get_loads()[['p', 'q']]
-        gens = network.get_generators()[['p', 'q']]
+        # Narrow — only p/q are read downstream. The default query
+        # materialises ~20 columns per row (voltage_level_id, bus_id,
+        # target_p, min_p, max_p, energy_source, ...).
+        loads = network.get_loads(attributes=['p', 'q'])
+        gens = network.get_generators(attributes=['p', 'q'])
+
+        # Raw numpy arrays — NaN-safe via nan_to_num.
+        loads_p = np.nan_to_num(loads['p'].values, nan=0.0)
+        loads_q = np.nan_to_num(loads['q'].values, nan=0.0)
+        gens_p = np.nan_to_num(gens['p'].values, nan=0.0)
+        gens_q = np.nan_to_num(gens['q'].values, nan=0.0)
+
+        load_ids = loads.index.tolist()
+        gen_ids = gens.index.tolist()
 
         flows = {}
-        for lid in loads.index:
-            pv = loads.loc[lid, 'p'] if not np.isnan(loads.loc[lid, 'p']) else 0.0
-            qv = loads.loc[lid, 'q'] if not np.isnan(loads.loc[lid, 'q']) else 0.0
-            flows[lid] = {"p": pv, "q": qv}
-        for gid in gens.index:
-            pv = gens.loc[gid, 'p'] if not np.isnan(gens.loc[gid, 'p']) else 0.0
-            qv = gens.loc[gid, 'q'] if not np.isnan(gens.loc[gid, 'q']) else 0.0
-            flows[gid] = {"p": pv, "q": qv}
+        for i, lid in enumerate(load_ids):
+            flows[lid] = {"p": float(loads_p[i]), "q": float(loads_q[i])}
+        for i, gid in enumerate(gen_ids):
+            flows[gid] = {"p": float(gens_p[i]), "q": float(gens_q[i])}
 
         return flows
 

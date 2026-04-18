@@ -1,0 +1,464 @@
+{
+  "description": "N-1 contingencies that produce >100% line overloads on the FR 400kV OSM network",
+  "network": "data/pypsa_eur_fr400/network.xiidm",
+  "total_contingencies_tested": 398,
+  "total_with_overload": 21,
+  "peak_loading_pct": 128.5,
+  "contingencies": [
+    {
+      "tripped_line": "way_214467346-400",
+      "tripped_line_name": "Liaisons 400 kV n°1 et 2 Échalas - Pivoz-Cordier",
+      "tripped_vl1": "VL_way_84476231-400",
+      "tripped_vl1_name": "ECHALAS 400kV",
+      "tripped_vl2": "VL_way_84485792-400",
+      "tripped_vl2_name": "PIVOZ-CORDIER 400kV",
+      "max_loading_pct": 128.5,
+      "most_loaded_line": "way_426020732-400",
+      "most_loaded_line_name": "way/426020732-400",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "way_426020732-400",
+          "line_name": "way/426020732-400",
+          "loading_pct": 128.5,
+          "current_a": 536.0,
+          "limit_a": 417.0
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_5312235-400",
+      "tripped_line_name": "Liaison 400kV n°1 Éguzon - Plaud",
+      "tripped_vl1": "VL_way_112893617-400",
+      "tripped_vl1_name": "PLAUD 400kV",
+      "tripped_vl2": "VL_way_105783300-400",
+      "tripped_vl2_name": "EGUZON 400kV",
+      "max_loading_pct": 128.0,
+      "most_loaded_line": "relation_9736329-400",
+      "most_loaded_line_name": "CLERAL71CUBNE",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_9736329-400",
+          "line_name": "CLERAL71CUBNE",
+          "loading_pct": 128.0,
+          "current_a": 286.5,
+          "limit_a": 223.9
+        }
+      ]
+    },
+    {
+      "tripped_line": "way_204027841-400",
+      "tripped_line_name": "Liaison 400 kV n°2 Avelin - Mastaing;Liaison 400 kV n°1 Avelgem - Mastaing",
+      "tripped_vl1": "VL_way_85605950-400",
+      "tripped_vl1_name": "AVELIN 400kV",
+      "tripped_vl2": "VL_way_82967739-400",
+      "tripped_vl2_name": "MASTAING 400kV",
+      "max_loading_pct": 128.0,
+      "most_loaded_line": "relation_6211546-400",
+      "most_loaded_line_name": "AVELIL71MASTA",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_6211546-400",
+          "line_name": "AVELIL71MASTA",
+          "loading_pct": 128.0,
+          "current_a": 712.7,
+          "limit_a": 556.8
+        }
+      ]
+    },
+    {
+      "tripped_line": "way_53826238-400",
+      "tripped_line_name": "way/53826238-400",
+      "tripped_vl1": "VL_way_85203486-400",
+      "tripped_vl1_name": "WARANDE 400kV",
+      "tripped_vl2": "VL_virtual_way_1430729489_1-400",
+      "tripped_vl2_name": "virtual_way_1430729489_1-400 400kV",
+      "max_loading_pct": 128.0,
+      "most_loaded_line": "way_1430729490-400",
+      "most_loaded_line_name": "Liaisons 400 kV n°5 et n°6 Gravelines (centrale) - Warande",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "way_1430729490-400",
+          "line_name": "Liaisons 400 kV n°5 et n°6 Gravelines (centrale) - Warande",
+          "loading_pct": 128.0,
+          "current_a": 143.9,
+          "limit_a": 112.4
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_5444503-400",
+      "tripped_line_name": "Frasne - Génissiat 1",
+      "tripped_vl1": "VL_way_83293593-400",
+      "tripped_vl1_name": "GENISSIAT-POSTE 400kV",
+      "tripped_vl2": "VL_way_159167277-400",
+      "tripped_vl2_name": "FRASNE 400kV",
+      "max_loading_pct": 125.8,
+      "most_loaded_line": "relation_6198618-400",
+      "most_loaded_line_name": "Mambelin - Sierentz",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_6198618-400",
+          "line_name": "Mambelin - Sierentz",
+          "loading_pct": 125.8,
+          "current_a": 291.5,
+          "limit_a": 231.8
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_5989317-400",
+      "tripped_line_name": "REALTL71TAVEL",
+      "tripped_vl1": "VL_way_110086345-400",
+      "tripped_vl1_name": "TAVEL 400kV",
+      "tripped_vl2": "VL_way_27259817-400",
+      "tripped_vl2_name": "REALTOR 400kV",
+      "max_loading_pct": 122.5,
+      "most_loaded_line": "relation_5989319-400",
+      "most_loaded_line_name": "REALTL72TAVEL",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_5989319-400",
+          "line_name": "REALTL72TAVEL",
+          "loading_pct": 122.5,
+          "current_a": 1203.4,
+          "limit_a": 982.6
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_5989319-400",
+      "tripped_line_name": "REALTL72TAVEL",
+      "tripped_vl1": "VL_way_110086345-400",
+      "tripped_vl1_name": "TAVEL 400kV",
+      "tripped_vl2": "VL_way_27259817-400",
+      "tripped_vl2_name": "REALTOR 400kV",
+      "max_loading_pct": 120.7,
+      "most_loaded_line": "relation_5989317-400",
+      "most_loaded_line_name": "REALTL71TAVEL",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_5989317-400",
+          "line_name": "REALTL71TAVEL",
+          "loading_pct": 120.7,
+          "current_a": 1203.4,
+          "limit_a": 997.3
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_5900943-400",
+      "tripped_line_name": "NEOULL72REALT",
+      "tripped_vl1": "VL_way_27259817-400",
+      "tripped_vl1_name": "REALTOR 400kV",
+      "tripped_vl2": "VL_way_93189928-400",
+      "tripped_vl2_name": "NEOULES 400kV",
+      "max_loading_pct": 120.0,
+      "most_loaded_line": "relation_5900941-400",
+      "most_loaded_line_name": "NEOULL71REALT",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_5900941-400",
+          "line_name": "NEOULL71REALT",
+          "loading_pct": 120.0,
+          "current_a": 783.4,
+          "limit_a": 653.0
+        }
+      ]
+    },
+    {
+      "tripped_line": "way_118121954-400",
+      "tripped_line_name": "Liaisons 400 kV n°1 et 2 Charpenay - Grépilles",
+      "tripped_vl1": "VL_way_118121876-400",
+      "tripped_vl1_name": "GREPILLES 400kV",
+      "tripped_vl2": "VL_way_84452130-400",
+      "tripped_vl2_name": "CHARPENAY 400kV",
+      "max_loading_pct": 119.0,
+      "most_loaded_line": "way_41453026-400",
+      "most_loaded_line_name": "Liaison 400 kV n°2 Le Chesnoy - Tabarderie",
+      "n_overloaded_lines": 2,
+      "overloaded_lines": [
+        {
+          "line_id": "way_41453026-400",
+          "line_name": "Liaison 400 kV n°2 Le Chesnoy - Tabarderie",
+          "loading_pct": 119.0,
+          "current_a": 119.0,
+          "limit_a": 100.0
+        },
+        {
+          "line_id": "way_86344182-400",
+          "line_name": "Liaison 400 kV n°3 Le Chesnoy - Tabarderie",
+          "loading_pct": 118.0,
+          "current_a": 118.0,
+          "limit_a": 100.0
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_10702896-400",
+      "tripped_line_name": "ROM L71VALDI",
+      "tripped_vl1": "VL_way_448355914-400",
+      "tripped_vl1_name": "ROM 400kV",
+      "tripped_vl2": "VL_way_105690676-400",
+      "tripped_vl2_name": "VALDIVIENNE 400kV",
+      "max_loading_pct": 117.3,
+      "most_loaded_line": "relation_10702897-400",
+      "most_loaded_line_name": "GRANZL71ROM",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_10702897-400",
+          "line_name": "GRANZL71ROM",
+          "loading_pct": 117.3,
+          "current_a": 148.4,
+          "limit_a": 126.5
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_5900937-400",
+      "tripped_line_name": "NEOULL71TRANS",
+      "tripped_vl1": "VL_way_93189928-400",
+      "tripped_vl1_name": "NEOULES 400kV",
+      "tripped_vl2": "VL_way_121297422-400",
+      "tripped_vl2_name": "TRANS 400kV",
+      "max_loading_pct": 111.7,
+      "most_loaded_line": "relation_5900939-400",
+      "most_loaded_line_name": "NEOULL72TRANS",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_5900939-400",
+          "line_name": "NEOULL72TRANS",
+          "loading_pct": 111.7,
+          "current_a": 642.0,
+          "limit_a": 574.9
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_7879760-400",
+      "tripped_line_name": "SEUILL71VESLE",
+      "tripped_vl1": "VL_way_82805188-400",
+      "tripped_vl1_name": "VESLE 400kV",
+      "tripped_vl2": "VL_way_82825446-400",
+      "tripped_vl2_name": "SEUIL 400kV",
+      "max_loading_pct": 108.0,
+      "most_loaded_line": "relation_7879762-400",
+      "most_loaded_line_name": "LONNYL71SEUIL",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_7879762-400",
+          "line_name": "LONNYL71SEUIL",
+          "loading_pct": 108.0,
+          "current_a": 147.1,
+          "limit_a": 136.2
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_6148805-400",
+      "tripped_line_name": "LONNYL71MAZUR",
+      "tripped_vl1": "VL_way_82825438-400",
+      "tripped_vl1_name": "LONNY 400kV",
+      "tripped_vl2": "VL_way_82949228-400",
+      "tripped_vl2_name": "MAZURES 400kV",
+      "max_loading_pct": 107.7,
+      "most_loaded_line": "relation_6148807_a-400",
+      "most_loaded_line_name": "LONNYL72MAZUR",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_6148807_a-400",
+          "line_name": "LONNYL72MAZUR",
+          "loading_pct": 107.7,
+          "current_a": 641.5,
+          "limit_a": 595.7
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_5900941-400",
+      "tripped_line_name": "NEOULL71REALT",
+      "tripped_vl1": "VL_way_27259817-400",
+      "tripped_vl1_name": "REALTOR 400kV",
+      "tripped_vl2": "VL_way_93189928-400",
+      "tripped_vl2_name": "NEOULES 400kV",
+      "max_loading_pct": 105.4,
+      "most_loaded_line": "relation_5900943-400",
+      "most_loaded_line_name": "NEOULL72REALT",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_5900943-400",
+          "line_name": "NEOULL72REALT",
+          "loading_pct": 105.4,
+          "current_a": 783.4,
+          "limit_a": 743.1
+        }
+      ]
+    },
+    {
+      "tripped_line": "merged_way_214450538-400_2",
+      "tripped_line_name": "Liaison 400 kV n°1 Cornier - Montagny-les-Lanches",
+      "tripped_vl1": "VL_way_199229562-400",
+      "tripped_vl1_name": "MONTAGNY-LES-LANCHES 400kV",
+      "tripped_vl2": "VL_way_83293593-400",
+      "tripped_vl2_name": "GENISSIAT-POSTE 400kV",
+      "max_loading_pct": 105.2,
+      "most_loaded_line": "way_118114536-400",
+      "most_loaded_line_name": "Liaisons 400 kV n°1 et n°2 Creys - Génissiat-poste",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "way_118114536-400",
+          "line_name": "Liaisons 400 kV n°1 et n°2 Creys - Génissiat-poste",
+          "loading_pct": 105.2,
+          "current_a": 352.7,
+          "limit_a": 335.2
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_15748180-400",
+      "tripped_line_name": "F.FREL71M.SEI",
+      "tripped_vl1": "VL_way_82599261-400",
+      "tripped_vl1_name": "MERY-SUR-SEINE 400kV",
+      "tripped_vl2": "VL_way_890834366-400",
+      "tripped_vl2_name": "FAUX-FRESNAY 400kV",
+      "max_loading_pct": 104.1,
+      "most_loaded_line": "relation_7879762-400",
+      "most_loaded_line_name": "LONNYL71SEUIL",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_7879762-400",
+          "line_name": "LONNYL71SEUIL",
+          "loading_pct": 104.1,
+          "current_a": 141.8,
+          "limit_a": 136.2
+        }
+      ]
+    },
+    {
+      "tripped_line": "way_210390730-400",
+      "tripped_line_name": "Liaison 400 kV n°1 Calan - Cordemais-Poste;Liaison 400 kV n°2 Cordemais-Poste - La Martyre",
+      "tripped_vl1": "VL_way_210389707-400",
+      "tripped_vl1_name": "CALAN 400kV",
+      "tripped_vl2": "VL_way_112342683-400",
+      "tripped_vl2_name": "CORDEMAIS-POSTE 400kV",
+      "max_loading_pct": 102.9,
+      "most_loaded_line": "relation_6410878-400",
+      "most_loaded_line_name": "Liaison 400 kV n°1 Cordemais-Poste - Louisfert (poste F)",
+      "n_overloaded_lines": 2,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_6410878-400",
+          "line_name": "Liaison 400 kV n°1 Cordemais-Poste - Louisfert (poste F)",
+          "loading_pct": 102.9,
+          "current_a": 143.4,
+          "limit_a": 139.4
+        },
+        {
+          "line_id": "relation_6410879-400",
+          "line_name": "Liaison 400 kV n°2 Cordemais-Poste - Louisfert (poste F)",
+          "loading_pct": 101.1,
+          "current_a": 143.4,
+          "limit_a": 141.8
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_5995942-400",
+      "tripped_line_name": "CHAFFL72CPNIE",
+      "tripped_vl1": "VL_way_24020601-400",
+      "tripped_vl1_name": "CHAFFARD (LE) 400kV",
+      "tripped_vl2": "VL_way_69813552-400",
+      "tripped_vl2_name": "CHAMPAGNIER 400kV",
+      "max_loading_pct": 102.3,
+      "most_loaded_line": "relation_5995938-400",
+      "most_loaded_line_name": "CHAFFL71CPNIE",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_5995938-400",
+          "line_name": "CHAFFL71CPNIE",
+          "loading_pct": 102.3,
+          "current_a": 504.4,
+          "limit_a": 492.8
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_5952073-400",
+      "tripped_line_name": "BIANCL71TRANS",
+      "tripped_vl1": "VL_way_121297422-400",
+      "tripped_vl1_name": "TRANS 400kV",
+      "tripped_vl2": "VL_way_121500497-400",
+      "tripped_vl2_name": "BIANCON 400kV",
+      "max_loading_pct": 101.0,
+      "most_loaded_line": "relation_5952074-400",
+      "most_loaded_line_name": "BIANCL72TRANS",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_5952074-400",
+          "line_name": "BIANCL72TRANS",
+          "loading_pct": 101.0,
+          "current_a": 499.6,
+          "limit_a": 494.5
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_6530784-400",
+      "tripped_line_name": "Liaison n°2 Cazaril - Verfeil",
+      "tripped_vl1": "VL_way_110443404-400",
+      "tripped_vl1_name": "CAZARIL 400kV",
+      "tripped_vl2": "VL_way_109817708-400",
+      "tripped_vl2_name": "VERFEIL 400kV",
+      "max_loading_pct": 100.8,
+      "most_loaded_line": "relation_6530786-400",
+      "most_loaded_line_name": "Liaison n°1 Cazaril - Verfeil",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_6530786-400",
+          "line_name": "Liaison n°1 Cazaril - Verfeil",
+          "loading_pct": 100.8,
+          "current_a": 504.9,
+          "limit_a": 501.1
+        }
+      ]
+    },
+    {
+      "tripped_line": "relation_6530786-400",
+      "tripped_line_name": "Liaison n°1 Cazaril - Verfeil",
+      "tripped_vl1": "VL_way_110443404-400",
+      "tripped_vl1_name": "CAZARIL 400kV",
+      "tripped_vl2": "VL_way_109817708-400",
+      "tripped_vl2_name": "VERFEIL 400kV",
+      "max_loading_pct": 100.3,
+      "most_loaded_line": "relation_6530784-400",
+      "most_loaded_line_name": "Liaison n°2 Cazaril - Verfeil",
+      "n_overloaded_lines": 1,
+      "overloaded_lines": [
+        {
+          "line_id": "relation_6530784-400",
+          "line_name": "Liaison n°2 Cazaril - Verfeil",
+          "loading_pct": 100.3,
+          "current_a": 504.9,
+          "limit_a": 503.5
+        }
+      ]
+    }
+  ]
+}

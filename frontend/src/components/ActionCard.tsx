@@ -32,6 +32,8 @@ interface ActionCardProps {
     onCardEditTapChange: (actionId: string, value: string) => void;
     onResimulate: (actionId: string, newMw: number) => void;
     onResimulateTap: (actionId: string, newTap: number) => void;
+    /** Resolve an element ID to its human-readable display name. Falls back to the ID. */
+    displayName?: (id: string) => string;
 }
 
 const clickableLinkStyle: React.CSSProperties = {
@@ -68,6 +70,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
     onCardEditTapChange,
     onResimulate,
     onResimulateTap,
+    displayName = (id: string) => id,
 }) => {
     const maxRhoPct = details.max_rho != null ? (details.max_rho * 100).toFixed(1) : null;
     const severity = details.max_rho != null
@@ -95,7 +98,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                         style={clickableLinkStyle}
                         title={`Zoom to ${lineName}`}
                         onClick={(e) => { e.stopPropagation(); onAssetClick(actionId, lineName, tab); }}
-                    >{lineName}</button>
+                    >{displayName(lineName)}</button>
                     {`: ${(v * 100).toFixed(1)}%`}
                 </React.Fragment>
             );
@@ -112,7 +115,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                 title={title}
                 onClick={(e) => { e.stopPropagation(); onAssetClick(id, name, 'action'); }}
                 onDoubleClick={onDoubleClick}>
-                {name}
+                {displayName(name)}
             </button>
         );
 
@@ -380,7 +383,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                                     style={{ ...clickableLinkStyle, color: '#888' }}
                                     title={`Zoom to ${details.max_rho_line}`}
                                     onClick={(e) => { e.stopPropagation(); onAssetClick(id, details.max_rho_line, 'action'); }}
-                                >{details.max_rho_line}</button></span>
+                                >{displayName(details.max_rho_line)}</button></span>
                             )}
                         </div>
                     )}

@@ -36,6 +36,7 @@ interface Props {
     onSimulateSingleAction: (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => void;
     monitoringFactor?: number;
     linesOverloaded?: string[];
+    displayName?: (id: string) => string;
 }
 
 /** Canonicalize a combined action ID by sorting the parts alphabetically. */
@@ -54,6 +55,7 @@ const CombinedActionsModal: React.FC<Props> = ({
     onSimulateSingleAction,
     monitoringFactor = 1.0,
     linesOverloaded = [],
+    displayName = (id: string) => id,
 }) => {
     const [activeTab, setActiveTab] = useState<'computed' | 'explore'>('computed');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -422,6 +424,7 @@ const CombinedActionsModal: React.FC<Props> = ({
                             monitoringFactor={monitoringFactor}
                             simulating={simulating}
                             onSimulate={handleSimulate}
+                            displayName={displayName}
                         />
                     ) : (
                         <ExplorePairsTab
@@ -441,6 +444,7 @@ const CombinedActionsModal: React.FC<Props> = ({
                             onEstimate={handleEstimate}
                             onSimulate={() => handleSimulate()}
                             onSimulateSingle={handleSimulate}
+                            displayName={displayName}
                         />
                     )}
                 </div>

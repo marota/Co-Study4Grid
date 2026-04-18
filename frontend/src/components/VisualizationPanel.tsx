@@ -239,6 +239,8 @@ interface VisualizationPanelProps {
      * colour, kept in sync with the card palette.
      */
     monitoringFactor?: number;
+    /** Resolve an element/VL ID to its human-readable display name. */
+    displayName?: (id: string) => string;
 }
 
 
@@ -296,6 +298,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onPinPreview,
     onOverviewPzChange,
     monitoringFactor,
+    displayName,
 }) => {
     // No-op fallbacks so conditional branches don't need to guard.
     const detachTabCb = onDetachTab ?? (() => {});
@@ -891,13 +894,22 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                 </DetachableTabHost>
                 {activeTab === 'overflow' && detachedTabs['overflow'] && renderDetachedPlaceholder('overflow', 'Overflow Analysis', '#27ae60')}
 
+                {/* Inactive, non-detached SVG tabs use `display: none` (not
+                    `visibility: hidden`) so their tens-of-thousands-of-node
+                    SVG subtrees are excluded from Blink's layout & paint
+                    passes. With `visibility: hidden`, every Layout still
+                    walked the union of all three tab SVGs (~610k nodes on
+                    large grids); with `display: none` only the active tab's
+                    SVG participates. The React subtree and DetachableTabHost
+                    portal target stay mounted, so refs, viewBox state and
+                    the auto-zoom effect survive tab switches. */}
                 <DetachableTabHost
                     detachedMountNode={detachedTabs['n']?.mountNode ?? null}
                     homeStyle={{
                         width: '100%', height: '100%',
                         position: 'absolute', top: 0, left: 0,
                         zIndex: !detachedTabs['n'] && activeTab === 'n' ? 10 : -1,
-                        visibility: !detachedTabs['n'] && activeTab === 'n' ? 'visible' : 'hidden',
+                        display: !detachedTabs['n'] && activeTab === 'n' ? 'block' : 'none',
                         pointerEvents: !detachedTabs['n'] && activeTab === 'n' ? 'auto' : 'none',
                     }}
                 >
@@ -923,14 +935,16 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                 </DetachableTabHost>
                 {activeTab === 'n' && detachedTabs['n'] && renderDetachedPlaceholder('n', 'Network (N)', '#3498db')}
 
-                {/* N-1 Container — always mounted, hidden via CSS to preserve zoom state */}
+                {/* N-1 Container — always mounted, but `display: none` when
+                    inactive so its SVG does not enter Blink's layout tree.
+                    See the comment on the N tab above for the full rationale. */}
                 <DetachableTabHost
                     detachedMountNode={detachedTabs['n-1']?.mountNode ?? null}
                     homeStyle={{
                         width: '100%', height: '100%',
                         position: 'absolute', top: 0, left: 0,
                         zIndex: !detachedTabs['n-1'] && activeTab === 'n-1' ? 10 : -1,
-                        visibility: !detachedTabs['n-1'] && activeTab === 'n-1' ? 'visible' : 'hidden',
+                        display: !detachedTabs['n-1'] && activeTab === 'n-1' ? 'block' : 'none',
                         pointerEvents: !detachedTabs['n-1'] && activeTab === 'n-1' ? 'auto' : 'none',
                     }}
                 >
@@ -971,14 +985,16 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                 </DetachableTabHost>
                 {activeTab === 'n-1' && detachedTabs['n-1'] && renderDetachedPlaceholder('n-1', 'Contingency (N-1)', '#e74c3c')}
 
-                {/* Action Variant Container — always mounted, hidden via CSS to preserve zoom state */}
+                {/* Action Variant Container — always mounted, but `display: none`
+                    when inactive so its SVG does not enter Blink's layout tree.
+                    See the comment on the N tab above for the full rationale. */}
                 <DetachableTabHost
                     detachedMountNode={detachedTabs['action']?.mountNode ?? null}
                     homeStyle={{
                         width: '100%', height: '100%',
                         position: 'absolute', top: 0, left: 0,
                         zIndex: !detachedTabs['action'] && activeTab === 'action' ? 10 : -1,
-                        visibility: !detachedTabs['action'] && activeTab === 'action' ? 'visible' : 'hidden',
+                        display: !detachedTabs['action'] && activeTab === 'action' ? 'block' : 'none',
                         pointerEvents: !detachedTabs['action'] && activeTab === 'action' ? 'auto' : 'none',
                     }}
                 >
@@ -1032,6 +1048,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             isTied={isTabTiedFn('action')}
                             onToggleTie={() => toggleTabTieCb('action')}
                             isDetached={!!detachedTabs['action']}
+                            displayName={displayName}
                         />
                         {actionDiagramLoading && (
                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>

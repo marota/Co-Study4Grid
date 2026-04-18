@@ -106,6 +106,8 @@ interface ActionOverviewDiagramProps {
     onToggleTie?: () => void;
     /** Whether the action tab is currently detached (controls Tie button visibility). */
     isDetached?: boolean;
+    /** Resolve an element/VL ID to its human-readable display name. */
+    displayName?: (id: string) => string;
 }
 
 const ZOOM_STEP_IN = 0.8;
@@ -137,6 +139,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     isTied,
     onToggleTie,
     isDetached,
+    displayName,
 }) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     // Pull the svg string into a local so the React Compiler can
@@ -878,6 +881,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                     onActionFavorite={onActionFavorite}
                     onActionReject={onActionReject}
                     onClose={() => closePopover('close_button')}
+                    displayName={displayName}
                 />
             )}
         </div>

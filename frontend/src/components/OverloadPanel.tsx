@@ -39,6 +39,8 @@ interface OverloadPanelProps {
     onToggleOverload?: (overload: string) => void;
     monitorDeselected?: boolean;
     onToggleMonitorDeselected?: () => void;
+    /** Resolve an element ID to its human-readable display name. Falls back to the ID. */
+    displayName?: (id: string) => string;
 }
 
 const OverloadPanel: React.FC<OverloadPanelProps> = ({
@@ -58,6 +60,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
     onToggleOverload,
     monitorDeselected = false,
     onToggleMonitorDeselected,
+    displayName = (id: string) => id,
 }) => {
     const clickableLinkStyle: React.CSSProperties = {
         background: 'none',
@@ -101,7 +104,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                             }
                         }}
                     >
-                        {lineName}
+                        {displayName(lineName)}
                     </button>
                     {rhoPct && (
                         <span

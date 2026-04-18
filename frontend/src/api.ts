@@ -54,11 +54,11 @@ export const api = {
     },
     getBranches: async () => {
         const response = await axios.get<BranchResponse>(`${API_BASE_URL}/api/branches`);
-        return response.data.branches;
+        return response.data;
     },
-    getVoltageLevels: async (): Promise<string[]> => {
-        const response = await axios.get<{ voltage_levels: string[] }>(`${API_BASE_URL}/api/voltage-levels`);
-        return response.data.voltage_levels;
+    getVoltageLevels: async (): Promise<{ voltage_levels: string[]; name_map?: Record<string, string> }> => {
+        const response = await axios.get<{ voltage_levels: string[]; name_map?: Record<string, string> }>(`${API_BASE_URL}/api/voltage-levels`);
+        return response.data;
     },
     getNominalVoltages: async (): Promise<{ mapping: Record<string, number>; unique_kv: number[] }> => {
         const response = await axios.get<{ mapping: Record<string, number>; unique_kv: number[] }>(
@@ -67,8 +67,28 @@ export const api = {
         return response.data;
     },
     getNetworkDiagram: async (): Promise<DiagramData> => {
-        const response = await axios.get<DiagramData>(`${API_BASE_URL}/api/network-diagram`);
-        return response.data;
+        // Fetch in `format=text` mode: the server returns a small JSON
+        // header on the first line, then the raw SVG body verbatim. This
+        // avoids `JSON.parse` having to escape-scan and copy the ~25 MB
+        // SVG string, saving ~500 ms of main-thread parse time on large
+        // grids. See docs/perf-loading-parallel.md (#4). We use `fetch`
+        // instead of axios so the browser's native gzip decoder runs
+        // without axios trying to JSON-parse the body.
+        const res = await fetch(`${API_BASE_URL}/api/network-diagram?format=text`);
+        if (!res.ok) {
+            const detail = await res.text().catch(() => '');
+            const err = new Error(`HTTP ${res.status}: ${detail || res.statusText}`) as Error & { response?: unknown };
+            err.response = { status: res.status, data: { detail } };
+            throw err;
+        }
+        const body = await res.text();
+        const nl = body.indexOf('\n');
+        if (nl < 0) {
+            throw new Error('Invalid /api/network-diagram response: missing header/body separator');
+        }
+        const header = JSON.parse(body.slice(0, nl)) as Omit<DiagramData, 'svg'>;
+        const svg = body.slice(nl + 1);
+        return { ...header, svg } as DiagramData;
     },
     getN1Diagram: async (disconnectedElement: string): Promise<DiagramData> => {
         const response = await axios.post<DiagramData>(
@@ -199,6 +219,44 @@ export const api = {
         });
         if (!response.ok) {
             throw new Error(`Analysis Resolution failed: ${response.statusText}`);
+        }
+        return response;
+    },
+    /**
+     * Combined manual-action simulation + post-action NAD generation, returned as an
+     * NDJSON stream of two events:
+     *   { type: "metrics", ... }   — simulate_manual_action result (rho_before/after, ...)
+     *   { type: "diagram", ... }   — get_action_variant_diagram result (svg, metadata, ...)
+     *
+     * Replaces the previous "simulateManualAction then getActionVariantDiagram" fallback
+     * pattern (one round-trip + earlier sidebar update instead of two sequential
+     * request/response cycles). Caller reads the stream with the same
+     * TextDecoder + split('\n') loop used for `runAnalysisStep2Stream`.
+     */
+    simulateAndVariantDiagramStream: async (params: {
+        action_id: string;
+        disconnected_element: string;
+        action_content?: Record<string, unknown> | null;
+        lines_overloaded?: string[] | null;
+        target_mw?: number | null;
+        target_tap?: number | null;
+        mode?: 'network' | 'delta';
+    }): Promise<Response> => {
+        const response = await fetch(`${API_BASE_URL}/api/simulate-and-variant-diagram`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action_id: params.action_id,
+                disconnected_element: params.disconnected_element,
+                action_content: params.action_content ?? null,
+                lines_overloaded: params.lines_overloaded ?? null,
+                target_mw: params.target_mw ?? null,
+                target_tap: params.target_tap ?? null,
+                mode: params.mode ?? 'network',
+            }),
+        });
+        if (!response.ok) {
+            throw new Error(`Simulate-and-variant-diagram failed: ${response.statusText}`);
         }
         return response;
     },

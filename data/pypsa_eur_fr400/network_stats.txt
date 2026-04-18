@@ -1,0 +1,25 @@
+PyPSA-Eur France 400 kV Network — Build Summary
+====================================================
+
+Source       : Zenodo 18619025 (PyPSA-Eur OSM)
+Filter       : country=FR, voltage∈{380,400} kV, AC, not under construction
+Base MVA     : 100.0
+Z_base       : 1600.0 Ω
+
+Buses        : 192
+Lines        : 398
+Transformers : 2
+Total branches: 400
+
+Voltage distribution (buses):
+  380 kV : 2 buses
+  400 kV : 190 buses
+
+Geographic extent (lon/lat):
+  Longitude : -4.194° … 7.556°
+  Latitude  : 42.732° … 51.000°
+
+Outputs:
+  /home/marotant/dev/AntiGravity/ExpertAssist/scripts/../data/pypsa_eur_fr400/network.m
+  /home/marotant/dev/AntiGravity/ExpertAssist/scripts/../data/pypsa_eur_fr400/grid_layout.json
+  /home/marotant/dev/AntiGravity/ExpertAssist/scripts/../data/pypsa_eur_fr400/network_stats.txt
