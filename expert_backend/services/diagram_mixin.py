@@ -29,20 +29,42 @@ class DiagramMixin:
     """Mixin providing diagram generation and flow analysis methods."""
 
     def _load_layout(self):
-        """Load layout DataFrame from grid_layout.json if available."""
+        """Load layout DataFrame from grid_layout.json if available.
+
+        Cached on the instance by `(path, mtime)`: repeated NAD
+        generations within the same process reuse the parsed DataFrame
+        instead of re-reading the JSON + rebuilding pandas (~50-150 ms
+        saved per call on large grids). Cache auto-invalidates when the
+        layout file is modified.
+        """
         import pandas as pd
         import json
 
         layout_file = getattr(config, 'LAYOUT_FILE_PATH', None)
-        if layout_file and layout_file.exists():
-            try:
-                with open(layout_file, 'r') as f:
-                    layout_data = json.load(f)
-                records = [{'id': k, 'x': v[0], 'y': v[1]} for k, v in layout_data.items()]
-                return pd.DataFrame(records).set_index('id')
-            except Exception as e:
-                logger.warning(f"Warning: Could not load layout: {e}")
-        return None
+        if not layout_file or not layout_file.exists():
+            return None
+
+        try:
+            mtime = layout_file.stat().st_mtime
+        except OSError as e:
+            logger.warning(f"Warning: Could not stat layout: {e}")
+            return None
+
+        cache_key = (str(layout_file), mtime)
+        cached = getattr(self, '_layout_cache', None)
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+
+        try:
+            with open(layout_file, 'r') as f:
+                layout_data = json.load(f)
+            records = [{'id': k, 'x': v[0], 'y': v[1]} for k, v in layout_data.items()]
+            df = pd.DataFrame(records).set_index('id')
+            self._layout_cache = (cache_key, df)
+            return df
+        except Exception as e:
+            logger.warning(f"Warning: Could not load layout: {e}")
+            return None
 
     def _default_nad_parameters(self):
         """Return default NadParameters for diagram generation.
@@ -59,20 +81,47 @@ class DiagramMixin:
           - GEOGRAPHICAL + fixed_positions (now):      3 470 ms
           - Gain: ~−450 ms (~−11 %)
 
-        SVG size unchanged (13.6 MB). Visual output identical — same
-        positions are used, only the force-refinement step is skipped.
+        SVG size unchanged by `layout_type`. Visual output identical —
+        same positions are used, only the force-refinement step is
+        skipped.
+
+        **Minimal-render toggles** (lever #6 in docs/perf-nad-profile-bare-env.md):
+        the following flags are set to the minimum needed to show:
+          - active power (P) at line endpoints
+          - voltage-level nodes + names
+          - nominal-voltage colouring
+          - overloaded-line / voltage-constraint highlights (done
+            client-side via CSS on ids returned in `lines_overloaded`)
+
+        Measured on `bare_env_20240828T0100Z` (~13 MB baseline SVG):
+          - `bus_legend=False`              → −0.11 s total, −1.0 MB
+          - `voltage_level_details=False`   → dead code (no label
+            provider configured), −0 s, kept explicit for clarity
+          - `substation_description_displayed=False` → VL name already
+            carries the substation code on RTE data → −0.2 MB
+          - `power_value_precision=0`       → "123 MW" instead of
+            "123.4 MW", removes a handful of characters per label
+          - `injections_added=False` (pypowsybl default, kept explicit)
+            → tested setting it to True: +1.03 s and +10.9 MB on this
+            grid — injections are intentionally left off the NAD
+
+        Combined gain vs prior defaults (`bus_legend=True`,
+        `substation_description_displayed=True`, `power_value_precision=1`,
+        `voltage_level_details` implicit True): −0.13 s total, −1.2 MB.
         """
         from pypowsybl.network import NadParameters, NadLayoutType
         return NadParameters(
             edge_name_displayed=False,
             id_displayed=False,
             edge_info_along_edge=True,
-            power_value_precision=1,
+            power_value_precision=0,
             angle_value_precision=0,
             current_value_precision=1,
             voltage_value_precision=0,
-            bus_legend=True,
-            substation_description_displayed=True,
+            bus_legend=False,
+            substation_description_displayed=False,
+            voltage_level_details=False,
+            injections_added=False,
             layout_type=NadLayoutType.GEOGRAPHICAL,
         )
 
@@ -582,14 +631,30 @@ class DiagramMixin:
         return sanitize_for_json(overloaded)
 
     def _get_element_max_currents(self, network):
-        """Return {element_id: max(|i1|, |i2|)} for all lines and transformers."""
-        import numpy as np
+        """Return {element_id: max(|i1|, |i2|)} for all lines and transformers.
+
+        Vectorised with numpy — the previous `df.iterrows()` loop added
+        ~300-700 ms on ~10 k-branch grids. Also narrows the pypowsybl
+        query to `i1, i2` only (mirrors `_get_overloaded_lines`).
+
+        Semantics preserved: rows where either `i1` or `i2` is NaN are
+        excluded from the returned dict.
+        """
         currents = {}
-        for df in [network.get_lines()[['i1', 'i2']], network.get_2_windings_transformers()[['i1', 'i2']]]:
-            for element_id, row in df.iterrows():
-                i1, i2 = row['i1'], row['i2']
-                if not np.isnan(i1) and not np.isnan(i2):
-                    currents[element_id] = max(abs(i1), abs(i2))
+        for df in [
+            network.get_lines(attributes=['i1', 'i2']),
+            network.get_2_windings_transformers(attributes=['i1', 'i2']),
+        ]:
+            if len(df.index) == 0:
+                continue
+            i1 = df['i1'].values
+            i2 = df['i2'].values
+            mask = ~(np.isnan(i1) | np.isnan(i2))
+            if not mask.any():
+                continue
+            idx = df.index.values[mask]
+            max_i = np.maximum(np.abs(i1[mask]), np.abs(i2[mask]))
+            currents.update(zip(idx, max_i.tolist()))
         return currents
 
     def _get_n1_flows(self, contingency: str) -> dict:

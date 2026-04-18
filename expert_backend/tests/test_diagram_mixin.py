@@ -7,14 +7,31 @@
 
 """Unit tests for :mod:`expert_backend.services.diagram_mixin`.
 
-Focused on invariants guaranteed by :meth:`DiagramMixin._default_nad_parameters`:
-in particular the ``layout_type=GEOGRAPHICAL`` choice which — paired with
-the ``fixed_positions`` passed from ``grid_layout.json`` — skips pypowsybl's
-force-directed refinement step and cuts NAD generation by ~11 % on large
-grids (see commit 413fa61).
+Covers the invariants guaranteed by :class:`DiagramMixin`:
+
+- :meth:`DiagramMixin._default_nad_parameters` — the minimal-render
+  config documented in ``docs/perf-nad-profile-bare-env.md`` (``bus_legend``,
+  ``substation_description_displayed``, ``voltage_level_details``,
+  ``injections_added`` all off; ``power_value_precision=0``;
+  ``layout_type=GEOGRAPHICAL``).
+
+- :meth:`DiagramMixin._load_layout` — instance-level cache keyed by
+  ``(path, mtime)`` so repeated NAD generations skip the JSON + DataFrame
+  rebuild.
+
+- :meth:`DiagramMixin._get_element_max_currents` — vectorised numpy path
+  returning ``{element_id: max(|i1|, |i2|)}`` with rows containing NaN
+  excluded.
 """
 from __future__ import annotations
 
+import json
+import time
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pandas as pd
 import pytest
 
 pypowsybl = pytest.importorskip("pypowsybl")
@@ -73,11 +90,12 @@ class TestDefaultNadParameters:
                 "on 118 MB grids."
             )
 
-    def test_other_expected_parameters_still_present(self):
-        """Companion kwargs must remain — no accidental regression of the
-        legend / precision / edge-info flags we've tuned over time."""
-        from unittest.mock import patch
-
+    def test_minimal_render_parameters(self):
+        """Companion kwargs guard — these are the minimal-render toggles
+        documented in ``docs/perf-nad-profile-bare-env.md`` (section
+        "Results — after #6"). Flipping any of them silently regresses
+        NAD perf on large grids (e.g. ``bus_legend=True`` adds ~1 MB SVG
+        and ~160 ms; ``injections_added=True`` adds ~11 MB / ~1 s)."""
         mixin = DiagramMixin()
         with patch("pypowsybl.network.NadParameters") as mock_cls:
             mock_cls.return_value = object()
@@ -88,14 +106,170 @@ class TestDefaultNadParameters:
             "edge_name_displayed": False,
             "id_displayed": False,
             "edge_info_along_edge": True,
-            "power_value_precision": 1,
+            "power_value_precision": 0,
             "angle_value_precision": 0,
             "current_value_precision": 1,
             "voltage_value_precision": 0,
-            "bus_legend": True,
-            "substation_description_displayed": True,
+            "bus_legend": False,
+            "substation_description_displayed": False,
+            "voltage_level_details": False,
+            "injections_added": False,
         }
         for key, value in expected.items():
             assert kwargs.get(key) == value, (
                 f"NadParameters kwarg {key!r} expected {value!r}, got {kwargs.get(key)!r}"
             )
+
+
+class TestLoadLayoutCache:
+    """`_load_layout` must cache its DataFrame on the instance keyed by
+    ``(path, mtime)``. Cache must invalidate when the file changes.
+    """
+
+    def _write_layout(self, path: Path, records: dict) -> None:
+        path.write_text(json.dumps(records))
+
+    def test_returns_none_when_layout_path_unset(self):
+        mixin = DiagramMixin()
+        with patch("expert_backend.services.diagram_mixin.config") as cfg:
+            cfg.LAYOUT_FILE_PATH = None
+            assert mixin._load_layout() is None
+
+    def test_returns_none_when_layout_file_missing(self, tmp_path):
+        missing = tmp_path / "nope.json"
+        mixin = DiagramMixin()
+        with patch("expert_backend.services.diagram_mixin.config") as cfg:
+            cfg.LAYOUT_FILE_PATH = missing
+            assert mixin._load_layout() is None
+
+    def test_loads_layout_dataframe(self, tmp_path):
+        layout_file = tmp_path / "grid_layout.json"
+        self._write_layout(layout_file, {"A": [1.0, 2.0], "B": [3.5, -0.5]})
+
+        mixin = DiagramMixin()
+        with patch("expert_backend.services.diagram_mixin.config") as cfg:
+            cfg.LAYOUT_FILE_PATH = layout_file
+            df = mixin._load_layout()
+
+        assert df is not None
+        assert list(df.index) == ["A", "B"]
+        assert list(df.columns) == ["x", "y"]
+        assert df.loc["A", "x"] == 1.0
+        assert df.loc["B", "y"] == -0.5
+
+    def test_cache_hit_skips_file_read(self, tmp_path):
+        """Second call for an unchanged file must not re-open it."""
+        layout_file = tmp_path / "grid_layout.json"
+        self._write_layout(layout_file, {"A": [1.0, 2.0]})
+
+        mixin = DiagramMixin()
+        with patch("expert_backend.services.diagram_mixin.config") as cfg:
+            cfg.LAYOUT_FILE_PATH = layout_file
+            first = mixin._load_layout()
+
+            # After the first load, patch `open` to detect any re-read.
+            with patch("builtins.open") as mock_open:
+                second = mixin._load_layout()
+                mock_open.assert_not_called(), (
+                    "_load_layout must return the cached DataFrame when "
+                    "(path, mtime) is unchanged"
+                )
+
+        assert second is first, "Cached call should return the same DataFrame object"
+
+    def test_cache_invalidates_on_mtime_change(self, tmp_path):
+        """Editing the layout file must invalidate the cache."""
+        layout_file = tmp_path / "grid_layout.json"
+        self._write_layout(layout_file, {"A": [1.0, 2.0]})
+
+        mixin = DiagramMixin()
+        with patch("expert_backend.services.diagram_mixin.config") as cfg:
+            cfg.LAYOUT_FILE_PATH = layout_file
+            first = mixin._load_layout()
+
+            # Bump mtime far enough that even coarse filesystems notice,
+            # then overwrite the file with new content.
+            future_mtime = time.time() + 10
+            import os
+            os.utime(layout_file, (future_mtime, future_mtime))
+            self._write_layout(layout_file, {"A": [1.0, 2.0], "B": [9.0, 9.0]})
+            os.utime(layout_file, (future_mtime + 1, future_mtime + 1))
+
+            second = mixin._load_layout()
+
+        assert second is not first, "Cache must not return the stale DataFrame"
+        assert "B" in second.index, "Reloaded layout must include the newly added entry"
+
+
+class TestGetElementMaxCurrents:
+    """`_get_element_max_currents` must return `max(|i1|, |i2|)` for every
+    line and 2-winding transformer with both currents finite. Rows with
+    NaN in `i1` or `i2` are excluded. The path is vectorised (no
+    row-by-row Python iteration).
+    """
+
+    @staticmethod
+    def _make_network(lines_df, trafos_df):
+        """Build a MagicMock network matching the pypowsybl API surface
+        used by `_get_element_max_currents`."""
+        network = MagicMock()
+        network.get_lines.return_value = lines_df
+        network.get_2_windings_transformers.return_value = trafos_df
+        return network
+
+    def test_basic_two_lines_one_trafo(self):
+        lines = pd.DataFrame(
+            {"i1": [100.0, -250.0], "i2": [110.0, 200.0]},
+            index=["L1", "L2"],
+        )
+        trafos = pd.DataFrame(
+            {"i1": [300.0], "i2": [-305.0]},
+            index=["T1"],
+        )
+        mixin = DiagramMixin()
+        out = mixin._get_element_max_currents(self._make_network(lines, trafos))
+
+        assert set(out.keys()) == {"L1", "L2", "T1"}
+        assert out["L1"] == pytest.approx(110.0)   # max(|100|, |110|)
+        assert out["L2"] == pytest.approx(250.0)   # max(|−250|, |200|)
+        assert out["T1"] == pytest.approx(305.0)
+
+    def test_excludes_rows_with_nan(self):
+        lines = pd.DataFrame(
+            {"i1": [100.0, np.nan, 50.0], "i2": [120.0, 80.0, np.nan]},
+            index=["ok", "nan_i1", "nan_i2"],
+        )
+        trafos = pd.DataFrame({"i1": [], "i2": []})
+        mixin = DiagramMixin()
+        out = mixin._get_element_max_currents(self._make_network(lines, trafos))
+
+        assert out == {"ok": pytest.approx(120.0)}, (
+            "Only fully-defined rows should be returned"
+        )
+
+    def test_empty_dataframes_returns_empty_dict(self):
+        empty = pd.DataFrame({"i1": [], "i2": []})
+        mixin = DiagramMixin()
+        out = mixin._get_element_max_currents(self._make_network(empty, empty))
+        assert out == {}
+
+    def test_narrows_pypowsybl_query_to_i1_i2(self):
+        """Both `get_lines` and `get_2_windings_transformers` must be
+        called with `attributes=['i1', 'i2']` — not the full column set.
+
+        This mirrors the optimisation already in place for
+        `_get_overloaded_lines` (see `diagram_mixin.py:528-545`). Letting
+        pypowsybl return all 30 columns and then slicing in pandas wastes
+        ~150-300 ms on the 55 k-row PyPSA-EUR France table.
+        """
+        lines = pd.DataFrame({"i1": [1.0], "i2": [2.0]}, index=["L"])
+        trafos = pd.DataFrame({"i1": [3.0], "i2": [4.0]}, index=["T"])
+        network = self._make_network(lines, trafos)
+
+        mixin = DiagramMixin()
+        mixin._get_element_max_currents(network)
+
+        network.get_lines.assert_called_once_with(attributes=["i1", "i2"])
+        network.get_2_windings_transformers.assert_called_once_with(
+            attributes=["i1", "i2"]
+        )

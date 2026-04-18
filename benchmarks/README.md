@@ -34,6 +34,8 @@ export BENCH_CONTINGENCY=DISCO_NAME                  # only for bench_n1_diagram
 | `bench_topology_cache.py` | Per-helper + full `NetworkTopologyCache(net)` init. Validates upstream vectorisation series (0.2.0.post3 → post8). | `docs/perf-vectorize-topology-cache.md`, `docs/perf-topology-cache-iter2.md` |
 | `bench_voltage_level_queries.py` | `/api/voltage-levels`, `/api/nominal-voltages`, `get_monitored_elements`, `_get_switches_with_topology` narrow-attr wins. | `docs/perf-narrow-voltage-level-queries.md` |
 | `bench_n1_diagram.py` | Full `get_n1_diagram(contingency)` cold + warm, per-sub-step breakdown. Validates the 3 N-1 fast-path patches. | `docs/perf-n1-diagram-fast-path.md` |
+| `bench_nad_n_state.py` | `get_network_diagram()` cold + warm on the N-state. Captures NAD / SVG / Meta sub-timings from the `[RECO]` log lines. | `docs/perf-nad-profile-bare-env.md` |
+| `bench_nad_toggles.py` | Matrix of `NadParameters` toggle combinations — quantifies per-flag impact on NAD gen + SVG size, surfaces the cost of `injections_added=True`. | `docs/perf-nad-profile-bare-env.md` |
 | `run_all.py` | Drives every benchmark above sequentially. | — |
 
 ## Reference measurements
