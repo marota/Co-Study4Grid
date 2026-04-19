@@ -1501,35 +1501,88 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
         // the sidebar feed.
         const computeActionOverviewPins = (actions, metaIndex) => {
             if (!actions || !metaIndex) return [];
-            const { edgesByEquipmentId, nodesBySvgId } = metaIndex;
+            const { edgesByEquipmentId, nodesBySvgId, nodesByEquipmentId } = metaIndex;
             const rank = Object.keys(actions);
             const pins = [];
+
+            // Resolve a target id to (x, y) on the N-1 NAD.  Falls
+            // through a series of strategies so every action that
+            // references ANY recognisable equipment gets a pin:
+            //   1. edge midpoint (max_rho_line is a line / trafo);
+            //   2. node centroid (max_rho_line is a VL / substation);
+            //   3. anchor node of an incident edge (edges list node1 /
+            //      node2 that may match a node by equipmentId);
+            // Returns null when none of them resolve.
+            const resolveAnchor = (targetId) => {
+                if (!targetId) return null;
+                // Strategy 1: edge midpoint
+                const edge = edgesByEquipmentId?.get?.(targetId);
+                if (edge) {
+                    const n1 = nodesBySvgId?.get?.(edge.node1);
+                    const n2 = nodesBySvgId?.get?.(edge.node2);
+                    if (n1 && n2) {
+                        const x = (Number(n1.x) + Number(n2.x)) / 2;
+                        const y = (Number(n1.y) + Number(n2.y)) / 2;
+                        if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+                    }
+                }
+                // Strategy 2: node lookup by equipment id
+                const node = nodesByEquipmentId?.get?.(targetId);
+                if (node) {
+                    const x = Number(node.x), y = Number(node.y);
+                    if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+                }
+                // Strategy 3: svgId (some edges reference VLs by svg id)
+                const nodeBySvg = nodesBySvgId?.get?.(targetId);
+                if (nodeBySvg) {
+                    const x = Number(nodeBySvg.x), y = Number(nodeBySvg.y);
+                    if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+                }
+                return null;
+            };
+
             for (let i = 0; i < rank.length; i++) {
                 const id = rank[i];
                 const action = actions[id];
                 if (!action) continue;
-                const lineId = action.max_rho_line;
-                if (!lineId) continue;
-                const edge = edgesByEquipmentId?.get?.(lineId);
-                if (!edge) continue;
-                const n1 = nodesBySvgId?.get?.(edge.node1);
-                const n2 = nodesBySvgId?.get?.(edge.node2);
-                if (!n1 || !n2) continue;
-                const x = (Number(n1.x) + Number(n2.x)) / 2;
-                const y = (Number(n1.y) + Number(n2.y)) / 2;
-                if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+                // Try max_rho_line first (simulated), then
+                // estimated_max_rho_line (for combined pairs the
+                // recommender estimated but didn't simulate).  If the
+                // action id is itself a line (common for disco_ /
+                // reco_ actions), fall back to that so the pin still
+                // anchors on the relevant asset.
+                const candidates = [
+                    action.max_rho_line,
+                    action.estimated_max_rho_line,
+                    // action id shape for disco_ / reco_ often
+                    // includes the line id as suffix; strip the
+                    // common prefixes and try.
+                    id.startsWith('disco_') ? id.slice(6) : null,
+                    id.startsWith('reco_') ? id.slice(5) : null,
+                ].filter(Boolean);
+                let anchor = null;
+                for (const c of candidates) {
+                    anchor = resolveAnchor(c);
+                    if (anchor) break;
+                }
+                if (!anchor) continue;
+
                 // Severity palette: green < 0.9, orange < 1.0, red otherwise.
-                const rho = typeof action.max_rho === 'number' ? action.max_rho : 0;
-                const color = rho < 0.9 ? '#28a745' : rho < 1.0 ? '#f0ad4e' : '#dc3545';
+                const rho = typeof action.max_rho === 'number'
+                    ? action.max_rho
+                    : (typeof action.estimated_max_rho === 'number' ? action.estimated_max_rho : NaN);
+                const color = Number.isFinite(rho)
+                    ? (rho < 0.9 ? '#28a745' : rho < 1.0 ? '#f0ad4e' : '#dc3545')
+                    : '#9e9e9e'; // grey when we don't have a rho yet
                 pins.push({
                     id,
-                    x,
-                    y,
+                    x: anchor.x,
+                    y: anchor.y,
                     rho,
                     rank: i + 1,
                     color,
                     description: action.description_unitaire || '',
-                    max_rho_line: lineId,
+                    max_rho_line: action.max_rho_line || action.estimated_max_rho_line || id,
                 });
             }
             return pins;
@@ -1550,6 +1603,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             selectedActionId,
             onActionSelect,
             onPinPreview,
+            // Richer-popover props — forward the sidebar ActionCard
+            // affordances so the pin popover matches the card the
+            // user would see in the feed.
+            selectedActionIds,
+            rejectedActionIds,
+            manuallyAddedIds,
+            onFavorite,
+            onReject,
         }) => {
             const containerRef = React.useRef(null);
             const backdropSvgRef = React.useRef(null);
@@ -1591,6 +1652,15 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             // highlight clones.  Injecting the raw backend SVG string
             // loses all of that and produces the unpainted NAD the
             // earlier port was rendering.
+            //
+            // Performance: `cloneNode(true)` on the PyPSA-EUR France
+            // SVG is ~200-500 ms on cold cache.  We keep a ref-scoped
+            // cache keyed by the source <svg> identity — tab switches
+            // and unrelated re-renders skip the clone entirely, only
+            // paying the cost when the underlying n1Diagram actually
+            // changes.  This is the standalone equivalent of React's
+            // `MemoizedSvgContainer` (PR #79).
+            const lastClonedSourceRef = React.useRef(null);
             React.useLayoutEffect(() => {
                 const container = containerRef.current;
                 if (!container || !visible) return;
@@ -1605,6 +1675,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     }
                     return;
                 }
+                // Skip the expensive clone when the source SVG node is
+                // the same one we already injected.  We still re-pin the
+                // backdropSvgRef each time so overviewVb updates land.
+                if (lastClonedSourceRef.current === source && backdropSvgRef.current && container.contains(backdropSvgRef.current)) {
+                    return;
+                }
+                lastClonedSourceRef.current = source;
                 const clone = source.cloneNode(true);
                 clone.style.width = '100%';
                 clone.style.height = '100%';
@@ -1974,53 +2051,128 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             style={{ padding: '2px 6px', border: '1px solid #ccc', borderRadius: 4, fontSize: '12px', marginLeft: 6, width: 180 }}
                         />
                     </div>
-                    {/* Popover (single-click preview) */}
-                    {popoverPin && (
-                        <div
-                            data-overview-popover
-                            style={{
-                                position: 'fixed',
-                                left: popoverPin.screenX,
-                                top: Math.max(12, popoverPin.screenY - 140),
-                                transform: 'translateX(-50%)',
-                                background: '#fff',
-                                border: '1px solid #ccc',
-                                borderRadius: 6,
-                                padding: '10px 12px',
-                                boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-                                minWidth: 220,
-                                zIndex: 200,
-                                fontSize: '13px',
-                            }}
-                        >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                                <strong style={{ flex: 1 }}>{popoverPin.id}</strong>
-                                <button
-                                    onClick={() => {
-                                        interactionLogger.record('overview_popover_closed', { reason: 'close_button' });
-                                        setPopoverPin(null);
-                                    }}
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }}
-                                    aria-label="Close popover"
-                                >✕</button>
-                            </div>
-                            <div style={{ color: '#555', marginBottom: 4 }}>{popoverPin.description || '(no description)'}</div>
-                            <div style={{ fontSize: '12px', color: '#777' }}>
-                                Max ρ <strong>{(popoverPin.rho * 100).toFixed(1)}%</strong> on {popoverPin.max_rho_line}
-                            </div>
-                            <button
-                                onClick={() => {
-                                    interactionLogger.record('overview_pin_double_clicked', { action_id: popoverPin.id });
-                                    setPopoverPin(null);
-                                    if (onActionSelect) onActionSelect(popoverPin.id);
-                                }}
+                    {/* Popover (single-click preview) — richer layout
+                        matching the sidebar ActionCard: status badges,
+                        max-ρ breakdown, star / reject / view buttons.
+                        Full ActionCard reuse would require extracting
+                        the card body into a shared component; this
+                        inline version carries the same affordances at
+                        lower scope. */}
+                    {popoverPin && (() => {
+                        const action = actions?.[popoverPin.id] || {};
+                        const isFavorited = selectedActionIds?.has?.(popoverPin.id);
+                        const isRejected = rejectedActionIds?.has?.(popoverPin.id);
+                        const isManual = manuallyAddedIds?.has?.(popoverPin.id);
+                        const rho = Number.isFinite(popoverPin.rho) ? popoverPin.rho : null;
+                        const statusBadge = !Number.isFinite(popoverPin.rho)
+                            ? { text: 'Not simulated', bg: '#e2e3e5', fg: '#383d41' }
+                            : rho < 0.9
+                                ? { text: 'Solves overload', bg: '#d4edda', fg: '#155724' }
+                                : rho < 1.0
+                                    ? { text: 'Solved — low margin', bg: '#fff3cd', fg: '#856404' }
+                                    : { text: 'Still overloaded', bg: '#f8d7da', fg: '#721c24' };
+                        const lineOverloadedAfter = Array.isArray(action.lines_overloaded_after)
+                            ? action.lines_overloaded_after
+                            : null;
+                        return (
+                            <div
+                                data-overview-popover
                                 style={{
-                                    marginTop: 8, padding: '4px 10px', background: '#3498db', color: '#fff',
-                                    border: 'none', borderRadius: 4, cursor: 'pointer', width: '100%',
+                                    position: 'fixed',
+                                    left: popoverPin.screenX,
+                                    top: Math.max(12, popoverPin.screenY - 220),
+                                    transform: 'translateX(-50%)',
+                                    background: '#fff',
+                                    border: '1px solid #ccc',
+                                    borderRadius: 6,
+                                    padding: '12px 14px',
+                                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                                    minWidth: 280, maxWidth: 360,
+                                    zIndex: 200,
+                                    fontSize: '13px',
                                 }}
-                            >View action</button>
-                        </div>
-                    )}
+                            >
+                                {/* Header row — id + status badges + close */}
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 8 }}>
+                                    <strong style={{ flex: 1, wordBreak: 'break-all', fontSize: '12px' }}>
+                                        #{popoverPin.rank} — {popoverPin.id}
+                                    </strong>
+                                    <button
+                                        onClick={() => {
+                                            interactionLogger.record('overview_popover_closed', { reason: 'close_button' });
+                                            setPopoverPin(null);
+                                        }}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#888', padding: 0, lineHeight: 1 }}
+                                        aria-label="Close popover"
+                                    >✕</button>
+                                </div>
+                                {/* Status badges */}
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+                                    <span style={{
+                                        background: statusBadge.bg, color: statusBadge.fg,
+                                        padding: '2px 8px', borderRadius: 10, fontSize: '11px', fontWeight: 600,
+                                    }}>{statusBadge.text}</span>
+                                    {isManual && <span style={{ background: '#cfe2ff', color: '#084298', padding: '2px 8px', borderRadius: 10, fontSize: '11px' }}>Manual</span>}
+                                    {isFavorited && <span style={{ background: '#fff3cd', color: '#856404', padding: '2px 8px', borderRadius: 10, fontSize: '11px' }}>⭐ Starred</span>}
+                                    {isRejected && <span style={{ background: '#f8d7da', color: '#721c24', padding: '2px 8px', borderRadius: 10, fontSize: '11px' }}>❌ Rejected</span>}
+                                </div>
+                                {/* Description */}
+                                <div style={{ color: '#333', marginBottom: 8, lineHeight: 1.35 }}>
+                                    {popoverPin.description || '(no description)'}
+                                </div>
+                                {/* Metrics */}
+                                <div style={{ fontSize: '12px', color: '#555', marginBottom: 8 }}>
+                                    {rho != null ? (
+                                        <div>
+                                            Max loading <strong>{(rho * 100).toFixed(1)}%</strong> on <em>{popoverPin.max_rho_line}</em>
+                                        </div>
+                                    ) : (
+                                        <div style={{ color: '#888' }}>Loading not yet simulated.</div>
+                                    )}
+                                    {lineOverloadedAfter && lineOverloadedAfter.length > 0 && (
+                                        <div style={{ marginTop: 4, color: '#856404' }}>
+                                            Residual overloads: {lineOverloadedAfter.slice(0, 3).join(', ')}
+                                            {lineOverloadedAfter.length > 3 ? ` (+${lineOverloadedAfter.length - 3})` : ''}
+                                        </div>
+                                    )}
+                                </div>
+                                {/* Action row: favorite / reject / view */}
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                    <button
+                                        onClick={() => { if (onFavorite) onFavorite(popoverPin.id); }}
+                                        title={isFavorited ? 'Un-star this action' : 'Star this action'}
+                                        style={{
+                                            flex: 'none', padding: '4px 10px',
+                                            background: isFavorited ? '#ffc107' : '#f8f9fa',
+                                            color: isFavorited ? '#000' : '#333',
+                                            border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer',
+                                        }}
+                                    >{isFavorited ? '★' : '☆'}</button>
+                                    <button
+                                        onClick={() => { if (onReject) onReject(popoverPin.id); }}
+                                        title={isRejected ? 'Un-reject this action' : 'Reject this action'}
+                                        style={{
+                                            flex: 'none', padding: '4px 10px',
+                                            background: isRejected ? '#dc3545' : '#f8f9fa',
+                                            color: isRejected ? '#fff' : '#333',
+                                            border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer',
+                                        }}
+                                    >✕</button>
+                                    <button
+                                        onClick={() => {
+                                            interactionLogger.record('overview_pin_double_clicked', { action_id: popoverPin.id });
+                                            setPopoverPin(null);
+                                            if (onActionSelect) onActionSelect(popoverPin.id);
+                                        }}
+                                        style={{
+                                            flex: 1, padding: '4px 10px', background: '#3498db', color: '#fff',
+                                            border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600,
+                                        }}
+                                    >View action</button>
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
             );
         };
@@ -2635,6 +2787,65 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             postVb();
                         });
                         popup.addEventListener('mouseup', () => { isDragging = false; svgEl.style.cursor = 'grab'; });
+
+                        // If we're detaching the Action Overview, render
+                        // the pin layer inside the popup too.  Pins are
+                        // positioned in SCREEN-px via the same
+                        // `xMidYMid meet` projection the pin SVG uses in
+                        // main, recomputed on every pan/zoom in the
+                        // popup so they stay anchored to their asset
+                        // through the popup's viewBox changes.  Clicks
+                        // in the popup are no-ops — action selection
+                        // remains a main-window gesture.
+                        if (actionFallbackToN1 && result?.actions) {
+                            const pinLayer = popup.document.createElement('div');
+                            pinLayer.style.cssText = 'position: absolute; inset: 0; pointer-events: none;';
+                            contentHost.appendChild(pinLayer);
+                            const overviewPins = computeActionOverviewPins(result.actions, n1MetaIndex);
+                            const renderPopupPins = () => {
+                                if (!vb) return;
+                                const rect = svgEl.getBoundingClientRect();
+                                if (!rect.width || !rect.height) return;
+                                const vbAspect = vb.w / vb.h;
+                                const boxAspect = rect.width / rect.height;
+                                let scale, offsetX, offsetY;
+                                if (boxAspect > vbAspect) {
+                                    scale = rect.height / vb.h;
+                                    offsetX = (rect.width - vb.w * scale) / 2;
+                                    offsetY = 0;
+                                } else {
+                                    scale = rect.width / vb.w;
+                                    offsetX = 0;
+                                    offsetY = (rect.height - vb.h * scale) / 2;
+                                }
+                                pinLayer.replaceChildren();
+                                for (const pin of overviewPins) {
+                                    const sx = offsetX + (pin.x - vb.x) * scale;
+                                    const sy = offsetY + (pin.y - vb.y) * scale;
+                                    const wrap = popup.document.createElement('div');
+                                    wrap.title = `${pin.id} — max ρ ${(pin.rho * 100).toFixed(1)}%`;
+                                    wrap.style.cssText = `position:absolute;left:${sx}px;top:${sy}px;transform:translate(-50%, -100%);width:28px;height:38px;pointer-events:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.4));`;
+                                    const label = Number.isFinite(pin.rho) ? `${Math.round(pin.rho * 100)}%` : String(pin.rank);
+                                    wrap.innerHTML = `
+                                        <svg viewBox="0 0 36 48" width="28" height="38" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M18 0 C8 0 0 8 0 18 C0 28 18 48 18 48 C18 48 36 28 36 18 C36 8 28 0 18 0 Z" fill="${pin.color}" stroke="#fff" stroke-width="2"/>
+                                            <circle cx="18" cy="18" r="11" fill="#fff"/>
+                                            <text x="18" y="18" text-anchor="middle" dominant-baseline="central" font-size="${label.length > 3 ? 8 : 10}" font-weight="700" fill="${pin.color}">${label}</text>
+                                        </svg>`;
+                                    pinLayer.appendChild(wrap);
+                                }
+                            };
+                            // Re-project on every popup pan/zoom + any
+                            // resize (window drag, layout change).
+                            svgEl.addEventListener('wheel', () => popup.requestAnimationFrame(renderPopupPins));
+                            popup.addEventListener('mousemove', () => popup.requestAnimationFrame(renderPopupPins));
+                            popup.addEventListener('mouseup', () => popup.requestAnimationFrame(renderPopupPins));
+                            popup.addEventListener('resize', () => popup.requestAnimationFrame(renderPopupPins));
+                            // Initial paint deferred until the SVG has
+                            // been laid out (its getBoundingClientRect
+                            // returns 0/0 synchronously after insertion).
+                            popup.requestAnimationFrame(renderPopupPins);
+                        }
                     } else {
                         contentHost.textContent = '(Tab has no diagram yet — return to the main window to load one.)';
                         contentHost.style.cssText += 'color: #888; display: flex; align-items: center; justify-content: center;';
@@ -6124,6 +6335,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                 actions={result.actions}
                                                 selectedActionId={selectedActionId}
                                                 onActionSelect={handleActionSelect}
+                                                selectedActionIds={manualActionIds}
+                                                rejectedActionIds={rejectedActionIds}
+                                                manuallyAddedIds={manuallyAddedIds}
+                                                onFavorite={handleActionFavorite}
+                                                onReject={handleActionReject}
                                             />
                                             : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Select an action card to view its network variant</div>
                                         )
