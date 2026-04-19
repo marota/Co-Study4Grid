@@ -1606,22 +1606,54 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 const clone = source.cloneNode(true);
                 clone.style.width = '100%';
                 clone.style.height = '100%';
-                clone.style.opacity = '0.55';          // dim the backdrop
+                // Light dimming only — pypowsybl edges are already
+                // thin at full extent; aggressive opacity hides them.
+                // The pin layer above provides enough visual contrast
+                // without further fading the network.
+                clone.style.opacity = '0.85';
                 clone.style.pointerEvents = 'none';
                 clone.removeAttribute('width');
                 clone.removeAttribute('height');
                 container.replaceChildren(clone);
                 backdropSvgRef.current = clone;
 
-                // Seed the overview viewBox from the clone's current
-                // viewBox (which the main N-1 tab has already zoomed
-                // to the contingency via zoomToElement).  Stash the
-                // auto-fit rectangle — the "Fit" button reapplies it.
+                // Seed the overview viewBox to a bounding box that
+                // includes EVERY pin (with 5 % padding) so the
+                // operator sees the full prioritized-actions map at
+                // once.  Falls back to the cloned SVG's existing
+                // viewBox when there are no pins (analysis hasn't
+                // produced any actions yet).  The same rectangle is
+                // stashed as the "Fit" target — clicking the Fit
+                // button restores it.
                 try {
-                    const vbAttr = clone.getAttribute('viewBox');
-                    if (vbAttr) {
-                        const [x, y, w, h] = vbAttr.split(/\s+/).map(Number);
-                        const seed = { x, y, w, h };
+                    let seed = null;
+                    if (pins.length > 0) {
+                        let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity;
+                        for (const p of pins) {
+                            if (p.x < xMin) xMin = p.x;
+                            if (p.y < yMin) yMin = p.y;
+                            if (p.x > xMax) xMax = p.x;
+                            if (p.y > yMax) yMax = p.y;
+                        }
+                        // Pad so pin glyphs aren't clipped at the
+                        // border, and enforce a minimum extent so a
+                        // single-pin overview doesn't zoom infinitely.
+                        const w = Math.max(xMax - xMin, 200);
+                        const h = Math.max(yMax - yMin, 200);
+                        seed = {
+                            x: xMin - w * 0.1,
+                            y: yMin - h * 0.1,
+                            w: w * 1.2,
+                            h: h * 1.2,
+                        };
+                    } else {
+                        const vbAttr = clone.getAttribute('viewBox');
+                        if (vbAttr) {
+                            const [x, y, w, h] = vbAttr.split(/\s+/).map(Number);
+                            seed = { x, y, w, h };
+                        }
+                    }
+                    if (seed) {
                         setOverviewVb(seed);
                         fitVbRef.current = seed;
                     }
@@ -2404,19 +2436,39 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         contentHost.style.cssText += 'color: #888; display: flex; align-items: center; justify-content: center;';
                     }
                 } else {
+                    // For the Action tab in Overview mode (no action selected
+                    // → no action variant SVG yet) fall back to the N-1
+                    // backdrop the overview is rendering on top of.  The
+                    // popup loses the pin layer (it's React state-driven and
+                    // would need its own IPC channel to hydrate in the
+                    // popup), but at least the underlying network shows up.
+                    const actionFallbackToN1 = tabId === 'action' && !actionSvgContainerRef.current?.querySelector('svg');
                     const sourceContainer = tabId === 'n' ? nSvgContainerRef.current
                         : tabId === 'n-1' ? n1SvgContainerRef.current
-                        : tabId === 'action' ? actionSvgContainerRef.current
+                        : tabId === 'action' ? (actionFallbackToN1 ? n1SvgContainerRef.current : actionSvgContainerRef.current)
                         : null;
                     const sourceSvg = sourceContainer?.querySelector('svg');
+                    if (actionFallbackToN1 && sourceSvg) {
+                        const note = popup.document.createElement('div');
+                        note.style.cssText = 'background: #fff3cd; color: #856404; padding: 6px 12px; font-size: 0.8rem; border-bottom: 1px solid #ffc107; text-align: center;';
+                        note.textContent = 'Action Overview popped out — N-1 backdrop only. Pin overlay stays in the main window.';
+                        popup.document.body.insertBefore(note, contentHost);
+                    }
                     if (sourceSvg) {
-                        // Deep-clone preserves every highlight clone, the
-                        // current viewBox attribute, and any applied
-                        // CSS classes.  We strip width/height inline
-                        // styles so the popup's flex container controls
-                        // sizing rather than inheriting the main
-                        // window's pixel dimensions.
-                        const svgEl = sourceSvg.cloneNode(true);
+                        // Cross-document SVG copy.  `cloneNode(true)` keeps
+                        // the node bound to the SOURCE document — when
+                        // appended to a popup, the embedded `<style>` block
+                        // (where pypowsybl defines `--nad-vl-color` per
+                        // voltage class) doesn't always re-evaluate, so
+                        // edges fall back to `lightgrey` and the popup
+                        // renders nodes-only.  Round-tripping through
+                        // serialised XML forces the popup's parser to
+                        // build a fresh node bound to the popup's
+                        // document, so the embedded styles take effect.
+                        const xmlString = new XMLSerializer().serializeToString(sourceSvg);
+                        const popupParser = new popup.DOMParser();
+                        const popupDoc = popupParser.parseFromString(xmlString, 'image/svg+xml');
+                        const svgEl = popupDoc.documentElement;
                         svgEl.style.width = '100%';
                         svgEl.style.height = '100%';
                         svgEl.removeAttribute('width');
@@ -7578,7 +7630,18 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 {[
                                     { id: 'n', label: 'Network (N)', available: !!nDiagram?.svg, accentColor: '#3498db', placeholder: 'Configure a network path to load the base-case diagram.' },
                                     { id: 'n-1', label: 'Contingency (N-1)', available: !!n1Diagram?.svg, accentColor: '#e74c3c', placeholder: 'Select a contingency element from the dropdown to view the N-1 state.' },
-                                    { id: 'action', label: selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action', available: !!actionDiagram?.svg, accentColor: '#ff4081', placeholder: 'Select an action card from the suggestions panel to view its effect on the network.' },
+                                    {
+                                        id: 'action',
+                                        label: selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action',
+                                        // Available when EITHER an action variant is loaded
+                                        // OR the Action Overview can render (analysis has
+                                        // produced prioritized actions).  Without the
+                                        // overview branch the detach button stays hidden
+                                        // while the user is browsing pins.
+                                        available: !!actionDiagram?.svg || (!!result?.actions && Object.keys(result.actions).length > 0),
+                                        accentColor: '#ff4081',
+                                        placeholder: 'Select an action card from the suggestions panel to view its effect on the network.',
+                                    },
                                     { id: 'overflow', label: 'Overflow Analysis', available: !!result?.pdf_url, accentColor: '#27ae60', placeholder: 'Run \u201cAnalyze & Suggest\u201d to see the overflow graph.' },
                                 ].map(tab => {
                                     const isActive = activeTab === tab.id;
