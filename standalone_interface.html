@@ -1545,15 +1545,24 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             visible,
             n1Diagram,
             n1MetaIndex,
+            n1SvgContainerRef,
             actions,
             selectedActionId,
             onActionSelect,
             onPinPreview,
         }) => {
             const containerRef = React.useRef(null);
+            const backdropSvgRef = React.useRef(null);
+            const pinSvgRef = React.useRef(null);
             const [popoverPin, setPopoverPin] = React.useState(null);
             const [inspectQuery, setInspectQuery] = React.useState('');
             const clickTimerRef = React.useRef(null);
+            // Local viewBox state for the overview.  The overview
+            // owns its own zoom — independent from the N-1 tab's
+            // pan/zoom state — so overview_zoom_* buttons move the
+            // overview viewport without affecting the main N-1 tab.
+            const [overviewVb, setOverviewVb] = React.useState(null);
+            const fitVbRef = React.useRef(null); // the "Fit" target
 
             const pins = React.useMemo(
                 () => computeActionOverviewPins(actions, n1MetaIndex),
@@ -1572,19 +1581,63 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 }
             }, [visible]);
 
-            // Inject the N-1 SVG as the overview backdrop.
+            // Inject the processed N-1 SVG as the overview backdrop.
+            // We clone the DOM the main N-1 tab is already rendering
+            // (`n1SvgContainerRef.current`) — that node has every
+            // post-processing pass applied: voltage-range filter,
+            // boostSvgForLargeGrid, overload highlights, contingency
+            // highlight clones.  Injecting the raw backend SVG string
+            // loses all of that and produces the unpainted NAD the
+            // earlier port was rendering.
             React.useLayoutEffect(() => {
                 const container = containerRef.current;
-                if (!container || !visible || !n1Diagram?.svg) return;
-                if (n1Diagram.svg instanceof SVGSVGElement) {
-                    container.replaceChildren(n1Diagram.svg.cloneNode(true));
-                } else {
-                    container.innerHTML = n1Diagram.svg;
+                if (!container || !visible) return;
+                const source = n1SvgContainerRef?.current?.querySelector?.('svg');
+                if (!source) {
+                    // Fall back to raw string if the main N-1 tab hasn't
+                    // mounted its SVG yet (unlikely but defensive).
+                    if (n1Diagram?.svg) {
+                        container.innerHTML = typeof n1Diagram.svg === 'string'
+                            ? n1Diagram.svg
+                            : (n1Diagram.svg.outerHTML || '');
+                    }
+                    return;
                 }
-                // Dim the backdrop so the pins read as the primary content.
-                const svg = container.querySelector('svg');
-                if (svg) svg.style.opacity = '0.5';
-            }, [visible, n1Diagram]);
+                const clone = source.cloneNode(true);
+                clone.style.width = '100%';
+                clone.style.height = '100%';
+                clone.style.opacity = '0.55';          // dim the backdrop
+                clone.style.pointerEvents = 'none';
+                clone.removeAttribute('width');
+                clone.removeAttribute('height');
+                container.replaceChildren(clone);
+                backdropSvgRef.current = clone;
+
+                // Seed the overview viewBox from the clone's current
+                // viewBox (which the main N-1 tab has already zoomed
+                // to the contingency via zoomToElement).  Stash the
+                // auto-fit rectangle — the "Fit" button reapplies it.
+                try {
+                    const vbAttr = clone.getAttribute('viewBox');
+                    if (vbAttr) {
+                        const [x, y, w, h] = vbAttr.split(/\s+/).map(Number);
+                        const seed = { x, y, w, h };
+                        setOverviewVb(seed);
+                        fitVbRef.current = seed;
+                    }
+                } catch (e) { /* ignore */ }
+            }, [visible, n1Diagram, n1SvgContainerRef]);
+
+            // Mirror the overview viewBox onto both the backdrop and
+            // the pin-layer SVG so pins stay anchored to their edges
+            // while the user pans/zooms.
+            React.useEffect(() => {
+                if (!overviewVb) return;
+                const { x, y, w, h } = overviewVb;
+                const vbAttr = `${x} ${y} ${w} ${h}`;
+                if (backdropSvgRef.current) backdropSvgRef.current.setAttribute('viewBox', vbAttr);
+                if (pinSvgRef.current) pinSvgRef.current.setAttribute('viewBox', vbAttr);
+            }, [overviewVb]);
 
             // Global Escape / outside-click handlers for the popover.
             React.useEffect(() => {
@@ -1644,9 +1697,62 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 if (onActionSelect) onActionSelect(pin.id);
             }, [onActionSelect]);
 
-            const handleZoomIn = () => interactionLogger.record('overview_zoom_in');
-            const handleZoomOut = () => interactionLogger.record('overview_zoom_out');
-            const handleZoomFit = () => interactionLogger.record('overview_zoom_fit');
+            const handleZoomIn = () => {
+                interactionLogger.record('overview_zoom_in');
+                setOverviewVb(vb => vb ? {
+                    x: vb.x + vb.w * 0.1, y: vb.y + vb.h * 0.1,
+                    w: vb.w * 0.8, h: vb.h * 0.8,
+                } : vb);
+            };
+            const handleZoomOut = () => {
+                interactionLogger.record('overview_zoom_out');
+                setOverviewVb(vb => vb ? {
+                    x: vb.x - vb.w * 0.125, y: vb.y - vb.h * 0.125,
+                    w: vb.w * 1.25, h: vb.h * 1.25,
+                } : vb);
+            };
+            const handleZoomFit = () => {
+                interactionLogger.record('overview_zoom_fit');
+                if (fitVbRef.current) setOverviewVb({ ...fitVbRef.current });
+            };
+
+            // Wheel + drag pan on the pin-layer SVG so the overview
+            // is explorable without the +/- buttons.
+            const panRef = React.useRef({ isDragging: false, lastX: 0, lastY: 0 });
+            const handleWheel = React.useCallback((e) => {
+                e.preventDefault();
+                setOverviewVb(vb => {
+                    if (!vb) return vb;
+                    const scale = e.deltaY < 0 ? 0.9 : 1.1;
+                    return {
+                        x: vb.x + vb.w * (1 - scale) / 2,
+                        y: vb.y + vb.h * (1 - scale) / 2,
+                        w: vb.w * scale, h: vb.h * scale,
+                    };
+                });
+            }, []);
+            const handleMouseDown = (e) => {
+                panRef.current.isDragging = true;
+                panRef.current.lastX = e.clientX;
+                panRef.current.lastY = e.clientY;
+            };
+            const handleMouseMove = (e) => {
+                if (!panRef.current.isDragging) return;
+                const dx = e.clientX - panRef.current.lastX;
+                const dy = e.clientY - panRef.current.lastY;
+                panRef.current.lastX = e.clientX;
+                panRef.current.lastY = e.clientY;
+                setOverviewVb(vb => {
+                    if (!vb || !pinSvgRef.current) return vb;
+                    const rect = pinSvgRef.current.getBoundingClientRect();
+                    return {
+                        x: vb.x - dx * vb.w / rect.width,
+                        y: vb.y - dy * vb.h / rect.height,
+                        w: vb.w, h: vb.h,
+                    };
+                });
+            };
+            const handleMouseUp = () => { panRef.current.isDragging = false; };
 
             const handleInspectChange = (e) => {
                 const q = e.target.value;
@@ -1666,15 +1772,15 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
             if (!visible) return null;
 
-            // Resolve the N-1 SVG's viewBox so pins can be positioned
-            // in SVG-local coordinates on top of it.  We render the
-            // pins in a second, overlaid SVG that matches the
-            // backdrop viewBox.
-            const vb = n1Diagram?.originalViewBox;
-            const viewBoxAttr = vb ? `${vb.x} ${vb.y} ${vb.w} ${vb.h}` : '0 0 1000 1000';
-            // Pin radius in SVG units — derived from viewBox size so
-            // the pin stays readable at the default fit.
-            const pinR = vb ? Math.max(Math.min(vb.w, vb.h) * 0.01, 8) : 15;
+            // Pin radius in SVG units, scaled to the CURRENT zoom
+            // level so the pin stays roughly constant in screen-px
+            // as the user zooms.  (A fully screen-constant sizing
+            // like the React app's MutationObserver + rescale
+            // approach would require cross-browser observer
+            // plumbing that isn't justified at this port's scope.)
+            const vbForPins = overviewVb || n1Diagram?.originalViewBox || { x: 0, y: 0, w: 1000, h: 1000 };
+            const viewBoxAttr = `${vbForPins.x} ${vbForPins.y} ${vbForPins.w} ${vbForPins.h}`;
+            const pinR = Math.max(Math.min(vbForPins.w, vbForPins.h) * 0.012, 8);
 
             return (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
@@ -1695,16 +1801,22 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
                         <svg
+                            ref={pinSvgRef}
                             viewBox={viewBoxAttr}
                             preserveAspectRatio="xMidYMid meet"
-                            style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+                            onWheel={handleWheel}
+                            onMouseDown={handleMouseDown}
+                            onMouseMove={handleMouseMove}
+                            onMouseUp={handleMouseUp}
+                            onMouseLeave={handleMouseUp}
+                            style={{ position: 'absolute', inset: 0, pointerEvents: 'auto', cursor: panRef.current.isDragging ? 'grabbing' : 'grab' }}
                         >
                             {pins.map((pin) => (
                                 <g
                                     key={pin.id}
                                     data-overview-pin
                                     transform={`translate(${pin.x}, ${pin.y})`}
-                                    style={{ cursor: 'pointer', pointerEvents: 'auto' }}
+                                    style={{ cursor: 'pointer' }}
                                     onClick={(e) => handlePinClick(pin, e)}
                                     onDoubleClick={() => handlePinDoubleClick(pin)}
                                 >
@@ -2215,7 +2327,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 return () => window.removeEventListener('beforeunload', onUnload);
             }, []);
 
-            const TAB_TITLES = { 'n': 'Network (N)', 'n-1': 'Contingency (N-1)', 'action': 'Remedial Action' };
+            const TAB_TITLES = { 'n': 'Network (N)', 'n-1': 'Contingency (N-1)', 'action': 'Remedial Action', 'overflow': 'Overflow Analysis' };
 
             const handleDetachTab = (tabId) => {
                 if (detachedTabsRef.current[tabId]) return; // already detached
@@ -2267,25 +2379,53 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 header.appendChild(reattachBtn);
                 popup.document.body.appendChild(header);
 
-                // SVG snapshot container.
-                const svgHost = popup.document.createElement('div');
-                svgHost.style.cssText = 'flex: 1; overflow: hidden; position: relative;';
-                svgHost.dataset.role = 'svg-host';
-                const snapshot = tabId === 'n' ? nDiagram?.svg
-                    : tabId === 'n-1' ? n1Diagram?.svg
-                    : tabId === 'action' ? actionDiagram?.svg
-                    : null;
-                if (snapshot) {
-                    svgHost.innerHTML = typeof snapshot === 'string' ? snapshot
-                        : snapshot instanceof SVGSVGElement ? snapshot.outerHTML
-                        : '';
-                    const svgEl = svgHost.querySelector('svg');
-                    if (svgEl) {
+                // Content host.  For diagram tabs (N / N-1 / Action) we
+                // clone the SVG node from the main container ref — it
+                // already has every post-processing pass applied
+                // (voltage filter, boostSvgForLargeGrid, contingency
+                // highlight, overload highlights, delta visuals, current
+                // viewBox).  Injecting the raw backend string would
+                // lose all of that and produce the unpainted NAD the
+                // earlier port was rendering.  For Overflow we reuse
+                // the same iframe src as the main tab.
+                const contentHost = popup.document.createElement('div');
+                contentHost.style.cssText = 'flex: 1; overflow: hidden; position: relative;';
+                contentHost.dataset.role = 'content-host';
+                popup.document.body.appendChild(contentHost);
+
+                if (tabId === 'overflow') {
+                    if (result?.pdf_url) {
+                        const iframe = popup.document.createElement('iframe');
+                        iframe.src = API_BASE + result.pdf_url;
+                        iframe.style.cssText = 'width: 100%; height: 100%; border: none;';
+                        contentHost.appendChild(iframe);
+                    } else {
+                        contentHost.textContent = '(No overflow PDF available yet.)';
+                        contentHost.style.cssText += 'color: #888; display: flex; align-items: center; justify-content: center;';
+                    }
+                } else {
+                    const sourceContainer = tabId === 'n' ? nSvgContainerRef.current
+                        : tabId === 'n-1' ? n1SvgContainerRef.current
+                        : tabId === 'action' ? actionSvgContainerRef.current
+                        : null;
+                    const sourceSvg = sourceContainer?.querySelector('svg');
+                    if (sourceSvg) {
+                        // Deep-clone preserves every highlight clone, the
+                        // current viewBox attribute, and any applied
+                        // CSS classes.  We strip width/height inline
+                        // styles so the popup's flex container controls
+                        // sizing rather than inheriting the main
+                        // window's pixel dimensions.
+                        const svgEl = sourceSvg.cloneNode(true);
                         svgEl.style.width = '100%';
                         svgEl.style.height = '100%';
+                        svgEl.removeAttribute('width');
+                        svgEl.removeAttribute('height');
+                        contentHost.appendChild(svgEl);
+
                         // Basic wheel-zoom + drag pan so the popup is
-                        // usable standalone. Forward viewBox changes to
-                        // the main window via postMessage — the main
+                        // usable standalone.  Forward viewBox changes
+                        // to the main window via postMessage — the main
                         // mirrors only when this tab is tied.
                         let vb = svgEl.viewBox?.baseVal
                             ? { x: svgEl.viewBox.baseVal.x, y: svgEl.viewBox.baseVal.y, w: svgEl.viewBox.baseVal.width, h: svgEl.viewBox.baseVal.height }
@@ -2327,12 +2467,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                             postVb();
                         });
                         popup.addEventListener('mouseup', () => { isDragging = false; svgEl.style.cursor = 'grab'; });
+                    } else {
+                        contentHost.textContent = '(Tab has no diagram yet — return to the main window to load one.)';
+                        contentHost.style.cssText += 'color: #888; display: flex; align-items: center; justify-content: center;';
                     }
-                } else {
-                    svgHost.textContent = '(No diagram available — return to the main window to load one.)';
-                    svgHost.style.cssText += 'color: #888; display: flex; align-items: center; justify-content: center;';
                 }
-                popup.document.body.appendChild(svgHost);
 
                 // When the user closes the popup via the OS, treat it as reattach.
                 popup.addEventListener('pagehide', () => {
@@ -3472,10 +3611,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             };
 
             // Fetch action variant diagram when an action card is clicked
-            const handleActionSelect = async (actionId) => {
+            const handleActionSelect = async (actionId, force = false) => {
 
-                if (actionId === selectedActionId) {
-                    // Deselect — return to previous diagram tab
+                if (!force && actionId === selectedActionId) {
+                    // Deselect — return to previous diagram tab.  Force
+                    // path (used after a fresh re-simulation) skips
+                    // this toggle so the variant diagram re-fetches
+                    // with the updated network state and the auto-zoom
+                    // effect recenters on the new max_rho_line.
                     interactionLogger.record('action_deselected', { previous_action_id: selectedActionId || '' });
                     setSelectedActionId(null);
                     setActionDiagram(null);
@@ -4690,6 +4833,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     });
                     // Refresh combined estimations for pairs containing this action
                     refreshCombinedEstimations(actionId);
+                    // Auto-select the re-simulated action so the action
+                    // variant diagram refreshes and the auto-zoom effect
+                    // recenters on the new max_rho_line.  Matches the
+                    // React `wrappedForcedActionSelect` pattern invoked
+                    // from `handleActionResimulated`.  force=true so a
+                    // re-simulation of the already-selected action
+                    // re-fetches instead of toggling it off.
+                    handleActionSelect(actionId, true);
                 } catch (err) {
                     console.error('Re-simulation failed:', err);
                 } finally {
@@ -4752,6 +4903,9 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     });
                     // Refresh combined estimations for pairs containing this action
                     refreshCombinedEstimations(actionId);
+                    // Force-select so the action variant diagram re-fetches
+                    // (matches the React `wrappedForcedActionSelect` path).
+                    handleActionSelect(actionId, true);
                 } catch (err) {
                     console.error('PST re-simulation failed:', err);
                 } finally {
@@ -5545,6 +5699,40 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 } catch (e) { console.error('Zoom failed:', e); }
             };
 
+            // Auto-zoom the Action tab onto the selected action's
+            // target element (`max_rho_line`) once the variant diagram
+            // arrives.  Without this, simulating an action and then
+            // landing on the action tab shows the preserved viewBox
+            // from the previous tab — so the user has to hunt for the
+            // impacted line manually.  Gated on selectedActionId +
+            // actionDiagram.svg so we only fire ONCE per simulation.
+            const lastAutoZoomedActionRef = useRef(null);
+            useEffect(() => {
+                if (activeTab !== 'action') return;
+                if (!selectedActionId || !actionDiagram?.svg) return;
+                // Only fire once per (actionId + diagram) pair — so
+                // panning or zooming manually after the auto-zoom
+                // doesn't snap the view back.
+                const key = `${selectedActionId}::${actionDiagram?.action_id || ''}`;
+                if (lastAutoZoomedActionRef.current === key) return;
+                lastAutoZoomedActionRef.current = key;
+
+                const target = result?.actions?.[selectedActionId]?.max_rho_line;
+                if (!target) return;
+                // Defer one frame so the SVG has been injected into the
+                // container by MemoizedSvgContainer's useLayoutEffect.
+                const raf = requestAnimationFrame(() => {
+                    try { zoomToElement(target); } catch (e) { /* ignore */ }
+                });
+                return () => cancelAnimationFrame(raf);
+            }, [activeTab, selectedActionId, actionDiagram, result]);
+
+            // Reset the auto-zoom guard when the user deselects the
+            // action, so re-selecting the same action later re-zooms.
+            useEffect(() => {
+                if (!selectedActionId) lastAutoZoomedActionRef.current = null;
+            }, [selectedActionId]);
+
             // Auto-zoom to selected element via viewBox
             useEffect(() => {
                 if (activeTab === 'overflow') return;
@@ -5707,6 +5895,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                 visible={activeTab === 'action' && !selectedActionId}
                                                 n1Diagram={n1Diagram}
                                                 n1MetaIndex={n1MetaIndex}
+                                                n1SvgContainerRef={n1SvgContainerRef}
                                                 actions={result.actions}
                                                 selectedActionId={selectedActionId}
                                                 onActionSelect={handleActionSelect}
@@ -7388,8 +7577,12 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 ].map(tab => {
                                     const isActive = activeTab === tab.id;
                                     const isDetached = !!detachedTabs[tab.id];
-                                    // Only N / N-1 / Action are detachable — Overflow is a PDF tab.
-                                    const detachable = tab.id !== 'overflow' && tab.available;
+                                    // Every available tab is detachable — the
+                                    // popup content is chosen by handleDetachTab:
+                                    // diagram tabs clone their main-container SVG,
+                                    // the Overflow tab opens the PDF url in an
+                                    // iframe.
+                                    const detachable = tab.available;
                                     return (
                                         <div key={tab.id} style={{ flex: 1, display: 'flex', alignItems: 'stretch', borderRight: '1px solid #e0e0e0' }}>
                                             <button
