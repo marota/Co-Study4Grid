@@ -231,12 +231,104 @@ def extract_settings_state_fields(hook_path: Path) -> set[str]:
 
 
 RECORD_CALL = re.compile(
-    r"interactionLogger\.record\(\s*['\"]([a-z0-9_]+)['\"]\s*(?:,\s*(\{[^{}]*?\}|\w+))?",
-    re.DOTALL,
+    r"interactionLogger\.record\(\s*['\"]([a-z0-9_]+)['\"]",
 )
 RECORD_COMPLETION_CALL = re.compile(
     r"interactionLogger\.recordCompletion\(\s*['\"]([a-z0-9_]+)['\"]",
 )
+
+
+def _extract_second_arg(src: str, after: int) -> tuple[str, int] | None:
+    """Starting at `src[after] == ','`, return the source slice of the
+    second argument to ``interactionLogger.record`` and the offset
+    past it.  Handles balanced ``{}`` nesting (so JSX and inline
+    expressions like ``Object.keys({}).length`` don't truncate the
+    capture), and handles bare identifiers / method calls (returns
+    them verbatim so the caller can note it's "deferred").
+
+    Returns None if the call has no second argument.
+    """
+    i = after
+    # Expect `,` followed by whitespace, then the arg.
+    if i >= len(src) or src[i] != ",":
+        return None
+    i += 1
+    while i < len(src) and src[i].isspace():
+        i += 1
+    if i >= len(src):
+        return None
+    start = i
+    if src[i] == "{":
+        # Balance braces; strings and comments can harbour unbalanced
+        # braces so we skip them explicitly.
+        depth = 0
+        while i < len(src):
+            c = src[i]
+            if c == "{":
+                depth += 1
+                i += 1
+            elif c == "}":
+                depth -= 1
+                i += 1
+                if depth == 0:
+                    return (src[start:i], i)
+            elif c in "\"'":
+                # Skip string literal
+                quote = c
+                i += 1
+                while i < len(src) and src[i] != quote:
+                    if src[i] == "\\":
+                        i += 2
+                    else:
+                        i += 1
+                i += 1
+            elif c == "`":
+                # Template literal — just skip to the matching `
+                i += 1
+                while i < len(src) and src[i] != "`":
+                    if src[i] == "\\":
+                        i += 2
+                    else:
+                        i += 1
+                i += 1
+            elif src[i:i + 2] == "//":
+                while i < len(src) and src[i] != "\n":
+                    i += 1
+            elif src[i:i + 2] == "/*":
+                i += 2
+                while i < len(src) and src[i:i + 2] != "*/":
+                    i += 1
+                i += 2
+            else:
+                i += 1
+        return None
+    # Bare identifier / call expression — read until top-level `)` or
+    # `,` at paren-depth 0.
+    paren_depth = 0
+    while i < len(src):
+        c = src[i]
+        if c == "(":
+            paren_depth += 1
+        elif c == ")":
+            if paren_depth == 0:
+                break
+            paren_depth -= 1
+        elif c == "," and paren_depth == 0:
+            break
+        i += 1
+    return (src[start:i], i)
+
+
+def _strip_comments(src: str) -> str:
+    """Remove ``//``-line and ``/* */``-block comments so they don't
+    pollute the DETAIL_KEY walk. (The tokenizer above already skips
+    comments while walking braces, but the body passed to DETAIL_KEY
+    is the raw slice — stripping here is the simplest way to keep
+    the key walker honest against call-site comments.)
+    """
+    src = re.sub(r"//[^\n]*", "", src)
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.DOTALL)
+    return src
 # Match only property-start positions inside an object literal so we
 # capture keys (not value identifiers).  Both explicit and JS shorthand
 # properties are supported:
@@ -280,15 +372,19 @@ def walk_record_calls(
         # Use line-by-line search so we can cheaply attach line numbers.
         for m in RECORD_CALL.finditer(src):
             event_type = m.group(1)
-            details_src = m.group(2) or ""
             line_no = src.count("\n", 0, m.start()) + 1
             sites_by_type[event_type].append((rel, line_no))
+            second = _extract_second_arg(src, m.end())
+            if second is None:
+                continue
+            details_src, _end = second
             if details_src.startswith("{"):
-                # Pass the whole literal (outer braces included) so the
-                # DETAIL_KEY anchor recognises the first property —
-                # stripping the outer ``{`` would drop the leading key
-                # of multi-property objects.
-                for km in DETAIL_KEY.finditer(details_src):
+                # Strip comments before the key walk — a comment between
+                # ``{`` and the first property would otherwise hide the
+                # first key (the anchor ``[{,]\s*`` can't skip across
+                # arbitrary non-whitespace text).
+                cleaned = _strip_comments(details_src)
+                for km in DETAIL_KEY.finditer(cleaned):
                     keys_by_type[event_type].add(km.group(1))
     return keys_by_type, sites_by_type
 
@@ -324,22 +420,22 @@ def walk_standalone_record_calls(
     """Same contract as :func:`walk_record_calls` but for the
     single-file standalone HTML. The standalone inlines React-like JSX
     + JS, so ``interactionLogger.record(...)`` literals look identical
-    to the frontend ones. We re-use the same regex.
+    to the frontend ones. We re-use the same extractor.
     """
     keys_by_type: dict[str, set[str]] = defaultdict(set)
     sites_by_type: dict[str, list[tuple[str, int]]] = defaultdict(list)
     src = html_path.read_text(encoding="utf-8", errors="replace")
     for m in RECORD_CALL.finditer(src):
         event_type = m.group(1)
-        details_src = m.group(2) or ""
         line_no = src.count("\n", 0, m.start()) + 1
         sites_by_type[event_type].append((str(html_path.name), line_no))
+        second = _extract_second_arg(src, m.end())
+        if second is None:
+            continue
+        details_src, _end = second
         if details_src.startswith("{"):
-            # Pass the whole literal, including outer braces. The
-            # DETAIL_KEY anchor needs the leading ``{`` to recognise
-            # the first property — stripping it would drop the first
-            # key from multi-property objects.
-            for km in DETAIL_KEY.finditer(details_src):
+            cleaned = _strip_comments(details_src)
+            for km in DETAIL_KEY.finditer(cleaned):
                 keys_by_type[event_type].add(km.group(1))
     return keys_by_type, sites_by_type
 

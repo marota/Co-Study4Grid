@@ -413,6 +413,8 @@ Legend: ✅ mirrored · ⚠️ partial (gap noted) · ❌ missing
 | **Settings** | Configurations tab (monitoring factor, lines file, threshold, fast mode) | ✅ | — |
 | **Settings** | Config-file path management | ✅ | — |
 | **Settings** | Action dict stats display | ✅ | — |
+| **Settings** | `settings_tab_changed` interaction log | ✅ | Emitted on every Paths/Recommender/Configurations tab click |
+| **Settings** | `path_picked` interaction log | ✅ | Emitted from the native file/dir picker |
 | **Contingency** | Datalist dropdown | ⚠️ | Shows IDs only — no human-readable name resolution in the options |
 | **Contingency** | Confirmation dialog on change | ✅ | Uses `window.confirm()` |
 | **Contingency** | Sticky summary strip | ✅ | — |
@@ -428,6 +430,7 @@ Legend: ✅ mirrored · ⚠️ partial (gap noted) · ❌ missing
 | **ActionFeed** | Load-shedding details popup | ❌ | Badge shows count only — no per-load breakdown popup |
 | **ActionFeed** | Curtailment details popup | ❌ | Badge shows count only — no per-generator breakdown popup |
 | **ActionFeed** | PST details popup | ❌ | Tap shown inline on the card — no separate popup with range & start |
+| **ActionFeed** | Re-simulate (MW + tap) interaction log | ✅ | Now emits `action_mw_resimulated` / `pst_tap_resimulated` |
 | **ActionVariant** | Fetch on select | ✅ | — |
 | **ActionVariant** | Network / Delta mode toggle | ✅ | — |
 | **ActionVariant** | N / N-1 / Action tabs | ✅ | — |
@@ -437,6 +440,7 @@ Legend: ✅ mirrored · ⚠️ partial (gap noted) · ❌ missing
 | **Visualization** | Zoom in / out / reset buttons | ✅ | — |
 | **Visualization** | N / N-1 / Action / Overflow tabs | ✅ | — |
 | **Visualization** | Inspect-query zoom | ⚠️ | Basic viewBox math; not the polished `usePanZoom` behaviour |
+| **Visualization** | `inspect_query_changed` interaction log | ✅ | — |
 | **Visualization** | Voltage range filter | ✅ | — |
 | **Visualization** | `boostSvgForLargeGrid` scaling | ✅ | — |
 | **Visualization** | Asset click zoom | ✅ | — |
@@ -466,14 +470,14 @@ Legend: ✅ mirrored · ⚠️ partial (gap noted) · ❌ missing
 | **Session** | List-sessions modal | ✅ | — |
 | **Session** | Restore configuration + contingency + analysis state | ✅ | — |
 | **Session** | Restore interaction log | ✅ | — |
-| **Interaction log** | Event-type coverage | ⚠️ | 19/55 spec types never emitted by the standalone — see machine-grounded findings below |
-| **Interaction log** | `details` schema conformance | ⚠️ | 5 events with standalone-side schema drift (e.g. `voltage_range_changed {min_kv,max_kv}` vs spec `{min,max}`) — see below |
-| **Interaction log** | `recordCompletion` pairs | ⚠️ | Only `analysis_step{1,2}_completed` emitted — both sides drift from the spec here |
+| **Interaction log** | Event-type coverage | ⚠️ | 13/55 spec types still missing — **all** within the Action Overview (9) + Detached-Tabs (4) features; every other gesture now logs on both sides |
+| **Interaction log** | `details` schema conformance | ✅ | All emitted standalone events are spec-conformant; historical `min_kv/max_kv`, `target_tab`, `from_tab/to_tab`, `missing tab/scope` drifts all resolved |
+| **Interaction log** | `recordCompletion` pairs | ⚠️ | Only `analysis_step{1,2}_completed` emitted — shared gap against the spec (fix needed on both sides) |
 | **Interaction log** | Replay-ready details | ✅ | — |
 | **Interaction log** | Saved with session | ✅ | — |
-| **Confirmation** | Contingency change | ✅ | `window.confirm()` |
-| **Confirmation** | Load Study | ✅ | `window.confirm()` |
-| **Confirmation** | Apply Settings | ⚠️ | Settings apply immediately — no confirmation prompt before analysis reset |
+| **Confirmation** | Contingency change | ✅ | `window.confirm()` + emits `contingency_confirmed { type: 'contingency', pending_branch }` |
+| **Confirmation** | Load Study | ✅ | `window.confirm()` + emits `contingency_confirmed { type: 'loadStudy' }` |
+| **Confirmation** | Apply Settings | ✅ | `window.confirm()` + emits `contingency_confirmed { type: 'applySettings' }` |
 | **Errors** | ErrorBoundary | ❌ | No catastrophic-render guard — only error-state message display |
 | **Errors** | Error / info / monitoring-warning messages | ✅ | — |
 | **Perf** | `format=text` diagram fetch | ⚠️ | Behaviour assumed from rendering; not obviously wired to the `format=text` endpoint |
@@ -520,56 +524,82 @@ into CI.
 
 _Generated from the parity script on 2026-04-19._
 `InteractionType` union: **55** types. Frontend emits **51**,
-standalone emits **32**.
+standalone emits **38** (was 32 — six cheap gestures ported +
+`settings_tab_changed` now fires on every tab switch).
 
-##### Event types emitted by the frontend but NOT by the standalone (19)
+##### Event types emitted by the frontend but NOT by the standalone (13)
 
-| Event type | React source |
-|---|---|
-| `action_mw_resimulated` | `components/ActionFeed.tsx:451` |
-| `contingency_confirmed` | `App.tsx:681` (standalone uses `window.confirm()` and emits nothing) |
-| `inspect_query_changed` | `App.tsx:976, App.tsx:984` |
-| `overview_hidden` | `components/ActionOverviewDiagram.tsx:469` |
-| `overview_inspect_changed` | `components/ActionOverviewDiagram.tsx:526, :530` |
-| `overview_pin_clicked` | `components/ActionOverviewDiagram.tsx:343` |
-| `overview_pin_double_clicked` | `components/ActionOverviewDiagram.tsx:364` |
-| `overview_popover_closed` | `components/ActionOverviewDiagram.tsx:558` |
-| `overview_shown` | `components/ActionOverviewDiagram.tsx:466` |
-| `overview_zoom_fit` | `components/ActionOverviewDiagram.tsx:487` |
-| `overview_zoom_in` | `components/ActionOverviewDiagram.tsx:476` |
-| `overview_zoom_out` | `components/ActionOverviewDiagram.tsx:482` |
-| `path_picked` | `hooks/useSettings.ts:232` |
-| `pst_tap_resimulated` | `components/ActionFeed.tsx:503` |
-| `settings_tab_changed` | `components/modals/SettingsModal.tsx:51` |
-| `tab_detached` | `App.tsx:211` |
-| `tab_reattached` | `App.tsx:225` |
-| `tab_tied` | `hooks/useTiedTabsSync.ts:97, :120` |
-| `tab_untied` | `hooks/useTiedTabsSync.ts:107, :117` |
+Down from 19 as of the last audit. Every remaining miss is in one
+of the two expensive feature families — Action Overview diagram and
+Detached + Tied Tabs. Porting them is the next follow-up.
+
+| Event type | Feature | React source |
+|---|---|---|
+| `overview_shown` / `overview_hidden` | Action Overview map visibility | `components/ActionOverviewDiagram.tsx:466,469` |
+| `overview_pin_clicked` / `overview_pin_double_clicked` | Pin single/double-click | `components/ActionOverviewDiagram.tsx:343,364` |
+| `overview_popover_closed` | Popover dismiss | `components/ActionOverviewDiagram.tsx:558` |
+| `overview_zoom_in` / `overview_zoom_out` / `overview_zoom_fit` | Overview zoom controls | `components/ActionOverviewDiagram.tsx:476,482,487` |
+| `overview_inspect_changed` | Overview search focus/clear | `components/ActionOverviewDiagram.tsx:526,530` |
+| `tab_detached` / `tab_reattached` | Pop tab into separate window | `App.tsx:211,225` |
+| `tab_tied` / `tab_untied` | Mirror detached viewBox | `hooks/useTiedTabsSync.ts:97,107` |
 
 Nothing in the standalone emits an event the union does not know
 about (0 orphan types).
 
-##### Frontend drifts from the replay-contract spec
+##### Details-key drift between frontend and standalone (1)
 
-**0 events — all resolved** in this branch. The table below is the
-historical record (each row now has a regression test and the Python
-+ Vitest conformity checks guard against re-introduction):
+Down from 11. The remaining diff is spec-conformant on both sides
+(the frontend's extra key is optional per the contract):
+
+| Event | Frontend | Standalone | Note |
+|---|---|---|---|
+| `inspect_query_changed` | `{query, target_tab}` | `{query}` | `target_tab` is optional per spec — only populated when the inspect field is triggered from a detached-tab overlay (which the standalone doesn't support). Not a bug. |
+
+##### Spec conformance (FE-vs-spec, SA-vs-spec)
+
+- Frontend drifts: **0** (was 4 earlier in this branch; all resolved).
+- Standalone drifts: **0** (was 14 earlier in this branch; all resolved by this commit's SA-drift fixes — `asset_clicked`, `diagram_tab_changed`, `sld_overlay_tab_changed`, `view_mode_changed`, `voltage_range_changed`, `zoom_in/out/reset`, `config_loaded`, `prioritized_actions_displayed`, and the harmless extras on `manual_action_simulated`, `session_saved`, `sld_overlay_opened`, `session_reload_modal_opened`).
+
+##### Historical fixes on the React side (6 events resolved)
+
+All six spec drifts that existed earlier in this branch are now
+fixed, each with a regression test. The Python parity script +
+Vitest `specConformance.test.ts` guard against re-introduction:
 
 | Event | Fix | Regression test |
 |---|---|---|
-| `action_deselected` | `{action_id}` → `{previous_action_id}` (`hooks/useDiagrams.ts:360`) | `hooks/useDiagrams.test.ts::logs action_deselected when re-selecting the same action` |
-| `analysis_step2_started` | added `element` + `all_overloads` (`hooks/useAnalysis.ts:122`) | `hooks/useAnalysis.test.ts::step2_started carries the full spec payload` |
-| `overload_toggled` | added `selected` (`hooks/useAnalysis.ts:239`) | `hooks/useAnalysis.test.ts::logs overload_toggled with overload + selected` |
-| `prioritized_actions_displayed` | `actions_count` → `n_actions` (`hooks/useAnalysis.ts:193`) | `hooks/useAnalysis.test.ts::logs prioritized_actions_displayed with n_actions` |
-| `analysis_step2_completed` | `actions_count` → `n_actions` (`hooks/useAnalysis.ts:184`) | same suite |
-| `view_mode_changed` (hook-internal emission) | removed emission from `hooks/useDiagrams.ts:202` (App.tsx owns the full-spec emission) | `hooks/useDiagrams.test.ts::handleViewModeChange updates state but does NOT emit view_mode_changed` |
+| `action_deselected` | `{action_id}` → `{previous_action_id}` | `hooks/useDiagrams.test.ts` |
+| `analysis_step2_started` | added `element` + `all_overloads` | `hooks/useAnalysis.test.ts` |
+| `overload_toggled` | added `selected` (post-toggle state) | `hooks/useAnalysis.test.ts` |
+| `prioritized_actions_displayed` | `actions_count` → `n_actions` | `hooks/useAnalysis.test.ts` |
+| `analysis_step2_completed` | `actions_count` → `n_actions` | `hooks/useAnalysis.test.ts` |
+| `view_mode_changed` (hook path) | Removed hook-internal emission (App.tsx owns full-spec) | `hooks/useDiagrams.test.ts` |
 
-The fifth drift (`view_mode_changed` hook-internal) was surfaced by
-the Vitest spec-conformance test, not the Python script — the
-script's set-based union across call sites was masking it behind
-`App.tsx`'s full-shape emission. The spec-conformance test
-(`utils/specConformance.test.ts`) walks all call sites individually
-and catches per-site drift, so it ran as the stricter check.
+The fifth one was surfaced by the Vitest spec-conformance test, not
+the Python script — the script's set-based union across call sites
+was masking it behind `App.tsx`'s full-shape emission. The
+spec-conformance test walks all call sites individually and catches
+per-site drift.
+
+##### Historical fixes on the standalone side (14 events resolved)
+
+All fourteen SA spec drifts that existed earlier in this branch are
+now fixed:
+
+| Event | Fix |
+|---|---|
+| `asset_clicked` | `target_tab` → `tab` |
+| `diagram_tab_changed` | `{from_tab, to_tab}` → `{tab}` (destination) |
+| `sld_overlay_tab_changed` | `{from_tab, to_tab}` → `{tab, vl_name}` |
+| `view_mode_changed` | Added `tab: 'action'` + `scope: 'main'` |
+| `voltage_range_changed` | `{min_kv, max_kv}` → `{min, max}` |
+| `zoom_in` / `zoom_out` / `zoom_reset` | Added `tab: activeTab` |
+| `config_loaded` | Added `output_folder_path` (was missing) |
+| `prioritized_actions_displayed` | Added `n_actions` (was `{}`) |
+| `manual_action_simulated` | Dropped empty `description: ''` extra |
+| `session_saved` | Dropped `session_name` extra |
+| `sld_overlay_opened` | Dropped `initial_tab` extra |
+| `session_reload_modal_opened` | Dropped `{available_sessions, output_folder}` extras |
 
 ##### Standalone drifts from the replay-contract spec (14 events)
 

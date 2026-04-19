@@ -1689,6 +1689,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     if (!window.confirm("Applying new settings will clear current analysis results. Do you want to continue?")) {
                         return;
                     }
+                    // Replay contract (docs/interaction-logging.md):
+                    //   { type: 'applySettings' } — user confirmed
+                    //   the "Applying new settings…" dialog.
+                    interactionLogger.record('contingency_confirmed', { type: 'applySettings' });
                 }
 
                 // If config file path changed, switch it first
@@ -2040,7 +2044,15 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             const pickPath = async (type, setter) => {
                 try {
                     const res = await axios.get(`${API_BASE}/api/pick-path?type=${type}&t=${Date.now()}`);
-                    if (res.data.path) setter(res.data.path);
+                    if (res.data.path) {
+                        // Replay contract (docs/interaction-logging.md):
+                        //   { type: 'file'|'dir', path: string }.
+                        //   The setter field is implicit from the
+                        //   preceding UI context (which field had
+                        //   focus before the picker opened).
+                        interactionLogger.record('path_picked', { type, path: res.data.path });
+                        setter(res.data.path);
+                    }
                 } catch (err) { setError('Failed to open file picker'); }
             };
 
@@ -2049,10 +2061,19 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     if (!window.confirm("Loading a new study will clear current analysis results. Do you want to continue?")) {
                         return;
                     }
+                    // Replay contract (docs/interaction-logging.md):
+                    //   { type: 'loadStudy' } — user confirmed the
+                    //   "Loading a new study will clear…" dialog.
+                    interactionLogger.record('contingency_confirmed', { type: 'loadStudy' });
                 }
                 interactionLogger.clear();
                 interactionLogger.record('config_loaded', {
+                    // Full 17-field replay contract
+                    // (docs/interaction-logging.md § Config & Study Loading).
+                    // `output_folder_path` was previously missing — a
+                    // replay agent could not restore the save location.
                     network_path: networkPath, action_file_path: actionPath, layout_path: layoutPath,
+                    output_folder_path: outputFolderPath,
                     min_line_reconnections: minLineReconnections, min_close_coupling: minCloseCoupling,
                     min_open_coupling: minOpenCoupling, min_line_disconnections: minLineDisconnections,
                     min_pst: minPst, min_load_shedding: minLoadShedding, min_renewable_curtailment_actions: minRenewableCurtailmentActions,
@@ -2145,7 +2166,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 }
             };
             const handleManualZoomIn = () => {
-                interactionLogger.record('zoom_in');
+                // Replay contract (docs/interaction-logging.md): { tab }.
+                interactionLogger.record('zoom_in', { tab: activeTab });
                 const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
                 const vb = currentPZ?.viewBox;
                 if (currentPZ && vb) {
@@ -2160,7 +2182,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             };
 
             const handleManualZoomOut = () => {
-                interactionLogger.record('zoom_out');
+                interactionLogger.record('zoom_out', { tab: activeTab });
                 const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
                 const vb = currentPZ?.viewBox;
                 if (currentPZ && vb) {
@@ -2175,7 +2197,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             };
 
             const handleManualReset = () => {
-                interactionLogger.record('zoom_reset');
+                interactionLogger.record('zoom_reset', { tab: activeTab });
                 setInspectQuery('');
 
                 const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
@@ -2281,7 +2303,15 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         setSelectedBranch(committedBranchRef.current);
                         return;
                     }
-                    // User confirmed — clear analysis state
+                    // User confirmed — clear analysis state + log the
+                    // confirmation gesture so replay agents know
+                    // whether the user said OK or Cancel.
+                    // Replay contract (docs/interaction-logging.md):
+                    //   { type: 'contingency', pending_branch: string }
+                    interactionLogger.record('contingency_confirmed', {
+                        type: 'contingency',
+                        pending_branch: selectedBranch,
+                    });
                     clearContingencyState();
                 }
 
@@ -2430,8 +2460,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
                 if (outputFolderPath) {
                     try {
+                        // Replay contract (docs/interaction-logging.md):
+                        //   { output_folder }. The session_name was carried
+                        //   historically but is derivable from the
+                        //   timestamp — a replay agent regenerates it.
                         interactionLogger.record('session_saved', {
-                            session_name: sessionName,
                             output_folder: outputFolderPath,
                         });
                         const res = await axios.post(API_BASE + '/api/save-session', {
@@ -2474,10 +2507,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 try {
                     const res = await axios.get(`${API_BASE}/api/list-sessions?folder_path=${encodeURIComponent(outputFolderPath)}&t=${Date.now()}`);
                     setSessionList(res.data.sessions);
-                    interactionLogger.record('session_reload_modal_opened', {
-                        output_folder: outputFolderPath,
-                        available_sessions: res.data.sessions,
-                    });
+                    // Replay contract (docs/interaction-logging.md):
+                    //   {} — the list of available sessions is async
+                    //   and deliberately not part of the event payload
+                    //   (replay consults /api/list-sessions fresh).
+                    interactionLogger.record('session_reload_modal_opened');
                 } catch (err) {
                     setError('Failed to list sessions: ' + (err.response?.data?.detail || err.message));
                     setShowReloadModal(false);
@@ -3031,7 +3065,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
             // ===== Asset Click (from action card badges / rho line names) =====
             const handleAssetClick = (actionId, assetName, tab = 'action') => {
-                interactionLogger.record('asset_clicked', { asset_name: assetName, action_id: actionId, target_tab: tab });
+                // Replay contract (docs/interaction-logging.md):
+                //   { action_id, asset_name, tab }
+                // where `tab` is the destination tab for the zoom.
+                interactionLogger.record('asset_clicked', { action_id: actionId, asset_name: assetName, tab });
                 setInspectQuery(assetName);
                 if (tab === 'n') {
                     setActiveTab('n');
@@ -3053,7 +3090,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 if (!assetName) return;
                 const tab = activeTabRef.current;
                 if (tab === 'overflow') return;
-                interactionLogger.record('asset_clicked', { asset_name: assetName, action_id: '', target_tab: tab });
+                // Sticky-sidebar zoom: action_id='' means "zoom in place
+                // on the current tab without selecting an action"
+                // (docs/interaction-logging.md § Visualization).
+                interactionLogger.record('asset_clicked', { action_id: '', asset_name: assetName, tab });
                 setInspectQuery(assetName);
             };
 
@@ -3073,8 +3113,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 } else {
                     initialTab = 'n';
                 }
+                // Replay contract (docs/interaction-logging.md):
+                //   { vl_name, action_id }. The initial_tab is implicit
+                //   from the current diagram tab; a replay agent will
+                //   observe the next sld_overlay_tab_changed event if
+                //   the user moves away from it.
                 interactionLogger.record('sld_overlay_opened', {
-                    vl_name: vlName, action_id: actionId || null, initial_tab: initialTab,
+                    vl_name: vlName, action_id: actionId || null,
                 });
                 setVlOverlay({ vlName, actionId, svg: null, viewBox: null, sldMetadata: null, loading: true, error: null, tab: initialTab });
                 fetchSldVariant(vlName, actionId, initialTab);
@@ -3820,7 +3865,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 const actionId = canonicalizeId(rawActionId);
                 if (!selectedBranch) { setSearchError('Run an analysis first'); return; }
                 if (simulatingActionId) return; // Prevent concurrent simulations
-                interactionLogger.record('manual_action_simulated', { action_id: actionId, description: '' });
+                interactionLogger.record('manual_action_simulated', { action_id: actionId });
                 console.log('[handleAddManualAction] Starting simulation for:', actionId);
                 setSimulatingActionId(actionId);
                 setSearchError('');
@@ -3967,6 +4012,12 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             // Re-simulate an existing action with a new target MW value
             const handleResimulate = async (actionId, newTargetMw) => {
                 if (!selectedBranch) return;
+                // Replay contract (docs/interaction-logging.md):
+                //   { action_id, target_mw } — the raw user-entered MW
+                //   (backend may clamp). Wait-point: card refreshes
+                //   with new rho_after + load_shedding / curtailment
+                //   details; the card stays in its current bucket.
+                interactionLogger.record('action_mw_resimulated', { action_id: actionId, target_mw: newTargetMw });
                 setResimulatingId(actionId);
                 try {
                     const actionDetail = result?.actions?.[actionId];
@@ -4024,6 +4075,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             // Re-simulate an existing PST action with a new tap position
             const handleResimulateTap = async (actionId, newTap) => {
                 if (!selectedBranch) return;
+                // Replay contract (docs/interaction-logging.md):
+                //   { action_id, target_tap } — the raw user-entered tap
+                //   integer. Backend clamps to [low_tap, high_tap].
+                //   Wait-point: pst_details.tap_position is updated.
+                interactionLogger.record('pst_tap_resimulated', { action_id: actionId, target_tap: newTap });
                 setResimulatingId(actionId);
                 try {
                     const actionDetail = result?.actions?.[actionId];
@@ -5067,7 +5123,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                 const kv = Math.exp(logV);
                                                 const snapped = uniqueVoltages.reduce((best, uv) => Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best);
                                                 if (snapped <= voltageRange[1]) {
-                                                    interactionLogger.record('voltage_range_changed', { min_kv: snapped, max_kv: voltageRange[1] });
+                                                    // Replay contract (docs/interaction-logging.md):
+                                                    //   { min, max } in kV. Previously emitted
+                                                    //   { min_kv, max_kv } — a replay agent reading
+                                                    //   `details.min` would see undefined.
+                                                    interactionLogger.record('voltage_range_changed', { min: snapped, max: voltageRange[1] });
                                                     setVoltageRange([snapped, voltageRange[1]]);
                                                 }
                                             }}
@@ -5080,7 +5140,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                 const logV = parseFloat(e.target.value) || 0;
                                                 const snapped = uniqueVoltages.reduce((best, uv) => Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best);
                                                 if (snapped >= voltageRange[0]) {
-                                                    interactionLogger.record('voltage_range_changed', { min_kv: voltageRange[0], max_kv: snapped });
+                                                    interactionLogger.record('voltage_range_changed', { min: voltageRange[0], max: snapped });
                                                     setVoltageRange([voltageRange[0], snapped]);
                                                 }
                                             }}
@@ -5145,7 +5205,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                     onMouseDown={e => e.stopPropagation()} // Prevent dragging when clicking tabs
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        interactionLogger.record('sld_overlay_tab_changed', { from_tab: vlOverlay.tab, to_tab: tabMode });
+                                                        // Replay contract (docs/interaction-logging.md):
+                                                        //   { tab: SldTab, vl_name: string }.
+                                                        // The destination tab is what a replay agent
+                                                        // needs; the previous tab is recoverable from
+                                                        // the preceding sld_overlay_opened / _tab_changed
+                                                        // event in the log.
+                                                        interactionLogger.record('sld_overlay_tab_changed', { tab: tabMode, vl_name: vlOverlay.vlName });
                                                         fetchSldVariant(vlOverlay.vlName, vlOverlay.actionId, tabMode);
                                                     }}
                                                     style={{
@@ -5629,8 +5695,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     <h3 style={{ margin: 0, borderBottom: '1px solid #eee', paddingBottom: '10px' }}>Recommender Settings</h3>
 
                                     <div style={{ display: 'flex', borderBottom: '1px solid #eee', marginBottom: '15px' }}>
+                                        {/* Replay contract (docs/interaction-logging.md):
+                                              { from_tab, to_tab } — only emitted when from_tab !== to_tab.
+                                            Wraps setSettingsTab so every tab click lands in the log. */}
                                         <button
-                                            onClick={() => setSettingsTab('paths')}
+                                            onClick={() => {
+                                                if (settingsTab !== 'paths') interactionLogger.record('settings_tab_changed', { from_tab: settingsTab, to_tab: 'paths' });
+                                                setSettingsTab('paths');
+                                            }}
                                             style={{
                                                 flex: 1, padding: '10px', cursor: 'pointer', background: 'none',
                                                 border: 'none', borderBottom: settingsTab === 'paths' ? '2px solid #3498db' : 'none',
@@ -5641,7 +5713,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                             Paths
                                         </button>
                                         <button
-                                            onClick={() => setSettingsTab('recommender')}
+                                            onClick={() => {
+                                                if (settingsTab !== 'recommender') interactionLogger.record('settings_tab_changed', { from_tab: settingsTab, to_tab: 'recommender' });
+                                                setSettingsTab('recommender');
+                                            }}
                                             style={{
                                                 flex: 1, padding: '10px', cursor: 'pointer', background: 'none',
                                                 border: 'none', borderBottom: settingsTab === 'recommender' ? '2px solid #3498db' : 'none',
@@ -5652,7 +5727,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                             Recommender
                                         </button>
                                         <button
-                                            onClick={() => setSettingsTab('configurations')}
+                                            onClick={() => {
+                                                if (settingsTab !== 'configurations') interactionLogger.record('settings_tab_changed', { from_tab: settingsTab, to_tab: 'configurations' });
+                                                setSettingsTab('configurations');
+                                            }}
                                             style={{
                                                 flex: 1, padding: '10px', cursor: 'pointer', background: 'none',
                                                 border: 'none', borderBottom: settingsTab === 'configurations' ? '2px solid #3498db' : 'none',
@@ -6672,7 +6750,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     return (
                                         <button
                                             key={tab.id}
-                                            onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: tab.id }); setActiveTab(tab.id); }}
+                                            onClick={() => { interactionLogger.record('diagram_tab_changed', { tab: tab.id }); setActiveTab(tab.id); }}
                                             title={tab.available ? undefined : tab.placeholder}
                                             style={{
                                                 flex: 1, borderRadius: 0, border: 'none', padding: '8px 6px',
@@ -6759,7 +6837,15 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                             backgroundColor: '#fff',
                                         }}>
                                             <button
-                                                onClick={() => { interactionLogger.record('view_mode_changed', { mode: 'network' }); setActionViewMode('network'); }}
+                                                onClick={() => {
+                                                    // Replay contract (docs/interaction-logging.md):
+                                                    //   { mode, tab, scope }.
+                                                    // Flow/Impacts toggle only appears on the action
+                                                    // tab today; the standalone has no detached-tab
+                                                    // support, so scope is always 'main'.
+                                                    interactionLogger.record('view_mode_changed', { mode: 'network', tab: 'action', scope: 'main' });
+                                                    setActionViewMode('network');
+                                                }}
                                                 style={{
                                                     padding: '4px 12px', border: 'none', cursor: 'pointer',
                                                     backgroundColor: actionViewMode === 'network' ? '#007bff' : '#fff',
@@ -6770,7 +6856,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                 Flows
                                             </button>
                                             <button
-                                                onClick={() => { interactionLogger.record('view_mode_changed', { mode: 'delta' }); setActionViewMode('delta'); }}
+                                                onClick={() => {
+                                                    interactionLogger.record('view_mode_changed', { mode: 'delta', tab: 'action', scope: 'main' });
+                                                    setActionViewMode('delta');
+                                                }}
                                                 style={{
                                                     padding: '4px 12px', border: 'none', borderLeft: '1px solid #ccc', cursor: 'pointer',
                                                     backgroundColor: actionViewMode === 'delta' ? '#007bff' : '#fff',
@@ -6817,7 +6906,12 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                 <input
                                                     list="inspectables"
                                                     value={inspectQuery}
-                                                    onChange={e => setInspectQuery(e.target.value)}
+                                                    onChange={e => {
+                                                        // Replay contract (docs/interaction-logging.md):
+                                                        //   { query: string }.
+                                                        interactionLogger.record('inspect_query_changed', { query: e.target.value });
+                                                        setInspectQuery(e.target.value);
+                                                    }}
                                                     placeholder="🔍 Inspect..."
                                                     style={{
                                                         padding: '5px 10px',
