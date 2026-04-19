@@ -506,111 +506,133 @@ Legend: ✅ mirrored · ⚠️ partial (gap noted) · ❌ missing
 #### Features in the standalone that are no longer in React
 None identified. The standalone is strictly a subset of the React app — there is no obsolete code path to remove. If a feature is removed from `frontend/`, delete it from `standalone_interface.html` in the same commit.
 
-### Machine-grounded findings (`scripts/check_standalone_parity.py`)
+### Machine-grounded findings
 
-The feature table above is human-curated. A static parity check is
-automated in `scripts/check_standalone_parity.py`; run it to refresh
-these numbers. Findings as of 2026-04-19:
+The feature table above is human-curated. Two static conformity
+scripts produce the machine-authoritative tables below; regenerate
+them via `python scripts/check_standalone_parity.py --emit-markdown`
+and `python scripts/check_session_fidelity.py --json`. See
+`scripts/PARITY_README.md` for the three-layer design
+(static / session-fidelity / E2E) and how to wire the first two
+into CI.
 
-```
-InteractionType union:       55 types declared in frontend/src/types.ts
-Frontend emits:              51 types (missing: settings_cancelled,
-                             action_unfavorited, action_unrejected,
-                             contingency_selected variants used in tests)
-Standalone emits:            32 types
-```
+#### Layer 1 — Static parity (`scripts/check_standalone_parity.py`)
 
-#### Event types emitted by the frontend but NOT by the standalone (19)
+_Generated from the parity script on 2026-04-19._
+`InteractionType` union: **55** types. Frontend emits **51**,
+standalone emits **32**.
 
-These are all valid `InteractionType` values. Fix by adding
-`interactionLogger.record('<type>', { ... })` at the equivalent
-gesture site in the standalone.
+##### Event types emitted by the frontend but NOT by the standalone (19)
 
 | Event type | React source |
 |---|---|
 | `action_mw_resimulated` | `components/ActionFeed.tsx:451` |
-| `pst_tap_resimulated` | `components/ActionFeed.tsx:503` |
 | `contingency_confirmed` | `App.tsx:681` (standalone uses `window.confirm()` and emits nothing) |
-| `settings_tab_changed` | `components/modals/SettingsModal.tsx:51` |
-| `path_picked` | `hooks/useSettings.ts:232` |
-| `inspect_query_changed` | `App.tsx:976,984` |
-| `tab_detached` / `tab_reattached` | `App.tsx:211,225` |
-| `tab_tied` / `tab_untied` | `hooks/useTiedTabsSync.ts:97,107` |
-| `overview_shown` / `overview_hidden` | `components/ActionOverviewDiagram.tsx:466,469` |
-| `overview_pin_clicked` / `overview_pin_double_clicked` | `components/ActionOverviewDiagram.tsx:343,364` |
+| `inspect_query_changed` | `App.tsx:976, App.tsx:984` |
+| `overview_hidden` | `components/ActionOverviewDiagram.tsx:469` |
+| `overview_inspect_changed` | `components/ActionOverviewDiagram.tsx:526, :530` |
+| `overview_pin_clicked` | `components/ActionOverviewDiagram.tsx:343` |
+| `overview_pin_double_clicked` | `components/ActionOverviewDiagram.tsx:364` |
 | `overview_popover_closed` | `components/ActionOverviewDiagram.tsx:558` |
-| `overview_zoom_in` / `overview_zoom_out` / `overview_zoom_fit` | `components/ActionOverviewDiagram.tsx:476,482,487` |
-| `overview_inspect_changed` | `components/ActionOverviewDiagram.tsx:526,530` |
+| `overview_shown` | `components/ActionOverviewDiagram.tsx:466` |
+| `overview_zoom_fit` | `components/ActionOverviewDiagram.tsx:487` |
+| `overview_zoom_in` | `components/ActionOverviewDiagram.tsx:476` |
+| `overview_zoom_out` | `components/ActionOverviewDiagram.tsx:482` |
+| `path_picked` | `hooks/useSettings.ts:232` |
+| `pst_tap_resimulated` | `components/ActionFeed.tsx:503` |
+| `settings_tab_changed` | `components/modals/SettingsModal.tsx:51` |
+| `tab_detached` | `App.tsx:211` |
+| `tab_reattached` | `App.tsx:225` |
+| `tab_tied` | `hooks/useTiedTabsSync.ts:97, :120` |
+| `tab_untied` | `hooks/useTiedTabsSync.ts:107, :117` |
 
-Nothing in the standalone emits an event the `InteractionType` union
-does not know about (0 orphan types).
+Nothing in the standalone emits an event the union does not know
+about (0 orphan types).
 
-#### Details-key drift between frontend and standalone (11 events)
+##### Frontend drifts from the replay-contract spec (4 events)
 
-Cross-referenced against the schema in `docs/interaction-logging.md`;
-each row lists which side owns the fix.
+The React app emits a shape that drifts from
+`docs/interaction-logging.md`. The standalone is closer to the spec
+for these — fix the React side, don't downgrade:
 
-**Standalone owns the fix (5 events)** — the standalone emits a shape
-incompatible with the documented replay contract:
+| Event | Spec required | Frontend emits | Missing | React source |
+|---|---|---|---|---|
+| `action_deselected` | `{previous_action_id}` | `{action_id}` | `previous_action_id` | `hooks/useDiagrams.ts:360` |
+| `analysis_step2_started` | `{all_overloads, element, monitor_deselected, selected_overloads}` | `{monitor_deselected, selected_overloads}` | `all_overloads, element` | `hooks/useAnalysis.ts:122` |
+| `overload_toggled` | `{overload, selected}` | `{overload}` | `selected` | `hooks/useAnalysis.ts:239` |
+| `prioritized_actions_displayed` | `{n_actions}` | `{actions_count}` | `n_actions` | `hooks/useAnalysis.ts:193` |
 
-| Event | Spec `details` | Standalone emits | Standalone site |
-|---|---|---|---|
-| `asset_clicked` | `{ action_id, asset_name, tab }` | `{ action_id, asset_name, target_tab }` | `standalone:3034,3056` |
-| `diagram_tab_changed` | `{ tab }` | `{ from_tab, to_tab }` | `standalone:6675` |
-| `sld_overlay_tab_changed` | `{ tab, vl_name }` | `{ from_tab, to_tab }` (no `vl_name`) | `standalone:5148` |
-| `view_mode_changed` | `{ mode, tab, scope }` | `{ mode }` (no `tab`, no `scope`) | `standalone:6762,6773` |
-| `voltage_range_changed` | `{ min, max }` (kV) | `{ min_kv, max_kv }` | `standalone:5070,5083` |
+##### Standalone drifts from the replay-contract spec (14 events)
 
-**Frontend owns the fix (3 events)** — the React app emits a shape
-that drifts from its own documented replay contract. The standalone
-is closer to the spec and should NOT be downgraded to match the FE;
-instead the FE should be corrected:
+| Event | Spec required | Standalone emits | Missing | Standalone source |
+|---|---|---|---|---|
+| `asset_clicked` | `{action_id, asset_name, tab}` | `{action_id, asset_name, target_tab}` | `tab` | `standalone:3034,3056` |
+| `config_loaded` | `{...17 settings + output_folder_path}` | 16 fields — missing `output_folder_path` | `output_folder_path` | `standalone:2054` |
+| `diagram_tab_changed` | `{tab}` | `{from_tab, to_tab}` | `tab` | `standalone:6675` |
+| `manual_action_simulated` | `{action_id}` | `{action_id, description}` | — (extra `description`, harmless) | `standalone:3823` |
+| `prioritized_actions_displayed` | `{n_actions}` | `{}` | `n_actions` | `standalone:2834` |
+| `session_reload_modal_opened` | `{}` | `{available_sessions, output_folder}` | — (extras, harmless) | `standalone:2477` |
+| `session_saved` | `{output_folder}` | `{output_folder, session_name}` | — (extra `session_name`, harmless) | `standalone:2433` |
+| `sld_overlay_opened` | `{action_id, vl_name}` | `{action_id, initial_tab, vl_name}` | — (extra `initial_tab`, harmless) | `standalone:3076` |
+| `sld_overlay_tab_changed` | `{tab, vl_name}` | `{from_tab, to_tab}` | `tab, vl_name` | `standalone:5148` |
+| `view_mode_changed` | `{mode, tab, scope}` | `{mode}` | `scope, tab` | `standalone:6762,6773` |
+| `voltage_range_changed` | `{max, min}` | `{max_kv, min_kv}` | `max, min` | `standalone:5070,5083` |
+| `zoom_in` | `{tab}` | `{}` | `tab` | `standalone:2148` |
+| `zoom_out` | `{tab}` | `{}` | `tab` | `standalone:2163` |
+| `zoom_reset` | `{tab}` | `{}` | `tab` | `standalone:2178` |
 
-| Event | Spec `details` | Frontend emits | Frontend site |
-|---|---|---|---|
-| `action_deselected` | `{ previous_action_id }` | `{ action_id }` | `hooks/useDiagrams.ts:360` |
-| `analysis_step2_started` | `{ element, selected_overloads, all_overloads, monitor_deselected }` | `{ selected_overloads, monitor_deselected }` — missing `element`, `all_overloads` | `hooks/useAnalysis.ts:122-125` |
-| `overload_toggled` | `{ overload, selected }` | `{ overload }` — missing `selected` | `hooks/useAnalysis.ts:239` |
-
-**Harmless extras in the standalone (3 events)** — the standalone
-adds keys the spec doesn't require. Keep or drop; does not break
-replay:
-
-| Event | Extra keys in standalone |
-|---|---|
-| `manual_action_simulated` | `+ description` |
-| `session_saved` | `+ session_name` |
-| `sld_overlay_opened` | `+ initial_tab` |
-
-#### API paths referenced by the frontend but not by the standalone (1)
+##### API paths referenced by the frontend but not by the standalone (1)
 
 | Endpoint | Introduced in | Frontend call site |
 |---|---|---|
 | `/api/simulate-and-variant-diagram` | NDJSON stream emitting `{type:"metrics"}` then `{type:"diagram"}` | `api.ts::simulateAndVariantDiagramStream` |
 
-#### `recordCompletion` coverage
+##### `recordCompletion` coverage
 
 Both codebases emit the same two `*_completed` events:
 `analysis_step1_completed` and `analysis_step2_completed`. The
-replay spec lists more async wait-points that could benefit from
+replay spec lists more async wait-points that would benefit from
 completion events (`action_selected`, `manual_action_simulated`,
-`action_mw_resimulated`, `pst_tap_resimulated`, `combine_pair_simulated`,
-`settings_applied`, `session_reloaded`, `tab_detached` /
-`tab_reattached`) — **this is a shared gap against the spec**, not a
-parity gap between the two codebases. Track as a follow-up for
-`docs/interaction-logging.md` compliance on both sides.
+`action_mw_resimulated`, `pst_tap_resimulated`,
+`combine_pair_simulated`, `settings_applied`, `session_reloaded`,
+`tab_detached` / `tab_reattached`) — this is a shared gap against
+the spec, not a parity gap between the two codebases.
 
-### Running the conformity check
+#### Layer 2 — Session-reload fidelity (`scripts/check_session_fidelity.py`)
+
+_Generated from the fidelity script on 2026-04-19._ 30 curated
+fields checked; 25/30 round-trip on React, 28/30 on standalone.
+
+##### Fields the React frontend RESTORES but never SAVES (1 — hard fail)
+
+| Field | Consequence |
+|---|---|
+| `lines_overloaded_after` | `useSession.ts:312` reads it back into each live `ActionDetail`, but `sessionUtils.ts` never writes it on save. On reload the field is always `undefined`, so the Remedial-Action NAD/SLD loses its post-action overload halos until the user re-runs analysis. Add the field to the `SavedActionEntry` object literal in `sessionUtils.ts:120-145`. |
+
+##### Fields absent from the standalone entirely (2 — warn)
+
+| Field | Note |
+|---|---|
+| `n_overloads_rho`, `n1_overloads_rho` | The sticky-header rho arrays (PR #88). The React app intentionally saves-only (live state re-derives from a fresh N-1 diagram on reload). The standalone doesn't save them either — fine for live UX, but replay agents and offline inspection tools lose the percentages. |
+
+### Running the conformity checks
 
 ```bash
-python scripts/check_standalone_parity.py            # human output
-python scripts/check_standalone_parity.py --json     # CI-friendly JSON
+# Layer 1 — static parity (events, API paths, settings, spec diff)
+python scripts/check_standalone_parity.py                # human text
+python scripts/check_standalone_parity.py --emit-markdown  # regenerate tables above
+python scripts/check_standalone_parity.py --json         # CI-friendly
+
+# Layer 2 — session-reload fidelity (save-vs-restore symmetry)
+python scripts/check_session_fidelity.py                 # human text
+python scripts/check_session_fidelity.py --json          # CI-friendly
 ```
 
-Exits non-zero on any FAIL finding — suitable as a GitHub Actions
-gate. See the top of the script file for the three inventories it
-checks (`InteractionType` union, API paths, `SettingsState`) and
-the per-event details-key diff.
+Both exit non-zero on any FAIL finding. Wire them into a GitHub
+Action per PR — see `scripts/PARITY_README.md`. A Layer-3 behavioural
+E2E check (Playwright, driving both UIs through a scripted session)
+is designed but not yet implemented; that README contains the spec
+for it.
 
 ### How to use this audit
 

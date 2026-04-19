@@ -49,6 +49,128 @@ USE_SETTINGS_TS = FRONTEND_SRC / "hooks" / "useSettings.ts"
 
 
 # ---------------------------------------------------------------------
+# Spec table — the replay contract from docs/interaction-logging.md
+# ---------------------------------------------------------------------
+#
+# Encoded per event type as `(required_keys, optional_keys)`. Both are
+# `frozenset` so the dict stays cheap to hash. Optional keys are
+# fields the spec marks "only populated when ..." (e.g.
+# `pending_branch` for `contingency_confirmed`) — they MAY be present
+# without being flagged as an extra.
+#
+# Source of truth: docs/interaction-logging.md § "Replay Contract:
+# Required Details Per Event Type". When the spec changes, update
+# this table in the same PR — the three-way-diff check (`--spec`)
+# compares FE and SA emissions against this.
+#
+# Events whose frontend details are passed via a bare identifier
+# (e.g. ``record('config_loaded', buildConfigInteractionDetails())``)
+# have SA compared to spec but FE can only be compared by a separate
+# static-analysis pass that resolves the identifier's return shape;
+# we don't attempt that here and mark FE as "deferred".
+
+_CONFIG_FIELDS = frozenset({
+    "network_path", "action_file_path", "layout_path", "output_folder_path",
+    "min_line_reconnections", "min_close_coupling", "min_open_coupling",
+    "min_line_disconnections", "min_pst", "min_load_shedding",
+    "min_renewable_curtailment_actions", "n_prioritized_actions",
+    "lines_monitoring_path", "monitoring_factor",
+    "pre_existing_overload_threshold", "ignore_reconnections",
+    "pypowsybl_fast_mode",
+})
+
+
+def _spec_row(required: set[str], optional: set[str] = frozenset()) -> dict:
+    return {"required": frozenset(required), "optional": frozenset(optional)}
+
+
+SPEC_DETAILS: dict[str, dict] = {
+    # --- Configuration & Study Loading ---
+    "config_loaded":           _spec_row(_CONFIG_FIELDS),
+    "settings_opened":         _spec_row({"tab"}),
+    "settings_tab_changed":    _spec_row({"from_tab", "to_tab"}),
+    "settings_applied":        _spec_row(_CONFIG_FIELDS),
+    "settings_cancelled":      _spec_row(set()),
+    "path_picked":             _spec_row({"type", "path"}),
+    # --- Contingency ---
+    "contingency_selected":    _spec_row({"element"}),
+    "contingency_confirmed":   _spec_row({"type"}, optional={"pending_branch"}),
+    # --- Two-Step Analysis ---
+    "analysis_step1_started":   _spec_row({"element"}),
+    "analysis_step1_completed": _spec_row({
+        "element", "overloads_found", "n_overloads",
+        "can_proceed", "dc_fallback", "message",
+    }),
+    "overload_toggled":         _spec_row({"overload", "selected"}),
+    "analysis_step2_started":   _spec_row({
+        "element", "selected_overloads", "all_overloads", "monitor_deselected",
+    }),
+    "analysis_step2_completed": _spec_row({
+        "n_actions", "action_ids", "dc_fallback", "message", "pdf_url",
+    }),
+    "prioritized_actions_displayed": _spec_row({"n_actions"}),
+    # --- Action ---
+    "action_selected":          _spec_row({"action_id"}),
+    "action_deselected":        _spec_row({"previous_action_id"}),
+    "action_favorited":         _spec_row({"action_id"}),
+    "action_unfavorited":       _spec_row({"action_id"}),
+    "action_rejected":          _spec_row({"action_id"}),
+    "action_unrejected":        _spec_row({"action_id"}),
+    "manual_action_simulated":  _spec_row({"action_id"}),
+    "action_mw_resimulated":    _spec_row({"action_id", "target_mw"}),
+    "pst_tap_resimulated":      _spec_row({"action_id", "target_tap"}),
+    # --- Combined Actions ---
+    "combine_modal_opened":     _spec_row(set()),
+    "combine_modal_closed":     _spec_row(set()),
+    "combine_pair_toggled":     _spec_row({"action_id", "selected"}),
+    "combine_pair_estimated":   _spec_row({
+        "action1_id", "action2_id",
+        "estimated_max_rho", "estimated_max_rho_line",
+    }),
+    "combine_pair_simulated":   _spec_row({
+        "combined_id", "action1_id", "action2_id", "simulated_max_rho",
+    }),
+    # --- Visualization ---
+    "diagram_tab_changed":      _spec_row({"tab"}),
+    "tab_detached":             _spec_row({"tab"}),
+    "tab_reattached":           _spec_row({"tab"}),
+    "tab_tied":                 _spec_row({"tab"}),
+    "tab_untied":               _spec_row({"tab"}),
+    "view_mode_changed":        _spec_row({"mode", "tab", "scope"}),
+    "voltage_range_changed":    _spec_row({"min", "max"}),
+    "asset_clicked":            _spec_row({"action_id", "asset_name", "tab"}),
+    "zoom_in":                  _spec_row({"tab"}),
+    "zoom_out":                 _spec_row({"tab"}),
+    "zoom_reset":               _spec_row({"tab"}),
+    "inspect_query_changed":    _spec_row({"query"}, optional={"target_tab"}),
+    # --- Action Overview Diagram ---
+    "overview_shown":           _spec_row({"has_pins", "pin_count"}),
+    "overview_hidden":          _spec_row(set()),
+    "overview_pin_clicked":     _spec_row({"action_id"}),
+    "overview_pin_double_clicked": _spec_row({"action_id"}),
+    "overview_popover_closed":  _spec_row({"reason"}),
+    "overview_zoom_in":         _spec_row(set()),
+    "overview_zoom_out":        _spec_row(set()),
+    "overview_zoom_fit":        _spec_row(set()),
+    "overview_inspect_changed": _spec_row({"query", "action"}),
+    # --- SLD Overlay ---
+    "sld_overlay_opened":       _spec_row({"vl_name", "action_id"}),
+    "sld_overlay_tab_changed":  _spec_row({"tab", "vl_name"}),
+    "sld_overlay_closed":       _spec_row(set()),
+    # --- Session Management ---
+    "session_saved":            _spec_row({"output_folder"}),
+    "session_reload_modal_opened": _spec_row(set()),
+    "session_reloaded":         _spec_row({"session_name"}),
+}
+
+# Event types whose frontend details argument is a bare identifier or
+# a function call — the regex cannot see inside them. The SA side is
+# still checked against the spec; the FE side is reported as
+# "deferred" rather than a false-positive mismatch.
+_FE_DEFERRED_TYPES = frozenset({"config_loaded", "settings_applied"})
+
+
+# ---------------------------------------------------------------------
 # Extractors (React source → canonical sets)
 # ---------------------------------------------------------------------
 
@@ -338,6 +460,59 @@ def run_checks() -> dict:
                 "standalone_sites": sa_sites[t][:3],
             })
 
+    # Three-way diff vs the replay-contract spec
+    # (docs/interaction-logging.md § Replay Contract). Distinct from the
+    # FE-vs-SA drift: both codebases can agree yet still drift from the
+    # contract, and conversely one side can be correct while the other
+    # drifts. Encoding the spec here lets the report attribute each
+    # finding to the side that needs to move.
+    fe_spec_drift: list[dict] = []
+    sa_spec_drift: list[dict] = []
+    missing_spec_rows: list[str] = []
+    for t in sorted(canonical_events):
+        spec = SPEC_DETAILS.get(t)
+        if spec is None:
+            missing_spec_rows.append(t)
+            continue
+        required = spec["required"]
+        optional = spec["optional"]
+        known = required | optional
+
+        # Frontend side.
+        if t in fe_event_types and t not in _FE_DEFERRED_TYPES:
+            fe = fe_keys.get(t, set())
+            # Empty object literal is a valid emission — only flag a
+            # missing-required gap when the event actually carries a
+            # non-empty shape or the spec requires anything.
+            fe_missing = sorted(required - fe) if (fe or required) else []
+            fe_extras = sorted(fe - known)
+            if fe_missing or fe_extras:
+                fe_spec_drift.append({
+                    "event_type": t,
+                    "spec_required": sorted(required),
+                    "spec_optional": sorted(optional),
+                    "frontend_keys": sorted(fe),
+                    "missing_required": fe_missing,
+                    "unknown_extras": fe_extras,
+                    "frontend_sites": fe_sites[t][:3],
+                })
+
+        # Standalone side.
+        if t in sa_event_types:
+            sa = sa_keys.get(t, set())
+            sa_missing = sorted(required - sa) if (sa or required) else []
+            sa_extras = sorted(sa - known)
+            if sa_missing or sa_extras:
+                sa_spec_drift.append({
+                    "event_type": t,
+                    "spec_required": sorted(required),
+                    "spec_optional": sorted(optional),
+                    "standalone_keys": sorted(sa),
+                    "missing_required": sa_missing,
+                    "unknown_extras": sa_extras,
+                    "standalone_sites": sa_sites[t][:3],
+                })
+
     sa_api = extract_standalone_api_paths(STANDALONE)
     missing_api_paths = sorted(
         p for p in canonical_api
@@ -376,6 +551,9 @@ def run_checks() -> dict:
         ],
         "missing_completion": missing_completion,
         "detail_key_drift": detail_key_drift,
+        "fe_spec_drift": fe_spec_drift,
+        "sa_spec_drift": sa_spec_drift,
+        "missing_spec_rows": missing_spec_rows,
         "missing_api_paths": missing_api_paths,
         "missing_settings": missing_settings,
     }
@@ -440,6 +618,53 @@ def render_human(report: dict) -> str:
                 out.append(f"        extra:      {entry['extra_in_standalone']}")
         out.append("")
 
+    # ---- FE-vs-spec drift
+    fs = report["fe_spec_drift"]
+    if fs:
+        fail = True
+        out.append(f"[FAIL] {len(fs)} events where the frontend drifts from the "
+                   f"replay-contract spec (docs/interaction-logging.md):")
+        for entry in fs:
+            out.append(f"   - {entry['event_type']}")
+            out.append(f"        spec required: {{{', '.join(entry['spec_required'])}}}")
+            if entry["spec_optional"]:
+                out.append(f"        spec optional: {{{', '.join(entry['spec_optional'])}}}")
+            out.append(f"        frontend:      {{{', '.join(entry['frontend_keys'])}}}")
+            if entry["missing_required"]:
+                out.append(f"        missing:       {entry['missing_required']}")
+            if entry["unknown_extras"]:
+                out.append(f"        unknown extras: {entry['unknown_extras']}")
+            out.append(f"        fe sites:      {fmt_sites(entry['frontend_sites'])}")
+        out.append("")
+
+    # ---- SA-vs-spec drift
+    ss = report["sa_spec_drift"]
+    if ss:
+        fail = True
+        out.append(f"[FAIL] {len(ss)} events where the standalone drifts from the "
+                   f"replay-contract spec (docs/interaction-logging.md):")
+        for entry in ss:
+            out.append(f"   - {entry['event_type']}")
+            out.append(f"        spec required: {{{', '.join(entry['spec_required'])}}}")
+            if entry["spec_optional"]:
+                out.append(f"        spec optional: {{{', '.join(entry['spec_optional'])}}}")
+            out.append(f"        standalone:    {{{', '.join(entry['standalone_keys'])}}}")
+            if entry["missing_required"]:
+                out.append(f"        missing:       {entry['missing_required']}")
+            if entry["unknown_extras"]:
+                out.append(f"        unknown extras: {entry['unknown_extras']}")
+            out.append(f"        sa sites:      {fmt_sites(entry['standalone_sites'])}")
+        out.append("")
+
+    # ---- Spec rows still missing from SPEC_DETAILS
+    mr = report.get("missing_spec_rows") or []
+    if mr:
+        out.append(f"[WARN] {len(mr)} InteractionType values have no SPEC_DETAILS "
+                   f"entry — extend the spec table in this script:")
+        for t in mr:
+            out.append(f"   - {t}")
+        out.append("")
+
     # ---- API-path gap
     ma = report["missing_api_paths"]
     if ma:
@@ -465,9 +690,114 @@ def render_human(report: dict) -> str:
     return "\n".join(out)
 
 
+def render_markdown(report: dict) -> str:
+    """Render the findings as Markdown tables suitable for pasting
+    into ``CLAUDE.md`` (§ "Machine-grounded findings").
+
+    This is what the ``--emit-markdown`` flag prints. The intent is
+    that the audit table in the root CLAUDE.md is NEVER hand-edited
+    — it is always regenerated from this function's output, so the
+    doc and the script can never drift.
+    """
+    out: list[str] = []
+    out.append(
+        f"_Generated by `scripts/check_standalone_parity.py`._ "
+        f"InteractionType union: **{report['canonical_event_count']}** types. "
+        f"Frontend emits **{report['frontend_event_count']}**, "
+        f"standalone emits **{report['standalone_event_count']}**."
+    )
+    out.append("")
+
+    me = report["missing_event_types"]
+    if me:
+        out.append(f"#### Event types emitted by the frontend but NOT by the standalone ({len(me)})")
+        out.append("")
+        out.append("| Event type | React source |")
+        out.append("|---|---|")
+        for entry in me:
+            sites = fmt_sites(entry["frontend_sites"])
+            out.append(f"| `{entry['type']}` | `{sites}` |")
+        out.append("")
+
+    oe = report["orphan_event_types"]
+    if oe:
+        out.append(f"#### Event types emitted by the standalone but NOT in `InteractionType` ({len(oe)})")
+        out.append("")
+        out.append("| Event type | Standalone source |")
+        out.append("|---|---|")
+        for entry in oe:
+            sites = fmt_sites(entry["standalone_sites"])
+            out.append(f"| `{entry['type']}` | `{sites}` |")
+        out.append("")
+
+    fs = report["fe_spec_drift"]
+    if fs:
+        out.append(f"#### Frontend drifts from the replay-contract spec ({len(fs)})")
+        out.append("")
+        out.append("| Event | Spec required | Frontend emits | Missing | React source |")
+        out.append("|---|---|---|---|---|")
+        for entry in fs:
+            req = ", ".join(entry["spec_required"])
+            fe = ", ".join(entry["frontend_keys"]) or "(empty)"
+            missing = ", ".join(entry["missing_required"]) or "—"
+            sites = fmt_sites(entry["frontend_sites"])
+            out.append(f"| `{entry['event_type']}` | `{{{req}}}` | `{{{fe}}}` | `{missing}` | `{sites}` |")
+        out.append("")
+
+    ss = report["sa_spec_drift"]
+    if ss:
+        out.append(f"#### Standalone drifts from the replay-contract spec ({len(ss)})")
+        out.append("")
+        out.append("| Event | Spec required | Standalone emits | Missing | Standalone source |")
+        out.append("|---|---|---|---|---|")
+        for entry in ss:
+            req = ", ".join(entry["spec_required"])
+            sa = ", ".join(entry["standalone_keys"]) or "(empty)"
+            missing = ", ".join(entry["missing_required"]) or "—"
+            sites = fmt_sites(entry["standalone_sites"])
+            out.append(f"| `{entry['event_type']}` | `{{{req}}}` | `{{{sa}}}` | `{missing}` | `{sites}` |")
+        out.append("")
+
+    d = report["detail_key_drift"]
+    if d:
+        out.append(f"#### FE ↔ SA details-key drift (no spec row) ({len(d)})")
+        out.append("")
+        out.append("| Event | Frontend | Standalone |")
+        out.append("|---|---|---|")
+        for entry in d:
+            fe = ", ".join(entry["frontend_keys"]) or "(empty)"
+            sa = ", ".join(entry["standalone_keys"]) or "(empty)"
+            out.append(f"| `{entry['event_type']}` | `{{{fe}}}` | `{{{sa}}}` |")
+        out.append("")
+
+    ma = report["missing_api_paths"]
+    if ma:
+        out.append(f"#### API paths referenced by the frontend but not by the standalone ({len(ma)})")
+        out.append("")
+        for p in ma:
+            out.append(f"- `{p}`")
+        out.append("")
+
+    mc = report["missing_completion"]
+    if mc:
+        out.append(f"#### `recordCompletion(...)` events emitted by the frontend but not the standalone ({len(mc)})")
+        out.append("")
+        for t in mc:
+            out.append(f"- `{t}`")
+        out.append("")
+
+    if not out:
+        out.append("_No findings — `standalone_interface.html` is in full Layer-1 parity with `frontend/`._")
+    return "\n".join(out)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--json", action="store_true", help="emit JSON instead of text")
+    parser.add_argument(
+        "--emit-markdown", action="store_true",
+        help="render a Markdown report suitable for pasting into CLAUDE.md",
+    )
     parser.add_argument(
         "--allow-warn", action="store_true",
         help="exit 0 even if there are [WARN] findings (FAILs still exit 1)",
@@ -477,6 +807,8 @@ def main() -> int:
     report = run_checks()
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
+    elif args.emit_markdown:
+        print(render_markdown(report))
     else:
         print(render_human(report))
 
@@ -485,6 +817,8 @@ def main() -> int:
         or report["orphan_event_types"]
         or report["missing_completion"]
         or report["detail_key_drift"]
+        or report["fe_spec_drift"]
+        or report["sa_spec_drift"]
         or report["missing_api_paths"]
     )
     return 1 if hard_fail else 0
