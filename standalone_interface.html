@@ -2143,6 +2143,253 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             useLayoutEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
             const prevTabRef = useRef(activeTab);
 
+            // ===== Detached + Tied Tabs =====
+            //
+            // `detachedTabs[tabId]` holds the Window reference when a tab
+            // is popped out. `tiedTabs` is a Set of tab ids whose
+            // viewBox should mirror into the main window. See
+            // docs/detachable-viz-tabs.md and docs/interaction-logging.md
+            // § Visualization for the replay contract:
+            //   tab_detached / tab_reattached / tab_tied / tab_untied
+            //   all carry `{ tab: TabId }`.
+            //
+            // Implementation notes:
+            //   - Popups are opened via window.open() with a named handle
+            //     so the browser reuses an existing window if re-detached.
+            //   - The popup's body is populated by injecting the tab's
+            //     current SVG string (`nDiagram.svg`, etc.) verbatim.
+            //     This is a SNAPSHOT at detach time — the popup does
+            //     not re-render when main state changes (e.g. selecting
+            //     a new action). Accepted limitation vs. the React
+            //     portal-based implementation; the 4 events still fire
+            //     at the documented gesture points so replay parity is
+            //     preserved.
+            //   - Tied viewBox mirror uses window.postMessage rather
+            //     than the React ref-based path. Same one-way semantics:
+            //     popup → main when a tied popup's viewBox changes.
+            const [detachedTabs, setDetachedTabs] = useState({});   // { [tab]: Window }
+            const detachedTabsRef = useRef(detachedTabs);
+            useEffect(() => { detachedTabsRef.current = detachedTabs; }, [detachedTabs]);
+            const [tiedTabs, setTiedTabs] = useState(new Set());
+            const tiedTabsRef = useRef(tiedTabs);
+            useEffect(() => { tiedTabsRef.current = tiedTabs; }, [tiedTabs]);
+
+            // Handle incoming viewBox updates from tied popups.
+            // Loop-guard ref: skip the immediate re-fire when we
+            // ourselves are applying a mirrored update.
+            const isSyncingRef = useRef(false);
+            useEffect(() => {
+                const onMessage = (evt) => {
+                    const data = evt.data;
+                    if (!data || data.source !== 'costudy4grid-detached-tab') return;
+                    if (data.type === 'reattach') {
+                        handleReattachTab(data.tab);
+                    } else if (data.type === 'viewBoxChange') {
+                        // Mirror into main if the source tab is tied.
+                        if (!tiedTabsRef.current.has(data.tab)) return;
+                        const pz = data.tab === 'n' ? nPZ : data.tab === 'n-1' ? n1PZ : actionPZ;
+                        if (pz && pz.setViewBox && data.viewBox) {
+                            isSyncingRef.current = true;
+                            pz.setViewBox(data.viewBox);
+                            // Release the guard on the next microtask so
+                            // subsequent user-initiated changes flow
+                            // through normally.
+                            queueMicrotask(() => { isSyncingRef.current = false; });
+                        }
+                    }
+                };
+                window.addEventListener('message', onMessage);
+                return () => window.removeEventListener('message', onMessage);
+                // eslint-disable-next-line react-hooks/exhaustive-deps
+            }, []);
+
+            // Close any live popups when the main window unloads so we
+            // don't leave orphans pointing at a dead page.
+            useEffect(() => {
+                const onUnload = () => {
+                    for (const win of Object.values(detachedTabsRef.current)) {
+                        try { win?.close(); } catch (e) { /* ignore */ }
+                    }
+                };
+                window.addEventListener('beforeunload', onUnload);
+                return () => window.removeEventListener('beforeunload', onUnload);
+            }, []);
+
+            const TAB_TITLES = { 'n': 'Network (N)', 'n-1': 'Contingency (N-1)', 'action': 'Remedial Action' };
+
+            const handleDetachTab = (tabId) => {
+                if (detachedTabsRef.current[tabId]) return; // already detached
+                const popup = window.open('', `costudy4grid_tab_${tabId}`, 'popup=yes,width=1100,height=800,menubar=no,toolbar=no,location=no');
+                if (!popup || popup.closed) {
+                    setError('Popup blocked by the browser. Please allow popups for this site to detach tabs.');
+                    return;
+                }
+                // Copy styles from opener so the popup inherits the
+                // standalone's look-and-feel.
+                try {
+                    popup.document.open();
+                    popup.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title></title></head><body></body></html>');
+                    popup.document.close();
+                    popup.document.title = `Co-Study4Grid — ${TAB_TITLES[tabId]}`;
+                    popup.document.body.style.margin = '0';
+                    popup.document.body.style.height = '100vh';
+                    popup.document.body.style.fontFamily = 'Arial, sans-serif';
+                    popup.document.body.style.display = 'flex';
+                    popup.document.body.style.flexDirection = 'column';
+                    document.querySelectorAll('style, link[rel="stylesheet"]').forEach(s => {
+                        popup.document.head.appendChild(s.cloneNode(true));
+                    });
+                } catch (e) {
+                    setError('Failed to initialise detached tab window: ' + e.message);
+                    try { popup.close(); } catch (ex) { /* ignore */ }
+                    return;
+                }
+
+                // Header with Reattach + Tie buttons.
+                const header = popup.document.createElement('div');
+                header.style.cssText = 'background: #2c3e50; color: #fff; padding: 8px 16px; display: flex; gap: 12px; align-items: center;';
+                const title = popup.document.createElement('strong');
+                title.textContent = TAB_TITLES[tabId];
+                title.style.flex = '1';
+                header.appendChild(title);
+                const tieBtn = popup.document.createElement('button');
+                tieBtn.dataset.role = 'tie';
+                tieBtn.textContent = '⛓ Tie';
+                tieBtn.style.cssText = 'padding: 4px 10px; cursor: pointer; background: #fff; border: none; border-radius: 4px;';
+                tieBtn.addEventListener('click', () => handleToggleTie(tabId));
+                header.appendChild(tieBtn);
+                const reattachBtn = popup.document.createElement('button');
+                reattachBtn.textContent = '⤩ Reattach';
+                reattachBtn.style.cssText = 'padding: 4px 10px; cursor: pointer; background: #fff; border: none; border-radius: 4px;';
+                reattachBtn.addEventListener('click', () => {
+                    window.postMessage({ source: 'costudy4grid-detached-tab', type: 'reattach', tab: tabId }, '*');
+                });
+                header.appendChild(reattachBtn);
+                popup.document.body.appendChild(header);
+
+                // SVG snapshot container.
+                const svgHost = popup.document.createElement('div');
+                svgHost.style.cssText = 'flex: 1; overflow: hidden; position: relative;';
+                svgHost.dataset.role = 'svg-host';
+                const snapshot = tabId === 'n' ? nDiagram?.svg
+                    : tabId === 'n-1' ? n1Diagram?.svg
+                    : tabId === 'action' ? actionDiagram?.svg
+                    : null;
+                if (snapshot) {
+                    svgHost.innerHTML = typeof snapshot === 'string' ? snapshot
+                        : snapshot instanceof SVGSVGElement ? snapshot.outerHTML
+                        : '';
+                    const svgEl = svgHost.querySelector('svg');
+                    if (svgEl) {
+                        svgEl.style.width = '100%';
+                        svgEl.style.height = '100%';
+                        // Basic wheel-zoom + drag pan so the popup is
+                        // usable standalone. Forward viewBox changes to
+                        // the main window via postMessage — the main
+                        // mirrors only when this tab is tied.
+                        let vb = svgEl.viewBox?.baseVal
+                            ? { x: svgEl.viewBox.baseVal.x, y: svgEl.viewBox.baseVal.y, w: svgEl.viewBox.baseVal.width, h: svgEl.viewBox.baseVal.height }
+                            : null;
+                        const postVb = () => {
+                            if (!vb) return;
+                            window.postMessage({
+                                source: 'costudy4grid-detached-tab',
+                                type: 'viewBoxChange',
+                                tab: tabId,
+                                viewBox: { ...vb },
+                            }, '*');
+                        };
+                        svgEl.addEventListener('wheel', (e) => {
+                            e.preventDefault();
+                            if (!vb) return;
+                            const scale = e.deltaY < 0 ? 0.85 : 1.15;
+                            vb = {
+                                x: vb.x + vb.w * (1 - scale) / 2,
+                                y: vb.y + vb.h * (1 - scale) / 2,
+                                w: vb.w * scale,
+                                h: vb.h * scale,
+                            };
+                            svgEl.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+                            postVb();
+                        }, { passive: false });
+                        let isDragging = false, lastX = 0, lastY = 0;
+                        svgEl.addEventListener('mousedown', (e) => {
+                            isDragging = true; lastX = e.clientX; lastY = e.clientY;
+                            svgEl.style.cursor = 'grabbing';
+                        });
+                        popup.addEventListener('mousemove', (e) => {
+                            if (!isDragging || !vb) return;
+                            const dx = (e.clientX - lastX) * vb.w / svgEl.clientWidth;
+                            const dy = (e.clientY - lastY) * vb.h / svgEl.clientHeight;
+                            vb = { x: vb.x - dx, y: vb.y - dy, w: vb.w, h: vb.h };
+                            svgEl.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+                            lastX = e.clientX; lastY = e.clientY;
+                            postVb();
+                        });
+                        popup.addEventListener('mouseup', () => { isDragging = false; svgEl.style.cursor = 'grab'; });
+                    }
+                } else {
+                    svgHost.textContent = '(No diagram available — return to the main window to load one.)';
+                    svgHost.style.cssText += 'color: #888; display: flex; align-items: center; justify-content: center;';
+                }
+                popup.document.body.appendChild(svgHost);
+
+                // When the user closes the popup via the OS, treat it as reattach.
+                popup.addEventListener('pagehide', () => {
+                    window.postMessage({ source: 'costudy4grid-detached-tab', type: 'reattach', tab: tabId }, '*');
+                });
+
+                setDetachedTabs(prev => ({ ...prev, [tabId]: popup }));
+                interactionLogger.record('tab_detached', { tab: tabId });
+            };
+
+            const handleReattachTab = (tabId) => {
+                const popup = detachedTabsRef.current[tabId];
+                if (!popup) return;
+                try { popup.close(); } catch (e) { /* ignore */ }
+                setDetachedTabs(prev => {
+                    const next = { ...prev };
+                    delete next[tabId];
+                    return next;
+                });
+                // Untie on reattach — tying a reattached tab makes no sense.
+                setTiedTabs(prev => {
+                    if (!prev.has(tabId)) return prev;
+                    const next = new Set(prev);
+                    next.delete(tabId);
+                    interactionLogger.record('tab_untied', { tab: tabId });
+                    return next;
+                });
+                interactionLogger.record('tab_reattached', { tab: tabId });
+            };
+
+            const handleToggleTie = (tabId) => {
+                setTiedTabs(prev => {
+                    const next = new Set(prev);
+                    if (next.has(tabId)) {
+                        next.delete(tabId);
+                        interactionLogger.record('tab_untied', { tab: tabId });
+                    } else {
+                        next.add(tabId);
+                        interactionLogger.record('tab_tied', { tab: tabId });
+                    }
+                    return next;
+                });
+                // Update the popup's Tie button label so the user sees
+                // the new state. The popup was opened by us; stylesheet
+                // reloads aren't needed — just toggle the button text.
+                const popup = detachedTabsRef.current[tabId];
+                if (popup && !popup.closed) {
+                    const btn = popup.document.querySelector('[data-role="tie"]');
+                    if (btn) {
+                        const willBeTied = !tiedTabsRef.current.has(tabId);
+                        btn.textContent = willBeTied ? '🔗 Tied' : '⛓ Tie';
+                        btn.style.background = willBeTied ? '#3498db' : '#fff';
+                        btn.style.color = willBeTied ? '#fff' : '#000';
+                    }
+                }
+            };
+
             // Auto-switch to overflow tab when PDF becomes available
             const lastAutoSwitchedPdfRef = useRef(null);
             useEffect(() => {
@@ -2681,6 +2928,17 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         n_overloads: nDiagram?.lines_overloaded ?? [],
                         n1_overloads: n1Diagram?.lines_overloaded ?? [],
                         resolved_overloads: result?.lines_overloaded ?? [],
+                        // Per-element loading ratios (PR #88 sticky-header
+                        // percentages). Persisted only when the array
+                        // length matches the element-name array above —
+                        // a shorter or missing array means the backend
+                        // N-1 payload predates the rho feature, in
+                        // which case we omit the key rather than
+                        // surface misleading zeros to replay agents.
+                        // Docs: interaction-logging.md § Session reload
+                        // fidelity (the "save-only-OK" fields).
+                        ...(nDiagram?.lines_overloaded_rho && nDiagram.lines_overloaded_rho.length === (nDiagram?.lines_overloaded?.length ?? 0) ? { n_overloads_rho: nDiagram.lines_overloaded_rho } : {}),
+                        ...(n1Diagram?.lines_overloaded_rho && n1Diagram.lines_overloaded_rho.length === (n1Diagram?.lines_overloaded?.length ?? 0) ? { n1_overloads_rho: n1Diagram.lines_overloaded_rho } : {}),
                     },
                     overflow_graph: result?.pdf_url
                         ? { pdf_url: result.pdf_url, pdf_path: result.pdf_path ?? null }
@@ -7129,25 +7387,54 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     { id: 'overflow', label: 'Overflow Analysis', available: !!result?.pdf_url, accentColor: '#27ae60', placeholder: 'Run \u201cAnalyze & Suggest\u201d to see the overflow graph.' },
                                 ].map(tab => {
                                     const isActive = activeTab === tab.id;
+                                    const isDetached = !!detachedTabs[tab.id];
+                                    // Only N / N-1 / Action are detachable — Overflow is a PDF tab.
+                                    const detachable = tab.id !== 'overflow' && tab.available;
                                     return (
-                                        <button
-                                            key={tab.id}
-                                            onClick={() => { interactionLogger.record('diagram_tab_changed', { tab: tab.id }); setActiveTab(tab.id); }}
-                                            title={tab.available ? undefined : tab.placeholder}
-                                            style={{
-                                                flex: 1, borderRadius: 0, border: 'none', padding: '8px 6px',
-                                                cursor: 'pointer',
-                                                fontWeight: isActive && tab.available ? 'bold' : 400,
-                                                fontStyle: !tab.available ? 'italic' : 'normal',
-                                                background: isActive ? 'white' : '#ecf0f1',
-                                                color: tab.available ? (isActive ? '#2c3e50' : '#7f8c8d') : '#bbb',
-                                                borderBottom: isActive && tab.available ? `3px solid ${tab.accentColor}` : 'none',
-                                                fontSize: tab.id === 'action' && selectedActionId ? '0.75rem' : '0.85rem',
-                                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                            }}
-                                        >
-                                            {tab.label}
-                                        </button>
+                                        <div key={tab.id} style={{ flex: 1, display: 'flex', alignItems: 'stretch', borderRight: '1px solid #e0e0e0' }}>
+                                            <button
+                                                onClick={() => {
+                                                    if (isDetached) {
+                                                        // Focus the popup rather than switching the
+                                                        // main tab (the content is in another window).
+                                                        try { detachedTabs[tab.id].focus(); } catch (e) { /* ignore */ }
+                                                        return;
+                                                    }
+                                                    interactionLogger.record('diagram_tab_changed', { tab: tab.id });
+                                                    setActiveTab(tab.id);
+                                                }}
+                                                title={tab.available ? (isDetached ? 'Tab detached — click to focus the popup' : undefined) : tab.placeholder}
+                                                style={{
+                                                    flex: 1, borderRadius: 0, border: 'none', padding: '8px 6px',
+                                                    cursor: 'pointer',
+                                                    fontWeight: isActive && tab.available ? 'bold' : 400,
+                                                    fontStyle: !tab.available || isDetached ? 'italic' : 'normal',
+                                                    background: isActive ? 'white' : '#ecf0f1',
+                                                    color: tab.available ? (isActive ? '#2c3e50' : '#7f8c8d') : '#bbb',
+                                                    opacity: isDetached ? 0.55 : 1,
+                                                    borderBottom: isActive && tab.available ? `3px solid ${tab.accentColor}` : 'none',
+                                                    fontSize: tab.id === 'action' && selectedActionId ? '0.75rem' : '0.85rem',
+                                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                }}
+                                            >
+                                                {tab.label}{isDetached ? ' ⧉' : ''}
+                                            </button>
+                                            {detachable && (
+                                                <button
+                                                    onClick={() => isDetached ? handleReattachTab(tab.id) : handleDetachTab(tab.id)}
+                                                    title={isDetached ? 'Reattach to main window' : 'Detach into a separate window'}
+                                                    style={{
+                                                        padding: '0 8px', border: 'none',
+                                                        background: isActive ? 'white' : '#ecf0f1',
+                                                        cursor: 'pointer', fontSize: '0.85rem',
+                                                        color: isDetached ? '#3498db' : '#7f8c8d',
+                                                    }}
+                                                    aria-label={isDetached ? `Reattach ${tab.label}` : `Detach ${tab.label}`}
+                                                >
+                                                    {isDetached ? '⤩' : '⊞'}
+                                                </button>
+                                            )}
+                                        </div>
                                     );
                                 })}
                             </div>

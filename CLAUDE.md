@@ -463,15 +463,15 @@ Legend: ✅ mirrored · ⚠️ partial (gap noted) · ❌ missing
 | **SLD** | Delta flow mode | ✅ | — |
 | **SLD** | Pan / zoom | ✅ | — |
 | **SLD** | Auto-center on load | ✅ | — |
-| **Detached tabs** | Pop into separate window | ❌ | **Deliberately deferred.** Requires `window.open` + `postMessage` IPC + per-window pan/zoom state. ~300-500 lines of infrastructure in the single-file HTML with behavioural risks (popup blockers, IPC ordering) that are hard to validate without a real browser. None of the 4 missing events (`tab_detached`, `tab_reattached`, `tab_tied`, `tab_untied`) appear in the canonical 11-gesture replay sequence, so replay agents against session logs without detached-tab gestures still work unchanged. |
-| **Detached tabs** | Tied viewBox sync | ❌ | Depends on detach support |
-| **Detached tabs** | Focus-from-main | ❌ | Depends on detach support |
+| **Detached tabs** | Pop into separate window | ⚠️ | Minimal port via `window.open()`. The popup gets a SNAPSHOT of the current SVG + a wheel/drag pan-zoom + Reattach / Tie buttons in its header. Accepted limitations vs. React: the popup doesn't live-update when main state changes (e.g. selecting a new action) and there's no React portal, so no shared component tree. All 4 events (`tab_detached`/`tab_reattached`/`tab_tied`/`tab_untied`) fire at the documented gesture points. |
+| **Detached tabs** | Tied viewBox sync | ⚠️ | `window.postMessage`-based one-way mirror from popup → main when the popup tab is tied. `isSyncingRef` guard skips the immediate re-fire. |
+| **Detached tabs** | Focus-from-main | ✅ | Clicking a tab header when the tab is already detached calls `focus()` on the popup rather than switching the main active tab. |
 | **Session** | Save to folder | ✅ | — |
 | **Session** | Browser download fallback | ✅ | — |
 | **Session** | List-sessions modal | ✅ | — |
 | **Session** | Restore configuration + contingency + analysis state | ✅ | — |
 | **Session** | Restore interaction log | ✅ | — |
-| **Interaction log** | Event-type coverage | ⚠️ | 4/55 spec types still missing — **all four** Detached + Tied Tabs events. Every other gesture (including all 9 Action Overview events) now logs on both sides. |
+| **Interaction log** | Event-type coverage | ✅ | 51/51 gestures emitted by the frontend are now emitted by the standalone (the full `InteractionType` union minus 4 test-only helpers that neither codebase emits). |
 | **Interaction log** | `details` schema conformance | ✅ | All emitted standalone events are spec-conformant; historical `min_kv/max_kv`, `target_tab`, `from_tab/to_tab`, `missing tab/scope` drifts all resolved |
 | **Interaction log** | `recordCompletion` pairs | ⚠️ | Only `analysis_step{1,2}_completed` emitted — shared gap against the spec (fix needed on both sides) |
 | **Interaction log** | Replay-ready details | ✅ | — |
@@ -491,7 +491,7 @@ Legend: ✅ mirrored · ⚠️ partial (gap noted) · ❌ missing
 
 #### Top-priority gaps (biggest user impact — do first)
 1. ~~**Action Overview Diagram + pin navigation**~~ — **DONE** (minimal port). Pins on the N-1 NAD, single-click popover, double-click navigation, zoom + inspect controls all wired, all 9 `overview_*` events fire. Follow-up polish: multi-pin fan-out on shared anchors, combined-action curves, full ActionCard in the popover.
-2. **Detached + tied tabs** — deliberately deferred. No way to compare N vs Action or N-1 vs Action side-by-side. Requires `window.open` + `postMessage` IPC. See `docs/detachable-viz-tabs.md` and the "Detached tabs" row above for the deferral rationale.
+2. ~~**Detached + tied tabs**~~ — **DONE** (minimal port). `window.open`-based popups with SVG snapshot + pan/zoom + postMessage-based tied viewBox mirror. Accepted limitations: popup content is a snapshot (doesn't live-update on main state changes) and there's no React portal. All 4 `tab_*` events fire. Follow-up polish: portal-style live updates, shared inspect-search inside popups.
 3. **Pan/zoom migration to `react-zoom-pan-pinch`** — standalone uses raw viewBox math with no inertia or gesture smoothing. On large grids this is the single biggest UX regression versus the React app.
 4. **Zoom-tier LOD** — large grids (500+ VLs) render ALL text at overview zoom and become unreadable; React hides text-heavy elements per tier. See `docs/rendering-optimization-plan.md`.
 5. **Load-shedding / curtailment / PST details popups** — three separate popups in the React `ActionCard` that expose per-item breakdowns; currently replaced by a badge count only.
@@ -525,26 +525,24 @@ into CI.
 
 _Generated from the parity script on 2026-04-19._
 `InteractionType` union: **55** types. Frontend emits **51**,
-standalone emits **47** (was 38 — the 9-event Action Overview
-feature ported in this commit).
+standalone emits **51**. Full event-type coverage — zero missing
+gestures, zero FE-vs-spec drifts, zero SA-vs-spec drifts, zero
+missing API paths. **Layer 1 exits 0.**
 
-##### Event types emitted by the frontend but NOT by the standalone (4)
+The one symmetric-difference (`inspect_query_changed`: FE has
+`{query, target_tab}`, SA has `{query}`) is spec-conformant on
+both sides — `target_tab` is marked optional in the replay
+contract and is only populated when the inspect field is
+triggered from a detached-tab overlay. The standalone's minimal
+detach port doesn't render an inspect input inside popups, so
+the optional key is never set. Script's `_check_benign_diff`
+helper filters this out.
 
-Down from 13 and 19 across the last two audits. Every remaining
-miss is one of the four **Detached + Tied Tabs** events. Porting
-them requires `window.open` + `postMessage` IPC infrastructure that
-doesn't exist in the single-file HTML and introduces behavioural
-risk (popup blockers, IPC ordering races) that's hard to validate
-without a real browser runtime — see the "Detached tabs" row in
-the mirror-status table above for the deferral rationale.
-
-| Event type | Feature | React source |
-|---|---|---|
-| `tab_detached` / `tab_reattached` | Pop tab into separate window | `App.tsx:211,225` |
-| `tab_tied` / `tab_untied` | Mirror detached viewBox | `hooks/useTiedTabsSync.ts:97,107` |
-
-Nothing in the standalone emits an event the union does not know
-about (0 orphan types).
+The 4 InteractionType values neither codebase emits are
+`settings_cancelled`, `action_unfavorited`, `action_unrejected`,
+and `contingency_selected`-completion — all are declared in
+`types.ts` for future-proofing but no current gesture triggers
+them. Not a parity gap (both sides agree).
 
 ##### Details-key drift between frontend and standalone (1)
 
@@ -656,11 +654,17 @@ historical record:
 |---|---|---|
 | `lines_overloaded_after` | Added to `SavedActionEntry` object literal in `sessionUtils.ts` | `utils/sessionUtils.test.ts::persists lines_overloaded_after so it survives save → reload (regression)` |
 
-##### Fields absent from the standalone entirely (2 — warn)
+##### Fields absent from the standalone entirely
 
-| Field | Note |
-|---|---|
-| `n_overloads_rho`, `n1_overloads_rho` | The sticky-header rho arrays (PR #88). The React app intentionally saves-only (live state re-derives from a fresh N-1 diagram on reload). The standalone doesn't save them either — fine for live UX, but replay agents and offline inspection tools lose the percentages. |
+**0 fields — resolved.** `n_overloads_rho` and `n1_overloads_rho`
+are now persisted by the standalone's session-save path
+(`buildSessionSnapshot`) under the same save-only-OK convention as
+React. Replay agents and offline inspection tools can now read
+the sticky-header rho percentages from both codebases' session
+dumps. The standalone now round-trips **30/30** curated fields
+(React round-trips 26/30; the remaining 4 are intentional
+re-derivation on reload per the React-side design — saved for
+inspection, re-derived from a fresh N-1 diagram on reload).
 
 #### Layer 3a — Gesture-sequence static proxy (`scripts/check_gesture_sequence.py`)
 

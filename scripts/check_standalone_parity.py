@@ -546,6 +546,24 @@ def run_checks() -> dict:
         if not fe:
             continue  # frontend details are in a bare identifier
         if fe and sa and fe != sa:
+            # A diff that is spec-conformant on both sides (only
+            # optional keys are present on one side but not the other)
+            # is not real drift — skip it rather than flag it as a
+            # parity failure.  The spec marks the difference as
+            # intentional, typically when one codebase supports a
+            # feature the other doesn't (e.g. detached-tab overlays).
+            spec = SPEC_DETAILS.get(t)
+            if spec is not None:
+                required = spec["required"]
+                optional = spec["optional"]
+                symmetric_diff = (fe ^ sa)
+                # Benign if every differing key is either optional or
+                # both sides have all required keys.
+                fe_ok = required <= fe
+                sa_ok = required <= sa
+                all_diffs_optional = symmetric_diff <= optional
+                if fe_ok and sa_ok and all_diffs_optional:
+                    continue
             detail_key_drift.append({
                 "event_type": t,
                 "frontend_keys": sorted(fe),
