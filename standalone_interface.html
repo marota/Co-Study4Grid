@@ -3560,6 +3560,12 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 interactionLogger.record('prioritized_actions_displayed', {
                     n_actions: Object.keys(pendingAnalysisResult.actions || {}).length,
                 });
+                // Auto-switch to the Remedial Action tab so the operator
+                // lands on the Action Overview pins the moment the
+                // prioritized actions are merged into the result.
+                // Matches the React `handleDisplayPrioritizedActions`
+                // behaviour (`useAnalysis.ts:198 setActiveTab?.('action')`).
+                setActiveTab('action');
                 setResult(prev => {
                     // Preserve manually added actions via is_manual flag
                     const manualActionsData = {};
