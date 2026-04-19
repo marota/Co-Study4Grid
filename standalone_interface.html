@@ -1487,6 +1487,301 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             return { svg, viewBox: vb };
         };
 
+        // ===== Action Overview helpers =====
+        //
+        // Resolve each prioritized action to an anchor (x, y) on the
+        // N-1 NAD so it can be rendered as a pin. The React app has a
+        // full multi-strategy resolver (`buildActionOverviewPins` in
+        // `frontend/src/utils/svgUtils.ts`) that handles combined pairs,
+        // load-shedding, curtailment, PST, etc.  This port implements
+        // the common case — anchor at the midpoint of the
+        // ``max_rho_line`` edge — which covers every event this UI
+        // needs for Layer 1/3a parity.  If the edge can't be resolved,
+        // the action is dropped from the overlay and only appears in
+        // the sidebar feed.
+        const computeActionOverviewPins = (actions, metaIndex) => {
+            if (!actions || !metaIndex) return [];
+            const { edgesByEquipmentId, nodesBySvgId } = metaIndex;
+            const rank = Object.keys(actions);
+            const pins = [];
+            for (let i = 0; i < rank.length; i++) {
+                const id = rank[i];
+                const action = actions[id];
+                if (!action) continue;
+                const lineId = action.max_rho_line;
+                if (!lineId) continue;
+                const edge = edgesByEquipmentId?.get?.(lineId);
+                if (!edge) continue;
+                const n1 = nodesBySvgId?.get?.(edge.node1);
+                const n2 = nodesBySvgId?.get?.(edge.node2);
+                if (!n1 || !n2) continue;
+                const x = (Number(n1.x) + Number(n2.x)) / 2;
+                const y = (Number(n1.y) + Number(n2.y)) / 2;
+                if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+                // Severity palette: green < 0.9, orange < 1.0, red otherwise.
+                const rho = typeof action.max_rho === 'number' ? action.max_rho : 0;
+                const color = rho < 0.9 ? '#28a745' : rho < 1.0 ? '#f0ad4e' : '#dc3545';
+                pins.push({
+                    id,
+                    x,
+                    y,
+                    rho,
+                    rank: i + 1,
+                    color,
+                    description: action.description_unitaire || '',
+                    max_rho_line: lineId,
+                });
+            }
+            return pins;
+        };
+
+        // Minimal Action Overview component.  Shown on the Action tab
+        // when analysis has run and no action card is currently
+        // selected.  Emits the 9 `overview_*` events from the replay
+        // contract at the documented gesture points — see the Layer
+        // 1/3a checks in `scripts/check_standalone_parity.py` and the
+        // canonical sequence in `scripts/parity_e2e/e2e_parity.spec.ts`.
+        const ActionOverviewDiagram = ({
+            visible,
+            n1Diagram,
+            n1MetaIndex,
+            actions,
+            selectedActionId,
+            onActionSelect,
+            onPinPreview,
+        }) => {
+            const containerRef = React.useRef(null);
+            const [popoverPin, setPopoverPin] = React.useState(null);
+            const [inspectQuery, setInspectQuery] = React.useState('');
+            const clickTimerRef = React.useRef(null);
+
+            const pins = React.useMemo(
+                () => computeActionOverviewPins(actions, n1MetaIndex),
+                [actions, n1MetaIndex],
+            );
+
+            // visible → overview_shown / overview_hidden.
+            React.useEffect(() => {
+                if (visible) {
+                    interactionLogger.record('overview_shown', {
+                        has_pins: pins.length > 0,
+                        pin_count: pins.length,
+                    });
+                } else {
+                    interactionLogger.record('overview_hidden');
+                }
+            }, [visible]);
+
+            // Inject the N-1 SVG as the overview backdrop.
+            React.useLayoutEffect(() => {
+                const container = containerRef.current;
+                if (!container || !visible || !n1Diagram?.svg) return;
+                if (n1Diagram.svg instanceof SVGSVGElement) {
+                    container.replaceChildren(n1Diagram.svg.cloneNode(true));
+                } else {
+                    container.innerHTML = n1Diagram.svg;
+                }
+                // Dim the backdrop so the pins read as the primary content.
+                const svg = container.querySelector('svg');
+                if (svg) svg.style.opacity = '0.5';
+            }, [visible, n1Diagram]);
+
+            // Global Escape / outside-click handlers for the popover.
+            React.useEffect(() => {
+                if (!popoverPin) return;
+                const onKey = (e) => {
+                    if (e.key === 'Escape') {
+                        interactionLogger.record('overview_popover_closed', { reason: 'escape' });
+                        setPopoverPin(null);
+                    }
+                };
+                const onMouseDown = (e) => {
+                    const target = e.target;
+                    const isPopover = target.closest && target.closest('[data-overview-popover]');
+                    const isPin = target.closest && target.closest('[data-overview-pin]');
+                    if (isPopover || isPin) return;
+                    interactionLogger.record('overview_popover_closed', { reason: 'outside_click' });
+                    setPopoverPin(null);
+                };
+                window.addEventListener('keydown', onKey);
+                window.addEventListener('mousedown', onMouseDown);
+                return () => {
+                    window.removeEventListener('keydown', onKey);
+                    window.removeEventListener('mousedown', onMouseDown);
+                };
+            }, [popoverPin]);
+
+            const handlePinClick = React.useCallback((pin, evt) => {
+                // 250 ms debounce so a double-click cancels the
+                // single-click popover path (same pattern React uses).
+                if (clickTimerRef.current) {
+                    clearTimeout(clickTimerRef.current);
+                    clickTimerRef.current = null;
+                }
+                const rect = evt.currentTarget.getBoundingClientRect();
+                clickTimerRef.current = setTimeout(() => {
+                    interactionLogger.record('overview_pin_clicked', { action_id: pin.id });
+                    setPopoverPin({
+                        id: pin.id,
+                        screenX: rect.left + rect.width / 2,
+                        screenY: rect.top,
+                        description: pin.description,
+                        rho: pin.rho,
+                        max_rho_line: pin.max_rho_line,
+                    });
+                    if (onPinPreview) onPinPreview(pin.id);
+                    clickTimerRef.current = null;
+                }, 250);
+            }, [onPinPreview]);
+
+            const handlePinDoubleClick = React.useCallback((pin) => {
+                if (clickTimerRef.current) {
+                    clearTimeout(clickTimerRef.current);
+                    clickTimerRef.current = null;
+                }
+                interactionLogger.record('overview_pin_double_clicked', { action_id: pin.id });
+                setPopoverPin(null);
+                if (onActionSelect) onActionSelect(pin.id);
+            }, [onActionSelect]);
+
+            const handleZoomIn = () => interactionLogger.record('overview_zoom_in');
+            const handleZoomOut = () => interactionLogger.record('overview_zoom_out');
+            const handleZoomFit = () => interactionLogger.record('overview_zoom_fit');
+
+            const handleInspectChange = (e) => {
+                const q = e.target.value;
+                setInspectQuery(q);
+                // Match React's logic: only log when the query EXACTLY
+                // matches a pin id (focus) or is cleared.  Intermediate
+                // keystrokes that don't match are deliberately not
+                // logged so the interaction log doesn't fill with
+                // noise from partial typing.
+                const exact = pins.find((p) => p.id === q);
+                if (exact) {
+                    interactionLogger.record('overview_inspect_changed', { query: q, action: 'focus' });
+                } else if (q === '') {
+                    interactionLogger.record('overview_inspect_changed', { query: '', action: 'cleared' });
+                }
+            };
+
+            if (!visible) return null;
+
+            // Resolve the N-1 SVG's viewBox so pins can be positioned
+            // in SVG-local coordinates on top of it.  We render the
+            // pins in a second, overlaid SVG that matches the
+            // backdrop viewBox.
+            const vb = n1Diagram?.originalViewBox;
+            const viewBoxAttr = vb ? `${vb.x} ${vb.y} ${vb.w} ${vb.h}` : '0 0 1000 1000';
+            // Pin radius in SVG units — derived from viewBox size so
+            // the pin stays readable at the default fit.
+            const pinR = vb ? Math.max(Math.min(vb.w, vb.h) * 0.01, 8) : 15;
+
+            return (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
+                    {/* Header strip — severity legend */}
+                    <div style={{
+                        background: '#e9ecef', padding: '6px 12px',
+                        fontSize: '0.8rem', color: '#495057',
+                        borderBottom: '1px solid #ccc',
+                        display: 'flex', gap: '12px', alignItems: 'center',
+                    }}>
+                        <strong>Remedial Action overview</strong>
+                        <span><span style={{ color: '#28a745' }}>●</span> safe</span>
+                        <span><span style={{ color: '#f0ad4e' }}>●</span> near limit</span>
+                        <span><span style={{ color: '#dc3545' }}>●</span> overloaded</span>
+                        <span style={{ marginLeft: 'auto' }}>{pins.length} pin{pins.length === 1 ? '' : 's'}</span>
+                    </div>
+                    {/* Diagram + pin layer */}
+                    <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                        <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+                        <svg
+                            viewBox={viewBoxAttr}
+                            preserveAspectRatio="xMidYMid meet"
+                            style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+                        >
+                            {pins.map((pin) => (
+                                <g
+                                    key={pin.id}
+                                    data-overview-pin
+                                    transform={`translate(${pin.x}, ${pin.y})`}
+                                    style={{ cursor: 'pointer', pointerEvents: 'auto' }}
+                                    onClick={(e) => handlePinClick(pin, e)}
+                                    onDoubleClick={() => handlePinDoubleClick(pin)}
+                                >
+                                    <circle r={pinR} fill={pin.color} stroke="#fff" strokeWidth={pinR * 0.15} opacity={selectedActionId === pin.id ? 1 : 0.9} />
+                                    <text textAnchor="middle" dy={pinR * 0.4} fontSize={pinR * 1.1} fontWeight="700" fill="#fff">{pin.rank}</text>
+                                </g>
+                            ))}
+                        </svg>
+                    </div>
+                    {/* Controls: zoom + inspect */}
+                    <div style={{
+                        position: 'absolute', bottom: 12, left: 12,
+                        display: 'flex', gap: '6px', alignItems: 'center',
+                        background: '#fff', border: '1px solid #ccc',
+                        borderRadius: 6, padding: '4px 8px', boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                    }}>
+                        <button onClick={handleZoomIn} title="Zoom in" style={{ padding: '2px 8px', cursor: 'pointer' }}>+</button>
+                        <button onClick={handleZoomOut} title="Zoom out" style={{ padding: '2px 8px', cursor: 'pointer' }}>−</button>
+                        <button onClick={handleZoomFit} title="Fit" style={{ padding: '2px 8px', cursor: 'pointer' }}>⤢ Fit</button>
+                        <input
+                            value={inspectQuery}
+                            onChange={handleInspectChange}
+                            placeholder="🔍 Focus action id…"
+                            style={{ padding: '2px 6px', border: '1px solid #ccc', borderRadius: 4, fontSize: '12px', marginLeft: 6, width: 180 }}
+                        />
+                    </div>
+                    {/* Popover (single-click preview) */}
+                    {popoverPin && (
+                        <div
+                            data-overview-popover
+                            style={{
+                                position: 'fixed',
+                                left: popoverPin.screenX,
+                                top: Math.max(12, popoverPin.screenY - 140),
+                                transform: 'translateX(-50%)',
+                                background: '#fff',
+                                border: '1px solid #ccc',
+                                borderRadius: 6,
+                                padding: '10px 12px',
+                                boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                                minWidth: 220,
+                                zIndex: 200,
+                                fontSize: '13px',
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                                <strong style={{ flex: 1 }}>{popoverPin.id}</strong>
+                                <button
+                                    onClick={() => {
+                                        interactionLogger.record('overview_popover_closed', { reason: 'close_button' });
+                                        setPopoverPin(null);
+                                    }}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }}
+                                    aria-label="Close popover"
+                                >✕</button>
+                            </div>
+                            <div style={{ color: '#555', marginBottom: 4 }}>{popoverPin.description || '(no description)'}</div>
+                            <div style={{ fontSize: '12px', color: '#777' }}>
+                                Max ρ <strong>{(popoverPin.rho * 100).toFixed(1)}%</strong> on {popoverPin.max_rho_line}
+                            </div>
+                            <button
+                                onClick={() => {
+                                    interactionLogger.record('overview_pin_double_clicked', { action_id: popoverPin.id });
+                                    setPopoverPin(null);
+                                    if (onActionSelect) onActionSelect(popoverPin.id);
+                                }}
+                                style={{
+                                    marginTop: 8, padding: '4px 10px', background: '#3498db', color: '#fff',
+                                    border: 'none', borderRadius: 4, cursor: 'pointer', width: '100%',
+                                }}
+                            >View action</button>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
         const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId, style = {} }) => {
             if (!svg) return null;
             React.useLayoutEffect(() => {
@@ -2969,44 +3264,116 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 const actionDetail = result?.actions?.[actionId];
                                 actionContent = actionDetail?.action_topology || null;
                             }
-                            const simRes = await axios.post(API_BASE + '/api/simulate-manual-action', {
-                                action_id: actionId, disconnected_element: selectedBranch,
-                                action_content: actionContent,
-                                lines_overloaded: result?.lines_overloaded?.length > 0 ? result.lines_overloaded : null,
-                            });
-                            const detail = simRes.data;
-                            // Update the action detail with fresh simulation data,
-                            // but preserve existing rho values from the original analysis
-                            // (the simulation may use different monitored line indices)
-                            setResult(prev => {
-                                if (!prev) return prev;
-                                const existing = prev.actions[actionId] || {};
-                                const hasRho = existing.rho_before?.length > 0;
-                                return {
-                                    ...prev,
-                                    actions: {
-                                        ...prev.actions,
-                                        [actionId]: {
-                                            ...existing,
-                                            description_unitaire: existing.description_unitaire || detail.description_unitaire,
-                                            rho_before: hasRho ? existing.rho_before : detail.rho_before,
-                                            rho_after: hasRho ? existing.rho_after : detail.rho_after,
-                                            max_rho: hasRho ? existing.max_rho : detail.max_rho,
-                                            max_rho_line: hasRho ? existing.max_rho_line : detail.max_rho_line,
-                                            is_rho_reduction: hasRho ? existing.is_rho_reduction : detail.is_rho_reduction,
-                                            non_convergence: detail.non_convergence,
-                                            is_islanded: detail.is_islanded,
-                                            n_components: detail.n_components,
-                                            disconnected_mw: detail.disconnected_mw,
-                                            load_shedding_details: detail.load_shedding_details,
+                            // Use the combined NDJSON stream endpoint so
+                            // the sidebar card updates with the metrics
+                            // event ~5 s before the post-action SVG
+                            // arrives.  Falls back to two sequential
+                            // calls if the stream endpoint is
+                            // unavailable (older backend).
+                            let streamed = false;
+                            try {
+                                const streamRes = await fetch(API_BASE + '/api/simulate-and-variant-diagram', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        action_id: actionId,
+                                        disconnected_element: selectedBranch,
+                                        action_content: actionContent,
+                                        lines_overloaded: result?.lines_overloaded?.length > 0 ? result.lines_overloaded : null,
+                                        mode: 'network',
+                                    }),
+                                });
+                                if (streamRes.ok && streamRes.body) {
+                                    streamed = true;
+                                    const reader = streamRes.body.getReader();
+                                    const decoder = new TextDecoder();
+                                    let buffer = '';
+                                    while (true) {
+                                        const { value, done } = await reader.read();
+                                        if (done) break;
+                                        buffer += decoder.decode(value, { stream: true });
+                                        const lines = buffer.split('\n');
+                                        buffer = lines.pop();
+                                        for (const line of lines) {
+                                            if (!line.trim()) continue;
+                                            let evt;
+                                            try { evt = JSON.parse(line); } catch { continue; }
+                                            if (evt.type === 'metrics') {
+                                                const detail = evt;
+                                                setResult(prev => {
+                                                    if (!prev) return prev;
+                                                    const existing = prev.actions[actionId] || {};
+                                                    const hasRho = existing.rho_before?.length > 0;
+                                                    return {
+                                                        ...prev,
+                                                        actions: {
+                                                            ...prev.actions,
+                                                            [actionId]: {
+                                                                ...existing,
+                                                                description_unitaire: existing.description_unitaire || detail.description_unitaire,
+                                                                rho_before: hasRho ? existing.rho_before : detail.rho_before,
+                                                                rho_after: hasRho ? existing.rho_after : detail.rho_after,
+                                                                max_rho: hasRho ? existing.max_rho : detail.max_rho,
+                                                                max_rho_line: hasRho ? existing.max_rho_line : detail.max_rho_line,
+                                                                is_rho_reduction: hasRho ? existing.is_rho_reduction : detail.is_rho_reduction,
+                                                                non_convergence: detail.non_convergence,
+                                                                is_islanded: detail.is_islanded,
+                                                                n_components: detail.n_components,
+                                                                disconnected_mw: detail.disconnected_mw,
+                                                                load_shedding_details: detail.load_shedding_details,
+                                                            },
+                                                        },
+                                                    };
+                                                });
+                                            } else if (evt.type === 'diagram') {
+                                                const { svg, viewBox } = processSvg(evt.svg, voltageLevels.length);
+                                                setActionDiagram({ ...evt, svg, originalViewBox: viewBox });
+                                            } else if (evt.type === 'error') {
+                                                throw new Error(evt.message || 'stream error');
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (streamErr) {
+                                console.warn('[simulate-and-variant-diagram] stream failed, falling back to sequential calls:', streamErr);
+                                streamed = false;
+                            }
+                            if (!streamed) {
+                                const simRes = await axios.post(API_BASE + '/api/simulate-manual-action', {
+                                    action_id: actionId, disconnected_element: selectedBranch,
+                                    action_content: actionContent,
+                                    lines_overloaded: result?.lines_overloaded?.length > 0 ? result.lines_overloaded : null,
+                                });
+                                const detail = simRes.data;
+                                setResult(prev => {
+                                    if (!prev) return prev;
+                                    const existing = prev.actions[actionId] || {};
+                                    const hasRho = existing.rho_before?.length > 0;
+                                    return {
+                                        ...prev,
+                                        actions: {
+                                            ...prev.actions,
+                                            [actionId]: {
+                                                ...existing,
+                                                description_unitaire: existing.description_unitaire || detail.description_unitaire,
+                                                rho_before: hasRho ? existing.rho_before : detail.rho_before,
+                                                rho_after: hasRho ? existing.rho_after : detail.rho_after,
+                                                max_rho: hasRho ? existing.max_rho : detail.max_rho,
+                                                max_rho_line: hasRho ? existing.max_rho_line : detail.max_rho_line,
+                                                is_rho_reduction: hasRho ? existing.is_rho_reduction : detail.is_rho_reduction,
+                                                non_convergence: detail.non_convergence,
+                                                is_islanded: detail.is_islanded,
+                                                n_components: detail.n_components,
+                                                disconnected_mw: detail.disconnected_mw,
+                                                load_shedding_details: detail.load_shedding_details,
+                                            },
                                         },
-                                    },
-                                };
-                            });
-                            // Now try fetching the diagram again
-                            const res2 = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: actionId });
-                            const { svg, viewBox } = processSvg(res2.data.svg, voltageLevels.length);
-                            setActionDiagram({ ...res2.data, svg, originalViewBox: viewBox });
+                                    };
+                                });
+                                const res2 = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: actionId });
+                                const { svg, viewBox } = processSvg(res2.data.svg, voltageLevels.length);
+                                setActionDiagram({ ...res2.data, svg, originalViewBox: viewBox });
+                            }
                         } catch (simErr) {
                             console.error('Failed to simulate and fetch diagram for', actionId, simErr);
                             setError('Failed to load action diagram for ' + actionId);
@@ -5072,7 +5439,22 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     <MemoizedSvgContainer svg={actionDiagram.svg} containerRef={actionSvgContainerRef} display="block" tabId="action" />
                                     : (selectedActionId ?
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Failed to load diagram for action {selectedActionId}</div>
-                                        : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Select an action card to view its network variant</div>
+                                        : (result?.actions && Object.keys(result.actions).length > 0 ?
+                                            /* Action Overview — shown when analysis has run but no
+                                               action card is selected.  Pins on the N-1 NAD let
+                                               the operator preview and navigate to each
+                                               prioritized action without trawling the sidebar
+                                               feed linearly. */
+                                            <ActionOverviewDiagram
+                                                visible={activeTab === 'action' && !selectedActionId}
+                                                n1Diagram={n1Diagram}
+                                                n1MetaIndex={n1MetaIndex}
+                                                actions={result.actions}
+                                                selectedActionId={selectedActionId}
+                                                onActionSelect={handleActionSelect}
+                                            />
+                                            : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Select an action card to view its network variant</div>
+                                        )
                                     )
                                 )
                             }

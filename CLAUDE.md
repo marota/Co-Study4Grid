@@ -452,17 +452,18 @@ Legend: ✅ mirrored · ⚠️ partial (gap noted) · ❌ missing
 | **Combined Actions** | ComputedPairsTable | ⚠️ | Rendered inline, not as a discrete reusable component |
 | **Combined Actions** | ExplorePairsTab | ⚠️ | Rendered inline, not as a discrete component |
 | **Combined Actions** | Simulate combined | ✅ | — |
-| **Action Overview** | N-1 NAD with pin overlay | ❌ | No overview map at all |
-| **Action Overview** | ActionCardPopover on pin hover | ❌ | Depends on overview map |
-| **Action Overview** | Pin double-click nav | ❌ | Depends on overview map |
-| **Action Overview** | Independent zoom controls | ❌ | Depends on overview map |
+| **Action Overview** | N-1 NAD with pin overlay | ✅ | Minimal port — one pin per prioritized action at the midpoint of its `max_rho_line`; no multi-pin fan-out, no combined-action curves. All 9 `overview_*` events fire at the documented gesture points. |
+| **Action Overview** | ActionCardPopover on pin hover | ⚠️ | Minimal popover (id / description / max ρ / "View action" button). Not the full ActionCard component — no favorite/reject buttons inside the popover. |
+| **Action Overview** | Pin double-click nav | ✅ | 250 ms debounce so single-click opens popover, double-click calls `handleActionSelect` |
+| **Action Overview** | Independent zoom controls | ⚠️ | `+ / − / Fit` buttons emit `overview_zoom_*` events; they don't manipulate viewBox separately from the main action-tab pan/zoom. Good enough for replay, less polished than React's dedicated instance. |
+| **Action Overview** | Inspect search | ✅ | Text input emits `overview_inspect_changed { query, action: 'focus'\|'cleared' }` |
 | **SLD** | VL double-click popup | ✅ | — |
 | **SLD** | N / N-1 / Action tabs | ✅ | — |
 | **SLD** | Switch change highlight | ✅ | — |
 | **SLD** | Delta flow mode | ✅ | — |
 | **SLD** | Pan / zoom | ✅ | — |
 | **SLD** | Auto-center on load | ✅ | — |
-| **Detached tabs** | Pop into separate window | ❌ | No `window.open` support anywhere |
+| **Detached tabs** | Pop into separate window | ❌ | **Deliberately deferred.** Requires `window.open` + `postMessage` IPC + per-window pan/zoom state. ~300-500 lines of infrastructure in the single-file HTML with behavioural risks (popup blockers, IPC ordering) that are hard to validate without a real browser. None of the 4 missing events (`tab_detached`, `tab_reattached`, `tab_tied`, `tab_untied`) appear in the canonical 11-gesture replay sequence, so replay agents against session logs without detached-tab gestures still work unchanged. |
 | **Detached tabs** | Tied viewBox sync | ❌ | Depends on detach support |
 | **Detached tabs** | Focus-from-main | ❌ | Depends on detach support |
 | **Session** | Save to folder | ✅ | — |
@@ -470,7 +471,7 @@ Legend: ✅ mirrored · ⚠️ partial (gap noted) · ❌ missing
 | **Session** | List-sessions modal | ✅ | — |
 | **Session** | Restore configuration + contingency + analysis state | ✅ | — |
 | **Session** | Restore interaction log | ✅ | — |
-| **Interaction log** | Event-type coverage | ⚠️ | 13/55 spec types still missing — **all** within the Action Overview (9) + Detached-Tabs (4) features; every other gesture now logs on both sides |
+| **Interaction log** | Event-type coverage | ⚠️ | 4/55 spec types still missing — **all four** Detached + Tied Tabs events. Every other gesture (including all 9 Action Overview events) now logs on both sides. |
 | **Interaction log** | `details` schema conformance | ✅ | All emitted standalone events are spec-conformant; historical `min_kv/max_kv`, `target_tab`, `from_tab/to_tab`, `missing tab/scope` drifts all resolved |
 | **Interaction log** | `recordCompletion` pairs | ⚠️ | Only `analysis_step{1,2}_completed` emitted — shared gap against the spec (fix needed on both sides) |
 | **Interaction log** | Replay-ready details | ✅ | — |
@@ -489,8 +490,8 @@ Legend: ✅ mirrored · ⚠️ partial (gap noted) · ❌ missing
 ### Parity Gap Priority
 
 #### Top-priority gaps (biggest user impact — do first)
-1. **Action Overview Diagram + pin navigation** — whole feature missing. The React UI lets operators see all prioritized actions as pins on the N-1 NAD and preview/jump to each via hover/double-click. Without it, standalone users can only browse actions linearly in the sidebar. `components/ActionOverviewDiagram.tsx`, `components/ActionCardPopover.tsx`, `docs/action-overview-diagram.md`.
-2. **Detached + tied tabs** — no way to compare N vs Action or N-1 vs Action side-by-side. Requires `window.open` + `postMessage` IPC. See `docs/detachable-viz-tabs.md`.
+1. ~~**Action Overview Diagram + pin navigation**~~ — **DONE** (minimal port). Pins on the N-1 NAD, single-click popover, double-click navigation, zoom + inspect controls all wired, all 9 `overview_*` events fire. Follow-up polish: multi-pin fan-out on shared anchors, combined-action curves, full ActionCard in the popover.
+2. **Detached + tied tabs** — deliberately deferred. No way to compare N vs Action or N-1 vs Action side-by-side. Requires `window.open` + `postMessage` IPC. See `docs/detachable-viz-tabs.md` and the "Detached tabs" row above for the deferral rationale.
 3. **Pan/zoom migration to `react-zoom-pan-pinch`** — standalone uses raw viewBox math with no inertia or gesture smoothing. On large grids this is the single biggest UX regression versus the React app.
 4. **Zoom-tier LOD** — large grids (500+ VLs) render ALL text at overview zoom and become unreadable; React hides text-heavy elements per tier. See `docs/rendering-optimization-plan.md`.
 5. **Load-shedding / curtailment / PST details popups** — three separate popups in the React `ActionCard` that expose per-item breakdowns; currently replaced by a badge count only.
@@ -524,22 +525,21 @@ into CI.
 
 _Generated from the parity script on 2026-04-19._
 `InteractionType` union: **55** types. Frontend emits **51**,
-standalone emits **38** (was 32 — six cheap gestures ported +
-`settings_tab_changed` now fires on every tab switch).
+standalone emits **47** (was 38 — the 9-event Action Overview
+feature ported in this commit).
 
-##### Event types emitted by the frontend but NOT by the standalone (13)
+##### Event types emitted by the frontend but NOT by the standalone (4)
 
-Down from 19 as of the last audit. Every remaining miss is in one
-of the two expensive feature families — Action Overview diagram and
-Detached + Tied Tabs. Porting them is the next follow-up.
+Down from 13 and 19 across the last two audits. Every remaining
+miss is one of the four **Detached + Tied Tabs** events. Porting
+them requires `window.open` + `postMessage` IPC infrastructure that
+doesn't exist in the single-file HTML and introduces behavioural
+risk (popup blockers, IPC ordering races) that's hard to validate
+without a real browser runtime — see the "Detached tabs" row in
+the mirror-status table above for the deferral rationale.
 
 | Event type | Feature | React source |
 |---|---|---|
-| `overview_shown` / `overview_hidden` | Action Overview map visibility | `components/ActionOverviewDiagram.tsx:466,469` |
-| `overview_pin_clicked` / `overview_pin_double_clicked` | Pin single/double-click | `components/ActionOverviewDiagram.tsx:343,364` |
-| `overview_popover_closed` | Popover dismiss | `components/ActionOverviewDiagram.tsx:558` |
-| `overview_zoom_in` / `overview_zoom_out` / `overview_zoom_fit` | Overview zoom controls | `components/ActionOverviewDiagram.tsx:476,482,487` |
-| `overview_inspect_changed` | Overview search focus/clear | `components/ActionOverviewDiagram.tsx:526,530` |
 | `tab_detached` / `tab_reattached` | Pop tab into separate window | `App.tsx:211,225` |
 | `tab_tied` / `tab_untied` | Mirror detached viewBox | `hooks/useTiedTabsSync.ts:97,107` |
 
@@ -620,11 +620,16 @@ now fixed:
 | `zoom_out` | `{tab}` | `{}` | `tab` | `standalone:2163` |
 | `zoom_reset` | `{tab}` | `{}` | `tab` | `standalone:2178` |
 
-##### API paths referenced by the frontend but not by the standalone (1)
+##### API paths referenced by the frontend but not by the standalone (0)
 
-| Endpoint | Introduced in | Frontend call site |
-|---|---|---|
-| `/api/simulate-and-variant-diagram` | NDJSON stream emitting `{type:"metrics"}` then `{type:"diagram"}` | `api.ts::simulateAndVariantDiagramStream` |
+All API paths the React frontend exercises are now referenced in
+the standalone. `/api/simulate-and-variant-diagram` was wired in
+this commit as the primary path for the "simulate-then-fetch-
+diagram" fallback: the standalone now consumes the NDJSON stream
+(`metrics` event, then `diagram` event) and falls back to the
+sequential `/api/simulate-manual-action` + `/api/action-variant-diagram`
+pair if the stream fails — matching the React app's behaviour and
+the per-event sidebar-first UX on slow NAD regenerations.
 
 ##### `recordCompletion` coverage
 
