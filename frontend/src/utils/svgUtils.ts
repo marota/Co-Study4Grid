@@ -818,7 +818,7 @@ const computeActionSeverity = (
  * null when no impacted asset can be located — the pin is then
  * silently skipped.
  */
-const resolveActionAnchor = (
+export const resolveActionAnchor = (
     actionId: string,
     details: ActionDetail,
     metaIndex: MetadataIndex,

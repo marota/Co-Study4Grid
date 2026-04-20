@@ -15,8 +15,9 @@ the canonical replay-contract spec they check against.
 |---|---|---|---|---|
 | **1. Static inventory** | `check_standalone_parity.py` | <5 s, no backend | yes | Event-type coverage, `details` schema drift (three-way diff vs spec), missing API paths, `SettingsState` fields |
 | **2. Session fidelity** | `check_session_fidelity.py` | <2 s, no backend | yes | Fields saved to `session.json` that are silently dropped on reload (e.g. the PR #83 `lines_overloaded_after` regression) |
-| **3a. Gesture sequence** (static proxy) | `check_gesture_sequence.py` | <2 s, no backend | yes | Canonical 11-step gesture sequence: each gesture's handler emits the required event types in the documented order |
+| **3a. Gesture sequence** (static proxy) | `check_gesture_sequence.py` | <2 s, no backend | yes | Canonical 15-step gesture sequence: each gesture's handler emits the required event types in the documented order. Covers the full loop through Display Prioritized → Overview → pin-click → pin-double-click → detach → deselect. |
 | **3b. Behavioural E2E** (runtime) | `parity_e2e/e2e_parity.spec.ts` | 60–90 s, needs Playwright browser | nightly / on-label | Same gesture sequence driven through real DOM against BOTH UIs; diffs resulting `interaction_log.json` + `session.json` at runtime |
+| **4. User-observable invariants** (static) | `check_invariants.py` + `frontend/src/utils/userObservableInvariants.test.ts` | <2 s Python + ~1 s Vitest, no backend | yes | Six bug classes Layers 1-3 can't catch by construction: visual thresholds (severity palette ↔ `monitoringFactor`), conditional rendering (dashed curves only for simulated pairs), field semantics (topology target precedes `max_rho_line`), auto-effects (tab auto-switch, deselect-stay), loading-state release timing, memoisation / performance guards |
 
 Layers 1, 2, and 3a need only Python and finish in under 10 s total
 — wire them into a GitHub Action on every PR. Layer 3b needs a
@@ -60,6 +61,13 @@ python scripts/check_session_fidelity.py --json          # machine
 # Layer 3a — gesture-sequence static proxy
 python scripts/check_gesture_sequence.py                 # human text
 python scripts/check_gesture_sequence.py --json          # machine
+
+# Layer 4 — user-observable invariants (static Python)
+python scripts/check_invariants.py                       # human text
+python scripts/check_invariants.py --json                # machine
+
+# Layer 4 — runtime Vitest companion (React-side behaviour)
+cd frontend && npx vitest run src/utils/userObservableInvariants.test.ts
 
 # Layer 3b — behavioural E2E with Playwright
 cd scripts/parity_e2e

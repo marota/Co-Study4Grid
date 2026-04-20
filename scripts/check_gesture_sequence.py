@@ -162,6 +162,42 @@ GESTURE_SEQUENCE = [
         "standalone_handler_fallbacks": ["handleSaveResults"],
         "expected_events": ["session_saved"],
     },
+    # Gestures 12-15 added after the Action-Overview + Detached-Tabs
+    # ports shipped — the original 11-step canonical sequence stopped
+    # at Save Results and never visited the pin map, which is
+    # precisely where the last four rounds of user-observed bugs hid.
+    # These four entries exercise the surface area Layer 3b's
+    # Playwright spec should also cover.
+    {
+        "name": "12. Overview pin single-click",
+        "react_handler": "handlePinClick",
+        "react_handler_fallbacks": ["overview_pin_clicked"],
+        "standalone_handler": "handlePinClick",
+        "standalone_handler_fallbacks": ["overview_pin_clicked"],
+        "expected_events": ["overview_pin_clicked"],
+    },
+    {
+        "name": "13. Overview pin double-click → drill-down",
+        "react_handler": "handlePinDoubleClick",
+        "react_handler_fallbacks": ["overview_pin_double_clicked"],
+        "standalone_handler": "handlePinDoubleClick",
+        "standalone_handler_fallbacks": ["overview_pin_double_clicked"],
+        "expected_events": ["overview_pin_double_clicked"],
+    },
+    {
+        "name": "14. Detach the Action tab",
+        "react_handler": "handleDetachTab",
+        "react_handler_fallbacks": ["tab_detached", "detach"],
+        "standalone_handler": "handleDetachTab",
+        "standalone_handler_fallbacks": ["tab_detached"],
+        "expected_events": ["tab_detached"],
+    },
+    {
+        "name": "15. Deselect action (Action tab stays, Overview re-appears)",
+        "react_handler": "handleActionSelect",
+        "standalone_handler": "handleActionSelect",
+        "expected_events": ["action_deselected"],
+    },
 ]
 
 

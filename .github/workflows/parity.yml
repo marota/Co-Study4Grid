@@ -77,6 +77,23 @@ jobs:
         run: python scripts/check_gesture_sequence.py
 
   # -------------------------------------------------------------------
+  # Layer 4 — user-observable invariants.  Static source-pattern
+  # assertions for the six bug classes Layers 1-3a cannot catch by
+  # construction (visual thresholds, conditional rendering,
+  # field semantics, auto-effects, loading-state, performance).
+  # -------------------------------------------------------------------
+  layer4-invariants:
+    name: 'Layer 4 · user-observable invariants'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run invariants check
+        run: python scripts/check_invariants.py
+
+  # -------------------------------------------------------------------
   # Layer 3b — behavioural E2E with Playwright.  Needs a browser
   # download, so it only runs nightly (schedule) or when a PR carries
   # the `e2e` label.  Per-commit gating would be too slow.

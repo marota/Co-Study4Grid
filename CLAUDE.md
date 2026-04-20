@@ -731,16 +731,23 @@ python scripts/check_standalone_parity.py --json         # CI-friendly
 python scripts/check_session_fidelity.py                 # human text
 python scripts/check_session_fidelity.py --json          # CI-friendly
 
-# Layer 3a — gesture-sequence static proxy
+# Layer 3a — gesture-sequence static proxy (15-step canonical)
 python scripts/check_gesture_sequence.py                 # human text
 python scripts/check_gesture_sequence.py --json          # CI-friendly
+
+# Layer 4 — user-observable invariants (static Python)
+python scripts/check_invariants.py                       # human text
+python scripts/check_invariants.py --json                # CI-friendly
+
+# Layer 4 — runtime Vitest companion (part of `cd frontend && npm test`)
+#   Lives at frontend/src/utils/userObservableInvariants.test.ts
 
 # Layer 3b — behavioural E2E (needs a Playwright browser; see
 # scripts/PARITY_README.md for the one-off setup)
 cd scripts/parity_e2e && npx playwright test
 ```
 
-All four exit non-zero on any FAIL finding.
+All five exit non-zero on any FAIL finding.
 
 ### CI wiring
 
