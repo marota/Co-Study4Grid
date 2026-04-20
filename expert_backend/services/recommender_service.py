@@ -90,7 +90,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._layout_cache = None
         # Pre-fetched base NAD (populated by `prefetch_base_nad_async` during
         # `update_config`, consumed by `/api/network-diagram`). See
-        # docs/perf-nad-prefetch.md.
+        # docs/performance/history/nad-prefetch.md.
         self._prefetched_base_nad = None       # dict result (see DiagramMixin.get_network_diagram)
         self._prefetched_base_nad_error = None  # Exception if the prefetch thread failed
         self._prefetched_base_nad_event = None  # threading.Event signalling completion
@@ -340,7 +340,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         # NAD compute is ~6 s → by the time /api/config returns, the worker
         # is ~2 s from done instead of ~4 s, so the subsequent
         # /api/network-diagram XHR wait drops from ~2 s to ~0-1 s on large
-        # grids. See docs/perf-nad-prefetch-earlier-spawn.md.
+        # grids. See docs/performance/history/nad-prefetch-earlier-spawn.md.
         self.prefetch_base_nad_async()
 
         # Load and cache the action dictionary immediately if path changed or not loaded
@@ -403,7 +403,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         # helper skips its own `pp.network.load()` call — saves ~1-5 s of
         # duplicate XML parse on large grids. Requires
         # expert_op4grid_recommender >= 0.2.0.post1 (the `network=` kwarg).
-        # See docs/perf-grid2op-shared-network.md.
+        # See docs/performance/history/grid2op-shared-network.md.
         try:
             from expert_op4grid_recommender.environment_pypowsybl import setup_environment_configs_pypowsybl
             # `skip_initial_obs=True`: we discard `_obs` below anyway, and
@@ -412,7 +412,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
             # reads that we simply waste. When `run_analysis_step1` later
             # needs an observation, it calls `env.get_obs()` itself.
             # Requires expert_op4grid_recommender >= 0.2.0.post3.
-            # See docs/perf-skip-initial-obs.md.
+            # See docs/performance/history/skip-initial-obs.md.
             env, _obs, env_path, chronic_name, custom_layout, _raw_dict, lines_non_reconnectable, lines_we_care_about = \
                 setup_environment_configs_pypowsybl(
                     network=self._base_network,
@@ -551,7 +551,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
             # Use try/finally so an exception during the AC load flow cannot
             # leave the shared Network stuck on `variant_id` — the base
             # Network is now shared with `network_service` and grid2op's
-            # backend (see docs/perf-grid2op-shared-network.md) so leaving
+            # backend (see docs/performance/history/grid2op-shared-network.md) so leaving
             # it on an unexpected variant would silently corrupt reads
             # from those consumers.
             try:

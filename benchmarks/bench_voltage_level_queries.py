@@ -6,7 +6,7 @@
 operational-limits query used by `/api/branches::get_monitored_elements`.
 
 Documents the narrow-query + vectorisation gains from
-`docs/perf-narrow-voltage-level-queries.md`:
+`docs/performance/history/narrow-voltage-level-queries.md`:
 
   - `/api/voltage-levels`   7.5 ms →  4.5 ms    (attributes=[])
   - `/api/nominal-voltages` 144 ms  →  5.7 ms   (narrow + no iterrows, ~25×)

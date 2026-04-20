@@ -236,7 +236,7 @@ class TestGetMonitoringParametersWithContext:
 class TestGetBaseNetworkMutualisation:
     """`_get_base_network` must reuse `network_service.network` when available
     to avoid re-parsing the same .xiidm file twice (~3-5 s of wasted pypowsybl
-    work on large grids). See docs/perf-shared-network.md."""
+    work on large grids). See docs/performance/history/shared-network.md."""
 
     def test_reuses_network_service_network_when_available(self):
         from expert_backend.services.network_service import network_service
@@ -289,7 +289,7 @@ class TestGetBaseNetworkMutualisation:
 
 
 class TestPrefetchBaseNad:
-    """Tests for the base-NAD prefetch (perf #2 — see docs/perf-nad-prefetch.md).
+    """Tests for the base-NAD prefetch (perf #2 — see docs/performance/history/nad-prefetch.md).
 
     The prefetch runs concurrently with `setup_environment_configs_pypowsybl`
     inside `update_config` so the subsequent `/api/network-diagram` XHR can
@@ -395,7 +395,7 @@ class TestPrefetchBaseNad:
 class TestUpdateConfigSharesNetworkWithGrid2op:
     """`update_config` must pass the already-loaded Network to the upstream
     `setup_environment_configs_pypowsybl(network=...)` so grid2op does not
-    re-parse the same .xiidm file. See docs/perf-grid2op-shared-network.md."""
+    re-parse the same .xiidm file. See docs/performance/history/grid2op-shared-network.md."""
 
     @patch("builtins.open", new_callable=mock_open)
     @patch("expert_backend.services.network_service.network_service")
@@ -447,7 +447,7 @@ class TestUpdateConfigSharesNetworkWithGrid2op:
             # is discarded below (we never store it in `_cached_env_context`),
             # so computing it wastes ~3-5 s on a large grid. Requires
             # expert_op4grid_recommender >= 0.2.0.post3.
-            # See docs/perf-skip-initial-obs.md.
+            # See docs/performance/history/skip-initial-obs.md.
             assert call_kwargs.get("skip_initial_obs") is True
 
 
@@ -457,7 +457,7 @@ class TestUpdateConfigSharesNetworkWithGrid2op:
 class TestEnsureNStateReady:
     """Guard that runs at the entry of every analyze/suggest/simulate
     endpoint: must drain any pending NAD prefetch AND position the shared
-    pypowsybl Network on the N variant. See docs/perf-grid2op-shared-network.md
+    pypowsybl Network on the N variant. See docs/performance/history/grid2op-shared-network.md
     ("variant-state guard")."""
 
     def test_drains_prefetch_then_positions_n_variant(self):

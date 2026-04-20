@@ -1,0 +1,94 @@
+# Co-Study4Grid — Documentation
+
+This folder holds design docs, feature specs, performance retrospectives,
+architectural proposals, and data-pipeline references for the project.
+The root `CLAUDE.md` is the canonical project overview; everything here
+drills into specific subsystems.
+
+## Layout
+
+```
+docs/
+├── features/        Active feature / behavior reference docs
+├── performance/     Current perf reference + history/ of shipped & rejected PR writeups
+├── architecture/    Refactoring plans, code-quality audits
+├── proposals/       Not-yet-implemented ideas, brainstorm decks, rejected designs
+└── data/            External data pipelines (OSM → XIIDM conversion, etc.)
+```
+
+## When to look where
+
+| I want to… | Go to |
+|------------|-------|
+| Understand how a shipped feature is supposed to behave | `features/` |
+| Diagnose a perf regression or see what's been tuned | `performance/` (and `performance/history/` for retrospectives) |
+| Find an ongoing refactoring plan or quality audit | `architecture/` |
+| Evaluate or revive a rejected / proposed design | `proposals/` |
+| Regenerate a grid dataset | `data/` |
+
+## Active feature docs (`features/`)
+
+| File | Topic |
+|------|-------|
+| [`save-results.md`](features/save-results.md) | Session save/reload contract + regression-guard matrix. |
+| [`interaction-logging.md`](features/interaction-logging.md) | Replay-ready event log contract. |
+| [`action-overview-diagram.md`](features/action-overview-diagram.md) | Map-pin overlay on N-1 NAD showing prioritized actions. |
+| [`detachable-viz-tabs.md`](features/detachable-viz-tabs.md) | Pop viz tabs into standalone windows; tied/detached sync. |
+| [`combined-actions.md`](features/combined-actions.md) | Dual-action simulation via superposition (fast) + full sim (exact). |
+| [`state-reset-and-confirmation-dialogs.md`](features/state-reset-and-confirmation-dialogs.md) | State-reset guards when switching contingencies / reloading. |
+| [`actions-topology.md`](features/actions-topology.md) | Action formats + topology algorithms (switch → set_bus, Union-Find cache). |
+| [`curtailment-loadshedding-pst-actions.md`](features/curtailment-loadshedding-pst-actions.md) | Renewable curtailment, load shedding, PST tap actions. |
+| [`frontend-ui-improvements.md`](features/frontend-ui-improvements.md) | Voltage filter, run-button placement, color codes, always-visible tabs. |
+
+## Performance (`performance/`)
+
+Top-level performance reference docs (the ones that still describe
+current behavior, not historical retrospectives):
+
+| File | Topic |
+|------|-------|
+| [`rendering-optimization-plan.md`](performance/rendering-optimization-plan.md) | Critical CSS + SVG rendering tricks (`vector-effect: non-scaling-stroke`, etc.) with regression risks. |
+| [`performance-profiling.md`](performance/performance-profiling.md) | Benchmark table + methodology. |
+| [`nad-profile-bare-env.md`](performance/nad-profile-bare-env.md) | Baseline measurements for N-state NAD generation. |
+| [`walkthrough-network-rendering-profiling.md`](performance/walkthrough-network-rendering-profiling.md) | End-to-end profiling trace (14 MB SVG, 26 s cold path). |
+
+Historical PR writeups — one file per shipped / rejected change —
+live under [`performance/history/`](performance/history/). See that
+folder's index for the full list.
+
+## Architecture (`architecture/`)
+
+| File | Topic |
+|------|-------|
+| [`app-refactoring-plan.md`](architecture/app-refactoring-plan.md) | Extract custom hooks from `App.tsx` (in progress). |
+| [`phase2-state-management-optimization.md`](architecture/phase2-state-management-optimization.md) | Memoize wrapper functions with `useCallback` (proposed). |
+| [`code-quality-analysis.md`](architecture/code-quality-analysis.md) | 2026-04 codebase audit: TS A, tests A+, Python type hints C−. |
+
+## Proposals (`proposals/`)
+
+Unimplemented ideas and rejected designs kept for reference.
+
+| File | Topic |
+|------|-------|
+| [`rendering-lod-strategies.md`](proposals/rendering-lod-strategies.md) | **Consolidated** LoD rendering history + current plan. Supersedes `nad_optimization.md`, `network_rendering_profiling_recommendations.md`, and `spatial_lod_architecture_proposal.md`. |
+| [`new-features-brainstorm-mars26.md`](proposals/new-features-brainstorm-mars26.md) | Brainstorm of 12 candidate features (batch N-1, heatmap, Cmd+K, shortcuts, …). French text. |
+
+## Data (`data/`)
+
+| File | Topic |
+|------|-------|
+| [`pypsa-eur-osm-to-xiidm.md`](data/pypsa-eur-osm-to-xiidm.md) | PyPSA-Eur OSM → XIIDM 3-script conversion pipeline. |
+
+---
+
+## Editing conventions
+
+- Prefer editing an existing doc over creating a new one.
+- If you write a new perf retrospective, drop it under
+  `performance/history/` using a short kebab-case filename (no
+  `perf-` prefix — the folder already conveys it).
+- If you write a new active feature doc, put it in `features/` and
+  add a row to the table above.
+- Keep proposals small and self-contained; once implemented, either
+  (a) rewrite into a `features/` doc and delete the proposal, or
+  (b) move to `performance/history/` if it was a perf change.

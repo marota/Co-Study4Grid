@@ -86,7 +86,7 @@ describe('api client', () => {
             // Server now returns:  {json header}\n<svg>...</svg>
             // The client splits on the first newline rather than doing
             // a JSON.parse of the full body (saves ~500 ms on 25 MB
-            // grids — see docs/perf-loading-parallel.md).
+            // grids — see docs/performance/history/loading-parallel.md).
             const header = { metadata: null, lines_overloaded: ['X'], lines_overloaded_rho: [1.05] };
             const svg = '<svg id="n"/>';
             const body = JSON.stringify(header) + '\n' + svg;

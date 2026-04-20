@@ -113,7 +113,7 @@ in `App.tsx` because it needs multiple hook instances at once.
    parallel `Promise.all` of `getBranches` + `getVoltageLevels` +
    `getNominalVoltages` + `getNetworkDiagram` (the slow NAD overlaps
    with the fast metadata calls — see
-   `docs/perf-loading-parallel.md`).
+   `docs/performance/history/loading-parallel.md`).
 3. **Select contingency**: typing in the contingency input fires the
    N-1 useEffect when the value matches a valid branch. If analysis
    state already exists, a confirmation dialog appears
@@ -130,14 +130,14 @@ in `App.tsx` because it needs multiple hook instances at once.
 6. **Session save**: `buildSessionResult()` in
    `utils/sessionUtils.ts` serializes EVERYTHING (paths, settings,
    contingency, action statuses, combined pairs, interaction log).
-   `api.saveSession()` writes to disk. See `docs/save-results.md`.
+   `api.saveSession()` writes to disk. See `docs/features/save-results.md`.
 
 ## State reset & confirmation dialogs
 
 `resetAllState()` (`App.tsx:310-324`) clears every per-study piece of
 React state. It is called on Apply Settings AND on Load Study. The
 backend mirrors this with `recommender_service.reset()` —
-`docs/state-reset-and-confirmation-dialogs.md` is the contract for
+`docs/features/state-reset-and-confirmation-dialogs.md` is the contract for
 both sides. Adding a new piece of analysis state? Reset it here
 AND make sure the backend mixin clears whatever cache shadows it.
 
@@ -174,7 +174,7 @@ to any "tied" detached tab.
 (`window.open`). When popups are blocked, the error surfaces via
 `onPopupBlocked` callback. The detached tab gets its own
 `react-zoom-pan-pinch` instance; `useTiedTabsSync` keeps the
-viewBoxes in sync. See `docs/detachable-viz-tabs.md`.
+viewBoxes in sync. See `docs/features/detachable-viz-tabs.md`.
 
 ## Interaction logging
 
@@ -188,7 +188,7 @@ for async operations.
 The log is replay-ready: each event must carry ALL inputs the
 agent would need to redo the gesture (paths, threshold values,
 selected branch, …). Saved as `interaction_log.json` alongside
-`session.json` on session save. See `docs/interaction-logging.md`.
+`session.json` on session save. See `docs/features/interaction-logging.md`.
 
 When adding a new gesture:
 1. Add a new variant to the `InteractionType` union in

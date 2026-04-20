@@ -17,7 +17,7 @@ This Python script delivers a weaker but still useful proxy:
    Playwright spec drives.
 2. A GESTURE_MODEL mapping each gesture to the ordered list of
    ``interactionLogger.record(...)`` events the replay contract
-   (``docs/interaction-logging.md``) says MUST fire.
+   (``docs/features/interaction-logging.md``) says MUST fire.
 3. For each gesture the script:
    - verifies the React implementation exists (a handler is defined
      AND it emits the expected events in order);

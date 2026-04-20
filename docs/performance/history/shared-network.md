@@ -2,7 +2,7 @@
 
 ## Observation (v8 trace)
 
-Le NAD prefetch introduit en v8 (`docs/perf-nad-prefetch.md`) a délivré
+Le NAD prefetch introduit en v8 (`docs/performance/history/nad-prefetch.md`) a délivré
 `/api/network-diagram` en **516 ms** au lieu de 6 385 ms, mais
 `/api/config` est passé de 14 790 ms à **19 171 ms (+4.4 s)**. Le gain
 net a été de seulement ~1.5 s sur la critical path.

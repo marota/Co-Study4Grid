@@ -14,7 +14,7 @@ emitted by ``diagram_mixin._generate_diagram`` via a logging.Handler
 parsing ``[RECO] Diagram generated: NAD Xs, SVG Ys, Meta Zs …``.
 
 Outputs ``profiling_results.json`` at the project root + a stdout
-summary. See ``docs/perf-nad-profile-bare-env.md``.
+summary. See ``docs/performance/nad-profile-bare-env.md``.
 
 Usage:
 

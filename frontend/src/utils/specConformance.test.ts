@@ -8,7 +8,7 @@
  *
  * Walks every ``interactionLogger.record(...)`` call site in the
  * React sources and verifies that the `details` object-literal keys
- * match the replay contract in ``docs/interaction-logging.md``.
+ * match the replay contract in ``docs/features/interaction-logging.md``.
  * Runs as part of the normal ``npm run test`` suite, so spec drift
  * is caught BEFORE a PR lands — not just when the Python parity
  * script happens to be run.
@@ -16,7 +16,7 @@
  * The SPEC table below is the TypeScript twin of the Python
  * ``SPEC_DETAILS`` dict in ``scripts/check_standalone_parity.py``.
  * When the replay contract changes:
- *   - update ``docs/interaction-logging.md`` (source of truth),
+ *   - update ``docs/features/interaction-logging.md`` (source of truth),
  *   - update this SPEC table,
  *   - update the Python one.
  * Keeping the two in sync is the cost of redundant enforcement; the

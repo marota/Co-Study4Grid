@@ -16,15 +16,15 @@
 - **AC/DC fallback**: analysis runs on the AC load flow and transparently falls back to DC when AC fails to converge.
 - **Prioritized action feed** with search, filter, star / reject, and per-action metadata — severity, MW deltas, rho after action, impacted overloaded lines.
 - **Manual action simulation** from the score table, including a *"Make a first guess"* shortcut when no suggestion is loaded.
-- **Combined actions** (PR #62 family): evaluate pairs of actions via a fast **superposition (beta-coefficient) estimation** or a full exact simulation, through the *Computed Pairs* / *Explore Pairs* modal. See [`docs/combined-actions.md`](docs/combined-actions.md).
+- **Combined actions** (PR #62 family): evaluate pairs of actions via a fast **superposition (beta-coefficient) estimation** or a full exact simulation, through the *Computed Pairs* / *Explore Pairs* modal. See [`docs/features/combined-actions.md`](docs/features/combined-actions.md).
 - **Full remedial action catalog**:
   - Topological switches and bus reconfiguration
   - **Phase Shifting Transformer (PST)** tap adjustment with tap-start / target columns, re-simulation, and superposition fallback (PR #78)
-  - **Renewable curtailment** and **load shedding** via the `set_load_p` / `set_gen_p` power-reduction format, with configurable MW reduction (PR #72, #73). See [`docs/curtailment-loadshedding-pst-actions.md`](docs/curtailment-loadshedding-pst-actions.md).
+  - **Renewable curtailment** and **load shedding** via the `set_load_p` / `set_gen_p` power-reduction format, with configurable MW reduction (PR #72, #73). See [`docs/features/curtailment-loadshedding-pst-actions.md`](docs/features/curtailment-loadshedding-pst-actions.md).
 
 ### Visualization
 - **Four synchronized tabs** — *Network N*, *Contingency N-1*, *Remedial Action*, *Overflow Analysis* — rendered as pypowsybl Network-Area Diagrams (NAD) with flow-delta overlays.
-- **Detachable tabs** (PR #86): pop any visualization tab out into a second browser window for dual-monitor workflows, with per-window pan/zoom, tie/untie, and automatic reattach. See [`docs/detachable-viz-tabs.md`](docs/detachable-viz-tabs.md).
+- **Detachable tabs** (PR #86): pop any visualization tab out into a second browser window for dual-monitor workflows, with per-window pan/zoom, tie/untie, and automatic reattach. See [`docs/features/detachable-viz-tabs.md`](docs/features/detachable-viz-tabs.md).
 - **Single-Line Diagrams (SLD)** for voltage levels in N, N-1, and post-action states, with persistent highlight of impacted switches and coupling breakers (PR #63).
 - **Focused sub-diagrams**: auto-generate a NAD centered on a specific element with configurable depth — useful for inspecting parts of 10k-branch grids.
 - **Robust highlighting**: contingencies, overloads and impacted assets are drawn as clone-based halos that survive pan, zoom, SLD overlay, and action-target dimming.
@@ -32,8 +32,8 @@
 - **Zoom-tier level-of-detail** (PR #76): labels, nodes and flow arrows are dynamically boosted proportional to `sqrt(diagramSize / referenceSize)`, so large grids remain legible at any zoom.
 
 ### Sessions & replay
-- **Save Results** / **Reload Session**: export the complete analysis state (config, contingency, actions with status tags, combined pairs, overflow PDF, loading ratios) to a timestamped session folder. See [`docs/save-results.md`](docs/save-results.md).
-- **Replay-ready interaction log**: every UI interaction is written to `interaction_log.json` as a self-contained, timestamped event with correlation IDs for async completions — suitable for deterministic browser-automation replay. See [`docs/interaction-logging.md`](docs/interaction-logging.md).
+- **Save Results** / **Reload Session**: export the complete analysis state (config, contingency, actions with status tags, combined pairs, overflow PDF, loading ratios) to a timestamped session folder. See [`docs/features/save-results.md`](docs/features/save-results.md).
+- **Replay-ready interaction log**: every UI interaction is written to `interaction_log.json` as a self-contained, timestamped event with correlation IDs for async completions — suitable for deterministic browser-automation replay. See [`docs/features/interaction-logging.md`](docs/features/interaction-logging.md).
 - **Persistent user config**: paths, recommender parameters and UI preferences persist across sessions through a user-writable config file outside the repo (PR #59).
 - **Confirmation dialogs** before destructive state resets (switching network, applying settings on an active study) so operators never lose work by accident.
 
@@ -49,7 +49,7 @@
 
 ## Performance Highlights (release 0.5.0)
 
-Measured on the full French grid (~10k branches) with `scripts/profile_diagram_perf.py`. Full write-up in [`docs/PR_PERF_OPTIMIZATION.md`](docs/PR_PERF_OPTIMIZATION.md) and [`docs/performance_profiling.md`](docs/performance_profiling.md).
+Measured on the full French grid (~10k branches) with `scripts/profile_diagram_perf.py`. Full write-up in [`docs/performance/history/pr-perf-optimization-summary.md`](docs/performance/history/pr-perf-optimization-summary.md) and [`docs/performance/performance-profiling.md`](docs/performance/performance-profiling.md).
 
 | Metric                              | Before   | After   | Speed-up   |
 |-------------------------------------|----------|---------|------------|

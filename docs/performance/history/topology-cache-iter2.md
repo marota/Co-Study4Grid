@@ -3,7 +3,7 @@
 ## Contexte
 
 Après la première passe de vectorisation (commit upstream `ee5c8a9a`,
-0.2.0.post4, cf `docs/perf-vectorize-topology-cache.md`), le profilage
+0.2.0.post4, cf `docs/performance/history/vectorize-topology-cache.md`), le profilage
 de `/api/config` sur la grille France 400 kV montrait :
 
 | Étape du cache | Temps |

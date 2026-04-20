@@ -617,7 +617,7 @@ def get_network_diagram(http_request: Request, format: str = Query("json")):
 
     Returns a pre-fetched NAD when available (populated by
     `RecommenderService.prefetch_base_nad_async()` during `/api/config`
-    — see docs/perf-nad-prefetch.md). On cache hit this endpoint skips
+    — see docs/performance/history/nad-prefetch.md). On cache hit this endpoint skips
     the ~5-6 s pypowsybl NAD regeneration entirely.
     """
     try:

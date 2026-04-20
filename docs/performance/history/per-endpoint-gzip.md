@@ -2,7 +2,7 @@
 
 ## Context
 
-After step 1 (`docs/perf-svg-tab-unmount.md`), the remaining floor on the
+After step 1 (`docs/performance/history/svg-tab-unmount.md`), the remaining floor on the
 manual-action / N-1 paths is dominated by:
 
 1. The server-side pypowsybl load-flow + NAD generation (unchanged here).

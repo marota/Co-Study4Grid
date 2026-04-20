@@ -187,7 +187,7 @@ INVARIANTS: list[Invariant] = [
             "Pin anchor resolver must consult the action's TOPOLOGY "
             "target (lines via getActionTargetLines → VLs via "
             "getActionTargetVoltageLevels) BEFORE falling back to "
-            "max_rho_line — per docs/action-overview-diagram.md § "
+            "max_rho_line — per docs/features/action-overview-diagram.md § "
             "'Pin anchor resolution'.  Reversing the order silently "
             "drops simulated action cards whose post-action max_rho_line "
             "happens not to be in the N-1 metadata (commit 5030b6c)."
@@ -294,7 +294,7 @@ INVARIANTS: list[Invariant] = [
             "`/api/network-diagram` must be fetched via the "
             "`format=text` variant (JSON header + raw SVG body) so "
             "the client skips the ~500 ms JSON.parse on the multi-MB "
-            "SVG string — docs/perf-loading-parallel.md (commit dbc05f8)."
+            "SVG string — docs/performance/history/loading-parallel.md (commit dbc05f8)."
         ),
         react={
             "file_hint": "frontend/src/api.ts",

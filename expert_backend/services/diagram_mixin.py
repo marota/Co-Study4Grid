@@ -85,7 +85,7 @@ class DiagramMixin:
         same positions are used, only the force-refinement step is
         skipped.
 
-        **Minimal-render toggles** (lever #6 in docs/perf-nad-profile-bare-env.md):
+        **Minimal-render toggles** (lever #6 in docs/performance/nad-profile-bare-env.md):
         the following flags are set to the minimum needed to show:
           - active power (P) at line endpoints
           - voltage-level nodes + names

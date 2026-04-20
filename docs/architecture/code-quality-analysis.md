@@ -224,7 +224,7 @@ CORS origins now configurable via `CORS_ALLOWED_ORIGINS` env var. Remaining:
 
 | Item | Details |
 |------|---------|
-| Empty doc file | `docs/network_rendering_profiling_recommendations.md` (0 bytes) |
+| Empty doc file | `docs/proposals/rendering-lod-strategies.md` (0 bytes) |
 | Stale lockfile | `.~lock.Cases_Defauts_10032026.odt#` tracked in repo root |
 | Redundant CI | Both CircleCI and GitHub Actions do the same work — consolidate |
 | No `.env.example` | No template for environment variables |

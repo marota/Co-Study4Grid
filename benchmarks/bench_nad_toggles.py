@@ -10,7 +10,7 @@ Drives ``recommender_service.get_network_diagram()`` with several
 impact on NAD generation time and SVG size.
 
 The matrix below validates the "minimal-render" choices documented in
-``docs/perf-nad-profile-bare-env.md`` (section "Results — after #6")
+``docs/performance/nad-profile-bare-env.md`` (section "Results — after #6")
 and surfaces the cost of ``injections_added=True`` so the trade-off
 can be revisited later.
 

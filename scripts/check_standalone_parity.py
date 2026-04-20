@@ -63,7 +63,7 @@ USE_SETTINGS_TS = FRONTEND_SRC / "hooks" / "useSettings.ts"
 
 
 # ---------------------------------------------------------------------
-# Spec table — the replay contract from docs/interaction-logging.md
+# Spec table — the replay contract from docs/features/interaction-logging.md
 # ---------------------------------------------------------------------
 #
 # Encoded per event type as `(required_keys, optional_keys)`. Both are
@@ -72,7 +72,7 @@ USE_SETTINGS_TS = FRONTEND_SRC / "hooks" / "useSettings.ts"
 # `pending_branch` for `contingency_confirmed`) — they MAY be present
 # without being flagged as an extra.
 #
-# Source of truth: docs/interaction-logging.md § "Replay Contract:
+# Source of truth: docs/features/interaction-logging.md § "Replay Contract:
 # Required Details Per Event Type". When the spec changes, update
 # this table in the same PR — the three-way-diff check (`--spec`)
 # compares FE and SA emissions against this.
@@ -589,7 +589,7 @@ def run_checks() -> dict:
             })
 
     # Three-way diff vs the replay-contract spec
-    # (docs/interaction-logging.md § Replay Contract). Distinct from the
+    # (docs/features/interaction-logging.md § Replay Contract). Distinct from the
     # FE-vs-SA drift: both codebases can agree yet still drift from the
     # contract, and conversely one side can be correct while the other
     # drifts. Encoding the spec here lets the report attribute each
@@ -751,7 +751,7 @@ def render_human(report: dict) -> str:
     if fs:
         fail = True
         out.append(f"[FAIL] {len(fs)} events where the frontend drifts from the "
-                   f"replay-contract spec (docs/interaction-logging.md):")
+                   f"replay-contract spec (docs/features/interaction-logging.md):")
         for entry in fs:
             out.append(f"   - {entry['event_type']}")
             out.append(f"        spec required: {{{', '.join(entry['spec_required'])}}}")
@@ -770,7 +770,7 @@ def render_human(report: dict) -> str:
     if ss:
         fail = True
         out.append(f"[FAIL] {len(ss)} events where the standalone drifts from the "
-                   f"replay-contract spec (docs/interaction-logging.md):")
+                   f"replay-contract spec (docs/features/interaction-logging.md):")
         for entry in ss:
             out.append(f"   - {entry['event_type']}")
             out.append(f"        spec required: {{{', '.join(entry['spec_required'])}}}")

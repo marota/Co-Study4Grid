@@ -136,7 +136,7 @@ class SimulationMixin:
         # simulation operates ON TOP of a known contingency, so the natural
         # entry state is N-1, not N. The guard also drains the NAD prefetch
         # worker so concurrent variant mutations can't corrupt reads.
-        # See docs/perf-grid2op-shared-network.md ("variant-state guard").
+        # See docs/performance/history/grid2op-shared-network.md ("variant-state guard").
         self._ensure_n1_state_ready(disconnected_element)
 
         action_id = self._canonicalize_id(raw_action_id.strip())

@@ -252,7 +252,7 @@ export function useSession(): SessionState {
       // 3. Fetch study data — all 4 XHRs in parallel. The base-diagram
       // call is the slowest (server-side NAD), so overlapping it with
       // branches/voltage-levels/nominal-voltages shaves the branches gap
-      // off the critical path. See docs/perf-loading-parallel.md.
+      // off the critical path. See docs/performance/history/loading-parallel.md.
       const [branchRes, vlRes, nomVRes, diagramRaw] = await Promise.all([
         api.getBranches(),
         api.getVoltageLevels(),

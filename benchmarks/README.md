@@ -30,12 +30,12 @@ export BENCH_CONTINGENCY=DISCO_NAME                  # only for bench_n1_diagram
 
 | Script | What it measures | Where the patch history lives |
 |---|---|---|
-| `bench_load_study.py` | Full `/api/config` + 4 parallel XHRs round-trip (reset + load_network + update_config + 4 response helpers). Cumulative target of every patch on the branch. | `docs/perf-loading-parallel.md` |
-| `bench_topology_cache.py` | Per-helper + full `NetworkTopologyCache(net)` init. Validates upstream vectorisation series (0.2.0.post3 → post8). | `docs/perf-vectorize-topology-cache.md`, `docs/perf-topology-cache-iter2.md` |
-| `bench_voltage_level_queries.py` | `/api/voltage-levels`, `/api/nominal-voltages`, `get_monitored_elements`, `_get_switches_with_topology` narrow-attr wins. | `docs/perf-narrow-voltage-level-queries.md` |
-| `bench_n1_diagram.py` | Full `get_n1_diagram(contingency)` cold + warm, per-sub-step breakdown. Validates the 3 N-1 fast-path patches. | `docs/perf-n1-diagram-fast-path.md` |
-| `bench_nad_n_state.py` | `get_network_diagram()` cold + warm on the N-state. Captures NAD / SVG / Meta sub-timings from the `[RECO]` log lines. | `docs/perf-nad-profile-bare-env.md` |
-| `bench_nad_toggles.py` | Matrix of `NadParameters` toggle combinations — quantifies per-flag impact on NAD gen + SVG size, surfaces the cost of `injections_added=True`. | `docs/perf-nad-profile-bare-env.md` |
+| `bench_load_study.py` | Full `/api/config` + 4 parallel XHRs round-trip (reset + load_network + update_config + 4 response helpers). Cumulative target of every patch on the branch. | `docs/performance/history/loading-parallel.md` |
+| `bench_topology_cache.py` | Per-helper + full `NetworkTopologyCache(net)` init. Validates upstream vectorisation series (0.2.0.post3 → post8). | `docs/performance/history/vectorize-topology-cache.md`, `docs/performance/history/topology-cache-iter2.md` |
+| `bench_voltage_level_queries.py` | `/api/voltage-levels`, `/api/nominal-voltages`, `get_monitored_elements`, `_get_switches_with_topology` narrow-attr wins. | `docs/performance/history/narrow-voltage-level-queries.md` |
+| `bench_n1_diagram.py` | Full `get_n1_diagram(contingency)` cold + warm, per-sub-step breakdown. Validates the 3 N-1 fast-path patches. | `docs/performance/history/n1-diagram-fast-path.md` |
+| `bench_nad_n_state.py` | `get_network_diagram()` cold + warm on the N-state. Captures NAD / SVG / Meta sub-timings from the `[RECO]` log lines. | `docs/performance/nad-profile-bare-env.md` |
+| `bench_nad_toggles.py` | Matrix of `NadParameters` toggle combinations — quantifies per-flag impact on NAD gen + SVG size, surfaces the cost of `injections_added=True`. | `docs/performance/nad-profile-bare-env.md` |
 | `run_all.py` | Drives every benchmark above sequentially. | — |
 
 ## Reference measurements
@@ -54,7 +54,7 @@ PyPSA-EUR France 400 kV grid, current branch tip:
 | **Total** | **~8.5 s** |
 
 This maps to ~8.8 s end-to-end wall-clock on Chrome DevTools traces —
-see v18 row of `docs/perf-loading-parallel.md` (-63 % vs v6 baseline).
+see v18 row of `docs/performance/history/loading-parallel.md` (-63 % vs v6 baseline).
 
 ### `bench_voltage_level_queries.py`
 

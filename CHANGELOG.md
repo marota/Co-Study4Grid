@@ -21,7 +21,7 @@ contingency-analysis assistant for large grids.
 
 - **4× faster manual-action simulation** and **~1,100× faster overload detection** on
   the full French grid (~10k branches), thanks to NumPy vectorization and observation
-  caching. See `docs/PR_PERF_OPTIMIZATION.md` and `docs/performance_profiling.md`.
+  caching. See `docs/performance/history/pr-perf-optimization-summary.md` and `docs/performance/performance-profiling.md`.
 - **Two-step N-1 workflow** (detect → select → resolve) replaces the legacy one-shot
   analysis as the primary user path.
 - **Full remedial-action catalog**: topology, PST tap adjustment, renewable curtailment,
@@ -47,7 +47,7 @@ contingency-analysis assistant for large grids.
 - **Detachable visualization tabs** (PR #84, #86, #87, #90): pop Network N / N-1 /
   Action / Overflow tabs into a second browser window, with tie/untie, per-window
   pan/zoom preservation, bidirectional controls, and stable-portal DOM move to avoid
-  unmount/remount cascades. See `docs/detachable-viz-tabs.md`.
+  unmount/remount cascades. See `docs/features/detachable-viz-tabs.md`.
 - **SLD impacted-asset highlights** (PR #63): clone-behind halos for switches and
   coupling breakers, robust across pan/zoom and N-1/action state changes.
 - **MW Start column** in action score tables (PR #62), with `get_virtual_line_flow`
@@ -63,10 +63,10 @@ contingency-analysis assistant for large grids.
 - **Save Results / Reload Session** (PR #62 family): timestamped session folders with
   `session.json`, `interaction_log.json`, and a copy of the overflow PDF. Restores
   actions, combined pairs, per-action enrichments, and sidebar loading ratios with no
-  re-simulation. Documented in `docs/save-results.md`.
+  re-simulation. Documented in `docs/features/save-results.md`.
 - **Replay-ready interaction logging** (PR #64): self-contained timestamped events with
   correlation IDs for async completions, suitable for deterministic browser-automation
-  replay. See `docs/interaction-logging.md`.
+  replay. See `docs/features/interaction-logging.md`.
 - **Persistent user configuration** (PR #59) stored outside the repository, with a
   configurable config-file path.
 - **Confirmation dialogs** (PR #83) before destructive state resets (switching network

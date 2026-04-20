@@ -3,7 +3,7 @@
 ## Context
 
 After the parallelisation + text-format work (see
-`docs/perf-loading-parallel.md`), the Load Study waterfall looked like
+`docs/performance/history/loading-parallel.md`), the Load Study waterfall looked like
 this on the v7 trace:
 
 ```

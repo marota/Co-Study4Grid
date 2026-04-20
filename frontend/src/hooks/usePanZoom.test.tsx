@@ -334,7 +334,7 @@ describe('usePanZoom', () => {
         });
     });
 
-    // Regression for Bug 1/2/4 in docs/detachable-viz-tabs.md:
+    // Regression for Bug 1/2/4 in docs/features/detachable-viz-tabs.md:
     // `usePanZoom` used to bind mousemove/mouseup to `window` captured
     // at effect-run time. When a tab was detached into a popup, the
     // element's ownerWindow became the popup but the listeners still

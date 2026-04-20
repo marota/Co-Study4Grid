@@ -204,7 +204,7 @@ describe('buildSessionResult — structure', () => {
     });
 
     it('persists lines_overloaded_after so it survives save → reload (regression)', () => {
-        // Reload-fidelity contract (docs/interaction-logging.md §
+        // Reload-fidelity contract (docs/features/interaction-logging.md §
         // Session reload fidelity): the post-action overload list is
         // read back in useSession.handleRestoreSession to feed the
         // Remedial-Action NAD/SLD overload halos (PR #83). Before

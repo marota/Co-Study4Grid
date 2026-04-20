@@ -18,7 +18,7 @@ on:
     branches: [main]
   schedule:
     # Nightly at 02:30 UTC — catches drift introduced between PRs
-    # (e.g. docs/interaction-logging.md updates without a code change).
+    # (e.g. docs/features/interaction-logging.md updates without a code change).
     - cron: '30 2 * * *'
 
 # Always allow a re-run to supersede an in-flight one for the same PR.

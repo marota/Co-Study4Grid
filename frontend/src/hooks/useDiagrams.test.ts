@@ -175,7 +175,7 @@ describe('useDiagrams — interaction logging', () => {
         const log = interactionLogger.getLog();
         expect(log).toHaveLength(1);
         expect(log[0].type).toBe('action_deselected');
-        // Replay contract (docs/interaction-logging.md): the key is
+        // Replay contract (docs/features/interaction-logging.md): the key is
         // `previous_action_id`, not `action_id`. After this event
         // fires no action is selected, so carrying the previously-
         // selected id makes the semantics explicit.
@@ -266,7 +266,7 @@ describe('useDiagrams — interaction logging', () => {
     });
 
     // Regression tests for the detachable-tab fixes (see
-    // docs/detachable-viz-tabs.md "Bugs fixed in the second iteration").
+    // docs/features/detachable-viz-tabs.md "Bugs fixed in the second iteration").
     // The previous `active` gate on usePanZoom was `activeTab === '<id>'`
     // alone, which meant that when the user detached a tab the main
     // window auto-switched activeTab elsewhere and the detached tab's
