@@ -619,7 +619,7 @@ describe('useAnalysis', () => {
         });
 
         it('logs overload_toggled with overload + selected (spec-conformant)', () => {
-            // Replay contract (docs/interaction-logging.md):
+            // Replay contract (docs/features/interaction-logging.md):
             //   { overload: string, selected: boolean }
             // `selected` must reflect the state AFTER the toggle so a
             // replay agent knows whether this click was a check or uncheck.
@@ -640,7 +640,7 @@ describe('useAnalysis', () => {
         });
 
         it('logs prioritized_actions_displayed with n_actions (spec-conformant)', () => {
-            // Replay contract (docs/interaction-logging.md):
+            // Replay contract (docs/features/interaction-logging.md):
             //   { n_actions: number }
             // Previously emitted `{ actions_count }` — the key name drifted
             // from the spec and any replay agent reading
@@ -678,7 +678,7 @@ describe('useAnalysis', () => {
         });
 
         it('step2_started carries the full spec payload (element + selected_overloads + all_overloads + monitor_deselected)', async () => {
-            // Replay contract (docs/interaction-logging.md):
+            // Replay contract (docs/features/interaction-logging.md):
             //   { element, selected_overloads, all_overloads, monitor_deselected }
             // Previously the hook emitted only the latter two, so a
             // replay agent had no way to know which contingency or

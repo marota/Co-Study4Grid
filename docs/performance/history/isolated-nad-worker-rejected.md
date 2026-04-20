@@ -2,7 +2,7 @@
 
 ## Contexte
 
-Après v10 (`docs/perf-grid2op-shared-network.md`), `/api/config` plafonnait
+Après v10 (`docs/performance/history/grid2op-shared-network.md`), `/api/config` plafonnait
 à ~15.9 s contre ~13 s théoriques. L'analyse pointait une contention
 Java-side sur les variants du Network pypowsybl partagé entre le main
 thread (grid2op env setup) et le worker NAD.
@@ -90,10 +90,10 @@ que pour la sérialisation + transfert pipe).
 
 | Approche | Verdict | Pointeur |
 |---|---|---|
-| `allow_variant_multi_thread_access=True` | ❌ Casse les endpoints read-only | `docs/perf-concurrent-variants.md` |
+| `allow_variant_multi_thread_access=True` | ❌ Casse les endpoints read-only | `docs/performance/history/concurrent-variants.md` |
 | **Network isolé par thread** | ❌ **Régresse de 1.7 s** | ce document |
-| `save_to_binary_buffer` round-trip | 🟡 Même coût qu'un reload (~3-5 s) | `docs/perf-concurrent-variants.md` |
-| `multiprocessing` + pipe SVG | 🟡 IPC 25 MB mange le gain | `docs/perf-concurrent-variants.md` |
+| `save_to_binary_buffer` round-trip | 🟡 Même coût qu'un reload (~3-5 s) | `docs/performance/history/concurrent-variants.md` |
+| `multiprocessing` + pipe SVG | 🟡 IPC 25 MB mange le gain | `docs/performance/history/concurrent-variants.md` |
 | Accepter v10 comme plafond | ✅ **Choix actuel** | — |
 
 ## Pistes hors contention serveur (recommandées)

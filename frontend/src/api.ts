@@ -71,7 +71,7 @@ export const api = {
         // header on the first line, then the raw SVG body verbatim. This
         // avoids `JSON.parse` having to escape-scan and copy the ~25 MB
         // SVG string, saving ~500 ms of main-thread parse time on large
-        // grids. See docs/perf-loading-parallel.md (#4). We use `fetch`
+        // grids. See docs/performance/history/loading-parallel.md (#4). We use `fetch`
         // instead of axios so the browser's native gzip decoder runs
         // without axios trying to JSON-parse the body.
         const res = await fetch(`${API_BASE_URL}/api/network-diagram?format=text`);

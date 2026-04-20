@@ -2530,7 +2530,7 @@ describe('ActionFeed', () => {
     // metrics event feeds `onManualActionAdded` as before, AND the diagram
     // event is pushed into the useDiagrams cache so the next click on the
     // card paints the SVG without a second XHR. See
-    // docs/perf-combined-action-endpoint.md "Option B".
+    // docs/performance/history/combined-action-endpoint.md "Option B".
     describe('Pre-fetch diagram on Add (option B)', () => {
         const buildNdjsonResponse = (events: Array<Record<string, unknown>>) => {
             const body = events.map(e => JSON.stringify(e)).join('\n') + '\n';

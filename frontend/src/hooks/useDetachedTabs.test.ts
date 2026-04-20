@@ -147,7 +147,7 @@ describe('useDetachedTabs', () => {
     });
 
     // Regression for the "blank other tabs on reattach" bug (Bug 3 in
-    // docs/detachable-viz-tabs.md). The previous implementation closed
+    // docs/features/detachable-viz-tabs.md). The previous implementation closed
     // the popup window synchronously inside `reattach()`, which tore
     // down the popup document while React was still trying to unmount
     // children from the popup's mount node. The fix is to queue the

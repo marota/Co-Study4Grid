@@ -6,7 +6,7 @@ is the source of truth; when the two diverge, the standalone is
 brought up — not the other way around.
 
 See the root `CLAUDE.md` § "Standalone Interface Parity Audit" for
-the gap list these scripts feed; `docs/interaction-logging.md` is
+the gap list these scripts feed; `docs/features/interaction-logging.md` is
 the canonical replay-contract spec they check against.
 
 ## Layers
@@ -97,7 +97,7 @@ python scripts/check_standalone_parity.py --emit-markdown \
 ## Spec encoder
 
 `check_standalone_parity.py` contains a `SPEC_DETAILS` dict that
-encodes the replay contract from `docs/interaction-logging.md §
+encodes the replay contract from `docs/features/interaction-logging.md §
 Replay Contract`. Each InteractionType maps to `(required_keys,
 optional_keys)`. When the spec changes, update this table in the
 same PR — the script's three-way diff (spec vs FE, spec vs SA)

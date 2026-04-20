@@ -121,7 +121,7 @@ class TestGetNetworkDiagram:
         `/api/config`, `/api/network-diagram` serves the cached NAD and
         does NOT re-run the expensive `get_network_diagram()` pypowsybl
         code path. This is the core of the perf #2 optimisation — see
-        docs/perf-nad-prefetch.md.
+        docs/performance/history/nad-prefetch.md.
         """
         _, mock_rs = mock_services
         mock_rs.get_prefetched_base_nad.return_value = {
@@ -813,7 +813,7 @@ class TestSimulateAndVariantDiagramStream:
       - the no-gzip invariant on streamed responses — wrapping this endpoint
         in `_maybe_gzip_json` or the global `GZipMiddleware` would break
         early-event delivery, which was the root cause of the step-2 rollback
-        (see docs/perf-per-endpoint-gzip.md).
+        (see docs/performance/history/per-endpoint-gzip.md).
     """
 
     _SIM_RESULT = {

@@ -24,21 +24,21 @@ import {
     resolveActionAnchor,
     type ActionPinInfo,
 } from './svgUtils';
-import type { ActionDetail, MetadataIndex } from '../types';
+import type { ActionDetail, EdgeMeta, MetadataIndex, NodeMeta } from '../types';
 
 // ---------------------------------------------------------------------
 // Helpers — tiny synthetic metadata so we don't need real pypowsybl.
 // ---------------------------------------------------------------------
 
 const makeMeta = (): MetadataIndex => {
-    const nodesByEquipmentId = new Map<string, any>([
+    const nodesByEquipmentId = new Map<string, NodeMeta>([
         ['VL_A', { equipmentId: 'VL_A', svgId: 'n-VL_A', x: 0, y: 0 }],
         ['VL_B', { equipmentId: 'VL_B', svgId: 'n-VL_B', x: 100, y: 0 }],
         ['VL_C', { equipmentId: 'VL_C', svgId: 'n-VL_C', x: 50, y: 100 }],
     ]);
-    const nodesBySvgId = new Map<string, any>();
+    const nodesBySvgId = new Map<string, NodeMeta>();
     for (const n of nodesByEquipmentId.values()) nodesBySvgId.set(n.svgId, n);
-    const edgesByEquipmentId = new Map<string, any>([
+    const edgesByEquipmentId = new Map<string, EdgeMeta>([
         ['LINE_AB', { equipmentId: 'LINE_AB', svgId: 'e-LINE_AB', node1: 'n-VL_A', node2: 'n-VL_B' }],
         ['LINE_BC', { equipmentId: 'LINE_BC', svgId: 'e-LINE_BC', node1: 'n-VL_B', node2: 'n-VL_C' }],
     ]);
@@ -108,7 +108,6 @@ describe('Layer 4 invariant — pin severity ↔ monitoringFactor', () => {
 // ---------------------------------------------------------------------
 
 describe('Layer 4 invariant — combined pairs filter estimated-only entries', () => {
-    const meta = makeMeta();
     const unitary: ActionPinInfo[] = [
         { id: 'disco_LINE_AB', x: 50, y: 0, severity: 'green', label: '50%', title: '' },
         { id: 'reco_LINE_BC', x: 75, y: 50, severity: 'orange', label: '92%', title: '' },

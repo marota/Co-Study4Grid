@@ -110,7 +110,7 @@ function App() {
   // When a detached tab is "tied", its viewBox is mirrored one-way
   // into the main window's active tab on every pan/zoom change —
   // supporting side-by-side comparison workflows. See
-  // docs/detachable-viz-tabs.md#tied-detached-tabs for the full
+  // docs/features/detachable-viz-tabs.md#tied-detached-tabs for the full
   // design rationale.
   const tiedTabsHook = useTiedTabsSync(
     { 'n': diagrams.nPZ, 'n-1': diagrams.n1PZ, 'action': actionPZForTie },
@@ -574,7 +574,7 @@ function App() {
       // the slowest (~6-7s pypowsybl NAD on large grids) and previously
       // only started after branches resolved — wasting the ~0.8s branches
       // gap off the critical path of the initial load.
-      // See docs/perf-loading-parallel.md.
+      // See docs/performance/history/loading-parallel.md.
       const [branchRes, vlRes, nomVRes, diagramRaw] = await Promise.all([
         api.getBranches(),
         api.getVoltageLevels(),

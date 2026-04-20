@@ -85,7 +85,7 @@ class TestCacheSynchronization:
         mock_get_n.return_value = "n_var"
         # Each `simulate_manual_action` call now triggers `_get_n1_variant`
         # twice — once via the `_ensure_n1_state_ready` guard at entry
-        # (see docs/perf-grid2op-shared-network.md), once inside the
+        # (see docs/performance/history/grid2op-shared-network.md), once inside the
         # simulation body. Two simulate calls → four side-effect values.
         mock_get_n1.side_effect = ["n1_A", "n1_A", "n1_B", "n1_B"]
         

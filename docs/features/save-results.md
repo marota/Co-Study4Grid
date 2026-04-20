@@ -10,7 +10,7 @@ Co-Study4Grid supports **saving** and **reloading** full analysis sessions:
 ### What is saved
 
 - **`session.json`** — all inputs, outputs, user decisions, combined action pairs, per-action enrichment details (`load_shedding_details` / `curtailment_details` / `pst_details` / `lines_overloaded_after`) and, when available, the per-element sidebar sticky-header loading ratios (`n_overloads_rho` / `n1_overloads_rho`)
-- **`interaction_log.json`** — timestamped log of every user interaction, suitable for automated session replay (see [docs/interaction-logging.md](interaction-logging.md))
+- **`interaction_log.json`** — timestamped log of every user interaction, suitable for automated session replay (see [docs/features/interaction-logging.md](interaction-logging.md))
 - **`<overflow>.pdf`** — a copy of the overflow graph PDF (when an analysis has been run)
 
 All files are written to a **session folder** named `costudy4grid_session_<contingency>_<timestamp>/` inside the configured **Output Folder Path**.
@@ -329,7 +329,7 @@ Each combined action entry represents a pair of actions estimated by linear supe
 | `json_content` | `str` | Serialised `session.json` content |
 | `pdf_path` | `str \| null` | Absolute path to the overflow PDF to copy |
 | `output_folder_path` | `str` | Parent output directory |
-| `interaction_log` | `str \| null` | Serialised `interaction_log.json` content (see [docs/interaction-logging.md](interaction-logging.md)). When non-null, the backend writes it to `<session_folder>/interaction_log.json`. |
+| `interaction_log` | `str \| null` | Serialised `interaction_log.json` content (see [docs/features/interaction-logging.md](interaction-logging.md)). When non-null, the backend writes it to `<session_folder>/interaction_log.json`. |
 
 Returns `{ "session_folder": "<path>", "pdf_copied": bool }`.
 

@@ -606,7 +606,7 @@ When updating `standalone_interface.html`:
    equivalent `interactionLogger.record('<type>', { ... })` at the
    matching spot in the standalone.
 3. For each "details-key drift" finding: check which side the spec
-   (`docs/interaction-logging.md`) sides with, then fix that side.
+   (`docs/features/interaction-logging.md`) sides with, then fix that side.
 4. When a new endpoint is added to the backend (`expert_backend/main.py`)
    and surfaced in `frontend/src/api.ts`, mirror it in the standalone's
    inline API wrapper **in the same PR** — the script's API-path

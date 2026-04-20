@@ -21,7 +21,7 @@ Maintained and refined the "Phase 1" SVG boosting utility in `standalone_interfa
 As part of this work, we extensively investigated dynamic SVG reduction strategies:
 - **Strategy 1 (Voltage Filtering)**: Evaluated but discarded due to insufficient payload reduction (~11%).
 - **Strategy 3 (Viewport-Based Subsets)**: Implemented as a prototype achieving 50x payload reduction. However, it was ultimately **discarded and reverted** in this PR due to complexities in coordinate synchronization and the loss of global highlighting integrity (overloads/impacts).
-Detailed findings on these investigations are documented in `docs/nad_optimization.md`.
+Detailed findings on these investigations are documented in `docs/proposals/rendering-lod-strategies.md`.
 
 ## Performance Benchmarks
 | Metric | Before | After | Improvement |

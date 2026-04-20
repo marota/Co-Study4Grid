@@ -119,7 +119,7 @@ export function useAnalysis(): AnalysisState {
       }
 
       // Step 2: Resolution
-      // Replay contract (docs/interaction-logging.md):
+      // Replay contract (docs/features/interaction-logging.md):
       //   { element, selected_overloads, all_overloads, monitor_deselected }
       const step2CorrId = interactionLogger.record('analysis_step2_started', {
         element: selectedBranch,
@@ -181,7 +181,7 @@ export function useAnalysis(): AnalysisState {
           }
         }
       }
-      // Replay contract (docs/interaction-logging.md):
+      // Replay contract (docs/features/interaction-logging.md):
       //   { n_actions, action_ids, dc_fallback, message, pdf_url }.
       // The full payload would require threading more state out of
       // the stream loop; for now we emit the most-replayed field
@@ -199,7 +199,7 @@ export function useAnalysis(): AnalysisState {
 
   const handleDisplayPrioritizedActions = useCallback((selectedActionIds: Set<string>, setActiveTab?: (tab: TabId) => void) => {
     if (!pendingAnalysisResult) return;
-    // Replay contract (docs/interaction-logging.md): { n_actions: number }.
+    // Replay contract (docs/features/interaction-logging.md): { n_actions: number }.
     interactionLogger.record('prioritized_actions_displayed', {
       n_actions: Object.keys(pendingAnalysisResult.actions).length,
     });
@@ -246,7 +246,7 @@ export function useAnalysis(): AnalysisState {
   }, [pendingAnalysisResult]);
 
   const handleToggleOverload = useCallback((overload: string) => {
-    // Replay contract (docs/interaction-logging.md):
+    // Replay contract (docs/features/interaction-logging.md):
     //   { overload, selected }. `selected` is the state AFTER the toggle —
     //   true if the checkbox is now checked, false otherwise. Compute the
     //   next value from the current set BEFORE calling setSelectedOverloads

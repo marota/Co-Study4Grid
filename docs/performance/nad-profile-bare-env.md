@@ -25,7 +25,7 @@ No N-1, no post-action, no frontend/XHR timing.
   (`network_path = /home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z/grid.xiidm`,
   `pypowsybl_fast_mode: true`, GEOGRAPHICAL NAD layout via the
   `perf/unmount-inactive-svg` branch baseline — see
-  `docs/perf-loading-parallel.md`).
+  `docs/performance/history/loading-parallel.md`).
 - **Command**:
   ```bash
   BENCH_NETWORK_PATH=/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z \
@@ -110,7 +110,7 @@ gain comes entirely from halving the post-processing overhead.
   `NaN-stripping` lxml roundtrip (parse 13 MB SVG → iterate elements →
   re-serialise). That is optimisation #3 in the list below, not yet
   applied.
-- **Consistent with `docs/performance_profiling.md`**: the 2.92 s total
+- **Consistent with `docs/performance/performance-profiling.md`**: the 2.92 s total
   beats the 3.5 s "Base Diagram (v2)" reference by ~17 %.
 
 ## Attempt #3 — regex NaN-stripping (**REJECTED**, +0.4 s regression)
@@ -231,7 +231,7 @@ cost is visible the next time this question surfaces.
 Before re-opening NAD rendering trade-offs, check the closed design
 questions:
 - **Spatial / focused sub-diagrams on zoom** are ruled out per
-  `docs/spatial_lod_architecture_proposal.md:298-303` — the chosen
+  `docs/proposals/rendering-lod-strategies.md:298-303` — the chosen
   mechanism is the CSS zoom-tier system
   (`frontend/src/hooks/usePanZoom.ts` + `frontend/src/App.css`).
 - **Auto-focus on contingency selection** was explicitly retired in
@@ -245,7 +245,7 @@ questions:
 - N-1 diagram timing (`get_n1_diagram`) — use
   `scripts/profile_diagram_perf.py` scenario 2 for that.
 - Post-action diagram timing — scenario 3 of the same script.
-- Frontend XHR / paint timing — see `docs/perf-loading-parallel.md`
-  and `docs/perf-svg-tab-unmount.md`.
+- Frontend XHR / paint timing — see `docs/performance/history/loading-parallel.md`
+  and `docs/performance/history/svg-tab-unmount.md`.
 - CPU flamegraph (`--cprofile`) — not needed; the three sub-timings
   already localise the cost.

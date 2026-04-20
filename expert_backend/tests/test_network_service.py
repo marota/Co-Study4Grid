@@ -56,7 +56,7 @@ class TestLoadNetwork:
 
         FastAPI serves each read-only endpoint (`/api/branches`, …) on an
         arbitrary thread-pool worker without a variant-set guard, so the
-        flag MUST stay off. See docs/perf-concurrent-variants.md."""
+        flag MUST stay off. See docs/performance/history/concurrent-variants.md."""
         xiidm = tmp_path / "grid.xiidm"
         xiidm.write_text("<network/>")
 
@@ -66,7 +66,7 @@ class TestLoadNetwork:
 
         _, kwargs = mock_pn.load.call_args
         assert kwargs.get("allow_variant_multi_thread_access") in (None, False), (
-            "Flag must remain OFF — see docs/perf-concurrent-variants.md."
+            "Flag must remain OFF — see docs/performance/history/concurrent-variants.md."
         )
 
     @patch("expert_backend.services.network_service.pn")

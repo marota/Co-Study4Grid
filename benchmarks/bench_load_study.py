@@ -6,7 +6,7 @@
 
 Mimics what `/api/config` + the 4 subsequent parallel XHRs do on a
 real UI click, without the HTTP stack. Used to track the cumulative
-wall-clock gains documented in `docs/perf-loading-parallel.md`
+wall-clock gains documented in `docs/performance/history/loading-parallel.md`
 (v6 → v18+ trace entries).
 
 Usage:
@@ -61,7 +61,7 @@ def main() -> None:
     dt_load = (time.perf_counter() - t0) * 1000
 
     # Step 3 — update_config: the big one. Spawns the base-NAD
-    # prefetch worker early (see docs/perf-nad-prefetch-earlier-spawn.md),
+    # prefetch worker early (see docs/performance/history/nad-prefetch-earlier-spawn.md),
     # runs enrich_actions_lazy (NetworkTopologyCache — now ~700 ms
     # since 0.2.0.post5+post6), sets up SimulationEnvironment.
     t0 = time.perf_counter()

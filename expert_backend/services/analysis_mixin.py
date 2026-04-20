@@ -795,7 +795,7 @@ class AnalysisMixin:
         """Runs the first step of analysis: contingency simulation and overload detection."""
         # Drain any in-flight NAD prefetch + position the shared Network on
         # the N variant before grid2op starts switching variants itself.
-        # See docs/perf-grid2op-shared-network.md ("variant-state guard").
+        # See docs/performance/history/grid2op-shared-network.md ("variant-state guard").
         self._ensure_n_state_ready()
         try:
             res_step1, context = run_analysis_step1(

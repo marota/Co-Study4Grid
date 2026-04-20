@@ -5,7 +5,7 @@
 """Profile a full `get_n1_diagram(contingency)` call end-to-end.
 
 Covers the three fast-path patches documented in
-`docs/perf-n1-diagram-fast-path.md`:
+`docs/performance/history/n1-diagram-fast-path.md`:
 
   1. `_get_asset_flows` vectorised   (1 168 ms → 75 ms)
   2. `_get_overloaded_lines` vect.   (1 161 ms → 98 ms)

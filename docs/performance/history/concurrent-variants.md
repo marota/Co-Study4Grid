@@ -3,7 +3,7 @@
 ## Contexte
 
 La v10 a mesuré `/api/config` à 15 966 ms, contre ~13-14 s attendus
-après l'élimination du 3e chargement (`docs/perf-grid2op-shared-network.md`).
+après l'élimination du 3e chargement (`docs/performance/history/grid2op-shared-network.md`).
 Les ~2-3 s « manquantes » viennent d'une **contention** entre :
 
 - **Main thread** : `setup_environment_configs_pypowsybl(network=...)` —

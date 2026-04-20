@@ -3,7 +3,7 @@
 ## Contexte
 
 Après la mutualisation `network_service` ↔ `recommender_service._base_network`
-(`docs/perf-shared-network.md`), le même `.xiidm` était encore **chargé
+(`docs/performance/history/shared-network.md`), le même `.xiidm` était encore **chargé
 deux fois** pendant `/api/config` :
 
 1. ✅ `network_service.load_network()` — pypowsybl parse #1.

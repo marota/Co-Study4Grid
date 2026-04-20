@@ -11,6 +11,126 @@ and the project (informally) follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.6.0] — 2026-04-20
+
+Follow-up release to **0.5.0** consolidating the standalone-parity
+effort, the Action Overview diagram, perf work on the inactive-tab
+SVG tree, and the docs reorganisation.
+
+### Highlights
+
+- **Auto-generated single-file standalone** (`npm run build:standalone`)
+  replaces the hand-maintained `standalone_interface.html`. The React
+  source in `frontend/src/` is now the single source of truth; no
+  manual mirroring required when adding a component, setting, API
+  call, or gesture.
+- **Layer-4 user-observable invariants** — runtime Vitest twin
+  (`userObservableInvariants.test.ts`) paired with the existing
+  `scripts/check_invariants.py` static check, guarding the six
+  classes of regression that had previously shipped past layers 1–3.
+- **Action Overview diagram** — map-pin overlay on the N-1 NAD
+  showing every prioritised action with severity colouring, with
+  pan/zoom-aware pin rescaling.
+
+### Added
+
+- **Auto-generated standalone bundle** (PR #101): React + CSS
+  inlined into `frontend/dist-standalone/standalone.html` via
+  `vite-plugin-singlefile`. Canonical distribution artifact. See
+  `frontend/CLAUDE.md § Standalone bundle`.
+- **Layer-4 parity guard** (commit `45c143e`): `scripts/check_invariants.py`
+  for the standalone and a runtime Vitest twin
+  (`frontend/src/utils/userObservableInvariants.test.ts`) for the
+  React side.
+- **Layer-3 Playwright E2E suite** (`scripts/parity_e2e/e2e_parity.spec.ts`)
+  and a gesture-sequence static proxy (`scripts/check_gesture_sequence.py`).
+- **Action Overview diagram** (commits `106f87a`, `4157a3e`,
+  `967766a`, `3c7863b`, `d3c3b59`, `5030b6c`, `56643a8`): pin overlay
+  on N-1 NAD; severity threshold parameterised by
+  `monitoringFactor`; topology-first pin anchoring; combined-pair
+  dashed curves; Overview backdrop dim; auto-switch to Action tab on
+  "Display Prioritized". See `docs/features/action-overview-diagram.md`.
+- **Detached + tied visualization tabs** brought to full Layer-1
+  parity (commit `00f078f`): save-only rho arrays, tied viewBox
+  sync, detach-in-Overview-mode support.
+- **`/api/simulate-and-variant-diagram` streaming endpoint** — NDJSON
+  `{type:"metrics"}` then `{type:"diagram"}` so the sidebar updates
+  ahead of the SVG.
+- **`frontend/PARITY_AUDIT.md`** — working record of the parity
+  effort (feature inventory, mirror-status table, Layer 1–4
+  conformity, gap list, regression-guard matrix), split out of the
+  root `CLAUDE.md`.
+
+### Changed
+
+- **Docs reorganised** into `docs/{features,performance/{,history},
+  architecture,proposals,data}/` with per-folder README indexes.
+  Three overlapping rendering-LoD proposals
+  (`nad_optimization.md`, `network_rendering_profiling_recommendations.md`,
+  `spatial_lod_architecture_proposal.md`) merged into
+  `docs/proposals/rendering-lod-strategies.md`. All in-repo
+  references updated across `CLAUDE.md`s, `README.md`, benchmarks,
+  scripts, tests and source comments.
+- **Parity audit split** out of the root `CLAUDE.md` into
+  `frontend/PARITY_AUDIT.md`.
+- **`expert_backend/CLAUDE.md` / `frontend/CLAUDE.md`** refreshed
+  with the post-decommission wording (single source of truth in
+  `frontend/src/`).
+
+### Performance
+
+- **`display:none` on inactive SVG tabs** (PRs #99, #102): the
+  off-screen N / N-1 / Action SVGs drop from the browser paint tree,
+  cutting live DOM nodes from ~600 k to ~200 k on the French grid.
+  See `docs/performance/history/svg-tab-unmount.md`.
+
+### Fixed
+
+- **SLD highlight** for LS / curtailment / PST targets on the
+  Action tab (commit `5d2b9d1`), including a text-search fallback
+  when the metadata index misses an equipment ID (commit `065e99c`).
+- **Overload halo suppression** on "Solved — low margin" actions in
+  both NAD and SLD (commit `894ec8c`).
+- **Session reload** now refreshes the N-1 diagram and preserves
+  action-bucket / combined-pair state without re-simulation
+  (commit `d729725`), with `/api/restore-analysis-context` wired in
+  (commit `5c9d92c`).
+- **Manual re-simulate** refreshes the SLD overlay; modal content
+  word-wraps correctly (commit `657af8a`).
+- **Pin severity** uses `monitoringFactor − 0.05` instead of a
+  hardcoded 0.9 / 1.0 cutoff, fixing the MF = 0.85 misclassification
+  (commit `56643a8`).
+- **Pin anchor** uses the topology target (action's disconnected
+  line) rather than `max_rho_line` (commit `5030b6c`).
+- **Pin coverage / Overview perf / popup pins / popover content**
+  (commits `967766a`, `dbc05f8`, `d3c3b59`, `3c7863b`, `4157a3e`).
+- **Rendering fidelity** for Overview, detached tabs, overflow tab,
+  and action auto-zoom (commit `4157a3e`).
+- **Obsolete `test_ui_regressions.py`** removed — it guarded strings
+  in the now-decommissioned `standalone_interface.html`.
+- **ESLint errors** in `userObservableInvariants.test.ts`
+  (`@typescript-eslint/no-explicit-any`, `no-unused-vars`).
+
+### Documentation
+
+- New consolidated doc: `docs/proposals/rendering-lod-strategies.md`.
+- New index files: `docs/README.md`,
+  `docs/performance/history/README.md`.
+- `docs/features/action-overview-diagram.md` added for the Action
+  Overview diagram feature.
+- `CLAUDE.md` (root, frontend, expert_backend) reflect the
+  auto-generated standalone workflow and the new docs tree.
+
+### Removed
+
+- **`expert_backend/tests/test_ui_regressions.py`** — its assertions
+  targeted strings in the decommissioned
+  `standalone_interface.html`; equivalent coverage now lives in the
+  four parity scripts (`scripts/check_*.py`) and in the Vitest
+  suite.
+
+---
+
 ## [0.5.0] — 2026-04-14
 
 First tagged release under the **Co-Study4Grid** name. This release consolidates the
@@ -21,7 +141,7 @@ contingency-analysis assistant for large grids.
 
 - **4× faster manual-action simulation** and **~1,100× faster overload detection** on
   the full French grid (~10k branches), thanks to NumPy vectorization and observation
-  caching. See `docs/PR_PERF_OPTIMIZATION.md` and `docs/performance_profiling.md`.
+  caching. See `docs/performance/history/pr-perf-optimization-summary.md` and `docs/performance/performance-profiling.md`.
 - **Two-step N-1 workflow** (detect → select → resolve) replaces the legacy one-shot
   analysis as the primary user path.
 - **Full remedial-action catalog**: topology, PST tap adjustment, renewable curtailment,
@@ -47,7 +167,7 @@ contingency-analysis assistant for large grids.
 - **Detachable visualization tabs** (PR #84, #86, #87, #90): pop Network N / N-1 /
   Action / Overflow tabs into a second browser window, with tie/untie, per-window
   pan/zoom preservation, bidirectional controls, and stable-portal DOM move to avoid
-  unmount/remount cascades. See `docs/detachable-viz-tabs.md`.
+  unmount/remount cascades. See `docs/features/detachable-viz-tabs.md`.
 - **SLD impacted-asset highlights** (PR #63): clone-behind halos for switches and
   coupling breakers, robust across pan/zoom and N-1/action state changes.
 - **MW Start column** in action score tables (PR #62), with `get_virtual_line_flow`
@@ -63,10 +183,10 @@ contingency-analysis assistant for large grids.
 - **Save Results / Reload Session** (PR #62 family): timestamped session folders with
   `session.json`, `interaction_log.json`, and a copy of the overflow PDF. Restores
   actions, combined pairs, per-action enrichments, and sidebar loading ratios with no
-  re-simulation. Documented in `docs/save-results.md`.
+  re-simulation. Documented in `docs/features/save-results.md`.
 - **Replay-ready interaction logging** (PR #64): self-contained timestamped events with
   correlation IDs for async completions, suitable for deterministic browser-automation
-  replay. See `docs/interaction-logging.md`.
+  replay. See `docs/features/interaction-logging.md`.
 - **Persistent user configuration** (PR #59) stored outside the repository, with a
   configurable config-file path.
 - **Confirmation dialogs** (PR #83) before destructive state resets (switching network
@@ -183,5 +303,6 @@ the authoritative reference for pre-0.5.0 work.
 
 ---
 
-[Unreleased]: https://github.com/marota/Co-Study4Grid/compare/0.5.0...HEAD
+[Unreleased]: https://github.com/marota/Co-Study4Grid/compare/0.6.0...HEAD
+[0.6.0]: https://github.com/marota/Co-Study4Grid/releases/tag/0.6.0
 [0.5.0]: https://github.com/marota/Co-Study4Grid/releases/tag/0.5.0

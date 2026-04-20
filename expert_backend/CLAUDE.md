@@ -60,7 +60,7 @@ class split across files for readability.
   analysis state. `_get_base_network()` MUTUALISES the same Network
   object loaded by `network_service` to avoid re-parsing the .xiidm
   twice (~3-5 s on the PyPSA-EUR France grid). See
-  `docs/perf-grid2op-shared-network.md`.
+  `docs/performance/history/grid2op-shared-network.md`.
 
 The shared Network is safe because:
 1. `network_service` only reads (no variant switching).
@@ -82,8 +82,8 @@ why enabling that is unsafe for the FastAPI thread pool today.
   2. Calls `prefetch_base_nad_async()` — kicks a background thread
      that pre-computes the base NAD so the subsequent
      `/api/network-diagram` XHR is a near-instant cache hit. See
-     `docs/perf-nad-prefetch.md` and
-     `docs/perf-nad-prefetch-earlier-spawn.md`.
+     `docs/performance/history/nad-prefetch.md` and
+     `docs/performance/history/nad-prefetch-earlier-spawn.md`.
   3. Loads the action dictionary (`load_actions` +
      `enrich_actions_lazy`). Auto-generates `disco_*` actions for
      every line if the file lacks them.
@@ -94,7 +94,7 @@ why enabling that is unsafe for the FastAPI thread pool today.
 - **Re-load** (any subsequent `/api/config`): `recommender_service.reset()`
   is called BEFORE the new network is loaded. `reset()` MUST clear
   every per-study cache on the service. The full list (also
-  documented at `docs/state-reset-and-confirmation-dialogs.md`):
+  documented at `docs/features/state-reset-and-confirmation-dialogs.md`):
   `_last_result`, `_is_running`, `_generator`, `_base_network`,
   `_simulation_env`, `_last_disconnected_element`, `_dict_action`,
   `_analysis_context`, `_saved_computed_pairs`, `_cached_obs_n*`,
@@ -119,7 +119,7 @@ Diagram & topology:
   prefetched diagram when available (saves ~5-6 s on large grids).
   Supports `?format=text` to return a JSON header + raw SVG body
   (saves ~500 ms of `JSON.parse` on 25 MB SVG strings — see
-  `docs/perf-loading-parallel.md`).
+  `docs/performance/history/loading-parallel.md`).
 - `POST /api/n1-diagram` / `/api/action-variant-diagram` /
   `/api/focused-diagram` / `/api/action-variant-focused-diagram`
 - `POST /api/n-sld` / `/api/n1-sld` / `/api/action-variant-sld`
@@ -159,7 +159,7 @@ per-endpoint gzip helper is for non-streaming responses only —
 wrapping NDJSON in gzip buffers events until a flush, breaking the
 early-PDF guarantee. This was the root cause behind the global
 `GZipMiddleware` rollback (`main.py:30-42`,
-`docs/perf-per-endpoint-gzip.md`).
+`docs/performance/history/per-endpoint-gzip.md`).
 
 ## Per-endpoint gzip
 
@@ -248,7 +248,7 @@ no prefetch was ever started (e.g. tests bypassing `update_config`).
    them grouped by purpose with a short comment.
 2. **Clear it in `reset()`** — same group / order as `__init__`.
 3. Document it in the "What `reset()` clears" list in
-   `docs/state-reset-and-confirmation-dialogs.md`.
+   `docs/features/state-reset-and-confirmation-dialogs.md`.
 4. If the field holds a thread / future / event, drain or cancel it
    inside `_drain_pending_*` helpers BEFORE clearing the field —
    look at `_drain_pending_base_nad_prefetch` for the pattern.

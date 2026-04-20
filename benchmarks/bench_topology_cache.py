@@ -6,8 +6,8 @@
 
 Validates the cumulative gains of the upstream vectorisation series
 (`expert_op4grid_recommender` 0.2.0.post3 → post8) documented in
-`docs/perf-vectorize-topology-cache.md` and
-`docs/perf-topology-cache-iter2.md`. Also exercises the narrow
+`docs/performance/history/vectorize-topology-cache.md` and
+`docs/performance/history/topology-cache-iter2.md`. Also exercises the narrow
 `_get_switches_with_topology` / `_get_branch_with_bus_breaker_info`
 variants (post6 / post8).
 

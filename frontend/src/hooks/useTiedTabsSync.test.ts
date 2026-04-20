@@ -13,7 +13,7 @@ import { interactionLogger } from '../utils/interactionLogger';
 
 /**
  * Tests for the "tied detached tabs" feature (see
- * docs/detachable-viz-tabs.md#tied-detached-tabs).
+ * docs/features/detachable-viz-tabs.md#tied-detached-tabs).
  *
  * The hook mirrors a tied detached tab's viewBox one-way into the
  * main window's active tab. These tests verify:

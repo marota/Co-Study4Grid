@@ -372,7 +372,7 @@ export function useDiagrams(
     const isActionDetached = !!detachedTabsRef.current?.['action'];
 
     if (!force && actionId === selectedActionId) {
-      // Replay contract (docs/interaction-logging.md): after this
+      // Replay contract (docs/features/interaction-logging.md): after this
       // event fires no action is selected any more, so the id
       // carried is the PREVIOUSLY-selected action, not the current.
       interactionLogger.record('action_deselected', { previous_action_id: actionId });

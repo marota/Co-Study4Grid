@@ -285,7 +285,7 @@ Two new interaction types were added to `types.ts`:
 - `tab_detached` — payload `{ tab: TabId }`
 - `tab_reattached` — payload `{ tab: TabId }`
 
-This keeps the replay contract documented in `docs/interaction-logging.md`
+This keeps the replay contract documented in `docs/features/interaction-logging.md`
 able to reproduce the exact window layout chosen by the operator during a
 session.
 
@@ -872,9 +872,9 @@ Done during development against `npm run dev`:
 
 ## Related files / further reading
 
-- `docs/interaction-logging.md` — replay contract, now extended with
+- `docs/features/interaction-logging.md` — replay contract, now extended with
   `tab_detached` / `tab_reattached` events.
-- `docs/rendering-optimization-plan.md` — context on why
+- `docs/performance/rendering-optimization-plan.md` — context on why
   `MemoizedSvgContainer` must stay mounted.
 - `frontend/src/components/VisualizationPanel.tsx:306` — long-standing
   comment explaining the always-mounted-container invariant this feature

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 """Layer-2 session-reload fidelity check.
 
-``docs/interaction-logging.md § Session reload fidelity`` documents a
+``docs/features/interaction-logging.md § Session reload fidelity`` documents a
 contract that EVERY field persisted into ``session.json`` must also be
 restored into the live app state on reload.  History has shown that
 this contract regresses silently — PR #88 persisted
@@ -126,7 +126,7 @@ SESSION_FIELDS = [
     # Save-only-OK: the live UI rebuilds these from a fresh N-1 diagram
     # fetch triggered by `setSelectedBranch` after restore, so the
     # on-disk arrays are only for inspection / offline replay agents.
-    # See docs/interaction-logging.md § Session reload fidelity.
+    # See docs/features/interaction-logging.md § Session reload fidelity.
     {"field": "n_overloads",
      "restore_token": "n_overloads",
      "save_only_ok": True,

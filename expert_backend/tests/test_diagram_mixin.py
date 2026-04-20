@@ -10,7 +10,7 @@
 Covers the invariants guaranteed by :class:`DiagramMixin`:
 
 - :meth:`DiagramMixin._default_nad_parameters` — the minimal-render
-  config documented in ``docs/perf-nad-profile-bare-env.md`` (``bus_legend``,
+  config documented in ``docs/performance/nad-profile-bare-env.md`` (``bus_legend``,
   ``substation_description_displayed``, ``voltage_level_details``,
   ``injections_added`` all off; ``power_value_precision=0``;
   ``layout_type=GEOGRAPHICAL``).
@@ -92,7 +92,7 @@ class TestDefaultNadParameters:
 
     def test_minimal_render_parameters(self):
         """Companion kwargs guard — these are the minimal-render toggles
-        documented in ``docs/perf-nad-profile-bare-env.md`` (section
+        documented in ``docs/performance/nad-profile-bare-env.md`` (section
         "Results — after #6"). Flipping any of them silently regresses
         NAD perf on large grids (e.g. ``bus_legend=True`` adds ~1 MB SVG
         and ~160 ms; ``injections_added=True`` adds ~11 MB / ~1 s)."""

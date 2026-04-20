@@ -32,7 +32,7 @@ class NetworkService:
         # on `pn.load()` which looks like a silver bullet for the
         # `/api/config` contention between the NAD prefetch worker and
         # grid2op env setup. It is NOT safe to enable here, see
-        # docs/perf-concurrent-variants.md: when ON, every thread that
+        # docs/performance/history/concurrent-variants.md: when ON, every thread that
         # touches the Network must FIRST call `n.set_working_variant(...)`,
         # otherwise pypowsybl raises "Variant index not set for current
         # thread". FastAPI serves each request on a thread-pool worker
