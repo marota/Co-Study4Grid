@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from collections import defaultdict
@@ -42,7 +43,16 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_SRC = REPO_ROOT / "frontend" / "src"
-STANDALONE = REPO_ROOT / "standalone_interface.html"
+# `STANDALONE` is the default hand-maintained mirror; callers can
+# override it at invocation time via the ``COSTUDY4GRID_STANDALONE_PATH``
+# environment variable (set by the Phase-1 auto-generated-standalone
+# smoke tests in the same repo).
+STANDALONE = Path(
+    os.environ.get(
+        "COSTUDY4GRID_STANDALONE_PATH",
+        str(REPO_ROOT / "standalone_interface.html"),
+    )
+)
 TYPES_TS = FRONTEND_SRC / "types.ts"
 API_TS = FRONTEND_SRC / "api.ts"
 USE_SETTINGS_TS = FRONTEND_SRC / "hooks" / "useSettings.ts"

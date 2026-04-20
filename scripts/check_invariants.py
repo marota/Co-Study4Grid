@@ -52,9 +52,16 @@ from pathlib import Path
 from typing import Iterable
 
 
+import os
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_SRC = REPO_ROOT / "frontend" / "src"
-STANDALONE = REPO_ROOT / "standalone_interface.html"
+STANDALONE = Path(
+    os.environ.get(
+        "COSTUDY4GRID_STANDALONE_PATH",
+        str(REPO_ROOT / "standalone_interface.html"),
+    )
+)
 
 
 class Invariant:

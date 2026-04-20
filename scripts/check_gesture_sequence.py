@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -61,7 +62,15 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_SRC = REPO_ROOT / "frontend" / "src"
-STANDALONE = REPO_ROOT / "standalone_interface.html"
+# Override via ``COSTUDY4GRID_STANDALONE_PATH`` to run the check against
+# the auto-generated ``frontend/dist-standalone/standalone.html`` instead
+# of the hand-maintained mirror.
+STANDALONE = Path(
+    os.environ.get(
+        "COSTUDY4GRID_STANDALONE_PATH",
+        str(REPO_ROOT / "standalone_interface.html"),
+    )
+)
 
 
 # ---------------------------------------------------------------------

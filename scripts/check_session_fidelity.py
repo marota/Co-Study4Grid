@@ -48,10 +48,19 @@ import sys
 from pathlib import Path
 
 
+import os
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FE_SAVE_PATH = REPO_ROOT / "frontend" / "src" / "utils" / "sessionUtils.ts"
 FE_RESTORE_PATH = REPO_ROOT / "frontend" / "src" / "hooks" / "useSession.ts"
-STANDALONE = REPO_ROOT / "standalone_interface.html"
+# Override via ``COSTUDY4GRID_STANDALONE_PATH`` to run the check against
+# the auto-generated bundle.
+STANDALONE = Path(
+    os.environ.get(
+        "COSTUDY4GRID_STANDALONE_PATH",
+        str(REPO_ROOT / "standalone_interface.html"),
+    )
+)
 
 # Curated list of fields that MUST survive a save/reload round-trip.
 # Each entry declares:
