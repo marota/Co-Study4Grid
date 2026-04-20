@@ -111,6 +111,10 @@ The `RecommenderService.reset()` method clears:
 - `_base_network`, `_simulation_env`
 - `_last_disconnected_element`
 - `_dict_action`, `_analysis_context`
+- `_layout_cache` — the cached `grid_layout.json` DataFrame used as
+  `fixed_positions` for NAD generation. Must be cleared so a new study
+  loaded from a different grid does not reuse the previous grid's
+  substation coordinates.
 
 ### Why Force Reload?
 

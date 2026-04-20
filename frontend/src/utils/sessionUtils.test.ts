@@ -203,6 +203,43 @@ describe('buildSessionResult — structure', () => {
         expect(saved.action_topology).toEqual({ lines_ex_bus: { LINE_X: 1 }, lines_or_bus: {}, gens_bus: {}, loads_bus: {} });
     });
 
+    it('persists lines_overloaded_after so it survives save → reload (regression)', () => {
+        // Reload-fidelity contract (docs/interaction-logging.md §
+        // Session reload fidelity): the post-action overload list is
+        // read back in useSession.handleRestoreSession to feed the
+        // Remedial-Action NAD/SLD overload halos (PR #83). Before
+        // this regression test landed, the field was declared on
+        // SavedActionEntry AND the restore path assigned it, but
+        // buildSessionResult silently dropped it on save — so on
+        // reload the halos disappeared until a fresh analysis run.
+        // Layer-2 conformity check (scripts/check_session_fidelity.py)
+        // flags this as a "restore_only" asymmetry.
+        const action = makeAction('Disconnect LINE_C', {
+            lines_overloaded_after: ['LINE_D', 'LINE_E'],
+        });
+        const out = buildSessionResult({
+            ...baseInput,
+            result: makeResult({ actions: { disco_LINE_C: action } }),
+        });
+        expect(out.analysis!.actions.disco_LINE_C.lines_overloaded_after)
+            .toEqual(['LINE_D', 'LINE_E']);
+    });
+
+    it('retains lines_overloaded_after as an empty array when all overloads are resolved', () => {
+        // Empty array means "action solved every overload" — distinct
+        // from undefined, which means "field unknown / not computed".
+        // The round-trip MUST preserve the distinction so the post-
+        // action halo logic can tell the two apart on reload.
+        const action = makeAction('Topological rearrangement', {
+            lines_overloaded_after: [],
+        });
+        const out = buildSessionResult({
+            ...baseInput,
+            result: makeResult({ actions: { topo_1: action } }),
+        });
+        expect(out.analysis!.actions.topo_1.lines_overloaded_after).toEqual([]);
+    });
+
     it('includes action_scores in analysis', () => {
         const scores = { act1: { score: 0.8, rank: 1 } };
         const out = buildSessionResult({

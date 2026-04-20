@@ -1487,6 +1487,842 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             return { svg, viewBox: vb };
         };
 
+        // ===== Action Overview helpers =====
+        //
+        // Resolve each prioritized action to an anchor (x, y) on the
+        // N-1 NAD so it can be rendered as a pin. The React app has a
+        // full multi-strategy resolver (`buildActionOverviewPins` in
+        // `frontend/src/utils/svgUtils.ts`) that handles combined pairs,
+        // load-shedding, curtailment, PST, etc.  This port implements
+        // the common case — anchor at the midpoint of the
+        // ``max_rho_line`` edge — which covers every event this UI
+        // needs for Layer 1/3a parity.  If the edge can't be resolved,
+        // the action is dropped from the overlay and only appears in
+        // the sidebar feed.
+        // Resolve a single unitary action to an (x, y) anchor on the
+        // N-1 NAD.  Mirrors `resolveActionAnchor` in
+        // frontend/src/utils/svgUtils.ts (PR #92) — the primary anchor
+        // is what the action TARGETS (lines / VLs from topology), NOT
+        // max_rho_line.  max_rho_line is the line that carries the
+        // worst loading AFTER the action, which is often different
+        // from the one the operator actually acts on.
+        //
+        // Resolution order:
+        //   1. Load-shedding / curtailment details → affected
+        //      load / generator's voltage_level_id.
+        //   2. Line targets via getActionTargetLines → edge midpoint
+        //      (or one endpoint if the other isn't resolvable).
+        //   3. VL targets via getActionTargetVoltageLevels → node (x, y).
+        //   4. Fallback: max_rho_line → edge midpoint.
+        //   5. Fallback: estimated_max_rho_line (for combined pairs
+        //      the recommender estimated but didn't simulate).
+        const resolveActionAnchor = (actionId, details, metaIndex) => {
+            if (!details || !metaIndex) return null;
+            const { edgesByEquipmentId, nodesBySvgId, nodesByEquipmentId } = metaIndex;
+            const lookupNode = (key) =>
+                (nodesBySvgId?.get?.(key)) || (nodesByEquipmentId?.get?.(key));
+            const isFinite2 = (n) => Number.isFinite(n?.x) && Number.isFinite(n?.y);
+
+            // 1. Load-shedding / curtailment details → affected load/gen VL.
+            if (Array.isArray(details.load_shedding_details)) {
+                for (const d of details.load_shedding_details) {
+                    if (d?.voltage_level_id) {
+                        const n = nodesByEquipmentId?.get?.(d.voltage_level_id);
+                        if (isFinite2(n)) return { x: Number(n.x), y: Number(n.y) };
+                    }
+                }
+            }
+            if (Array.isArray(details.curtailment_details)) {
+                for (const d of details.curtailment_details) {
+                    if (d?.voltage_level_id) {
+                        const n = nodesByEquipmentId?.get?.(d.voltage_level_id);
+                        if (isFinite2(n)) return { x: Number(n.x), y: Number(n.y) };
+                    }
+                }
+            }
+
+            // 2. Line targets via getActionTargetLines.
+            try {
+                const lineTargets = getActionTargetLines(details, actionId, edgesByEquipmentId);
+                for (const lineName of lineTargets || []) {
+                    const edge = edgesByEquipmentId?.get?.(lineName);
+                    if (!edge) continue;
+                    const n1 = lookupNode(edge.node1);
+                    const n2 = lookupNode(edge.node2);
+                    if (isFinite2(n1) && isFinite2(n2)) {
+                        return { x: (Number(n1.x) + Number(n2.x)) / 2, y: (Number(n1.y) + Number(n2.y)) / 2 };
+                    }
+                    if (isFinite2(n1)) return { x: Number(n1.x), y: Number(n1.y) };
+                    if (isFinite2(n2)) return { x: Number(n2.x), y: Number(n2.y) };
+                }
+            } catch (e) { /* defensive — ignore resolver errors */ }
+
+            // 3. VL targets via getActionTargetVoltageLevels.
+            try {
+                const vlTargets = getActionTargetVoltageLevels(details, actionId, nodesByEquipmentId);
+                for (const vlName of vlTargets || []) {
+                    const node = nodesByEquipmentId?.get?.(vlName);
+                    if (isFinite2(node)) return { x: Number(node.x), y: Number(node.y) };
+                }
+            } catch (e) { /* ignore */ }
+
+            // 4. Last-resort fallback on max_rho_line (the line the
+            //    action redistributes onto, not the one it affects).
+            //    Only used when topology resolution failed entirely.
+            const mrl = details.max_rho_line;
+            if (mrl) {
+                const edge = edgesByEquipmentId?.get?.(mrl);
+                if (edge) {
+                    const n1 = lookupNode(edge.node1);
+                    const n2 = lookupNode(edge.node2);
+                    if (isFinite2(n1) && isFinite2(n2)) {
+                        return { x: (Number(n1.x) + Number(n2.x)) / 2, y: (Number(n1.y) + Number(n2.y)) / 2 };
+                    }
+                }
+            }
+
+            // 5. For estimated-only combined pairs without topology,
+            //    estimated_max_rho_line is all we have.
+            const emrl = details.estimated_max_rho_line;
+            if (emrl) {
+                const edge = edgesByEquipmentId?.get?.(emrl);
+                if (edge) {
+                    const n1 = lookupNode(edge.node1);
+                    const n2 = lookupNode(edge.node2);
+                    if (isFinite2(n1) && isFinite2(n2)) {
+                        return { x: (Number(n1.x) + Number(n2.x)) / 2, y: (Number(n1.y) + Number(n2.y)) / 2 };
+                    }
+                }
+            }
+            return null;
+        };
+
+        // Pure pin-severity classifier.  Mirrors React's
+        // `computeActionSeverity` (frontend/src/utils/svgUtils.ts):
+        //   non_convergence / is_islanded → grey
+        //   max_rho missing      → green if is_rho_reduction else red
+        //   max_rho > MF         → red    (still overloaded)
+        //   max_rho > MF - 0.05  → orange (low margin)
+        //   else                 → green
+        // monitoringFactor is the operational threshold the user set
+        // in the Configurations tab — defaults to 0.95.  Hardcoding
+        // 0.9 / 1.0 boundaries (the previous bug) silently classed
+        // "still overloaded at 97%" cards as orange instead of red
+        // when the user had set MF=0.95.
+        const computeActionSeverity = (details, monitoringFactor) => {
+            if (!details) return 'grey';
+            if (details.non_convergence || details.is_islanded) return 'grey';
+            const rho = details.max_rho != null
+                ? details.max_rho
+                : (details.estimated_max_rho != null ? details.estimated_max_rho : null);
+            if (rho == null) return details.is_rho_reduction ? 'green' : 'red';
+            if (rho > monitoringFactor) return 'red';
+            if (rho > monitoringFactor - 0.05) return 'orange';
+            return 'green';
+        };
+        const SEVERITY_COLOR = {
+            green:  '#28a745',
+            orange: '#f0ad4e',
+            red:    '#dc3545',
+            grey:   '#9ca3af',
+        };
+
+        const computeActionOverviewPins = (actions, metaIndex, monitoringFactor = 0.95) => {
+            if (!actions || !metaIndex) return [];
+            const ids = Object.keys(actions);
+            const pins = [];
+            for (let i = 0; i < ids.length; i++) {
+                const id = ids[i];
+                const action = actions[id];
+                if (!action) continue;
+                // Skip combined-action entries (key contains '+').  They
+                // are rendered separately by computeCombinedActionPins
+                // below as curves connecting their constituent unitary
+                // pins.  Matches frontend/src/utils/svgUtils.ts's
+                // `buildActionOverviewPins` contract.
+                if (id.includes('+')) continue;
+                const anchor = resolveActionAnchor(id, action, metaIndex);
+                if (!anchor) continue;
+                const severity = computeActionSeverity(action, monitoringFactor);
+                const rho = typeof action.max_rho === 'number'
+                    ? action.max_rho
+                    : (typeof action.estimated_max_rho === 'number' ? action.estimated_max_rho : NaN);
+                pins.push({
+                    id,
+                    x: anchor.x, y: anchor.y,
+                    rho, rank: i + 1,
+                    color: SEVERITY_COLOR[severity],
+                    severity,
+                    description: action.description_unitaire || '',
+                    max_rho_line: action.max_rho_line || action.estimated_max_rho_line || id,
+                });
+            }
+            return pins;
+        };
+
+        // Build curves for combined-pair (A+B) entries.  Filtered to
+        // SIMULATED pairs only — `is_estimated: true` entries are the
+        // recommender's superposition output (no actual simulation
+        // ran), and rendering dashed lines for them mid-flight clutters
+        // the overview before the operator has even opened the Combine
+        // modal.  Matches frontend behaviour: simulated combined pairs
+        // land in `result.actions` with `is_estimated: false` and only
+        // those produce a dashed connection.
+        const computeCombinedActionPins = (actions, metaIndex, unitaryPinById, monitoringFactor = 0.95) => {
+            if (!actions || !metaIndex) return [];
+            const pairs = [];
+            for (const [id, action] of Object.entries(actions)) {
+                if (!id.includes('+') || !action) continue;
+                if (action.is_estimated === true) continue;        // estimated only — skip
+                // Resolve each constituent to a pin position.
+                const parts = id.split('+').map(p => p.trim());
+                if (parts.length !== 2) continue;
+                const getEndpoint = (partId) => {
+                    const cached = unitaryPinById.get(partId);
+                    if (cached) return { x: cached.x, y: cached.y };
+                    const partDetail = actions[partId];
+                    if (!partDetail) return null;
+                    return resolveActionAnchor(partId, partDetail, metaIndex);
+                };
+                const a = getEndpoint(parts[0]);
+                const b = getEndpoint(parts[1]);
+                if (!a || !b) continue;
+                const severity = computeActionSeverity(action, monitoringFactor);
+                pairs.push({
+                    id,
+                    x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+                    midX: (a.x + b.x) / 2, midY: (a.y + b.y) / 2,
+                    severity,
+                    color: SEVERITY_COLOR[severity],
+                    description: action.description_unitaire || '',
+                });
+            }
+            return pairs;
+        };
+
+        // Minimal Action Overview component.  Shown on the Action tab
+        // when analysis has run and no action card is currently
+        // selected.  Emits the 9 `overview_*` events from the replay
+        // contract at the documented gesture points — see the Layer
+        // 1/3a checks in `scripts/check_standalone_parity.py` and the
+        // canonical sequence in `scripts/parity_e2e/e2e_parity.spec.ts`.
+        const ActionOverviewDiagram = ({
+            visible,
+            n1Diagram,
+            n1MetaIndex,
+            n1SvgContainerRef,
+            actions,
+            selectedActionId,
+            onActionSelect,
+            onPinPreview,
+            // Operational threshold from the Configurations tab.
+            // Drives the pin severity palette (green / orange / red)
+            // — without this, the standalone falls back to the 0.95
+            // default and may misclassify pins on grids configured
+            // with a different MF.
+            monitoringFactor = 0.95,
+            // Richer-popover props — forward the sidebar ActionCard
+            // affordances so the pin popover matches the card the
+            // user would see in the feed.
+            selectedActionIds,
+            rejectedActionIds,
+            manuallyAddedIds,
+            onFavorite,
+            onReject,
+        }) => {
+            const containerRef = React.useRef(null);
+            const backdropSvgRef = React.useRef(null);
+            const pinSvgRef = React.useRef(null);
+            const overlayWrapperRef = React.useRef(null);
+            const [overlayRect, setOverlayRect] = React.useState({ width: 0, height: 0 });
+            const [popoverPin, setPopoverPin] = React.useState(null);
+            const [inspectQuery, setInspectQuery] = React.useState('');
+            const clickTimerRef = React.useRef(null);
+            // Local viewBox state for the overview.  The overview
+            // owns its own zoom — independent from the N-1 tab's
+            // pan/zoom state — so overview_zoom_* buttons move the
+            // overview viewport without affecting the main N-1 tab.
+            const [overviewVb, setOverviewVb] = React.useState(null);
+            const fitVbRef = React.useRef(null); // the "Fit" target
+
+            const pins = React.useMemo(
+                () => computeActionOverviewPins(actions, n1MetaIndex, monitoringFactor),
+                [actions, n1MetaIndex, monitoringFactor],
+            );
+
+            // Combined-pair connections.  A Map keyed by unitary pin id
+            // lets `computeCombinedActionPins` reuse the unitary anchors
+            // rather than re-running the resolver for every leg.
+            const combinedPairs = React.useMemo(() => {
+                const byId = new Map(pins.map(p => [p.id, p]));
+                return computeCombinedActionPins(actions, n1MetaIndex, byId, monitoringFactor);
+            }, [actions, n1MetaIndex, pins, monitoringFactor]);
+
+            // visible → overview_shown / overview_hidden.
+            React.useEffect(() => {
+                if (visible) {
+                    interactionLogger.record('overview_shown', {
+                        has_pins: pins.length > 0,
+                        pin_count: pins.length,
+                    });
+                } else {
+                    interactionLogger.record('overview_hidden');
+                }
+            }, [visible]);
+
+            // Inject the processed N-1 SVG as the overview backdrop.
+            // We clone the DOM the main N-1 tab is already rendering
+            // (`n1SvgContainerRef.current`) — that node has every
+            // post-processing pass applied: voltage-range filter,
+            // boostSvgForLargeGrid, overload highlights, contingency
+            // highlight clones.  Injecting the raw backend SVG string
+            // loses all of that and produces the unpainted NAD the
+            // earlier port was rendering.
+            //
+            // Performance: `cloneNode(true)` on the PyPSA-EUR France
+            // SVG is ~200-500 ms on cold cache.  We keep a ref-scoped
+            // cache keyed by the source <svg> identity — tab switches
+            // and unrelated re-renders skip the clone entirely, only
+            // paying the cost when the underlying n1Diagram actually
+            // changes.  This is the standalone equivalent of React's
+            // `MemoizedSvgContainer` (PR #79).
+            const lastClonedSourceRef = React.useRef(null);
+            React.useLayoutEffect(() => {
+                const container = containerRef.current;
+                if (!container || !visible) return;
+                const source = n1SvgContainerRef?.current?.querySelector?.('svg');
+                if (!source) {
+                    // Fall back to raw string if the main N-1 tab hasn't
+                    // mounted its SVG yet (unlikely but defensive).
+                    if (n1Diagram?.svg) {
+                        container.innerHTML = typeof n1Diagram.svg === 'string'
+                            ? n1Diagram.svg
+                            : (n1Diagram.svg.outerHTML || '');
+                    }
+                    return;
+                }
+                // Skip the expensive clone when the source SVG node is
+                // the same one we already injected.  We still re-pin the
+                // backdropSvgRef each time so overviewVb updates land.
+                if (lastClonedSourceRef.current === source && backdropSvgRef.current && container.contains(backdropSvgRef.current)) {
+                    return;
+                }
+                lastClonedSourceRef.current = source;
+                const clone = source.cloneNode(true);
+                clone.style.width = '100%';
+                clone.style.height = '100%';
+                // Light dimming only — pypowsybl edges are already
+                // thin at full extent; aggressive opacity hides them.
+                // The pin layer above provides enough visual contrast
+                // without further fading the network.
+                clone.style.opacity = '0.85';
+                clone.style.pointerEvents = 'none';
+                clone.removeAttribute('width');
+                clone.removeAttribute('height');
+                container.replaceChildren(clone);
+                backdropSvgRef.current = clone;
+
+                // Seed the overview viewBox to a bounding box that
+                // includes EVERY pin (with 5 % padding) so the
+                // operator sees the full prioritized-actions map at
+                // once.  Falls back to the cloned SVG's existing
+                // viewBox when there are no pins (analysis hasn't
+                // produced any actions yet).  The same rectangle is
+                // stashed as the "Fit" target — clicking the Fit
+                // button restores it.
+                try {
+                    let seed = null;
+                    if (pins.length > 0) {
+                        let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity;
+                        for (const p of pins) {
+                            if (p.x < xMin) xMin = p.x;
+                            if (p.y < yMin) yMin = p.y;
+                            if (p.x > xMax) xMax = p.x;
+                            if (p.y > yMax) yMax = p.y;
+                        }
+                        // Pad so pin glyphs aren't clipped at the
+                        // border, and enforce a minimum extent so a
+                        // single-pin overview doesn't zoom infinitely.
+                        const w = Math.max(xMax - xMin, 200);
+                        const h = Math.max(yMax - yMin, 200);
+                        seed = {
+                            x: xMin - w * 0.1,
+                            y: yMin - h * 0.1,
+                            w: w * 1.2,
+                            h: h * 1.2,
+                        };
+                    } else {
+                        const vbAttr = clone.getAttribute('viewBox');
+                        if (vbAttr) {
+                            const [x, y, w, h] = vbAttr.split(/\s+/).map(Number);
+                            seed = { x, y, w, h };
+                        }
+                    }
+                    if (seed) {
+                        setOverviewVb(seed);
+                        fitVbRef.current = seed;
+                    }
+                } catch (e) { /* ignore */ }
+            }, [visible, n1Diagram, n1SvgContainerRef]);
+
+            // Mirror the overview viewBox onto both the backdrop and
+            // the pin-layer SVG so pins stay anchored to their edges
+            // while the user pans/zooms.
+            React.useEffect(() => {
+                if (!overviewVb) return;
+                const { x, y, w, h } = overviewVb;
+                const vbAttr = `${x} ${y} ${w} ${h}`;
+                if (backdropSvgRef.current) backdropSvgRef.current.setAttribute('viewBox', vbAttr);
+                if (pinSvgRef.current) pinSvgRef.current.setAttribute('viewBox', vbAttr);
+            }, [overviewVb]);
+
+            // Global Escape / outside-click handlers for the popover.
+            React.useEffect(() => {
+                if (!popoverPin) return;
+                const onKey = (e) => {
+                    if (e.key === 'Escape') {
+                        interactionLogger.record('overview_popover_closed', { reason: 'escape' });
+                        setPopoverPin(null);
+                    }
+                };
+                const onMouseDown = (e) => {
+                    const target = e.target;
+                    const isPopover = target.closest && target.closest('[data-overview-popover]');
+                    const isPin = target.closest && target.closest('[data-overview-pin]');
+                    if (isPopover || isPin) return;
+                    interactionLogger.record('overview_popover_closed', { reason: 'outside_click' });
+                    setPopoverPin(null);
+                };
+                window.addEventListener('keydown', onKey);
+                window.addEventListener('mousedown', onMouseDown);
+                return () => {
+                    window.removeEventListener('keydown', onKey);
+                    window.removeEventListener('mousedown', onMouseDown);
+                };
+            }, [popoverPin]);
+
+            const handlePinClick = React.useCallback((pin, evt) => {
+                // 250 ms debounce so a double-click cancels the
+                // single-click popover path (same pattern React uses).
+                if (clickTimerRef.current) {
+                    clearTimeout(clickTimerRef.current);
+                    clickTimerRef.current = null;
+                }
+                const rect = evt.currentTarget.getBoundingClientRect();
+                clickTimerRef.current = setTimeout(() => {
+                    interactionLogger.record('overview_pin_clicked', { action_id: pin.id });
+                    setPopoverPin({
+                        id: pin.id,
+                        screenX: rect.left + rect.width / 2,
+                        screenY: rect.top,
+                        description: pin.description,
+                        rho: pin.rho,
+                        max_rho_line: pin.max_rho_line,
+                    });
+                    if (onPinPreview) onPinPreview(pin.id);
+                    clickTimerRef.current = null;
+                }, 250);
+            }, [onPinPreview]);
+
+            const handlePinDoubleClick = React.useCallback((pin) => {
+                if (clickTimerRef.current) {
+                    clearTimeout(clickTimerRef.current);
+                    clickTimerRef.current = null;
+                }
+                interactionLogger.record('overview_pin_double_clicked', { action_id: pin.id });
+                setPopoverPin(null);
+                if (onActionSelect) onActionSelect(pin.id);
+            }, [onActionSelect]);
+
+            const handleZoomIn = () => {
+                interactionLogger.record('overview_zoom_in');
+                setOverviewVb(vb => vb ? {
+                    x: vb.x + vb.w * 0.1, y: vb.y + vb.h * 0.1,
+                    w: vb.w * 0.8, h: vb.h * 0.8,
+                } : vb);
+            };
+            const handleZoomOut = () => {
+                interactionLogger.record('overview_zoom_out');
+                setOverviewVb(vb => vb ? {
+                    x: vb.x - vb.w * 0.125, y: vb.y - vb.h * 0.125,
+                    w: vb.w * 1.25, h: vb.h * 1.25,
+                } : vb);
+            };
+            const handleZoomFit = () => {
+                interactionLogger.record('overview_zoom_fit');
+                if (fitVbRef.current) setOverviewVb({ ...fitVbRef.current });
+            };
+
+            // Wheel + drag pan on the pin-layer SVG so the overview
+            // is explorable without the +/- buttons.
+            const panRef = React.useRef({ isDragging: false, lastX: 0, lastY: 0 });
+            const handleWheel = React.useCallback((e) => {
+                e.preventDefault();
+                setOverviewVb(vb => {
+                    if (!vb) return vb;
+                    const scale = e.deltaY < 0 ? 0.9 : 1.1;
+                    return {
+                        x: vb.x + vb.w * (1 - scale) / 2,
+                        y: vb.y + vb.h * (1 - scale) / 2,
+                        w: vb.w * scale, h: vb.h * scale,
+                    };
+                });
+            }, []);
+            const handleMouseDown = (e) => {
+                panRef.current.isDragging = true;
+                panRef.current.lastX = e.clientX;
+                panRef.current.lastY = e.clientY;
+            };
+            const handleMouseMove = (e) => {
+                if (!panRef.current.isDragging) return;
+                const dx = e.clientX - panRef.current.lastX;
+                const dy = e.clientY - panRef.current.lastY;
+                panRef.current.lastX = e.clientX;
+                panRef.current.lastY = e.clientY;
+                setOverviewVb(vb => {
+                    if (!vb || !pinSvgRef.current) return vb;
+                    const rect = pinSvgRef.current.getBoundingClientRect();
+                    return {
+                        x: vb.x - dx * vb.w / rect.width,
+                        y: vb.y - dy * vb.h / rect.height,
+                        w: vb.w, h: vb.h,
+                    };
+                });
+            };
+            const handleMouseUp = () => { panRef.current.isDragging = false; };
+
+            const handleInspectChange = (e) => {
+                const q = e.target.value;
+                setInspectQuery(q);
+                // Match React's logic: only log when the query EXACTLY
+                // matches a pin id (focus) or is cleared.  Intermediate
+                // keystrokes that don't match are deliberately not
+                // logged so the interaction log doesn't fill with
+                // noise from partial typing.
+                const exact = pins.find((p) => p.id === q);
+                if (exact) {
+                    interactionLogger.record('overview_inspect_changed', { query: q, action: 'focus' });
+                } else if (q === '') {
+                    interactionLogger.record('overview_inspect_changed', { query: '', action: 'cleared' });
+                }
+            };
+
+            // Track the overlay wrapper's pixel size — ResizeObserver
+            // is the cheap way to keep pin positions fresh as the
+            // window / sidebar is resized.  We also initialise once
+            // via getBoundingClientRect so the first frame has valid
+            // coordinates (ResizeObserver only fires AFTER the first
+            // layout).
+            React.useEffect(() => {
+                if (!visible || !overlayWrapperRef.current) return;
+                const el = overlayWrapperRef.current;
+                const apply = () => {
+                    const r = el.getBoundingClientRect();
+                    setOverlayRect({ width: r.width, height: r.height });
+                };
+                apply();
+                const ro = new ResizeObserver(apply);
+                ro.observe(el);
+                return () => ro.disconnect();
+            }, [visible]);
+
+            if (!visible) return null;
+
+            const vbForPins = overviewVb || n1Diagram?.originalViewBox || { x: 0, y: 0, w: 1000, h: 1000 };
+            const viewBoxAttr = `${vbForPins.x} ${vbForPins.y} ${vbForPins.w} ${vbForPins.h}`;
+
+            // Project SVG-local (pin.x, pin.y) → screen-px (relative to
+            // the overlay wrapper) using `preserveAspectRatio="xMidYMid
+            // meet"` which is what the pin SVG declares.  Matches the
+            // backdrop's projection exactly so pins stay anchored to
+            // their asset positions through pan + zoom.
+            const projectSvgPoint = (sx, sy) => {
+                if (!overlayRect.width || !overlayRect.height) return { screenX: 0, screenY: 0 };
+                const vbAspect = vbForPins.w / vbForPins.h;
+                const boxAspect = overlayRect.width / overlayRect.height;
+                let scale, offsetX, offsetY;
+                if (boxAspect > vbAspect) {
+                    // Container wider than viewBox — letterboxed on X.
+                    scale = overlayRect.height / vbForPins.h;
+                    offsetX = (overlayRect.width - vbForPins.w * scale) / 2;
+                    offsetY = 0;
+                } else {
+                    scale = overlayRect.width / vbForPins.w;
+                    offsetX = 0;
+                    offsetY = (overlayRect.height - vbForPins.h * scale) / 2;
+                }
+                return {
+                    screenX: offsetX + (sx - vbForPins.x) * scale,
+                    screenY: offsetY + (sy - vbForPins.y) * scale,
+                };
+            };
+            const pinsScreen = pins.map((p) => ({ ...p, ...projectSvgPoint(p.x, p.y) }));
+
+            return (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
+                    {/* Header strip — severity legend */}
+                    <div style={{
+                        background: '#e9ecef', padding: '6px 12px',
+                        fontSize: '0.8rem', color: '#495057',
+                        borderBottom: '1px solid #ccc',
+                        display: 'flex', gap: '12px', alignItems: 'center',
+                    }}>
+                        <strong>Remedial Action overview</strong>
+                        <span><span style={{ color: '#28a745' }}>●</span> safe</span>
+                        <span><span style={{ color: '#f0ad4e' }}>●</span> near limit</span>
+                        <span><span style={{ color: '#dc3545' }}>●</span> overloaded</span>
+                        <span style={{ marginLeft: 'auto' }}>{pins.length} pin{pins.length === 1 ? '' : 's'}</span>
+                    </div>
+                    {/* Diagram + pin layer.  Two stacked layers:
+                        1. backdrop SVG (the cloned N-1 diagram) that
+                           scales with viewBox;
+                        2. SVG that captures wheel/drag for pan-zoom
+                           using the same viewBox as the backdrop so
+                           coordinates match;
+                        3. HTML pin layer rendered in SCREEN-px space
+                           via the overlayRect + vbForPins projection.
+                           Pins keep a constant CSS size across zoom
+                           levels — React's teardrop-with-MutationObserver
+                           approach collapses neatly to "just position
+                           absolutely" when we're happy to pay a React
+                           re-render on every viewBox change (cheap
+                           here, pins count is small). */}
+                    <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }} ref={overlayWrapperRef}>
+                        <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+                        <svg
+                            ref={pinSvgRef}
+                            viewBox={viewBoxAttr}
+                            preserveAspectRatio="xMidYMid meet"
+                            onWheel={handleWheel}
+                            onMouseDown={handleMouseDown}
+                            onMouseMove={handleMouseMove}
+                            onMouseUp={handleMouseUp}
+                            onMouseLeave={handleMouseUp}
+                            style={{ position: 'absolute', inset: 0, pointerEvents: 'auto', cursor: panRef.current.isDragging ? 'grabbing' : 'grab' }}
+                        >
+                            {/* Combined-pair connections — dashed line
+                                between constituent unitary pins, with a
+                                severity-coloured chip at the midpoint
+                                showing the combined max ρ.  Stroke
+                                width uses `vector-effect: non-scaling-
+                                stroke` so the line stays 2 screen-px
+                                regardless of zoom. */}
+                            {combinedPairs.map((pair) => (
+                                <g key={pair.id} data-combined-pair={pair.id} opacity={0.85}>
+                                    <line
+                                        x1={pair.x1} y1={pair.y1}
+                                        x2={pair.x2} y2={pair.y2}
+                                        stroke={pair.color}
+                                        strokeWidth={2}
+                                        strokeDasharray="6,6"
+                                        vectorEffect="non-scaling-stroke"
+                                    />
+                                </g>
+                            ))}
+                        </svg>
+                        {/* Pins in screen-px space.  Each pin is an
+                            absolutely-positioned <div> at the projected
+                            screen coordinate of its SVG anchor.  The
+                            teardrop itself is an inline SVG with the
+                            tip at (0, 48) so `translate(-50%, -100%)`
+                            on the wrapper plants the tip exactly on
+                            the asset.  Google-Maps-style glyph with a
+                            drop shadow and a white ring; loading
+                            percentage is rendered inside the circular
+                            head. */}
+                        {pinsScreen.map((pin) => {
+                            const label = Number.isFinite(pin.rho)
+                                ? `${Math.round(pin.rho * 100)}%`
+                                : String(pin.rank);
+                            const isSelected = selectedActionId === pin.id;
+                            return (
+                                <div
+                                    key={pin.id}
+                                    data-overview-pin
+                                    title={`${pin.id} — ${pin.description || ''} (max ρ ${(pin.rho * 100).toFixed(1)}% on ${pin.max_rho_line})`}
+                                    onClick={(e) => handlePinClick(pin, e)}
+                                    onDoubleClick={(e) => { e.stopPropagation(); handlePinDoubleClick(pin); }}
+                                    style={{
+                                        position: 'absolute',
+                                        left: pin.screenX,
+                                        top: pin.screenY,
+                                        transform: 'translate(-50%, -100%)',
+                                        width: 36,
+                                        height: 48,
+                                        cursor: 'pointer',
+                                        pointerEvents: 'auto',
+                                        userSelect: 'none',
+                                        filter: isSelected
+                                            ? 'drop-shadow(0 0 4px rgba(52,152,219,0.9))'
+                                            : 'drop-shadow(0 2px 3px rgba(0,0,0,0.4))',
+                                    }}
+                                >
+                                    <svg viewBox="0 0 36 48" width="36" height="48" style={{ display: 'block' }}>
+                                        {/* Teardrop body */}
+                                        <path
+                                            d="M18 0 C8 0 0 8 0 18 C0 28 18 48 18 48 C18 48 36 28 36 18 C36 8 28 0 18 0 Z"
+                                            fill={pin.color}
+                                            stroke="#fff"
+                                            strokeWidth={2}
+                                        />
+                                        {/* Label disc for contrast against the coloured body */}
+                                        <circle cx={18} cy={18} r={11} fill="#fff" />
+                                        <text
+                                            x={18} y={18}
+                                            textAnchor="middle"
+                                            dominantBaseline="central"
+                                            fontSize={label.length > 3 ? 8 : 10}
+                                            fontWeight={700}
+                                            fill={pin.color}
+                                        >{label}</text>
+                                    </svg>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    {/* Controls: zoom + inspect */}
+                    <div style={{
+                        position: 'absolute', bottom: 12, left: 12,
+                        display: 'flex', gap: '6px', alignItems: 'center',
+                        background: '#fff', border: '1px solid #ccc',
+                        borderRadius: 6, padding: '4px 8px', boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                    }}>
+                        <button onClick={handleZoomIn} title="Zoom in" style={{ padding: '2px 8px', cursor: 'pointer' }}>+</button>
+                        <button onClick={handleZoomOut} title="Zoom out" style={{ padding: '2px 8px', cursor: 'pointer' }}>−</button>
+                        <button onClick={handleZoomFit} title="Fit" style={{ padding: '2px 8px', cursor: 'pointer' }}>⤢ Fit</button>
+                        <input
+                            value={inspectQuery}
+                            onChange={handleInspectChange}
+                            placeholder="🔍 Focus action id…"
+                            style={{ padding: '2px 6px', border: '1px solid #ccc', borderRadius: 4, fontSize: '12px', marginLeft: 6, width: 180 }}
+                        />
+                    </div>
+                    {/* Popover (single-click preview) — richer layout
+                        matching the sidebar ActionCard: status badges,
+                        max-ρ breakdown, star / reject / view buttons.
+                        Full ActionCard reuse would require extracting
+                        the card body into a shared component; this
+                        inline version carries the same affordances at
+                        lower scope. */}
+                    {popoverPin && (() => {
+                        const action = actions?.[popoverPin.id] || {};
+                        const isFavorited = selectedActionIds?.has?.(popoverPin.id);
+                        const isRejected = rejectedActionIds?.has?.(popoverPin.id);
+                        const isManual = manuallyAddedIds?.has?.(popoverPin.id);
+                        const rho = Number.isFinite(popoverPin.rho) ? popoverPin.rho : null;
+                        const statusBadge = !Number.isFinite(popoverPin.rho)
+                            ? { text: 'Not simulated', bg: '#e2e3e5', fg: '#383d41' }
+                            : rho < 0.9
+                                ? { text: 'Solves overload', bg: '#d4edda', fg: '#155724' }
+                                : rho < 1.0
+                                    ? { text: 'Solved — low margin', bg: '#fff3cd', fg: '#856404' }
+                                    : { text: 'Still overloaded', bg: '#f8d7da', fg: '#721c24' };
+                        const lineOverloadedAfter = Array.isArray(action.lines_overloaded_after)
+                            ? action.lines_overloaded_after
+                            : null;
+                        return (
+                            <div
+                                data-overview-popover
+                                style={{
+                                    position: 'fixed',
+                                    left: popoverPin.screenX,
+                                    top: Math.max(12, popoverPin.screenY - 220),
+                                    transform: 'translateX(-50%)',
+                                    background: '#fff',
+                                    border: '1px solid #ccc',
+                                    borderRadius: 6,
+                                    padding: '12px 14px',
+                                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                                    minWidth: 280, maxWidth: 360,
+                                    zIndex: 200,
+                                    fontSize: '13px',
+                                }}
+                            >
+                                {/* Header row — id + status badges + close */}
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 8 }}>
+                                    <strong style={{ flex: 1, wordBreak: 'break-all', fontSize: '12px' }}>
+                                        #{popoverPin.rank} — {popoverPin.id}
+                                    </strong>
+                                    <button
+                                        onClick={() => {
+                                            interactionLogger.record('overview_popover_closed', { reason: 'close_button' });
+                                            setPopoverPin(null);
+                                        }}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#888', padding: 0, lineHeight: 1 }}
+                                        aria-label="Close popover"
+                                    >✕</button>
+                                </div>
+                                {/* Status badges */}
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+                                    <span style={{
+                                        background: statusBadge.bg, color: statusBadge.fg,
+                                        padding: '2px 8px', borderRadius: 10, fontSize: '11px', fontWeight: 600,
+                                    }}>{statusBadge.text}</span>
+                                    {isManual && <span style={{ background: '#cfe2ff', color: '#084298', padding: '2px 8px', borderRadius: 10, fontSize: '11px' }}>Manual</span>}
+                                    {isFavorited && <span style={{ background: '#fff3cd', color: '#856404', padding: '2px 8px', borderRadius: 10, fontSize: '11px' }}>⭐ Starred</span>}
+                                    {isRejected && <span style={{ background: '#f8d7da', color: '#721c24', padding: '2px 8px', borderRadius: 10, fontSize: '11px' }}>❌ Rejected</span>}
+                                </div>
+                                {/* Description */}
+                                <div style={{ color: '#333', marginBottom: 8, lineHeight: 1.35 }}>
+                                    {popoverPin.description || '(no description)'}
+                                </div>
+                                {/* Metrics */}
+                                <div style={{ fontSize: '12px', color: '#555', marginBottom: 8 }}>
+                                    {rho != null ? (
+                                        <div>
+                                            Max loading <strong>{(rho * 100).toFixed(1)}%</strong> on <em>{popoverPin.max_rho_line}</em>
+                                        </div>
+                                    ) : (
+                                        <div style={{ color: '#888' }}>Loading not yet simulated.</div>
+                                    )}
+                                    {lineOverloadedAfter && lineOverloadedAfter.length > 0 && (
+                                        <div style={{ marginTop: 4, color: '#856404' }}>
+                                            Residual overloads: {lineOverloadedAfter.slice(0, 3).join(', ')}
+                                            {lineOverloadedAfter.length > 3 ? ` (+${lineOverloadedAfter.length - 3})` : ''}
+                                        </div>
+                                    )}
+                                </div>
+                                {/* Action row: favorite / reject / view */}
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                    <button
+                                        onClick={() => { if (onFavorite) onFavorite(popoverPin.id); }}
+                                        title={isFavorited ? 'Un-star this action' : 'Star this action'}
+                                        style={{
+                                            flex: 'none', padding: '4px 10px',
+                                            background: isFavorited ? '#ffc107' : '#f8f9fa',
+                                            color: isFavorited ? '#000' : '#333',
+                                            border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer',
+                                        }}
+                                    >{isFavorited ? '★' : '☆'}</button>
+                                    <button
+                                        onClick={() => { if (onReject) onReject(popoverPin.id); }}
+                                        title={isRejected ? 'Un-reject this action' : 'Reject this action'}
+                                        style={{
+                                            flex: 'none', padding: '4px 10px',
+                                            background: isRejected ? '#dc3545' : '#f8f9fa',
+                                            color: isRejected ? '#fff' : '#333',
+                                            border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer',
+                                        }}
+                                    >✕</button>
+                                    <button
+                                        onClick={() => {
+                                            interactionLogger.record('overview_pin_double_clicked', { action_id: popoverPin.id });
+                                            setPopoverPin(null);
+                                            if (onActionSelect) onActionSelect(popoverPin.id);
+                                        }}
+                                        style={{
+                                            flex: 1, padding: '4px 10px', background: '#3498db', color: '#fff',
+                                            border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600,
+                                        }}
+                                    >View action</button>
+                                </div>
+                            </div>
+                        );
+                    })()}
+                </div>
+            );
+        };
+
         const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId, style = {} }) => {
             if (!svg) return null;
             React.useLayoutEffect(() => {
@@ -1689,6 +2525,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     if (!window.confirm("Applying new settings will clear current analysis results. Do you want to continue?")) {
                         return;
                     }
+                    // Replay contract (docs/interaction-logging.md):
+                    //   { type: 'applySettings' } — user confirmed
+                    //   the "Applying new settings…" dialog.
+                    interactionLogger.record('contingency_confirmed', { type: 'applySettings' });
                 }
 
                 // If config file path changed, switch it first
@@ -1765,11 +2605,22 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         }
                     }
 
-                    // Fetch study-related data (branches, nominal voltages etc.)
-                    const [branchesRes, vlRes, nomVRes] = await Promise.all([
+                    // Fetch study-related data in parallel with the
+                    // base NAD.  /api/network-diagram is the slowest XHR
+                    // (~5-6 s pypowsybl regeneration on big grids);
+                    // previously it only started AFTER branches +
+                    // voltage-levels + nominal-voltages had resolved,
+                    // wasting ~1 s off the critical path.  Matches
+                    // `frontend/src/App.tsx` applySettingsImmediate.
+                    const [branchesRes, vlRes, nomVRes, nadRaw] = await Promise.all([
                         axios.get(`${API_BASE}/api/branches?t=${Date.now()}`),
                         axios.get(`${API_BASE}/api/voltage-levels?t=${Date.now()}`),
-                        axios.get(`${API_BASE}/api/nominal-voltages?t=${Date.now()}`)
+                        axios.get(`${API_BASE}/api/nominal-voltages?t=${Date.now()}`),
+                        _fetchNetworkDiagramTextFormat().catch(async (textErr) => {
+                            console.warn('[network-diagram] text-format fetch failed, falling back:', textErr);
+                            const r = await axios.get(`${API_BASE}/api/network-diagram?t=${Date.now()}`);
+                            return r.data;
+                        }),
                     ]);
 
                     setBranches(branchesRes.data.branches);
@@ -1785,7 +2636,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         setVoltageRange([uniqueKv[0], uniqueKv[uniqueKv.length - 1]]);
                     }
 
-                    fetchBaseDiagram(vlRes.data.voltage_levels.length);
+                    // Consume the already-fetched NAD instead of firing
+                    // another XHR.
+                    try {
+                        const { svg, viewBox } = processSvg(nadRaw.svg, vlRes.data.voltage_levels.length);
+                        if (viewBox) setOriginalViewBox(viewBox);
+                        setNDiagram({ ...nadRaw, svg, originalViewBox: viewBox });
+                    } catch (err) { console.error('Failed to process diagram:', err); }
 
                     setSettingsBackup({
                         networkPath,
@@ -1843,6 +2700,359 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             // useLayoutEffect to ensure ref is updated before any layout effects (like svg-pan-zoom) run
             useLayoutEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
             const prevTabRef = useRef(activeTab);
+
+            // ===== Detached + Tied Tabs =====
+            //
+            // `detachedTabs[tabId]` holds the Window reference when a tab
+            // is popped out. `tiedTabs` is a Set of tab ids whose
+            // viewBox should mirror into the main window. See
+            // docs/detachable-viz-tabs.md and docs/interaction-logging.md
+            // § Visualization for the replay contract:
+            //   tab_detached / tab_reattached / tab_tied / tab_untied
+            //   all carry `{ tab: TabId }`.
+            //
+            // Implementation notes:
+            //   - Popups are opened via window.open() with a named handle
+            //     so the browser reuses an existing window if re-detached.
+            //   - The popup's body is populated by injecting the tab's
+            //     current SVG string (`nDiagram.svg`, etc.) verbatim.
+            //     This is a SNAPSHOT at detach time — the popup does
+            //     not re-render when main state changes (e.g. selecting
+            //     a new action). Accepted limitation vs. the React
+            //     portal-based implementation; the 4 events still fire
+            //     at the documented gesture points so replay parity is
+            //     preserved.
+            //   - Tied viewBox mirror uses window.postMessage rather
+            //     than the React ref-based path. Same one-way semantics:
+            //     popup → main when a tied popup's viewBox changes.
+            const [detachedTabs, setDetachedTabs] = useState({});   // { [tab]: Window }
+            const detachedTabsRef = useRef(detachedTabs);
+            useEffect(() => { detachedTabsRef.current = detachedTabs; }, [detachedTabs]);
+            const [tiedTabs, setTiedTabs] = useState(new Set());
+            const tiedTabsRef = useRef(tiedTabs);
+            useEffect(() => { tiedTabsRef.current = tiedTabs; }, [tiedTabs]);
+
+            // Handle incoming viewBox updates from tied popups.
+            // Loop-guard ref: skip the immediate re-fire when we
+            // ourselves are applying a mirrored update.
+            const isSyncingRef = useRef(false);
+            useEffect(() => {
+                const onMessage = (evt) => {
+                    const data = evt.data;
+                    if (!data || data.source !== 'costudy4grid-detached-tab') return;
+                    if (data.type === 'reattach') {
+                        handleReattachTab(data.tab);
+                    } else if (data.type === 'viewBoxChange') {
+                        // Mirror into main if the source tab is tied.
+                        if (!tiedTabsRef.current.has(data.tab)) return;
+                        const pz = data.tab === 'n' ? nPZ : data.tab === 'n-1' ? n1PZ : actionPZ;
+                        if (pz && pz.setViewBox && data.viewBox) {
+                            isSyncingRef.current = true;
+                            pz.setViewBox(data.viewBox);
+                            // Release the guard on the next microtask so
+                            // subsequent user-initiated changes flow
+                            // through normally.
+                            queueMicrotask(() => { isSyncingRef.current = false; });
+                        }
+                    }
+                };
+                window.addEventListener('message', onMessage);
+                return () => window.removeEventListener('message', onMessage);
+                // eslint-disable-next-line react-hooks/exhaustive-deps
+            }, []);
+
+            // Close any live popups when the main window unloads so we
+            // don't leave orphans pointing at a dead page.
+            useEffect(() => {
+                const onUnload = () => {
+                    for (const win of Object.values(detachedTabsRef.current)) {
+                        try { win?.close(); } catch (e) { /* ignore */ }
+                    }
+                };
+                window.addEventListener('beforeunload', onUnload);
+                return () => window.removeEventListener('beforeunload', onUnload);
+            }, []);
+
+            const TAB_TITLES = { 'n': 'Network (N)', 'n-1': 'Contingency (N-1)', 'action': 'Remedial Action', 'overflow': 'Overflow Analysis' };
+
+            const handleDetachTab = (tabId) => {
+                if (detachedTabsRef.current[tabId]) return; // already detached
+                const popup = window.open('', `costudy4grid_tab_${tabId}`, 'popup=yes,width=1100,height=800,menubar=no,toolbar=no,location=no');
+                if (!popup || popup.closed) {
+                    setError('Popup blocked by the browser. Please allow popups for this site to detach tabs.');
+                    return;
+                }
+                // Copy styles from opener so the popup inherits the
+                // standalone's look-and-feel.
+                try {
+                    popup.document.open();
+                    popup.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title></title></head><body></body></html>');
+                    popup.document.close();
+                    popup.document.title = `Co-Study4Grid — ${TAB_TITLES[tabId]}`;
+                    popup.document.body.style.margin = '0';
+                    popup.document.body.style.height = '100vh';
+                    popup.document.body.style.fontFamily = 'Arial, sans-serif';
+                    popup.document.body.style.display = 'flex';
+                    popup.document.body.style.flexDirection = 'column';
+                    document.querySelectorAll('style, link[rel="stylesheet"]').forEach(s => {
+                        popup.document.head.appendChild(s.cloneNode(true));
+                    });
+                } catch (e) {
+                    setError('Failed to initialise detached tab window: ' + e.message);
+                    try { popup.close(); } catch (ex) { /* ignore */ }
+                    return;
+                }
+
+                // Header with Reattach + Tie buttons.
+                const header = popup.document.createElement('div');
+                header.style.cssText = 'background: #2c3e50; color: #fff; padding: 8px 16px; display: flex; gap: 12px; align-items: center;';
+                const title = popup.document.createElement('strong');
+                title.textContent = TAB_TITLES[tabId];
+                title.style.flex = '1';
+                header.appendChild(title);
+                const tieBtn = popup.document.createElement('button');
+                tieBtn.dataset.role = 'tie';
+                tieBtn.textContent = '⛓ Tie';
+                tieBtn.style.cssText = 'padding: 4px 10px; cursor: pointer; background: #fff; border: none; border-radius: 4px;';
+                tieBtn.addEventListener('click', () => handleToggleTie(tabId));
+                header.appendChild(tieBtn);
+                const reattachBtn = popup.document.createElement('button');
+                reattachBtn.textContent = '⤩ Reattach';
+                reattachBtn.style.cssText = 'padding: 4px 10px; cursor: pointer; background: #fff; border: none; border-radius: 4px;';
+                reattachBtn.addEventListener('click', () => {
+                    window.postMessage({ source: 'costudy4grid-detached-tab', type: 'reattach', tab: tabId }, '*');
+                });
+                header.appendChild(reattachBtn);
+                popup.document.body.appendChild(header);
+
+                // Content host.  For diagram tabs (N / N-1 / Action) we
+                // clone the SVG node from the main container ref — it
+                // already has every post-processing pass applied
+                // (voltage filter, boostSvgForLargeGrid, contingency
+                // highlight, overload highlights, delta visuals, current
+                // viewBox).  Injecting the raw backend string would
+                // lose all of that and produce the unpainted NAD the
+                // earlier port was rendering.  For Overflow we reuse
+                // the same iframe src as the main tab.
+                const contentHost = popup.document.createElement('div');
+                contentHost.style.cssText = 'flex: 1; overflow: hidden; position: relative;';
+                contentHost.dataset.role = 'content-host';
+                popup.document.body.appendChild(contentHost);
+
+                if (tabId === 'overflow') {
+                    if (result?.pdf_url) {
+                        const iframe = popup.document.createElement('iframe');
+                        iframe.src = API_BASE + result.pdf_url;
+                        iframe.style.cssText = 'width: 100%; height: 100%; border: none;';
+                        contentHost.appendChild(iframe);
+                    } else {
+                        contentHost.textContent = '(No overflow PDF available yet.)';
+                        contentHost.style.cssText += 'color: #888; display: flex; align-items: center; justify-content: center;';
+                    }
+                } else {
+                    // For the Action tab in Overview mode (no action selected
+                    // → no action variant SVG yet) fall back to the N-1
+                    // backdrop the overview is rendering on top of.  The
+                    // popup loses the pin layer (it's React state-driven and
+                    // would need its own IPC channel to hydrate in the
+                    // popup), but at least the underlying network shows up.
+                    const actionFallbackToN1 = tabId === 'action' && !actionSvgContainerRef.current?.querySelector('svg');
+                    const sourceContainer = tabId === 'n' ? nSvgContainerRef.current
+                        : tabId === 'n-1' ? n1SvgContainerRef.current
+                        : tabId === 'action' ? (actionFallbackToN1 ? n1SvgContainerRef.current : actionSvgContainerRef.current)
+                        : null;
+                    const sourceSvg = sourceContainer?.querySelector('svg');
+                    if (actionFallbackToN1 && sourceSvg) {
+                        const note = popup.document.createElement('div');
+                        note.style.cssText = 'background: #fff3cd; color: #856404; padding: 6px 12px; font-size: 0.8rem; border-bottom: 1px solid #ffc107; text-align: center;';
+                        note.textContent = 'Action Overview popped out — N-1 backdrop only. Pin overlay stays in the main window.';
+                        popup.document.body.insertBefore(note, contentHost);
+                    }
+                    if (sourceSvg) {
+                        // Cross-document SVG copy.  `cloneNode(true)` keeps
+                        // the node bound to the SOURCE document — when
+                        // appended to a popup, the embedded `<style>` block
+                        // (where pypowsybl defines `--nad-vl-color` per
+                        // voltage class) doesn't always re-evaluate, so
+                        // edges fall back to `lightgrey` and the popup
+                        // renders nodes-only.  Round-tripping through
+                        // serialised XML forces the popup's parser to
+                        // build a fresh node bound to the popup's
+                        // document, so the embedded styles take effect.
+                        const xmlString = new XMLSerializer().serializeToString(sourceSvg);
+                        const popupParser = new popup.DOMParser();
+                        const popupDoc = popupParser.parseFromString(xmlString, 'image/svg+xml');
+                        const svgEl = popupDoc.documentElement;
+                        svgEl.style.width = '100%';
+                        svgEl.style.height = '100%';
+                        svgEl.removeAttribute('width');
+                        svgEl.removeAttribute('height');
+                        contentHost.appendChild(svgEl);
+
+                        // Basic wheel-zoom + drag pan so the popup is
+                        // usable standalone.  Forward viewBox changes
+                        // to the main window via postMessage — the main
+                        // mirrors only when this tab is tied.
+                        let vb = svgEl.viewBox?.baseVal
+                            ? { x: svgEl.viewBox.baseVal.x, y: svgEl.viewBox.baseVal.y, w: svgEl.viewBox.baseVal.width, h: svgEl.viewBox.baseVal.height }
+                            : null;
+                        const postVb = () => {
+                            if (!vb) return;
+                            window.postMessage({
+                                source: 'costudy4grid-detached-tab',
+                                type: 'viewBoxChange',
+                                tab: tabId,
+                                viewBox: { ...vb },
+                            }, '*');
+                        };
+                        svgEl.addEventListener('wheel', (e) => {
+                            e.preventDefault();
+                            if (!vb) return;
+                            const scale = e.deltaY < 0 ? 0.85 : 1.15;
+                            vb = {
+                                x: vb.x + vb.w * (1 - scale) / 2,
+                                y: vb.y + vb.h * (1 - scale) / 2,
+                                w: vb.w * scale,
+                                h: vb.h * scale,
+                            };
+                            svgEl.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+                            postVb();
+                        }, { passive: false });
+                        let isDragging = false, lastX = 0, lastY = 0;
+                        svgEl.addEventListener('mousedown', (e) => {
+                            isDragging = true; lastX = e.clientX; lastY = e.clientY;
+                            svgEl.style.cursor = 'grabbing';
+                        });
+                        popup.addEventListener('mousemove', (e) => {
+                            if (!isDragging || !vb) return;
+                            const dx = (e.clientX - lastX) * vb.w / svgEl.clientWidth;
+                            const dy = (e.clientY - lastY) * vb.h / svgEl.clientHeight;
+                            vb = { x: vb.x - dx, y: vb.y - dy, w: vb.w, h: vb.h };
+                            svgEl.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+                            lastX = e.clientX; lastY = e.clientY;
+                            postVb();
+                        });
+                        popup.addEventListener('mouseup', () => { isDragging = false; svgEl.style.cursor = 'grab'; });
+
+                        // If we're detaching the Action Overview, render
+                        // the pin layer inside the popup too.  Pins are
+                        // positioned in SCREEN-px via the same
+                        // `xMidYMid meet` projection the pin SVG uses in
+                        // main, recomputed on every pan/zoom in the
+                        // popup so they stay anchored to their asset
+                        // through the popup's viewBox changes.  Clicks
+                        // in the popup are no-ops — action selection
+                        // remains a main-window gesture.
+                        if (actionFallbackToN1 && result?.actions) {
+                            const pinLayer = popup.document.createElement('div');
+                            pinLayer.style.cssText = 'position: absolute; inset: 0; pointer-events: none;';
+                            contentHost.appendChild(pinLayer);
+                            const overviewPins = computeActionOverviewPins(result.actions, n1MetaIndex);
+                            const renderPopupPins = () => {
+                                if (!vb) return;
+                                const rect = svgEl.getBoundingClientRect();
+                                if (!rect.width || !rect.height) return;
+                                const vbAspect = vb.w / vb.h;
+                                const boxAspect = rect.width / rect.height;
+                                let scale, offsetX, offsetY;
+                                if (boxAspect > vbAspect) {
+                                    scale = rect.height / vb.h;
+                                    offsetX = (rect.width - vb.w * scale) / 2;
+                                    offsetY = 0;
+                                } else {
+                                    scale = rect.width / vb.w;
+                                    offsetX = 0;
+                                    offsetY = (rect.height - vb.h * scale) / 2;
+                                }
+                                pinLayer.replaceChildren();
+                                for (const pin of overviewPins) {
+                                    const sx = offsetX + (pin.x - vb.x) * scale;
+                                    const sy = offsetY + (pin.y - vb.y) * scale;
+                                    const wrap = popup.document.createElement('div');
+                                    wrap.title = `${pin.id} — max ρ ${(pin.rho * 100).toFixed(1)}%`;
+                                    wrap.style.cssText = `position:absolute;left:${sx}px;top:${sy}px;transform:translate(-50%, -100%);width:28px;height:38px;pointer-events:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.4));`;
+                                    const label = Number.isFinite(pin.rho) ? `${Math.round(pin.rho * 100)}%` : String(pin.rank);
+                                    wrap.innerHTML = `
+                                        <svg viewBox="0 0 36 48" width="28" height="38" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M18 0 C8 0 0 8 0 18 C0 28 18 48 18 48 C18 48 36 28 36 18 C36 8 28 0 18 0 Z" fill="${pin.color}" stroke="#fff" stroke-width="2"/>
+                                            <circle cx="18" cy="18" r="11" fill="#fff"/>
+                                            <text x="18" y="18" text-anchor="middle" dominant-baseline="central" font-size="${label.length > 3 ? 8 : 10}" font-weight="700" fill="${pin.color}">${label}</text>
+                                        </svg>`;
+                                    pinLayer.appendChild(wrap);
+                                }
+                            };
+                            // Re-project on every popup pan/zoom + any
+                            // resize (window drag, layout change).
+                            svgEl.addEventListener('wheel', () => popup.requestAnimationFrame(renderPopupPins));
+                            popup.addEventListener('mousemove', () => popup.requestAnimationFrame(renderPopupPins));
+                            popup.addEventListener('mouseup', () => popup.requestAnimationFrame(renderPopupPins));
+                            popup.addEventListener('resize', () => popup.requestAnimationFrame(renderPopupPins));
+                            // Initial paint deferred until the SVG has
+                            // been laid out (its getBoundingClientRect
+                            // returns 0/0 synchronously after insertion).
+                            popup.requestAnimationFrame(renderPopupPins);
+                        }
+                    } else {
+                        contentHost.textContent = '(Tab has no diagram yet — return to the main window to load one.)';
+                        contentHost.style.cssText += 'color: #888; display: flex; align-items: center; justify-content: center;';
+                    }
+                }
+
+                // When the user closes the popup via the OS, treat it as reattach.
+                popup.addEventListener('pagehide', () => {
+                    window.postMessage({ source: 'costudy4grid-detached-tab', type: 'reattach', tab: tabId }, '*');
+                });
+
+                setDetachedTabs(prev => ({ ...prev, [tabId]: popup }));
+                interactionLogger.record('tab_detached', { tab: tabId });
+            };
+
+            const handleReattachTab = (tabId) => {
+                const popup = detachedTabsRef.current[tabId];
+                if (!popup) return;
+                try { popup.close(); } catch (e) { /* ignore */ }
+                setDetachedTabs(prev => {
+                    const next = { ...prev };
+                    delete next[tabId];
+                    return next;
+                });
+                // Untie on reattach — tying a reattached tab makes no sense.
+                setTiedTabs(prev => {
+                    if (!prev.has(tabId)) return prev;
+                    const next = new Set(prev);
+                    next.delete(tabId);
+                    interactionLogger.record('tab_untied', { tab: tabId });
+                    return next;
+                });
+                interactionLogger.record('tab_reattached', { tab: tabId });
+            };
+
+            const handleToggleTie = (tabId) => {
+                setTiedTabs(prev => {
+                    const next = new Set(prev);
+                    if (next.has(tabId)) {
+                        next.delete(tabId);
+                        interactionLogger.record('tab_untied', { tab: tabId });
+                    } else {
+                        next.add(tabId);
+                        interactionLogger.record('tab_tied', { tab: tabId });
+                    }
+                    return next;
+                });
+                // Update the popup's Tie button label so the user sees
+                // the new state. The popup was opened by us; stylesheet
+                // reloads aren't needed — just toggle the button text.
+                const popup = detachedTabsRef.current[tabId];
+                if (popup && !popup.closed) {
+                    const btn = popup.document.querySelector('[data-role="tie"]');
+                    if (btn) {
+                        const willBeTied = !tiedTabsRef.current.has(tabId);
+                        btn.textContent = willBeTied ? '🔗 Tied' : '⛓ Tie';
+                        btn.style.background = willBeTied ? '#3498db' : '#fff';
+                        btn.style.color = willBeTied ? '#fff' : '#000';
+                    }
+                }
+            };
 
             // Auto-switch to overflow tab when PDF becomes available
             const lastAutoSwitchedPdfRef = useRef(null);
@@ -2040,7 +3250,15 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             const pickPath = async (type, setter) => {
                 try {
                     const res = await axios.get(`${API_BASE}/api/pick-path?type=${type}&t=${Date.now()}`);
-                    if (res.data.path) setter(res.data.path);
+                    if (res.data.path) {
+                        // Replay contract (docs/interaction-logging.md):
+                        //   { type: 'file'|'dir', path: string }.
+                        //   The setter field is implicit from the
+                        //   preceding UI context (which field had
+                        //   focus before the picker opened).
+                        interactionLogger.record('path_picked', { type, path: res.data.path });
+                        setter(res.data.path);
+                    }
                 } catch (err) { setError('Failed to open file picker'); }
             };
 
@@ -2049,10 +3267,19 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     if (!window.confirm("Loading a new study will clear current analysis results. Do you want to continue?")) {
                         return;
                     }
+                    // Replay contract (docs/interaction-logging.md):
+                    //   { type: 'loadStudy' } — user confirmed the
+                    //   "Loading a new study will clear…" dialog.
+                    interactionLogger.record('contingency_confirmed', { type: 'loadStudy' });
                 }
                 interactionLogger.clear();
                 interactionLogger.record('config_loaded', {
+                    // Full 17-field replay contract
+                    // (docs/interaction-logging.md § Config & Study Loading).
+                    // `output_folder_path` was previously missing — a
+                    // replay agent could not restore the save location.
                     network_path: networkPath, action_file_path: actionPath, layout_path: layoutPath,
+                    output_folder_path: outputFolderPath,
                     min_line_reconnections: minLineReconnections, min_close_coupling: minCloseCoupling,
                     min_open_coupling: minOpenCoupling, min_line_disconnections: minLineDisconnections,
                     min_pst: minPst, min_load_shedding: minLoadShedding, min_renewable_curtailment_actions: minRenewableCurtailmentActions,
@@ -2097,10 +3324,19 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     if (configRes.data?.action_dict_file_name) { setActionDictFileName(configRes.data.action_dict_file_name); setShowActionDictWarning(true); }
                     if (configRes.data?.action_dict_stats) setActionDictStats(configRes.data.action_dict_stats);
 
-                    const [branchesRes, vlRes, nomVRes] = await Promise.all([
+                    // 4-way parallel fetch, same as applySettingsImmediate
+                    // above.  /api/network-diagram is the slowest XHR so
+                    // overlapping it with the metadata calls is the
+                    // single biggest loading-time win.
+                    const [branchesRes, vlRes, nomVRes, nadRaw] = await Promise.all([
                         axios.get(`${API_BASE}/api/branches?t=${Date.now()}`),
                         axios.get(`${API_BASE}/api/voltage-levels?t=${Date.now()}`),
-                        axios.get(`${API_BASE}/api/nominal-voltages?t=${Date.now()}`)
+                        axios.get(`${API_BASE}/api/nominal-voltages?t=${Date.now()}`),
+                        _fetchNetworkDiagramTextFormat().catch(async (textErr) => {
+                            console.warn('[network-diagram] text-format fetch failed, falling back:', textErr);
+                            const r = await axios.get(`${API_BASE}/api/network-diagram?t=${Date.now()}`);
+                            return r.data;
+                        }),
                     ]);
 
                     setBranches(branchesRes.data.branches);
@@ -2115,7 +3351,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         setVoltageRange([uniqueKv[0], uniqueKv[uniqueKv.length - 1]]);
                     }
 
-                    fetchBaseDiagram(vlRes.data.voltage_levels.length);
+                    try {
+                        const { svg, viewBox } = processSvg(nadRaw.svg, vlRes.data.voltage_levels.length);
+                        if (viewBox) setOriginalViewBox(viewBox);
+                        setNDiagram({ ...nadRaw, svg, originalViewBox: viewBox });
+                    } catch (err) { console.error('Failed to process diagram:', err); }
                 } catch (err) {
                     setError('Failed to load config: ' + (err.response?.data?.detail || err.message));
                 } finally { setConfigLoading(false); }
@@ -2145,7 +3385,8 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 }
             };
             const handleManualZoomIn = () => {
-                interactionLogger.record('zoom_in');
+                // Replay contract (docs/interaction-logging.md): { tab }.
+                interactionLogger.record('zoom_in', { tab: activeTab });
                 const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
                 const vb = currentPZ?.viewBox;
                 if (currentPZ && vb) {
@@ -2160,7 +3401,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             };
 
             const handleManualZoomOut = () => {
-                interactionLogger.record('zoom_out');
+                interactionLogger.record('zoom_out', { tab: activeTab });
                 const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
                 const vb = currentPZ?.viewBox;
                 if (currentPZ && vb) {
@@ -2175,7 +3416,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             };
 
             const handleManualReset = () => {
-                interactionLogger.record('zoom_reset');
+                interactionLogger.record('zoom_reset', { tab: activeTab });
                 setInspectQuery('');
 
                 const currentPZ = activeTab === 'action' ? actionPZ : activeTab === 'n' ? nPZ : n1PZ;
@@ -2195,12 +3436,36 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 }
             };
 
+            // Fetch the base NAD using the `format=text` endpoint — the
+            // backend returns a one-line JSON header + raw SVG body
+            // instead of embedding the multi-MB SVG inside JSON.  Lets
+            // us skip `JSON.parse` on the big SVG string (~500 ms
+            // main-thread block on the PyPSA-EUR France grid).  Matches
+            // `frontend/src/api.ts::getNetworkDiagram`.  Falls back to
+            // plain JSON if the backend pre-dates the text format.
+            const _fetchNetworkDiagramTextFormat = async () => {
+                const res = await fetch(`${API_BASE}/api/network-diagram?format=text&t=${Date.now()}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                const body = await res.text();
+                const nl = body.indexOf('\n');
+                if (nl < 0) throw new Error('Invalid /api/network-diagram response: missing header/body separator');
+                const header = JSON.parse(body.slice(0, nl));
+                const svg = body.slice(nl + 1);
+                return { ...header, svg };
+            };
             const fetchBaseDiagram = async (vlCount) => {
                 try {
-                    const res = await axios.get(`${API_BASE}/api/network-diagram?t=${Date.now()}`);
-                    const { svg, viewBox } = processSvg(res.data.svg, vlCount || 0);
+                    let raw;
+                    try {
+                        raw = await _fetchNetworkDiagramTextFormat();
+                    } catch (textErr) {
+                        console.warn('[network-diagram] text-format fetch failed, falling back to JSON:', textErr);
+                        const res = await axios.get(`${API_BASE}/api/network-diagram?t=${Date.now()}`);
+                        raw = res.data;
+                    }
+                    const { svg, viewBox } = processSvg(raw.svg, vlCount || 0);
                     if (viewBox) setOriginalViewBox(viewBox);
-                    setNDiagram({ ...res.data, svg, originalViewBox: viewBox });
+                    setNDiagram({ ...raw, svg, originalViewBox: viewBox });
                 } catch (err) { console.error('Failed to fetch diagram:', err); }
             };
 
@@ -2281,7 +3546,15 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         setSelectedBranch(committedBranchRef.current);
                         return;
                     }
-                    // User confirmed — clear analysis state
+                    // User confirmed — clear analysis state + log the
+                    // confirmation gesture so replay agents know
+                    // whether the user said OK or Cancel.
+                    // Replay contract (docs/interaction-logging.md):
+                    //   { type: 'contingency', pending_branch: string }
+                    interactionLogger.record('contingency_confirmed', {
+                        type: 'contingency',
+                        pending_branch: selectedBranch,
+                    });
                     clearContingencyState();
                 }
 
@@ -2356,6 +3629,17 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         n_overloads: nDiagram?.lines_overloaded ?? [],
                         n1_overloads: n1Diagram?.lines_overloaded ?? [],
                         resolved_overloads: result?.lines_overloaded ?? [],
+                        // Per-element loading ratios (PR #88 sticky-header
+                        // percentages). Persisted only when the array
+                        // length matches the element-name array above —
+                        // a shorter or missing array means the backend
+                        // N-1 payload predates the rho feature, in
+                        // which case we omit the key rather than
+                        // surface misleading zeros to replay agents.
+                        // Docs: interaction-logging.md § Session reload
+                        // fidelity (the "save-only-OK" fields).
+                        ...(nDiagram?.lines_overloaded_rho && nDiagram.lines_overloaded_rho.length === (nDiagram?.lines_overloaded?.length ?? 0) ? { n_overloads_rho: nDiagram.lines_overloaded_rho } : {}),
+                        ...(n1Diagram?.lines_overloaded_rho && n1Diagram.lines_overloaded_rho.length === (n1Diagram?.lines_overloaded?.length ?? 0) ? { n1_overloads_rho: n1Diagram.lines_overloaded_rho } : {}),
                     },
                     overflow_graph: result?.pdf_url
                         ? { pdf_url: result.pdf_url, pdf_path: result.pdf_path ?? null }
@@ -2430,8 +3714,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
                 if (outputFolderPath) {
                     try {
+                        // Replay contract (docs/interaction-logging.md):
+                        //   { output_folder }. The session_name was carried
+                        //   historically but is derivable from the
+                        //   timestamp — a replay agent regenerates it.
                         interactionLogger.record('session_saved', {
-                            session_name: sessionName,
                             output_folder: outputFolderPath,
                         });
                         const res = await axios.post(API_BASE + '/api/save-session', {
@@ -2474,10 +3761,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 try {
                     const res = await axios.get(`${API_BASE}/api/list-sessions?folder_path=${encodeURIComponent(outputFolderPath)}&t=${Date.now()}`);
                     setSessionList(res.data.sessions);
-                    interactionLogger.record('session_reload_modal_opened', {
-                        output_folder: outputFolderPath,
-                        available_sessions: res.data.sessions,
-                    });
+                    // Replay contract (docs/interaction-logging.md):
+                    //   {} — the list of available sessions is async
+                    //   and deliberately not part of the event payload
+                    //   (replay consults /api/list-sessions fresh).
+                    interactionLogger.record('session_reload_modal_opened');
                 } catch (err) {
                     setError('Failed to list sessions: ' + (err.response?.data?.detail || err.message));
                     setShowReloadModal(false);
@@ -2834,6 +4122,12 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 interactionLogger.record('prioritized_actions_displayed', {
                     n_actions: Object.keys(pendingAnalysisResult.actions || {}).length,
                 });
+                // Auto-switch to the Remedial Action tab so the operator
+                // lands on the Action Overview pins the moment the
+                // prioritized actions are merged into the result.
+                // Matches the React `handleDisplayPrioritizedActions`
+                // behaviour (`useAnalysis.ts:198 setActiveTab?.('action')`).
+                setActiveTab('action');
                 setResult(prev => {
                     // Preserve manually added actions via is_manual flag
                     const manualActionsData = {};
@@ -2885,14 +4179,17 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             };
 
             // Fetch action variant diagram when an action card is clicked
-            const handleActionSelect = async (actionId) => {
+            const handleActionSelect = async (actionId, force = false) => {
 
-                if (actionId === selectedActionId) {
-                    // Deselect — return to previous diagram tab
+                if (!force && actionId === selectedActionId) {
+                    // Deselect — stay on the Remedial-Action tab so the
+                    // ActionOverviewDiagram takes over and the operator
+                    // lands back on the pin map. React switched this to
+                    // overview-stay in PR #93 (docs/action-overview-
+                    // diagram.md); the standalone needs to follow.
                     interactionLogger.record('action_deselected', { previous_action_id: selectedActionId || '' });
                     setSelectedActionId(null);
                     setActionDiagram(null);
-                    setActiveTab('n-1');
                     return;
                 }
                 if (actionId !== null) {
@@ -2935,44 +4232,116 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 const actionDetail = result?.actions?.[actionId];
                                 actionContent = actionDetail?.action_topology || null;
                             }
-                            const simRes = await axios.post(API_BASE + '/api/simulate-manual-action', {
-                                action_id: actionId, disconnected_element: selectedBranch,
-                                action_content: actionContent,
-                                lines_overloaded: result?.lines_overloaded?.length > 0 ? result.lines_overloaded : null,
-                            });
-                            const detail = simRes.data;
-                            // Update the action detail with fresh simulation data,
-                            // but preserve existing rho values from the original analysis
-                            // (the simulation may use different monitored line indices)
-                            setResult(prev => {
-                                if (!prev) return prev;
-                                const existing = prev.actions[actionId] || {};
-                                const hasRho = existing.rho_before?.length > 0;
-                                return {
-                                    ...prev,
-                                    actions: {
-                                        ...prev.actions,
-                                        [actionId]: {
-                                            ...existing,
-                                            description_unitaire: existing.description_unitaire || detail.description_unitaire,
-                                            rho_before: hasRho ? existing.rho_before : detail.rho_before,
-                                            rho_after: hasRho ? existing.rho_after : detail.rho_after,
-                                            max_rho: hasRho ? existing.max_rho : detail.max_rho,
-                                            max_rho_line: hasRho ? existing.max_rho_line : detail.max_rho_line,
-                                            is_rho_reduction: hasRho ? existing.is_rho_reduction : detail.is_rho_reduction,
-                                            non_convergence: detail.non_convergence,
-                                            is_islanded: detail.is_islanded,
-                                            n_components: detail.n_components,
-                                            disconnected_mw: detail.disconnected_mw,
-                                            load_shedding_details: detail.load_shedding_details,
+                            // Use the combined NDJSON stream endpoint so
+                            // the sidebar card updates with the metrics
+                            // event ~5 s before the post-action SVG
+                            // arrives.  Falls back to two sequential
+                            // calls if the stream endpoint is
+                            // unavailable (older backend).
+                            let streamed = false;
+                            try {
+                                const streamRes = await fetch(API_BASE + '/api/simulate-and-variant-diagram', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        action_id: actionId,
+                                        disconnected_element: selectedBranch,
+                                        action_content: actionContent,
+                                        lines_overloaded: result?.lines_overloaded?.length > 0 ? result.lines_overloaded : null,
+                                        mode: 'network',
+                                    }),
+                                });
+                                if (streamRes.ok && streamRes.body) {
+                                    streamed = true;
+                                    const reader = streamRes.body.getReader();
+                                    const decoder = new TextDecoder();
+                                    let buffer = '';
+                                    while (true) {
+                                        const { value, done } = await reader.read();
+                                        if (done) break;
+                                        buffer += decoder.decode(value, { stream: true });
+                                        const lines = buffer.split('\n');
+                                        buffer = lines.pop();
+                                        for (const line of lines) {
+                                            if (!line.trim()) continue;
+                                            let evt;
+                                            try { evt = JSON.parse(line); } catch { continue; }
+                                            if (evt.type === 'metrics') {
+                                                const detail = evt;
+                                                setResult(prev => {
+                                                    if (!prev) return prev;
+                                                    const existing = prev.actions[actionId] || {};
+                                                    const hasRho = existing.rho_before?.length > 0;
+                                                    return {
+                                                        ...prev,
+                                                        actions: {
+                                                            ...prev.actions,
+                                                            [actionId]: {
+                                                                ...existing,
+                                                                description_unitaire: existing.description_unitaire || detail.description_unitaire,
+                                                                rho_before: hasRho ? existing.rho_before : detail.rho_before,
+                                                                rho_after: hasRho ? existing.rho_after : detail.rho_after,
+                                                                max_rho: hasRho ? existing.max_rho : detail.max_rho,
+                                                                max_rho_line: hasRho ? existing.max_rho_line : detail.max_rho_line,
+                                                                is_rho_reduction: hasRho ? existing.is_rho_reduction : detail.is_rho_reduction,
+                                                                non_convergence: detail.non_convergence,
+                                                                is_islanded: detail.is_islanded,
+                                                                n_components: detail.n_components,
+                                                                disconnected_mw: detail.disconnected_mw,
+                                                                load_shedding_details: detail.load_shedding_details,
+                                                            },
+                                                        },
+                                                    };
+                                                });
+                                            } else if (evt.type === 'diagram') {
+                                                const { svg, viewBox } = processSvg(evt.svg, voltageLevels.length);
+                                                setActionDiagram({ ...evt, svg, originalViewBox: viewBox });
+                                            } else if (evt.type === 'error') {
+                                                throw new Error(evt.message || 'stream error');
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (streamErr) {
+                                console.warn('[simulate-and-variant-diagram] stream failed, falling back to sequential calls:', streamErr);
+                                streamed = false;
+                            }
+                            if (!streamed) {
+                                const simRes = await axios.post(API_BASE + '/api/simulate-manual-action', {
+                                    action_id: actionId, disconnected_element: selectedBranch,
+                                    action_content: actionContent,
+                                    lines_overloaded: result?.lines_overloaded?.length > 0 ? result.lines_overloaded : null,
+                                });
+                                const detail = simRes.data;
+                                setResult(prev => {
+                                    if (!prev) return prev;
+                                    const existing = prev.actions[actionId] || {};
+                                    const hasRho = existing.rho_before?.length > 0;
+                                    return {
+                                        ...prev,
+                                        actions: {
+                                            ...prev.actions,
+                                            [actionId]: {
+                                                ...existing,
+                                                description_unitaire: existing.description_unitaire || detail.description_unitaire,
+                                                rho_before: hasRho ? existing.rho_before : detail.rho_before,
+                                                rho_after: hasRho ? existing.rho_after : detail.rho_after,
+                                                max_rho: hasRho ? existing.max_rho : detail.max_rho,
+                                                max_rho_line: hasRho ? existing.max_rho_line : detail.max_rho_line,
+                                                is_rho_reduction: hasRho ? existing.is_rho_reduction : detail.is_rho_reduction,
+                                                non_convergence: detail.non_convergence,
+                                                is_islanded: detail.is_islanded,
+                                                n_components: detail.n_components,
+                                                disconnected_mw: detail.disconnected_mw,
+                                                load_shedding_details: detail.load_shedding_details,
+                                            },
                                         },
-                                    },
-                                };
-                            });
-                            // Now try fetching the diagram again
-                            const res2 = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: actionId });
-                            const { svg, viewBox } = processSvg(res2.data.svg, voltageLevels.length);
-                            setActionDiagram({ ...res2.data, svg, originalViewBox: viewBox });
+                                    };
+                                });
+                                const res2 = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: actionId });
+                                const { svg, viewBox } = processSvg(res2.data.svg, voltageLevels.length);
+                                setActionDiagram({ ...res2.data, svg, originalViewBox: viewBox });
+                            }
                         } catch (simErr) {
                             console.error('Failed to simulate and fetch diagram for', actionId, simErr);
                             setError('Failed to load action diagram for ' + actionId);
@@ -3031,7 +4400,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
             // ===== Asset Click (from action card badges / rho line names) =====
             const handleAssetClick = (actionId, assetName, tab = 'action') => {
-                interactionLogger.record('asset_clicked', { asset_name: assetName, action_id: actionId, target_tab: tab });
+                // Replay contract (docs/interaction-logging.md):
+                //   { action_id, asset_name, tab }
+                // where `tab` is the destination tab for the zoom.
+                interactionLogger.record('asset_clicked', { action_id: actionId, asset_name: assetName, tab });
                 setInspectQuery(assetName);
                 if (tab === 'n') {
                     setActiveTab('n');
@@ -3053,7 +4425,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 if (!assetName) return;
                 const tab = activeTabRef.current;
                 if (tab === 'overflow') return;
-                interactionLogger.record('asset_clicked', { asset_name: assetName, action_id: '', target_tab: tab });
+                // Sticky-sidebar zoom: action_id='' means "zoom in place
+                // on the current tab without selecting an action"
+                // (docs/interaction-logging.md § Visualization).
+                interactionLogger.record('asset_clicked', { action_id: '', asset_name: assetName, tab });
                 setInspectQuery(assetName);
             };
 
@@ -3073,8 +4448,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 } else {
                     initialTab = 'n';
                 }
+                // Replay contract (docs/interaction-logging.md):
+                //   { vl_name, action_id }. The initial_tab is implicit
+                //   from the current diagram tab; a replay agent will
+                //   observe the next sld_overlay_tab_changed event if
+                //   the user moves away from it.
                 interactionLogger.record('sld_overlay_opened', {
-                    vl_name: vlName, action_id: actionId || null, initial_tab: initialTab,
+                    vl_name: vlName, action_id: actionId || null,
                 });
                 setVlOverlay({ vlName, actionId, svg: null, viewBox: null, sldMetadata: null, loading: true, error: null, tab: initialTab });
                 fetchSldVariant(vlName, actionId, initialTab);
@@ -3820,7 +5200,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 const actionId = canonicalizeId(rawActionId);
                 if (!selectedBranch) { setSearchError('Run an analysis first'); return; }
                 if (simulatingActionId) return; // Prevent concurrent simulations
-                interactionLogger.record('manual_action_simulated', { action_id: actionId, description: '' });
+                interactionLogger.record('manual_action_simulated', { action_id: actionId });
                 console.log('[handleAddManualAction] Starting simulation for:', actionId);
                 setSimulatingActionId(actionId);
                 setSearchError('');
@@ -3895,6 +5275,15 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     setSearchOpen(false);
                     setSearchQuery('');
 
+                    // Release the sidebar / combine-modal Simulate buttons
+                    // the moment the action CARD is ready — don't keep the
+                    // operator waiting on the (expensive) variant-diagram
+                    // fetch that follows. Previously the button stayed on
+                    // the disabled / spinner state for the whole diagram
+                    // round-trip, which looks like the app is stuck when
+                    // the NAD takes several seconds on big grids.
+                    setSimulatingActionId(null);
+
                     // Fetch the action diagram AFTER simulation completes (ensures post-action state is ready)
                     try {
                         const diagRes = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: actionId });
@@ -3914,7 +5303,6 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 } catch (err) {
                     console.error('Simulation failed:', err);
                     setSearchError(err?.response?.data?.detail || 'Simulation failed');
-                } finally {
                     setSimulatingActionId(null);
                 }
             };
@@ -3967,6 +5355,12 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             // Re-simulate an existing action with a new target MW value
             const handleResimulate = async (actionId, newTargetMw) => {
                 if (!selectedBranch) return;
+                // Replay contract (docs/interaction-logging.md):
+                //   { action_id, target_mw } — the raw user-entered MW
+                //   (backend may clamp). Wait-point: card refreshes
+                //   with new rho_after + load_shedding / curtailment
+                //   details; the card stays in its current bucket.
+                interactionLogger.record('action_mw_resimulated', { action_id: actionId, target_mw: newTargetMw });
                 setResimulatingId(actionId);
                 try {
                     const actionDetail = result?.actions?.[actionId];
@@ -4014,6 +5408,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     });
                     // Refresh combined estimations for pairs containing this action
                     refreshCombinedEstimations(actionId);
+                    // Auto-select the re-simulated action so the action
+                    // variant diagram refreshes and the auto-zoom effect
+                    // recenters on the new max_rho_line.  Matches the
+                    // React `wrappedForcedActionSelect` pattern invoked
+                    // from `handleActionResimulated`.  force=true so a
+                    // re-simulation of the already-selected action
+                    // re-fetches instead of toggling it off.
+                    handleActionSelect(actionId, true);
                 } catch (err) {
                     console.error('Re-simulation failed:', err);
                 } finally {
@@ -4024,6 +5426,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             // Re-simulate an existing PST action with a new tap position
             const handleResimulateTap = async (actionId, newTap) => {
                 if (!selectedBranch) return;
+                // Replay contract (docs/interaction-logging.md):
+                //   { action_id, target_tap } — the raw user-entered tap
+                //   integer. Backend clamps to [low_tap, high_tap].
+                //   Wait-point: pst_details.tap_position is updated.
+                interactionLogger.record('pst_tap_resimulated', { action_id: actionId, target_tap: newTap });
                 setResimulatingId(actionId);
                 try {
                     const actionDetail = result?.actions?.[actionId];
@@ -4071,6 +5478,9 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     });
                     // Refresh combined estimations for pairs containing this action
                     refreshCombinedEstimations(actionId);
+                    // Force-select so the action variant diagram re-fetches
+                    // (matches the React `wrappedForcedActionSelect` path).
+                    handleActionSelect(actionId, true);
                 } catch (err) {
                     console.error('PST re-simulation failed:', err);
                 } finally {
@@ -4284,6 +5694,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                         };
                     });
 
+                    // Release the Simulate Combined / sidebar / modal
+                    // Simulate buttons the moment the combined action
+                    // lands — the diagram fetch below continues
+                    // asynchronously. See the matching comment in
+                    // handleAddManualAction for the rationale.
+                    setSimulatingActionId(null);
+                    setIsSimulatingCombined(false);
+
                     // Fetch the action diagram AFTER simulation completes (ensures post-action state is ready)
                     try {
                         const diagRes = await axios.post(API_BASE + '/api/action-variant-diagram', { action_id: combinedId });
@@ -4297,7 +5715,6 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     }
                 } catch (err) {
                     setError('Failed to simulate combined action: ' + (err.response?.data?.detail || err.message));
-                } finally {
                     setSimulatingActionId(null);
                     setIsSimulatingCombined(false);
                 }
@@ -4864,6 +6281,40 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                 } catch (e) { console.error('Zoom failed:', e); }
             };
 
+            // Auto-zoom the Action tab onto the selected action's
+            // target element (`max_rho_line`) once the variant diagram
+            // arrives.  Without this, simulating an action and then
+            // landing on the action tab shows the preserved viewBox
+            // from the previous tab — so the user has to hunt for the
+            // impacted line manually.  Gated on selectedActionId +
+            // actionDiagram.svg so we only fire ONCE per simulation.
+            const lastAutoZoomedActionRef = useRef(null);
+            useEffect(() => {
+                if (activeTab !== 'action') return;
+                if (!selectedActionId || !actionDiagram?.svg) return;
+                // Only fire once per (actionId + diagram) pair — so
+                // panning or zooming manually after the auto-zoom
+                // doesn't snap the view back.
+                const key = `${selectedActionId}::${actionDiagram?.action_id || ''}`;
+                if (lastAutoZoomedActionRef.current === key) return;
+                lastAutoZoomedActionRef.current = key;
+
+                const target = result?.actions?.[selectedActionId]?.max_rho_line;
+                if (!target) return;
+                // Defer one frame so the SVG has been injected into the
+                // container by MemoizedSvgContainer's useLayoutEffect.
+                const raf = requestAnimationFrame(() => {
+                    try { zoomToElement(target); } catch (e) { /* ignore */ }
+                });
+                return () => cancelAnimationFrame(raf);
+            }, [activeTab, selectedActionId, actionDiagram, result]);
+
+            // Reset the auto-zoom guard when the user deselects the
+            // action, so re-selecting the same action later re-zooms.
+            useEffect(() => {
+                if (!selectedActionId) lastAutoZoomedActionRef.current = null;
+            }, [selectedActionId]);
+
             // Auto-zoom to selected element via viewBox
             useEffect(() => {
                 if (activeTab === 'overflow') return;
@@ -5016,7 +6467,29 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     <MemoizedSvgContainer svg={actionDiagram.svg} containerRef={actionSvgContainerRef} display="block" tabId="action" />
                                     : (selectedActionId ?
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Failed to load diagram for action {selectedActionId}</div>
-                                        : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Select an action card to view its network variant</div>
+                                        : (result?.actions && Object.keys(result.actions).length > 0 ?
+                                            /* Action Overview — shown when analysis has run but no
+                                               action card is selected.  Pins on the N-1 NAD let
+                                               the operator preview and navigate to each
+                                               prioritized action without trawling the sidebar
+                                               feed linearly. */
+                                            <ActionOverviewDiagram
+                                                visible={activeTab === 'action' && !selectedActionId}
+                                                n1Diagram={n1Diagram}
+                                                n1MetaIndex={n1MetaIndex}
+                                                n1SvgContainerRef={n1SvgContainerRef}
+                                                actions={result.actions}
+                                                selectedActionId={selectedActionId}
+                                                onActionSelect={handleActionSelect}
+                                                monitoringFactor={monitoringFactor}
+                                                selectedActionIds={manualActionIds}
+                                                rejectedActionIds={rejectedActionIds}
+                                                manuallyAddedIds={manuallyAddedIds}
+                                                onFavorite={handleActionFavorite}
+                                                onReject={handleActionReject}
+                                            />
+                                            : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>Select an action card to view its network variant</div>
+                                        )
                                     )
                                 )
                             }
@@ -5067,7 +6540,11 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                 const kv = Math.exp(logV);
                                                 const snapped = uniqueVoltages.reduce((best, uv) => Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best);
                                                 if (snapped <= voltageRange[1]) {
-                                                    interactionLogger.record('voltage_range_changed', { min_kv: snapped, max_kv: voltageRange[1] });
+                                                    // Replay contract (docs/interaction-logging.md):
+                                                    //   { min, max } in kV. Previously emitted
+                                                    //   { min_kv, max_kv } — a replay agent reading
+                                                    //   `details.min` would see undefined.
+                                                    interactionLogger.record('voltage_range_changed', { min: snapped, max: voltageRange[1] });
                                                     setVoltageRange([snapped, voltageRange[1]]);
                                                 }
                                             }}
@@ -5080,7 +6557,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                 const logV = parseFloat(e.target.value) || 0;
                                                 const snapped = uniqueVoltages.reduce((best, uv) => Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best);
                                                 if (snapped >= voltageRange[0]) {
-                                                    interactionLogger.record('voltage_range_changed', { min_kv: voltageRange[0], max_kv: snapped });
+                                                    interactionLogger.record('voltage_range_changed', { min: voltageRange[0], max: snapped });
                                                     setVoltageRange([voltageRange[0], snapped]);
                                                 }
                                             }}
@@ -5145,7 +6622,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                     onMouseDown={e => e.stopPropagation()} // Prevent dragging when clicking tabs
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        interactionLogger.record('sld_overlay_tab_changed', { from_tab: vlOverlay.tab, to_tab: tabMode });
+                                                        // Replay contract (docs/interaction-logging.md):
+                                                        //   { tab: SldTab, vl_name: string }.
+                                                        // The destination tab is what a replay agent
+                                                        // needs; the previous tab is recoverable from
+                                                        // the preceding sld_overlay_opened / _tab_changed
+                                                        // event in the log.
+                                                        interactionLogger.record('sld_overlay_tab_changed', { tab: tabMode, vl_name: vlOverlay.vlName });
                                                         fetchSldVariant(vlOverlay.vlName, vlOverlay.actionId, tabMode);
                                                     }}
                                                     style={{
@@ -5629,8 +7112,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                     <h3 style={{ margin: 0, borderBottom: '1px solid #eee', paddingBottom: '10px' }}>Recommender Settings</h3>
 
                                     <div style={{ display: 'flex', borderBottom: '1px solid #eee', marginBottom: '15px' }}>
+                                        {/* Replay contract (docs/interaction-logging.md):
+                                              { from_tab, to_tab } — only emitted when from_tab !== to_tab.
+                                            Wraps setSettingsTab so every tab click lands in the log. */}
                                         <button
-                                            onClick={() => setSettingsTab('paths')}
+                                            onClick={() => {
+                                                if (settingsTab !== 'paths') interactionLogger.record('settings_tab_changed', { from_tab: settingsTab, to_tab: 'paths' });
+                                                setSettingsTab('paths');
+                                            }}
                                             style={{
                                                 flex: 1, padding: '10px', cursor: 'pointer', background: 'none',
                                                 border: 'none', borderBottom: settingsTab === 'paths' ? '2px solid #3498db' : 'none',
@@ -5641,7 +7130,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                             Paths
                                         </button>
                                         <button
-                                            onClick={() => setSettingsTab('recommender')}
+                                            onClick={() => {
+                                                if (settingsTab !== 'recommender') interactionLogger.record('settings_tab_changed', { from_tab: settingsTab, to_tab: 'recommender' });
+                                                setSettingsTab('recommender');
+                                            }}
                                             style={{
                                                 flex: 1, padding: '10px', cursor: 'pointer', background: 'none',
                                                 border: 'none', borderBottom: settingsTab === 'recommender' ? '2px solid #3498db' : 'none',
@@ -5652,7 +7144,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                             Recommender
                                         </button>
                                         <button
-                                            onClick={() => setSettingsTab('configurations')}
+                                            onClick={() => {
+                                                if (settingsTab !== 'configurations') interactionLogger.record('settings_tab_changed', { from_tab: settingsTab, to_tab: 'configurations' });
+                                                setSettingsTab('configurations');
+                                            }}
                                             style={{
                                                 flex: 1, padding: '10px', cursor: 'pointer', background: 'none',
                                                 border: 'none', borderBottom: settingsTab === 'configurations' ? '2px solid #3498db' : 'none',
@@ -6665,29 +8160,73 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 {[
                                     { id: 'n', label: 'Network (N)', available: !!nDiagram?.svg, accentColor: '#3498db', placeholder: 'Configure a network path to load the base-case diagram.' },
                                     { id: 'n-1', label: 'Contingency (N-1)', available: !!n1Diagram?.svg, accentColor: '#e74c3c', placeholder: 'Select a contingency element from the dropdown to view the N-1 state.' },
-                                    { id: 'action', label: selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action', available: !!actionDiagram?.svg, accentColor: '#ff4081', placeholder: 'Select an action card from the suggestions panel to view its effect on the network.' },
+                                    {
+                                        id: 'action',
+                                        label: selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial Action',
+                                        // Available when EITHER an action variant is loaded
+                                        // OR the Action Overview can render (analysis has
+                                        // produced prioritized actions).  Without the
+                                        // overview branch the detach button stays hidden
+                                        // while the user is browsing pins.
+                                        available: !!actionDiagram?.svg || (!!result?.actions && Object.keys(result.actions).length > 0),
+                                        accentColor: '#ff4081',
+                                        placeholder: 'Select an action card from the suggestions panel to view its effect on the network.',
+                                    },
                                     { id: 'overflow', label: 'Overflow Analysis', available: !!result?.pdf_url, accentColor: '#27ae60', placeholder: 'Run \u201cAnalyze & Suggest\u201d to see the overflow graph.' },
                                 ].map(tab => {
                                     const isActive = activeTab === tab.id;
+                                    const isDetached = !!detachedTabs[tab.id];
+                                    // Every available tab is detachable — the
+                                    // popup content is chosen by handleDetachTab:
+                                    // diagram tabs clone their main-container SVG,
+                                    // the Overflow tab opens the PDF url in an
+                                    // iframe.
+                                    const detachable = tab.available;
                                     return (
-                                        <button
-                                            key={tab.id}
-                                            onClick={() => { interactionLogger.record('diagram_tab_changed', { from_tab: activeTab, to_tab: tab.id }); setActiveTab(tab.id); }}
-                                            title={tab.available ? undefined : tab.placeholder}
-                                            style={{
-                                                flex: 1, borderRadius: 0, border: 'none', padding: '8px 6px',
-                                                cursor: 'pointer',
-                                                fontWeight: isActive && tab.available ? 'bold' : 400,
-                                                fontStyle: !tab.available ? 'italic' : 'normal',
-                                                background: isActive ? 'white' : '#ecf0f1',
-                                                color: tab.available ? (isActive ? '#2c3e50' : '#7f8c8d') : '#bbb',
-                                                borderBottom: isActive && tab.available ? `3px solid ${tab.accentColor}` : 'none',
-                                                fontSize: tab.id === 'action' && selectedActionId ? '0.75rem' : '0.85rem',
-                                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                            }}
-                                        >
-                                            {tab.label}
-                                        </button>
+                                        <div key={tab.id} style={{ flex: 1, display: 'flex', alignItems: 'stretch', borderRight: '1px solid #e0e0e0' }}>
+                                            <button
+                                                onClick={() => {
+                                                    if (isDetached) {
+                                                        // Focus the popup rather than switching the
+                                                        // main tab (the content is in another window).
+                                                        try { detachedTabs[tab.id].focus(); } catch (e) { /* ignore */ }
+                                                        return;
+                                                    }
+                                                    interactionLogger.record('diagram_tab_changed', { tab: tab.id });
+                                                    setActiveTab(tab.id);
+                                                }}
+                                                title={tab.available ? (isDetached ? 'Tab detached — click to focus the popup' : undefined) : tab.placeholder}
+                                                style={{
+                                                    flex: 1, borderRadius: 0, border: 'none', padding: '8px 6px',
+                                                    cursor: 'pointer',
+                                                    fontWeight: isActive && tab.available ? 'bold' : 400,
+                                                    fontStyle: !tab.available || isDetached ? 'italic' : 'normal',
+                                                    background: isActive ? 'white' : '#ecf0f1',
+                                                    color: tab.available ? (isActive ? '#2c3e50' : '#7f8c8d') : '#bbb',
+                                                    opacity: isDetached ? 0.55 : 1,
+                                                    borderBottom: isActive && tab.available ? `3px solid ${tab.accentColor}` : 'none',
+                                                    fontSize: tab.id === 'action' && selectedActionId ? '0.75rem' : '0.85rem',
+                                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                }}
+                                            >
+                                                {tab.label}{isDetached ? ' ⧉' : ''}
+                                            </button>
+                                            {detachable && (
+                                                <button
+                                                    onClick={() => isDetached ? handleReattachTab(tab.id) : handleDetachTab(tab.id)}
+                                                    title={isDetached ? 'Reattach to main window' : 'Detach into a separate window'}
+                                                    style={{
+                                                        padding: '0 8px', border: 'none',
+                                                        background: isActive ? 'white' : '#ecf0f1',
+                                                        cursor: 'pointer', fontSize: '0.85rem',
+                                                        color: isDetached ? '#3498db' : '#7f8c8d',
+                                                    }}
+                                                    aria-label={isDetached ? `Reattach ${tab.label}` : `Detach ${tab.label}`}
+                                                >
+                                                    {isDetached ? '⤩' : '⊞'}
+                                                </button>
+                                            )}
+                                        </div>
                                     );
                                 })}
                             </div>
@@ -6759,7 +8298,15 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                             backgroundColor: '#fff',
                                         }}>
                                             <button
-                                                onClick={() => { interactionLogger.record('view_mode_changed', { mode: 'network' }); setActionViewMode('network'); }}
+                                                onClick={() => {
+                                                    // Replay contract (docs/interaction-logging.md):
+                                                    //   { mode, tab, scope }.
+                                                    // Flow/Impacts toggle only appears on the action
+                                                    // tab today; the standalone has no detached-tab
+                                                    // support, so scope is always 'main'.
+                                                    interactionLogger.record('view_mode_changed', { mode: 'network', tab: 'action', scope: 'main' });
+                                                    setActionViewMode('network');
+                                                }}
                                                 style={{
                                                     padding: '4px 12px', border: 'none', cursor: 'pointer',
                                                     backgroundColor: actionViewMode === 'network' ? '#007bff' : '#fff',
@@ -6770,7 +8317,10 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                 Flows
                                             </button>
                                             <button
-                                                onClick={() => { interactionLogger.record('view_mode_changed', { mode: 'delta' }); setActionViewMode('delta'); }}
+                                                onClick={() => {
+                                                    interactionLogger.record('view_mode_changed', { mode: 'delta', tab: 'action', scope: 'main' });
+                                                    setActionViewMode('delta');
+                                                }}
                                                 style={{
                                                     padding: '4px 12px', border: 'none', borderLeft: '1px solid #ccc', cursor: 'pointer',
                                                     backgroundColor: actionViewMode === 'delta' ? '#007bff' : '#fff',
@@ -6817,7 +8367,12 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                                 <input
                                                     list="inspectables"
                                                     value={inspectQuery}
-                                                    onChange={e => setInspectQuery(e.target.value)}
+                                                    onChange={e => {
+                                                        // Replay contract (docs/interaction-logging.md):
+                                                        //   { query: string }.
+                                                        interactionLogger.record('inspect_query_changed', { query: e.target.value });
+                                                        setInspectQuery(e.target.value);
+                                                    }}
                                                     placeholder="🔍 Inspect..."
                                                     style={{
                                                         padding: '5px 10px',

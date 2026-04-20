@@ -46,17 +46,22 @@ describe('useDiagrams — interaction logging', () => {
         vi.clearAllMocks();
     });
 
-    it('logs view_mode_changed when handleViewModeChange is called', () => {
+    it('handleViewModeChange updates state but does NOT emit view_mode_changed (App.tsx owns the emission)', () => {
+        // The spec-conformant event needs `{ mode, tab, scope }` — the
+        // `scope` is computed from the detached-tabs map which isn't
+        // visible inside this hook. So the event is emitted by
+        // `App.tsx::handleViewModeChangeForTab`, and the hook handler
+        // is a pure state setter. This test locks in that split so
+        // neither side starts emitting a partial-shape event again
+        // (regression: useDiagrams.ts used to emit `{ mode }` only).
         const { result } = renderHook(() => useDiagrams([], [], ''));
 
         act(() => {
             result.current.handleViewModeChange('delta');
         });
 
-        const log = interactionLogger.getLog();
-        expect(log).toHaveLength(1);
-        expect(log[0].type).toBe('view_mode_changed');
-        expect(log[0].details).toEqual({ mode: 'delta' });
+        expect(result.current.actionViewMode).toBe('delta');
+        expect(interactionLogger.getLog()).toHaveLength(0);
     });
 
     it('logs zoom_in when handleManualZoomIn is called', () => {
@@ -170,7 +175,11 @@ describe('useDiagrams — interaction logging', () => {
         const log = interactionLogger.getLog();
         expect(log).toHaveLength(1);
         expect(log[0].type).toBe('action_deselected');
-        expect(log[0].details).toEqual({ action_id: 'act_1' });
+        // Replay contract (docs/interaction-logging.md): the key is
+        // `previous_action_id`, not `action_id`. After this event
+        // fires no action is selected, so carrying the previously-
+        // selected id makes the semantics explicit.
+        expect(log[0].details).toEqual({ previous_action_id: 'act_1' });
     });
 
     it('logs action_selected when selecting a new action', async () => {

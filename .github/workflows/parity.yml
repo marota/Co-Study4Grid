@@ -1,0 +1,146 @@
+# Parity checks between the React frontend and standalone_interface.html.
+#
+# See scripts/PARITY_README.md for the four-layer design. Summary:
+#   Layer 1 — static inventory (events, API paths, settings, schema drift)
+#   Layer 2 — session-reload fidelity (save-vs-restore symmetry)
+#   Layer 3a — gesture-sequence static proxy (ordered event emission)
+#   Layer 3b — behavioural E2E with Playwright (real DOM, mocked backend)
+#
+# Layers 1 + 2 + 3a run on every PR (fast, deterministic, no browser).
+# Layer 3b runs nightly + on a PR that carries the `e2e` label — it
+# needs a Playwright-compatible browser and ~90 s per run.
+name: Parity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly at 02:30 UTC — catches drift introduced between PRs
+    # (e.g. docs/interaction-logging.md updates without a code change).
+    - cron: '30 2 * * *'
+
+# Always allow a re-run to supersede an in-flight one for the same PR.
+concurrency:
+  group: parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # -------------------------------------------------------------------
+  # Layer 1 — static inventory parity (events, API paths, settings,
+  # three-way spec diff).  No backend, no browser.
+  # -------------------------------------------------------------------
+  layer1-static-inventory:
+    name: 'Layer 1 · static inventory parity'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run parity check
+        run: python scripts/check_standalone_parity.py
+      - name: Emit Markdown summary
+        if: always()
+        run: |
+          python scripts/check_standalone_parity.py --emit-markdown \
+            >> "$GITHUB_STEP_SUMMARY" || true
+
+  # -------------------------------------------------------------------
+  # Layer 2 — session-reload fidelity (save/restore symmetry).
+  # -------------------------------------------------------------------
+  layer2-session-fidelity:
+    name: 'Layer 2 · session-reload fidelity'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run session-fidelity check
+        run: python scripts/check_session_fidelity.py
+
+  # -------------------------------------------------------------------
+  # Layer 3a — gesture-sequence static proxy.  Lightweight sequence-
+  # aware check; complements Layer 1's set-based diff.
+  # -------------------------------------------------------------------
+  layer3a-gesture-sequence:
+    name: 'Layer 3a · gesture-sequence static proxy'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run gesture-sequence check
+        run: python scripts/check_gesture_sequence.py
+
+  # -------------------------------------------------------------------
+  # Layer 4 — user-observable invariants.  Static source-pattern
+  # assertions for the six bug classes Layers 1-3a cannot catch by
+  # construction (visual thresholds, conditional rendering,
+  # field semantics, auto-effects, loading-state, performance).
+  # -------------------------------------------------------------------
+  layer4-invariants:
+    name: 'Layer 4 · user-observable invariants'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run invariants check
+        run: python scripts/check_invariants.py
+
+  # -------------------------------------------------------------------
+  # Layer 3b — behavioural E2E with Playwright.  Needs a browser
+  # download, so it only runs nightly (schedule) or when a PR carries
+  # the `e2e` label.  Per-commit gating would be too slow.
+  # -------------------------------------------------------------------
+  layer3b-behavioural-e2e:
+    name: 'Layer 3b · behavioural E2E (Playwright)'
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'schedule'
+      || (github.event_name == 'pull_request'
+          && contains(github.event.pull_request.labels.*.name, 'e2e'))
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            scripts/parity_e2e/package-lock.json
+
+      - name: Install frontend deps + build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install E2E deps
+        working-directory: scripts/parity_e2e
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: scripts/parity_e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E parity spec
+        working-directory: scripts/parity_e2e
+        run: npx playwright test
+
+      - name: Upload Playwright report + artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            scripts/parity_e2e/playwright-report/
+            scripts/parity_e2e/artefacts.json
+          if-no-files-found: ignore
+          retention-days: 14

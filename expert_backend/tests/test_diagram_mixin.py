@@ -200,6 +200,55 @@ class TestLoadLayoutCache:
         assert second is not first, "Cache must not return the stale DataFrame"
         assert "B" in second.index, "Reloaded layout must include the newly added entry"
 
+    def test_reset_clears_layout_cache_across_studies(self, tmp_path):
+        """Bugfix: loading a new study must not reuse the previous study's
+        cached layout DataFrame as ``fixed_positions`` for NAD generation.
+
+        Reproduces the bug described in issue "grid layout not properly
+        reset" — two different grids pointing at different layout files
+        must each get their own DataFrame back from ``_load_layout`` after
+        ``reset()``, even if ``(path, mtime)`` were to coincide.
+
+        We use :class:`RecommenderService` rather than the bare mixin
+        because the cache invalidation happens in ``reset()``, which is
+        defined on the composed service class.
+        """
+        from expert_backend.services.recommender_service import RecommenderService
+
+        layout_a = tmp_path / "grid_layout_A.json"
+        layout_b = tmp_path / "grid_layout_B.json"
+        self._write_layout(layout_a, {"SUB_A1": [1.0, 2.0], "SUB_A2": [3.0, 4.0]})
+        self._write_layout(layout_b, {"SUB_B1": [10.0, 20.0], "SUB_B2": [30.0, 40.0]})
+
+        service = RecommenderService()
+
+        # Study 1 — point at layout A and prime the cache.
+        with patch("expert_backend.services.diagram_mixin.config") as cfg:
+            cfg.LAYOUT_FILE_PATH = layout_a
+            df_a = service._load_layout()
+        assert df_a is not None
+        assert set(df_a.index) == {"SUB_A1", "SUB_A2"}
+        assert service._layout_cache is not None, "Cache should have been primed"
+
+        # Simulate loading a new study: /api/config calls reset() before
+        # update_config(). After reset(), the layout cache must be gone.
+        service.reset()
+        assert service._layout_cache is None, (
+            "reset() must clear _layout_cache so the next _load_layout() "
+            "reads the fresh layout file for the new study"
+        )
+
+        # Study 2 — point at layout B.  The returned DataFrame must
+        # contain B's substation IDs, not A's.
+        with patch("expert_backend.services.diagram_mixin.config") as cfg:
+            cfg.LAYOUT_FILE_PATH = layout_b
+            df_b = service._load_layout()
+        assert df_b is not None
+        assert set(df_b.index) == {"SUB_B1", "SUB_B2"}, (
+            "New study must get its own layout DataFrame, not the cached "
+            "layout from the previous study"
+        )
+
 
 class TestGetElementMaxCurrents:
     """`_get_element_max_currents` must return `max(|i1|, |i2|)` for every

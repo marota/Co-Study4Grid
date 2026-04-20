@@ -82,6 +82,12 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         # per N-1 diagram on the PyPSA-EUR France grid (cold path) and
         # ~1 s on the warm path (repeat views of same contingency).
         self._lf_status_by_variant = {}
+        # Grid-layout DataFrame cache (populated by `DiagramMixin._load_layout`,
+        # keyed by `(path, mtime)`). Owned here so `reset()` can clear it when
+        # a new study is loaded — otherwise a stale layout can leak across
+        # studies that share the same layout filename / mtime, producing a
+        # NAD whose `fixed_positions` reference the previous grid's substations.
+        self._layout_cache = None
         # Pre-fetched base NAD (populated by `prefetch_base_nad_async` during
         # `update_config`, consumed by `/api/network-diagram`). See
         # docs/perf-nad-prefetch.md.
@@ -115,6 +121,14 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._cached_env_context = None
         self._initial_pst_taps = None
         self._lf_status_by_variant = {}
+        # Layout cache must be cleared when a new study is loaded so the
+        # next `_load_layout()` call reads the fresh `grid_layout.json`
+        # for the new grid. Without this, the previous study's layout
+        # DataFrame could be re-served for the new grid if `(path, mtime)`
+        # happens to match (shared filename, coarse filesystem mtime
+        # resolution), producing a NAD whose `fixed_positions` reference
+        # substation IDs from the wrong grid.
+        self._layout_cache = None
 
         self._prefetched_base_nad = None
         self._prefetched_base_nad_error = None

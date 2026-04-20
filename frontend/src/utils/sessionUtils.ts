@@ -132,6 +132,13 @@ export function buildSessionResult(input: SessionInput): SessionResult {
                         is_islanded: detail.is_islanded,
                         n_components: detail.n_components,
                         disconnected_mw: detail.disconnected_mw,
+                        // Post-action overload list is read back in
+                        // useSession.handleRestoreSession and is required
+                        // for the Remedial-Action NAD/SLD overload halos
+                        // (PR #83). Previously omitted here, so reload
+                        // silently dropped the field and halos disappeared
+                        // until the user re-ran analysis.
+                        lines_overloaded_after: detail.lines_overloaded_after,
                         load_shedding_details: detail.load_shedding_details,
                         curtailment_details: detail.curtailment_details,
                         pst_details: detail.pst_details,

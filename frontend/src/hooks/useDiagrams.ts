@@ -199,8 +199,15 @@ export function useDiagrams(
 
   // View mode
   const [actionViewMode, setActionViewMode] = useState<'network' | 'delta'>('network');
+  // Pure state setter — no interaction-log emission here. The
+  // spec-conformant event (`view_mode_changed` with `{ mode, tab,
+  // scope }`) is emitted by `App.tsx::handleViewModeChangeForTab`,
+  // which has access to the `detachedTabs` map needed to compute
+  // `scope`. Emitting from the hook would require passing that map
+  // into every caller, and would risk drifting from the spec if
+  // someone forgets one of the fields — see the regression caught
+  // by `utils/specConformance.test.ts`.
   const handleViewModeChange = useCallback((mode: 'network' | 'delta') => {
-    interactionLogger.record('view_mode_changed', { mode });
     setActionViewMode(mode);
   }, []);
 
@@ -357,7 +364,10 @@ export function useDiagrams(
     const isActionDetached = !!detachedTabsRef.current?.['action'];
 
     if (!force && actionId === selectedActionId) {
-      interactionLogger.record('action_deselected', { action_id: actionId });
+      // Replay contract (docs/interaction-logging.md): after this
+      // event fires no action is selected any more, so the id
+      // carried is the PREVIOUSLY-selected action, not the current.
+      interactionLogger.record('action_deselected', { previous_action_id: actionId });
       setSelectedActionId(null);
       setActionDiagram(null);
       // Stay on the current tab. When the user was on the action tab,
