@@ -548,6 +548,9 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             // backend computed for the ActionCard breakdown. Feeding
             // both into `findCellForEquipment` makes the SLD highlight
             // robust regardless of which side populated the data.
+            const isLoadShedding = (actionDetail.load_shedding_details?.length ?? 0) > 0;
+            const isRenewableCurtailment = (actionDetail.curtailment_details?.length ?? 0) > 0;
+
             if (!isCoupling) {
                 const targetEquipIds = new Set<string>();
                 if (topo) {
@@ -572,7 +575,36 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                 }
 
                 for (const equipId of targetEquipIds) {
-                    const cell = findCellForEquipment(equipId);
+                    let cell: Element | null = findCellForEquipment(equipId);
+
+                    // Extreme fallback for load-shedding / curtailment:
+                    // when the SLD metadata's `equipmentId` doesn't match
+                    // the grid2op load / generator name (e.g. pypowsybl
+                    // returns a fully-qualified IIDM connectable ID but
+                    // the action carries a bare "P.SAO3TR311"), fall back
+                    // to matching on the rendered text label. The label
+                    // almost always carries the short grid2op name, so
+                    // scanning <text> nodes for a 5-character prefix
+                    // reliably lands on the shed load / curtailed
+                    // generator cell. Parity with the legacy standalone
+                    // at `standalone_interface_legacy.html:5462-5472`,
+                    // which is what made the LS highlight work on the
+                    // `bare_env_small_grid_test` data where metadata
+                    // equipment IDs and action names disagree.
+                    if (!cell && (isRenewableCurtailment || isLoadShedding)) {
+                        const texts = container.querySelectorAll('text');
+                        const q = equipId.toLowerCase().substring(0, 5);
+                        if (q) {
+                            for (const txt of Array.from(texts)) {
+                                const content = (txt.textContent ?? '').toLowerCase();
+                                if (content.includes(q)) {
+                                    cell = walkUpToCell(txt);
+                                    if (cell) break;
+                                }
+                            }
+                        }
+                    }
+
                     if (cell && !highlightedCells.has(cell)) {
                         cloneHighlight(cell, 'sld-highlight-action');
                         highlightedCells.add(cell);

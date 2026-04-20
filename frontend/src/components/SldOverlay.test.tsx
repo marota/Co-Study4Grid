@@ -484,6 +484,69 @@ describe('SldOverlay', () => {
             expect(container.querySelector('#cell_pst.sld-highlight-action-original')).toBeTruthy();
         });
 
+        it('falls back to SVG <text> search when SLD metadata equipmentId does not match load_name', () => {
+            // Regression for the case observed on `bare_env_small_grid_test`:
+            // the backend's LS action carries `load_name: "P.SAO3TR311"`
+            // but the SLD metadata's `equipmentId` is a different IIDM
+            // form (e.g. `"P.SAO3_TR311_load"` or a UUID). The direct
+            // lookup + substring fallbacks in `findCellForEquipment`
+            // miss, so the highlight only appears if we ALSO scan the
+            // rendered <text> labels for a prefix match and walk up to
+            // the enclosing cell. Legacy standalone had this fallback
+            // (`standalone_interface_legacy.html:5462-5472`) — without
+            // porting it the frontend silently dropped the highlight.
+            const svg = '<svg xmlns="http://www.w3.org/2000/svg">'
+                + '<g class="sld-extern-cell" id="cell_for_load">'
+                +   '<rect width="10" height="10"/>'
+                +   '<text>P.SAO3TR311</text>'
+                + '</g>'
+                + '</svg>';
+            const vlOverlay: VlOverlay = {
+                vlName: 'P.SAOP3',
+                actionId: 'load_shedding_P.SAO3TR311',
+                svg,
+                sldMetadata: JSON.stringify({
+                    // Intentional mismatch: metadata uses a sanitised
+                    // / fully-qualified form that won't pass the direct
+                    // or substring lookups. The text-label fallback is
+                    // the only path that can land the highlight.
+                    nodes: [{ id: 'cell_for_load', equipmentId: 'IIDM_UUID_123' }],
+                }),
+                loading: false,
+                error: null,
+                tab: 'action' as SldTab,
+            };
+            const detail = {
+                description_unitaire: 'Shed P.SAO3TR311',
+                rho_before: [1.1],
+                rho_after: [0.9],
+                max_rho: 0.9,
+                max_rho_line: 'X',
+                is_rho_reduction: true,
+                action_topology: {},
+                load_shedding_details: [{ load_name: 'P.SAO3TR311', voltage_level_id: 'P.SAOP3', shedded_mw: 3.4 }],
+            };
+            const { container } = render(
+                <SldOverlay
+                    {...defaultProps}
+                    vlOverlay={vlOverlay}
+                    result={{
+                        actions: { 'load_shedding_P.SAO3TR311': detail },
+                        lines_overloaded: [],
+                        pdf_path: null,
+                        pdf_url: null,
+                        message: '',
+                        dc_fallback: false,
+                    } as unknown as AnalysisResult}
+                />,
+            );
+            // The highlight landed on the cell via the <text> fallback
+            // even though SLD metadata's equipmentId was "IIDM_UUID_123"
+            // and neither the direct nor substring lookup of "P.SAO3TR311"
+            // matched.
+            expect(container.querySelector('#cell_for_load.sld-highlight-action-original')).toBeTruthy();
+        });
+
         it('re-applies highlights when an in-place re-simulation bumps shedded_mw (signature invalidation)', () => {
             // Signature cache must include the LS magnitude, otherwise
             // the highlight pass short-circuits after a re-simulation

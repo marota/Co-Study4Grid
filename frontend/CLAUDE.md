@@ -286,3 +286,40 @@ Consequence for day-to-day dev: **no manual mirroring is required**
 when you add a component, setting, endpoint, or gesture. Land the
 change in `frontend/src/`, run the tests, and the standalone
 inherits it on the next build.
+
+## Parity audit
+
+The working record of the standalone-vs-React parity effort —
+feature inventory, mirror-status table, Layer 1–4 conformity
+findings, gap-priority list, regression-guard matrix and deltas
+— lives in [`frontend/PARITY_AUDIT.md`](./PARITY_AUDIT.md) (split
+out of the root `CLAUDE.md` on 2026-04-20). Regenerate the
+machine-authored tables with:
+
+```bash
+python scripts/check_standalone_parity.py --emit-markdown
+python scripts/check_session_fidelity.py --json
+python scripts/check_gesture_sequence.py --json
+python scripts/check_invariants.py --json
+```
+
+All four scripts accept `COSTUDY4GRID_STANDALONE_PATH=<path>` to
+re-target any artifact, and default to `dist-standalone/standalone.html`
+with a fallback to the legacy file when the auto-gen is not built.
+
+## How to make a UI change today
+
+1. Edit the React source in `src/` — components, hooks, styles.
+2. Run `npm run test` — the Vitest suite covers session
+   save/reload, SLD highlights, action card re-simulation,
+   settings logging, datalist clamping, and ~930 other specs.
+3. Run `npm run build:standalone` — produces the single-file
+   `dist-standalone/standalone.html` artifact. This is what ships
+   as the standalone distribution.
+4. Optionally run the parity scripts in `scripts/` if the change
+   touches an interaction gesture, a settings field, an API
+   endpoint, or a session-JSON field — those are the four
+   contract surfaces each layer guards.
+
+No manual mirror in any separate HTML file. The React source is
+the single source of truth.
