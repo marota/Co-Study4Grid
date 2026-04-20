@@ -168,6 +168,14 @@ export interface DiagramsState {
   // on the same action card is served from cache (no XHR, no pypowsybl).
   // Cache is automatically cleared when `selectedBranch` changes.
   primeActionDiagram: (actionId: string, diagram: DiagramData, voltageLevelsLength: number) => void;
+
+  /**
+   * Re-fetch the SLD overlay if it is currently open on the given
+   * action. Wired by App.tsx into the re-simulate flow so editable
+   * actions (load-shedding MW, curtailment MW, PST tap) refresh the
+   * SLD's per-equipment highlights and flow deltas after a user edit.
+   */
+  refreshSldIfAction: (actionId: string) => void;
 }
 
 export function useDiagrams(
@@ -306,7 +314,7 @@ export function useDiagrams(
   // SLD that was opened from the N or N-1 tab (the stored
   // vlOverlay.actionId is '' in that case).
   const sldOverlay = useSldOverlay(activeTab, selectedActionId);
-  const { vlOverlay, setVlOverlay, selectedBranchForSld, handleVlDoubleClick, handleOverlaySldTabChange, handleOverlayClose } = sldOverlay;
+  const { vlOverlay, setVlOverlay, selectedBranchForSld, handleVlDoubleClick, handleOverlaySldTabChange, handleOverlayClose, refreshCurrentIfAction: refreshSldIfAction } = sldOverlay;
 
   // Metadata
   const nMetaIndex = useMemo(() => buildMetadataIndex(nDiagram?.metadata), [nDiagram?.metadata]);
@@ -988,6 +996,7 @@ export function useDiagrams(
     inspectableItems,
     selectedBranchForSld,
     primeActionDiagram,
+    refreshSldIfAction,
   }), [
     activeTab, nDiagram, n1Diagram, n1Loading,
     selectedActionId, actionDiagram, actionDiagramLoading, actionViewMode, handleViewModeChange,
@@ -1002,5 +1011,6 @@ export function useDiagrams(
     selectedBranchForSld, setVlOverlay,
     setInspectQueryForTab,
     primeActionDiagram,
+    refreshSldIfAction,
   ]);
 }

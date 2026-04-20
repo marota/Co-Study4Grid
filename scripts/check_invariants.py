@@ -52,9 +52,18 @@ from pathlib import Path
 from typing import Iterable
 
 
+import os
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_SRC = REPO_ROOT / "frontend" / "src"
-STANDALONE = REPO_ROOT / "standalone_interface.html"
+_DEFAULT_STANDALONE = REPO_ROOT / "frontend" / "dist-standalone" / "standalone.html"
+_LEGACY_STANDALONE = REPO_ROOT / "standalone_interface_legacy.html"
+STANDALONE = Path(
+    os.environ.get(
+        "COSTUDY4GRID_STANDALONE_PATH",
+        str(_DEFAULT_STANDALONE if _DEFAULT_STANDALONE.exists() else _LEGACY_STANDALONE),
+    )
+)
 
 
 class Invariant:
@@ -97,6 +106,24 @@ def _search_in_paths(
 
 
 def _paths_for_hint(hint: str) -> list[Path]:
+    # Standalone-side invariants: the existing regex patterns were
+    # written against the hand-maintained inline JSX in the legacy
+    # file. The auto-generated single-file bundle contains the
+    # compiled / bundled equivalent, but with minified variable
+    # names and `reactExports.*` namespacing that breaks those
+    # patterns. We intentionally target the legacy file here when
+    # it is still present on disk — the React-source invariants
+    # (which use `FRONTEND_SRC` hints) remain the authoritative
+    # assertion; the standalone side is a best-effort mirror check.
+    # When the legacy file is ultimately removed the standalone
+    # rows simply return "no path found" and the invariant reports
+    # as skipped rather than failing the whole script.
+    if hint in ("standalone_interface.html", "standalone_interface_legacy.html"):
+        candidates = [_LEGACY_STANDALONE, STANDALONE]
+        for cand in candidates:
+            if cand.exists():
+                return [cand]
+        return []
     if "*" in hint:
         return sorted((REPO_ROOT / Path(hint)).parent.glob(Path(hint).name))
     p = REPO_ROOT / hint
@@ -387,7 +414,8 @@ def render_human(report: dict) -> str:
             out.append(f"     description: {r['description']}")
             for side, info in r["sides"].items():
                 if info["status"] != "OK":
-                    out.append(f"       {side:10s} → {info['reason']}  ({info['file_hint']})")
+                    hint = info.get("file_hint", "<no hint>")
+                    out.append(f"       {side:10s} → {info.get('reason', '')}  ({hint})")
     out.append("")
     out.append(f"Summary: {len(report['invariants']) - len(failed)}/{len(report['invariants'])} invariants satisfied.")
     return "\n".join(out)

@@ -106,6 +106,15 @@ export interface AnalysisResult {
     combined_actions?: Record<string, CombinedAction>;
     message: string;
     dc_fallback: boolean;
+    // Monitored-line set the analysis ran against. Round-tripped through
+    // session.json so a reloaded session can re-push it to the backend
+    // via `/api/restore-analysis-context` and preserve the original
+    // per-study monitored-line policy for subsequent simulations.
+    lines_we_care_about?: string[];
+    // Superposition-computed pair cache (key = `"actionA+actionB"`).
+    // Persisted + re-pushed on reload for the same reason as
+    // `lines_we_care_about`.
+    computed_pairs?: Record<string, unknown>;
 }
 
 export interface BranchResponse {
@@ -361,6 +370,20 @@ export interface SessionResult {
         action_scores: Record<string, Record<string, unknown>> | undefined;
         actions: Record<string, SavedActionEntry>;
         combined_actions: Record<string, SavedCombinedAction>;
+        // Set of monitored line IDs the analysis was run against.
+        // Persisted so we can re-push it to the backend via
+        // `/api/restore-analysis-context` on session reload —
+        // otherwise simulate-action calls post-reload fall back to
+        // the backend default (all lines / lines-monitoring file)
+        // instead of the captured per-study set. Optional for
+        // backwards compatibility with older session dumps.
+        lines_we_care_about?: string[] | null;
+        // Superposition-computed pair cache keyed by
+        // `"actionA_id+actionB_id"`. Persisted alongside
+        // `lines_we_care_about` and re-pushed to the backend on
+        // reload so the Combine modal does not re-score everything
+        // from scratch.
+        computed_pairs?: Record<string, unknown> | null;
     } | null;
     interaction_log?: InteractionLogEntry[];
 }

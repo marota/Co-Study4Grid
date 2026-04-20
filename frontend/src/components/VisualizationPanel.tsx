@@ -1159,6 +1159,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         actionDiagram={actionDiagram}
                         selectedBranch={selectedBranch}
                         result={result}
+                        monitoringFactor={monitoringFactor}
                     />
                 )}
 

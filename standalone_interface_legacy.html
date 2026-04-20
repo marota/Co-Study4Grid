@@ -627,10 +627,17 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             background: white;
             padding: 20px;
             border-radius: 8px;
-            width: 80%;
-            max-width: 1150px;
+            /* Widened from 80% / max-width 1150px (which forced horizontal
+               scroll or content clipping when a combined-pair row carried
+               long equipment IDs) to (almost) the full viewport, matching
+               React's `CombinedActionsModal` (`width: 95vw`). Cells carry
+               `word-break: break-word` so content wraps instead of
+               stretching the table past the modal edge. */
+            width: 95vw;
+            max-width: 95vw;
             max-height: 80vh;
             overflow-y: auto;
+            overflow-x: hidden;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
             position: relative;
         }
@@ -664,6 +671,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             padding: 8px;
             text-align: left;
             border-bottom: 1px solid #eee;
+            /* Long equipment IDs would stretch the table past the modal
+               container and either trigger a horizontal scrollbar or get
+               clipped invisibly. `overflow-wrap: anywhere` lets the cell
+               break mid-word so content stays visible and the modal
+               fits its width. Parity with `frontend/src/index.css:52`. */
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .action-table th {
@@ -1040,17 +1054,29 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
                 const scaledGroups = new Set();
                 const startBoost = Date.now();
-                svgEl.querySelectorAll('circle').forEach(circle => {
+                // 5-second bail-out: on pathological SVGs (10k+ circles)
+                // the transform pass can block the main thread long
+                // enough for the user to think the app has frozen. The
+                // check runs every 100 circles to keep the arithmetic
+                // overhead negligible. Parity with the React build
+                // (`dist-standalone:12585`).
+                const circles = svgEl.querySelectorAll('circle');
+                for (let i = 0; i < circles.length; i++) {
+                    if (i % 100 === 0 && Date.now() - startBoost > 5000) {
+                        console.warn(`[SVG] Boost loop bailed out at circle ${i}/${circles.length} after 5s.`);
+                        break;
+                    }
+                    const circle = circles[i];
                     const g = circle.parentElement;
-                    if (!g || g.tagName !== 'g' || scaledGroups.has(g)) return;
-                    if (g.querySelector('foreignObject')) return;
+                    if (!g || g.tagName !== 'g' || scaledGroups.has(g)) continue;
+                    if (g.querySelector('foreignObject')) continue;
                     scaledGroups.add(g);
                     const cx = parseFloat(circle.getAttribute('cx')) || 0;
                     const cy = parseFloat(circle.getAttribute('cy')) || 0;
                     const t = g.getAttribute('transform') || '';
                     g.setAttribute('transform',
                         `${t} translate(${cx},${cy}) scale(${boostStr}) translate(${-cx},${-cy})`);
-                });
+                }
 
                 const edgeInfoGroup = svgEl.querySelector('.nad-edge-infos');
                 if (edgeInfoGroup) {
@@ -2348,9 +2374,381 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             );
         });
 
+        // ===== ComputedPairsTable =====
+        // "Computed Pairs" tab of the Combine-Actions modal.
+        // Extracted 2026-04-20 from the inline JSX in <App /> to give the
+        // standalone a discrete module boundary matching React's
+        // `components/ComputedPairsTable.tsx`. All App-state it consumes
+        // is threaded through props — no closure over module-level state.
+        const ComputedPairsTable = ({ result, monitoringFactor, simulatingActionId, handleAddManualAction, canonicalizeId }) => {
+            const combinedEntries = Object.entries(result?.combined_actions || {});
+            const combinedCanonicalKeys = new Set(combinedEntries.map(([id]) => canonicalizeId(id)));
+            const simulatedOnly = Object.entries(result?.actions || {})
+                .filter(([id]) => id.includes('+') && !(result?.combined_actions || {})[id] && !combinedCanonicalKeys.has(canonicalizeId(id)));
+            const allPairs = [
+                ...combinedEntries.map(([id, ca]) => {
+                    const cId = canonicalizeId(id);
+                    const simData = result?.actions?.[id] || result?.actions?.[cId];
+                    const isSimulated = simData && !simData.is_estimated && simData.rho_after && simData.rho_after.length > 0;
+                    return [id, { ...ca, ...(isSimulated ? { _simData: simData } : {}) }];
+                }),
+                ...simulatedOnly.map(([id, data]) => [id, data]),
+            ];
+            const rows = allPairs
+                .sort((a, b) => ((a[1].estimated_max_rho ?? a[1].max_rho) ?? 999) - ((b[1].estimated_max_rho ?? b[1].max_rho) ?? 999))
+                .map(([id, data]) => {
+                    const parts = id.split('+').map(p => p.trim());
+                    const simData = data._simData || result?.actions?.[id] || result?.actions?.[canonicalizeId(id)];
+                    const isSimulated = simData && !simData.is_estimated && simData.rho_after && simData.rho_after.length > 0;
+                    const estMaxRho = data.estimated_max_rho ?? data.max_rho;
+                    const estMaxRhoLine = data.estimated_max_rho_line ?? data.max_rho_line;
+                    return (
+                        <tr key={id}>
+                            <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{parts[0]}</td>
+                            <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{parts[1]}</td>
+                            <td style={{ fontSize: '11px', fontFamily: 'monospace', color: '#666' }}>
+                                {data.betas ? (Array.isArray(data.betas) ? data.betas : Object.values(data.betas)).map(b => b.toFixed(2)).join(', ') : '-'}
+                            </td>
+                            <td>
+                                <span className="metric-badge metric-rho" style={{
+                                    background: estMaxRho > monitoringFactor ? '#ffebee' : estMaxRho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
+                                    color: estMaxRho > monitoringFactor ? '#c62828' : estMaxRho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32',
+                                    fontWeight: 'bold',
+                                    opacity: 0.9,
+                                    border: estMaxRho > monitoringFactor ? '1px solid #c62828' : estMaxRho > (monitoringFactor - 0.05) ? '1px solid #856404' : '1px dashed #2e7d32'
+                                }}>
+                                    {estMaxRho != null && !isNaN(estMaxRho) ? `${(estMaxRho * 100).toFixed(1)}%` : '—'}
+                                    {data.is_islanded && (
+                                        <span style={{ marginLeft: '4px' }} title="Estimation suspect due to islanding or linear superposition breakdown">⚠️</span>
+                                    )}
+                                </span>
+                            </td>
+                            <td style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>{estMaxRhoLine || 'N/A'}</td>
+                            <td style={{ textAlign: 'center' }}>
+                                {isSimulated ? (
+                                    <span className="metric-badge metric-rho" style={{
+                                        fontWeight: 'bold',
+                                        fontSize: '13px',
+                                        background: simData.max_rho > monitoringFactor ? '#ffebee' : simData.max_rho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
+                                        color: simData.max_rho > monitoringFactor ? '#c62828' : simData.max_rho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32'
+                                    }}>
+                                        {(simData.max_rho * 100).toFixed(1)}%
+                                        {simData.is_islanded && (
+                                            <span style={{ fontSize: '10px', marginLeft: '4px', border: '1px solid #721c24', padding: '1px 3px', borderRadius: '3px', color: '#721c24', background: '#f8d7da' }} title={`Islanding: ${simData.disconnected_mw?.toFixed(1)} MW disconnected`}>🏝️</span>
+                                        )}
+                                    </span>
+                                ) : (
+                                    <span style={{ color: '#aaa', fontSize: '11px' }}>Not simulated</span>
+                                )}
+                            </td>
+                            <td style={{ fontSize: '11px', color: '#333', fontWeight: isSimulated ? 'bold' : 'normal' }}>
+                                {isSimulated ? simData.max_rho_line : '-'}
+                            </td>
+                            <td>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleAddManualAction(id); }}
+                                    disabled={!!simulatingActionId}
+                                    style={{
+                                        padding: '6px 14px',
+                                        background: isSimulated ? '#007bff' : '#28a745',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        cursor: simulatingActionId ? 'not-allowed' : 'pointer',
+                                        fontSize: '11px',
+                                        fontWeight: 'bold',
+                                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                        opacity: simulatingActionId ? 0.6 : 1,
+                                        minWidth: '100px'
+                                    }}
+                                >
+                                    {simulatingActionId === canonicalizeId(id) ? '⌛' : (isSimulated ? 'Re-Simulate' : 'Simulate')}
+                                </button>
+                            </td>
+                        </tr>
+                    );
+                });
+            const empty = Object.keys(result?.combined_actions || {}).length === 0 &&
+                Object.entries(result?.actions || {}).filter(([id]) => id.includes('+')).length === 0;
+            return (
+                <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                    <table className="action-table">
+                        <thead>
+                            <tr>
+                                <th>Action 1</th>
+                                <th>Action 2</th>
+                                <th>Betas</th>
+                                <th>Max Loading (Est.)</th>
+                                <th>Line (Est.)</th>
+                                <th>Simulated Max Rho</th>
+                                <th>Simulated Line</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows}
+                            {empty && (
+                                <tr>
+                                    <td colSpan="6" style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', padding: '40px 20px' }}>
+                                        No computed combinations found.<br />Go to <strong>Explore Pairs</strong> to create new ones.
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            );
+        };
+
+        // ===== ExplorePairsTab =====
+        // "Explore Pairs" tab of the Combine-Actions modal — pair picker
+        // + scored-actions table + Estimate / Simulate panel. Extracted
+        // 2026-04-20; mirrors React's `components/ExplorePairsTab.tsx`.
+        const ExplorePairsTab = ({
+            result, monitoringFactor, selectedCombineActionIds, setSelectedCombineActionIds,
+            exploreFilter, setExploreFilter, scoredActionsList, toggleActionSelection,
+            handleSimulateUnitaryFromModal, simulatingActionId, handleComputeSuperposition,
+            isComputingSuperposition, superpositionResult, handleSimulateCombined,
+            isSimulatingCombined, combinedSimulationFeedback,
+        }) => {
+            const hasRestricted = selectedCombineActionIds.some(id => {
+                const detail = result?.actions?.[id];
+                return id.includes('load_shedding') || !!detail?.load_shedding_details ||
+                    id.includes('renewable_curtailment') || !!detail?.curtailment_details;
+            });
+            return (
+                <>
+                    <div style={{ background: '#f8f9fa', padding: '10px', borderRadius: '6px', marginBottom: '15px', border: '1px solid #e9ecef' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#444' }}>Selected Actions ({selectedCombineActionIds.length}/2)</div>
+                            <button
+                                onClick={() => setSelectedCombineActionIds([])}
+                                disabled={selectedCombineActionIds.length === 0}
+                                style={{ background: 'none', border: 'none', color: '#007bff', fontSize: '11px', cursor: 'pointer', padding: 0 }}
+                            >Clear All</button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', minHeight: '30px' }}>
+                            {selectedCombineActionIds.length === 0 ? (
+                                <div style={{ color: '#999', fontSize: '12px', fontStyle: 'italic', display: 'flex', alignItems: 'center' }}>Click rows in the table below to select...</div>
+                            ) : (
+                                selectedCombineActionIds.map(id => (
+                                    <div key={id} style={{ background: '#e7f1ff', color: '#007bff', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', border: '1px solid #b3d7ff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        {id}
+                                        <span onClick={(e) => { e.stopPropagation(); toggleActionSelection(id); }} style={{ cursor: 'pointer', fontSize: '14px' }}>&times;</span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                    <div style={{ marginBottom: '12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {['all', 'disco', 'reco', 'open', 'close', 'pst', 'ls', 'rc'].map(f => (
+                            <button
+                                key={f}
+                                onClick={() => setExploreFilter(f)}
+                                style={{
+                                    padding: '4px 10px', borderRadius: '15px', border: '1px solid',
+                                    borderColor: exploreFilter === f ? '#007bff' : '#ddd',
+                                    background: exploreFilter === f ? '#007bff' : 'white',
+                                    color: exploreFilter === f ? 'white' : '#666',
+                                    fontSize: '11px', cursor: 'pointer',
+                                    fontWeight: exploreFilter === f ? 'bold' : 'normal',
+                                    transition: 'all 0.2s'
+                                }}
+                            >{f.toUpperCase()}</button>
+                        ))}
+                    </div>
+                    <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '4px' }}>
+                        {Array.from(new Set(scoredActionsList.map(item => item.type)))
+                            .filter(type => exploreFilter === 'all' || type.includes(exploreFilter) || (exploreFilter === 'ls' && type === 'load_shedding') || (exploreFilter === 'rc' && type === 'renewable_curtailment'))
+                            .map(type => (
+                                <div key={type} style={{ marginBottom: '1px' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#444', backgroundColor: '#f0f2f5', padding: '4px 8px', borderBottom: '1px solid #e1e4e8', display: 'flex', justifyContent: 'space-between' }}>
+                                        <span>{type.replace('_', ' ').toUpperCase()}</span>
+                                        <span>{scoredActionsList.filter(item => item.type === type).length} actions</span>
+                                    </div>
+                                    {type === 'load_shedding' && (
+                                        <div style={{ padding: '6px 10px', background: '#fff3cd', color: '#856404', borderBottom: '1px solid #ffeeba', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span>⚠️</span> Load shedding actions cannot be combined for estimation.
+                                        </div>
+                                    )}
+                                    {type === 'renewable_curtailment' && (
+                                        <div style={{ padding: '6px 10px', background: '#fff3cd', color: '#856404', borderBottom: '1px solid #ffeeba', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span>⚠️</span> Renewable curtailment actions cannot be combined for estimation.
+                                        </div>
+                                    )}
+                                    <table className="action-table" style={{ margin: 0, border: 'none' }}>
+                                        <tbody>
+                                            {scoredActionsList
+                                                .filter(item => item.type === type)
+                                                .map(({ actionId, score }) => {
+                                                    const data = result?.actions?.[actionId];
+                                                    const isSelected = selectedCombineActionIds.includes(actionId);
+                                                    return (
+                                                        <tr
+                                                            key={actionId}
+                                                            className={isSelected ? 'selected' : ''}
+                                                            onClick={() => toggleActionSelection(actionId)}
+                                                            style={{ cursor: 'pointer', background: isSelected ? '#fff9db' : (data ? '#fdfdfd' : 'white') }}
+                                                        >
+                                                            <td style={{ width: '10px', paddingRight: 0 }}>
+                                                                <input type="checkbox" checked={isSelected} readOnly style={{ cursor: 'pointer' }} />
+                                                            </td>
+                                                            <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{actionId}</td>
+                                                            <td style={{ width: '60px' }}>
+                                                                <span className="metric-badge metric-score" style={{ scale: '0.9' }}>
+                                                                    {score.toFixed(2)}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ width: '80px' }}>
+                                                                {data ? (
+                                                                    <span className="metric-badge metric-rho" style={{
+                                                                        scale: '0.9',
+                                                                        background: data.max_rho > monitoringFactor ? '#ffebee' : data.max_rho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
+                                                                        color: data.max_rho > monitoringFactor ? '#c62828' : data.max_rho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32'
+                                                                    }}>
+                                                                        {(data.max_rho * 100).toFixed(1)}%
+                                                                    </span>
+                                                                ) : (
+                                                                    <span style={{ color: '#aaa', fontStyle: 'italic', fontSize: '10px' }}>Untested</span>
+                                                                )}
+                                                            </td>
+                                                            <td onClick={(e) => e.stopPropagation()} style={{ width: '90px' }}>
+                                                                <button
+                                                                    onClick={() => handleSimulateUnitaryFromModal(actionId)}
+                                                                    disabled={simulatingActionId === actionId}
+                                                                    style={{ padding: '3px 8px', background: data ? '#95a5a6' : '#2980b9', color: 'white', border: 'none', borderRadius: '4px', cursor: (simulatingActionId === actionId) ? 'not-allowed' : 'pointer', fontSize: '10px' }}
+                                                                >
+                                                                    {simulatingActionId === actionId ? '...' : (data ? 'Re-run' : 'Simulate')}
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ))}
+                        {scoredActionsList.length === 0 && (
+                            <div style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', padding: '40px 20px' }}>
+                                No scored actions available. Run analysis first.
+                            </div>
+                        )}
+                    </div>
+                    <div style={{ marginTop: '15px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {!superpositionResult ? (
+                                <button
+                                    onClick={handleComputeSuperposition}
+                                    disabled={selectedCombineActionIds.length !== 2 || isComputingSuperposition || hasRestricted}
+                                    style={{
+                                        width: '100%', padding: '12px',
+                                        background: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasRestricted) ? '#3498db' : '#ecf0f1',
+                                        color: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasRestricted) ? 'white' : '#bdc3c7',
+                                        border: 'none', borderRadius: '6px',
+                                        cursor: (selectedCombineActionIds.length !== 2 || isComputingSuperposition || hasRestricted) ? 'not-allowed' : 'pointer',
+                                        fontWeight: 'bold', fontSize: '14px', transition: 'all 0.2s',
+                                        boxShadow: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasRestricted) ? '0 4px 6px rgba(52,152,219,0.2)' : 'none'
+                                    }}
+                                >
+                                    {isComputingSuperposition ? '⚙️ Estimating Combination...' : (selectedCombineActionIds.length === 2 ? (hasRestricted ? 'Combination not allowed' : 'Estimate combination effect') : 'Select 2 actions to estimate')}
+                                </button>
+                            ) : (
+                                <div style={{ padding: '15px', background: superpositionResult.error ? '#fff3cd' : '#e1f5fe', borderRadius: '8px', borderLeft: '5px solid ' + (superpositionResult.error ? '#856404' : '#0288d1'), boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                                        <div style={{ flex: 1 }}>
+                                            {superpositionResult.betas && (
+                                                <div style={{ marginBottom: '8px', fontSize: '11px', color: '#666', background: 'rgba(255,255,255,0.6)', padding: '2px 8px', borderRadius: '4px', display: 'inline-block', fontWeight: 600 }}>
+                                                    Betas: {superpositionResult.betas.map(b => b.toFixed(3)).join(', ')}
+                                                </div>
+                                            )}
+                                            <div style={{ fontWeight: 800, color: superpositionResult.error ? '#856404' : '#01579b', fontSize: '15px' }}>
+                                                {superpositionResult.error ? '⚠️ Estimation Failed' : 'Explore Pairs Comparison'}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <button
+                                                onClick={handleComputeSuperposition}
+                                                disabled={isComputingSuperposition || hasRestricted}
+                                                style={{ padding: '6px 12px', background: 'white', border: '1px solid #3498db', color: '#3498db', borderRadius: '4px', cursor: (isComputingSuperposition || hasRestricted) ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                                            >
+                                                {isComputingSuperposition ? '...' : (hasRestricted ? 'Locked' : 'Estimate combination effect')}
+                                            </button>
+                                            <button
+                                                onClick={() => handleSimulateCombined()}
+                                                disabled={isSimulatingCombined || hasRestricted}
+                                                style={{ padding: '6px 16px', background: (isSimulatingCombined || hasRestricted) ? '#6c757d' : '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: (isSimulatingCombined || hasRestricted) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '12px', boxShadow: (isSimulatingCombined || hasRestricted) ? 'none' : '0 2px 4px rgba(39,174,96,0.2)', minWidth: '140px' }}
+                                            >
+                                                {isSimulatingCombined ? '⌛ Simulating...' : (hasRestricted ? 'Simulation Locked' : 'Simulate Combined')}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {!superpositionResult.error && (
+                                        <div style={{ display: 'flex', gap: '30px', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '12px' }}>
+                                            <div style={{ flex: 1, borderRight: '1px solid rgba(0,0,0,0.05)', paddingRight: '15px' }}>
+                                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Estimated Effect</div>
+                                                <div style={{ fontSize: '13px', marginBottom: '4px' }}>
+                                                    Estimated Max Loading: <strong style={{ color: superpositionResult.max_rho <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{(superpositionResult.max_rho * 100).toFixed(1)}%</strong>
+                                                </div>
+                                                <div style={{ fontSize: '12px', color: '#666' }}>
+                                                    Line: {superpositionResult.max_rho_line}
+                                                </div>
+                                            </div>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Simulation Result</div>
+                                                {isSimulatingCombined && (
+                                                    <div style={{ color: '#0056b3', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <span>⌛</span> Simulating combined action...
+                                                    </div>
+                                                )}
+                                                {!isSimulatingCombined && combinedSimulationFeedback && (
+                                                    <>
+                                                        <div style={{ fontSize: '13px', marginBottom: '4px' }}>
+                                                            Actual Max Loading: <strong style={{ color: (combinedSimulationFeedback.max_rho ?? 1) <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{combinedSimulationFeedback.max_rho != null ? `${(combinedSimulationFeedback.max_rho * 100).toFixed(1)}%` : 'N/A'}</strong>
+                                                        </div>
+                                                        <div style={{ fontSize: '12px', color: '#666' }}>
+                                                            Line: {combinedSimulationFeedback.max_rho_line}
+                                                        </div>
+                                                        {combinedSimulationFeedback.is_islanded && (
+                                                            <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                                                                Islanding detected ({combinedSimulationFeedback.disconnected_mw?.toFixed(1)} MW disconnected)
+                                                            </div>
+                                                        )}
+                                                        {combinedSimulationFeedback.non_convergence && (
+                                                            <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                                                                Non-convergence: {combinedSimulationFeedback.non_convergence}
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                )}
+                                                {!isSimulatingCombined && !combinedSimulationFeedback && (
+                                                    <div style={{ color: '#aaa', fontSize: '12px', fontStyle: 'italic', marginTop: '5px' }}>Click "Simulate Combined" to run</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {superpositionResult.error && (
+                                        <div style={{ fontSize: '13px', color: '#856404' }}>{superpositionResult.error}</div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </>
+            );
+        };
+
         function App() {
             const [branches, setBranches] = useState([]);
             const [voltageLevels, setVoltageLevels] = useState([]);
+            // Backend returns an ID → human-readable-name mapping
+            // alongside the branch and voltage-level lists (e.g.
+            // `{"LINE.VERGE62DERDU6_1_2": "Vergé to Dudelange"}`).
+            // Surfaced in the contingency datalist so users searching
+            // grids with 1000+ branches can type either the ID
+            // fragment or the substation name. Parity with
+            // `frontend/src/App.tsx::displayName` + `contingencyOptions`.
+            const [nameMap, setNameMap] = useState({});
             const initialMountRef = useRef(true);
             const isPrePopulated = useRef(false);
 
@@ -2392,14 +2790,23 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     opts.push(...branches.slice(0, 50));
                 } else {
                     for (let i = 0; i < branches.length; i++) {
-                        if (branches[i].toUpperCase().includes(q)) {
-                            opts.push(branches[i]);
+                        const id = branches[i];
+                        const name = nameMap[id] || '';
+                        if (id.toUpperCase().includes(q) || name.toUpperCase().includes(q)) {
+                            opts.push(id);
                             if (opts.length >= 50) break;
                         }
                     }
                 }
-                return opts.map(b => <option key={b} value={b} />);
-            }, [branches, selectedBranch]);
+                // Visible label shows "Display name  —  RAW_ID" so the
+                // operator sees real substation names while the
+                // submitted value stays the raw ID the backend expects.
+                // Parity with frontend/src/App.tsx:184-187.
+                return opts.map(b => {
+                    const name = nameMap[b];
+                    return <option key={b} value={b} label={name ? `${name}  —  ${b}` : b} />;
+                });
+            }, [branches, selectedBranch, nameMap]);
 
             // Recommender Settings
             const [minLineReconnections, setMinLineReconnections] = useState(2.0);
@@ -2625,6 +3032,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
                     setBranches(branchesRes.data.branches);
                     setVoltageLevels(vlRes.data.voltage_levels);
+                    setNameMap({ ...(branchesRes.data.name_map || {}), ...(vlRes.data.name_map || {}) });
                     setSelectedBranch('');
 
                     // Set up nominal voltage filter
@@ -3341,6 +3749,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
                     setBranches(branchesRes.data.branches);
                     setVoltageLevels(vlRes.data.voltage_levels);
+                    setNameMap({ ...(branchesRes.data.name_map || {}), ...(vlRes.data.name_map || {}) });
 
                     // Set up nominal voltage filter
                     const nvMap = nomVRes.data.mapping;
@@ -3838,6 +4247,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     ]);
                     setBranches(branchRes.data.branches);
                     setVoltageLevels(vlRes.data.voltage_levels);
+                    setNameMap({ ...(branchRes.data.name_map || {}), ...(vlRes.data.name_map || {}) });
 
                     // Set up nominal voltage filter
                     const nvMap = nomVRes.data.mapping;
@@ -5023,41 +5433,52 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     const isLoadShedding = actionDetail.load_shedding_details && actionDetail.load_shedding_details.length > 0;
                     const isRenewableCurtailment = actionDetail.curtailment_details && actionDetail.curtailment_details.length > 0;
 
-                    if (topo) {
-                        // For coupling actions: only highlight breaker, not branches
-                        if (!isCoupling) {
-                            const targetEquipIds = new Set();
+                    // Collect LS / curtailment / PST targets regardless of
+                    // whether action_topology is populated — manually
+                    // simulated actions can arrive with `topo = {}` but the
+                    // enrichment-detail arrays are always present, so the
+                    // block is now OUTSIDE the `if (topo)` gate. Parity
+                    // with `frontend/src/components/SldOverlay.tsx:528-568`.
+                    if (!isCoupling) {
+                        const targetEquipIds = new Set();
+                        if (topo) {
                             for (const id of Object.keys(topo.lines_ex_bus || {})) targetEquipIds.add(id);
                             for (const id of Object.keys(topo.lines_or_bus || {})) targetEquipIds.add(id);
                             for (const id of Object.keys(topo.gens_bus || {})) targetEquipIds.add(id);
                             for (const id of Object.keys(topo.loads_bus || {})) targetEquipIds.add(id);
                             for (const id of Object.keys(topo.pst_tap || {})) targetEquipIds.add(id);
+                            for (const id of Object.keys(topo.loads_p || {})) targetEquipIds.add(id);
+                            for (const id of Object.keys(topo.gens_p || {})) targetEquipIds.add(id);
+                        }
+                        // Detail-array fallback — covers LS / curtailment / PST
+                        // actions whose topology was not round-tripped.
+                        (actionDetail.curtailment_details || []).forEach(rc => { if (rc.gen_name) targetEquipIds.add(rc.gen_name); });
+                        (actionDetail.load_shedding_details || []).forEach(ls => { if (ls.load_name) targetEquipIds.add(ls.load_name); });
+                        (actionDetail.pst_details || []).forEach(p => { if (p.pst_name) targetEquipIds.add(p.pst_name); });
 
-                            // Fallback from enrichment details (if topology match fails or metadata is missing)
-                            (actionDetail.curtailment_details || []).forEach(rc => { if (rc.gen_name) targetEquipIds.add(rc.gen_name); });
-                            (actionDetail.load_shedding_details || []).forEach(ls => { if (ls.load_name) targetEquipIds.add(ls.load_name); });
+                        for (const equipId of targetEquipIds) {
+                            let cell = findCellForEquipment(equipId);
 
-                            for (const equipId of targetEquipIds) {
-                                let cell = findCellForEquipment(equipId);
-
-                                // Extreme fallback for RC/LS: direct text search in the SVG
-                                if (!cell && (isRenewableCurtailment || isLoadShedding)) {
-                                    const texts = container.querySelectorAll('text');
-                                    const q = equipId.toLowerCase().substring(0, 5);
-                                    for (const txt of texts) {
-                                        if (txt.textContent.toLowerCase().includes(q)) {
-                                            cell = walkUpToCell(txt);
-                                            if (cell) break;
-                                        }
+                            // Extreme fallback for RC/LS: direct text search in the SVG
+                            if (!cell && (isRenewableCurtailment || isLoadShedding)) {
+                                const texts = container.querySelectorAll('text');
+                                const q = equipId.toLowerCase().substring(0, 5);
+                                for (const txt of texts) {
+                                    if (txt.textContent.toLowerCase().includes(q)) {
+                                        cell = walkUpToCell(txt);
+                                        if (cell) break;
                                     }
                                 }
+                            }
 
-                                if (cell && !highlightedCells.has(cell)) {
-                                    cloneHighlight(cell, 'sld-highlight-action');
-                                    highlightedCells.add(cell);
-                                }
+                            if (cell && !highlightedCells.has(cell)) {
+                                cloneHighlight(cell, 'sld-highlight-action');
+                                highlightedCells.add(cell);
                             }
                         }
+                    }
+
+                    if (topo) {
 
                         // Highlight affected breakers/switches.
                         // Prefer changed_switches from SLD response (robust N-1 vs action comparison)
@@ -5416,6 +5837,16 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     // re-simulation of the already-selected action
                     // re-fetches instead of toggling it off.
                     handleActionSelect(actionId, true);
+                    // If the SLD overlay is currently open on this same
+                    // action, refetch it so the per-equipment
+                    // load-shedding / curtailment highlights and the
+                    // flow deltas baked into the backend SLD response
+                    // reflect the new MW. Without this the overlay kept
+                    // showing the pre-resimulation markers. Parity with
+                    // `frontend/src/hooks/useSldOverlay.ts::refreshCurrentIfAction`.
+                    if (vlOverlay && vlOverlay.actionId === actionId) {
+                        fetchSldVariant(vlOverlay.vlName, actionId, vlOverlay.tab);
+                    }
                 } catch (err) {
                     console.error('Re-simulation failed:', err);
                 } finally {
@@ -5481,6 +5912,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     // Force-select so the action variant diagram re-fetches
                     // (matches the React `wrappedForcedActionSelect` path).
                     handleActionSelect(actionId, true);
+                    // If the SLD overlay is currently open on this PST
+                    // action, refetch it so the tap highlight + flow
+                    // deltas reflect the new tap position (parity with
+                    // the MW re-simulate path + React's refreshCurrentIfAction).
+                    if (vlOverlay && vlOverlay.actionId === actionId) {
+                        fetchSldVariant(vlOverlay.vlName, actionId, vlOverlay.tab);
+                    }
                 } catch (err) {
                     console.error('PST re-simulation failed:', err);
                 } finally {
@@ -8474,375 +8912,32 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                                 </div>
 
                                 {combineModalTab === 'computed' ? (
-                                    <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                                        <table className="action-table">
-                                            <thead>
-                                                <tr>
-                                                    <th>Action 1</th>
-                                                    <th>Action 2</th>
-                                                    <th>Betas</th>
-                                                    <th>Max Loading (Est.)</th>
-                                                    <th>Line (Est.)</th>
-                                                    <th>Simulated Max Rho</th>
-                                                    <th>Simulated Line</th>
-                                                    <th>Action</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {(() => {
-                                                    // Primary source: combined_actions (includes estimated-only pairs)
-                                                    // Merge with result.actions for simulation data
-                                                    const combinedEntries = Object.entries(result?.combined_actions || {});
-                                                    // Build a set of canonical keys present in combined_actions
-                                                    const combinedCanonicalKeys = new Set(combinedEntries.map(([id]) => canonicalizeId(id)));
-                                                    // Also include any simulated pairs in result.actions not in combined_actions
-                                                    // (check both original key AND canonical key to avoid duplicates)
-                                                    const simulatedOnly = Object.entries(result?.actions || {})
-                                                        .filter(([id, data]) => id.includes('+') && !(result?.combined_actions || {})[id] && !combinedCanonicalKeys.has(canonicalizeId(id)));
-                                                    const allPairs = [
-                                                        ...combinedEntries.map(([id, ca]) => {
-                                                            // Look up simulation data by both original key and canonical key
-                                                            const cId = canonicalizeId(id);
-                                                            const simData = result?.actions?.[id] || result?.actions?.[cId];
-                                                            const isSimulated = simData && !simData.is_estimated && simData.rho_after && simData.rho_after.length > 0;
-                                                            return [id, { ...ca, ...(isSimulated ? { _simData: simData } : {}) }];
-                                                        }),
-                                                        ...simulatedOnly.map(([id, data]) => [id, data]),
-                                                    ];
-                                                    return allPairs
-                                                        .sort((a, b) => ((a[1].estimated_max_rho ?? a[1].max_rho) ?? 999) - ((b[1].estimated_max_rho ?? b[1].max_rho) ?? 999))
-                                                        .map(([id, data]) => {
-                                                            const parts = id.split('+').map(p => p.trim());
-                                                            const simData = data._simData || result?.actions?.[id] || result?.actions?.[canonicalizeId(id)];
-                                                            const isSimulated = simData && !simData.is_estimated && simData.rho_after && simData.rho_after.length > 0;
-                                                            const estMaxRho = data.estimated_max_rho ?? data.max_rho;
-                                                            const estMaxRhoLine = data.estimated_max_rho_line ?? data.max_rho_line;
-
-                                                            return (
-                                                                <tr key={id}>
-                                                                    <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{parts[0]}</td>
-                                                                    <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{parts[1]}</td>
-                                                                    <td style={{ fontSize: '11px', fontFamily: 'monospace', color: '#666' }}>
-                                                                        {data.betas ? (Array.isArray(data.betas) ? data.betas : Object.values(data.betas)).map(b => b.toFixed(2)).join(', ') : '-'}
-                                                                    </td>
-                                                                    <td>
-                                                                        <span className="metric-badge metric-rho" style={{
-                                                                            background: estMaxRho > monitoringFactor ? '#ffebee' : estMaxRho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
-                                                                            color: estMaxRho > monitoringFactor ? '#c62828' : estMaxRho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32',
-                                                                            fontWeight: 'bold',
-                                                                            opacity: 0.9,
-                                                                            border: estMaxRho > monitoringFactor ? '1px solid #c62828' : estMaxRho > (monitoringFactor - 0.05) ? '1px solid #856404' : '1px dashed #2e7d32'
-                                                                        }}>
-                                                                            {estMaxRho != null && !isNaN(estMaxRho) ? `${(estMaxRho * 100).toFixed(1)}%` : '—'}
-                                                                            {data.is_islanded && (
-                                                                                <span style={{ marginLeft: '4px' }} title="Estimation suspect due to islanding or linear superposition breakdown">⚠️</span>
-                                                                            )}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>{estMaxRhoLine || 'N/A'}</td>
-
-                                                                    <td style={{ textAlign: 'center' }}>
-                                                                        {isSimulated ? (
-                                                                            <span className="metric-badge metric-rho" style={{
-                                                                                fontWeight: 'bold',
-                                                                                fontSize: '13px',
-                                                                                background: simData.max_rho > monitoringFactor ? '#ffebee' : simData.max_rho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
-                                                                                color: simData.max_rho > monitoringFactor ? '#c62828' : simData.max_rho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32'
-                                                                            }}>
-                                                                                {(simData.max_rho * 100).toFixed(1)}%
-                                                                                {simData.is_islanded && (
-                                                                                    <span style={{ fontSize: '10px', marginLeft: '4px', border: '1px solid #721c24', padding: '1px 3px', borderRadius: '3px', color: '#721c24', background: '#f8d7da' }} title={`Islanding: ${simData.disconnected_mw?.toFixed(1)} MW disconnected`}>🏝️</span>
-                                                                                )}
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span style={{ color: '#aaa', fontSize: '11px' }}>Not simulated</span>
-                                                                        )}
-                                                                    </td>
-                                                                    <td style={{ fontSize: '11px', color: '#333', fontWeight: isSimulated ? 'bold' : 'normal' }}>
-                                                                        {isSimulated ? simData.max_rho_line : '-'}
-                                                                    </td>
-
-                                                                    <td>
-                                                                        <button
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                handleAddManualAction(id);
-                                                                            }}
-                                                                            disabled={!!simulatingActionId}
-                                                                            style={{
-                                                                                padding: '6px 14px',
-                                                                                background: isSimulated ? '#007bff' : '#28a745',
-                                                                                color: 'white',
-                                                                                border: 'none',
-                                                                                borderRadius: '4px',
-                                                                                cursor: simulatingActionId ? 'not-allowed' : 'pointer',
-                                                                                fontSize: '11px',
-                                                                                fontWeight: 'bold',
-                                                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                                                opacity: simulatingActionId ? 0.6 : 1,
-                                                                                minWidth: '100px'
-                                                                            }}
-                                                                        >
-                                                                            {simulatingActionId === canonicalizeId(id) ? '⌛' : (isSimulated ? 'Re-Simulate' : 'Simulate')}
-                                                                        </button>
-                                                                    </td>
-                                                                </tr>
-                                                            );
-                                                        });
-                                                }
-                                                )()}
-                                                {Object.keys(result?.combined_actions || {}).length === 0 &&
-                                                    Object.entries(result?.actions || {}).filter(([id]) => id.includes('+')).length === 0 && (
-                                                        <tr>
-                                                            <td colSpan="6" style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', padding: '40px 20px' }}>
-                                                                No computed combinations found.<br />Go to <strong>Explore Pairs</strong> to create new ones.
-                                                            </td>
-                                                        </tr>
-                                                    )}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                    <ComputedPairsTable
+                                        result={result}
+                                        monitoringFactor={monitoringFactor}
+                                        simulatingActionId={simulatingActionId}
+                                        handleAddManualAction={handleAddManualAction}
+                                        canonicalizeId={canonicalizeId}
+                                    />
                                 ) : (
-                                    <>
-                                        <div style={{ background: '#f8f9fa', padding: '10px', borderRadius: '6px', marginBottom: '15px', border: '1px solid #e9ecef' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                                <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#444' }}>Selected Actions ({selectedCombineActionIds.length}/2)</div>
-                                                <button
-                                                    onClick={() => setSelectedCombineActionIds([])}
-                                                    disabled={selectedCombineActionIds.length === 0}
-                                                    style={{ background: 'none', border: 'none', color: '#007bff', fontSize: '11px', cursor: 'pointer', padding: 0 }}
-                                                >Clear All</button>
-                                            </div>
-                                            <div style={{ display: 'flex', gap: '8px', minHeight: '30px' }}>
-                                                {selectedCombineActionIds.length === 0 ? (
-                                                    <div style={{ color: '#999', fontSize: '12px', fontStyle: 'italic', display: 'flex', alignItems: 'center' }}>Click rows in the table below to select...</div>
-                                                ) : (
-                                                    selectedCombineActionIds.map(id => (
-                                                        <div key={id} style={{ background: '#e7f1ff', color: '#007bff', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', border: '1px solid #b3d7ff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                            {id}
-                                                            <span onClick={(e) => { e.stopPropagation(); toggleActionSelection(id); }} style={{ cursor: 'pointer', fontSize: '14px' }}>&times;</span>
-                                                        </div>
-                                                    ))
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div style={{ marginBottom: '12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                            {['all', 'disco', 'reco', 'open', 'close', 'pst', 'ls', 'rc'].map(f => (
-                                                <button
-                                                    key={f}
-                                                    onClick={() => setExploreFilter(f)}
-                                                    style={{
-                                                        padding: '4px 10px',
-                                                        borderRadius: '15px',
-                                                        border: '1px solid',
-                                                        borderColor: exploreFilter === f ? '#007bff' : '#ddd',
-                                                        background: exploreFilter === f ? '#007bff' : 'white',
-                                                        color: exploreFilter === f ? 'white' : '#666',
-                                                        fontSize: '11px',
-                                                        cursor: 'pointer',
-                                                        fontWeight: exploreFilter === f ? 'bold' : 'normal',
-                                                        transition: 'all 0.2s'
-                                                    }}
-                                                >
-                                                    {f.toUpperCase()}
-                                                </button>
-                                            ))}
-                                        </div>
-
-                                        <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '4px' }}>
-                                            {Array.from(new Set(scoredActionsList.map(item => item.type)))
-                                                .filter(type => exploreFilter === 'all' || type.includes(exploreFilter) || (exploreFilter === 'ls' && type === 'load_shedding') || (exploreFilter === 'rc' && type === 'renewable_curtailment'))
-                                                .map(type => (
-                                                    <div key={type} style={{ marginBottom: '1px' }}>
-                                                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#444', backgroundColor: '#f0f2f5', padding: '4px 8px', borderBottom: '1px solid #e1e4e8', display: 'flex', justifyContent: 'space-between' }}>
-                                                            <span>{type.replace('_', ' ').toUpperCase()}</span>
-                                                            <span>{scoredActionsList.filter(item => item.type === type).length} actions</span>
-                                                        </div>
-                                                        {type === 'load_shedding' && (
-                                                            <div style={{ padding: '6px 10px', background: '#fff3cd', color: '#856404', borderBottom: '1px solid #ffeeba', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                <span>⚠️</span> Load shedding actions cannot be combined for estimation.
-                                                            </div>
-                                                        )}
-                                                        {type === 'renewable_curtailment' && (
-                                                            <div style={{ padding: '6px 10px', background: '#fff3cd', color: '#856404', borderBottom: '1px solid #ffeeba', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                <span>⚠️</span> Renewable curtailment actions cannot be combined for estimation.
-                                                            </div>
-                                                        )}
-                                                        <table className="action-table" style={{ margin: 0, border: 'none' }}>
-                                                            <tbody>
-                                                                {scoredActionsList
-                                                                    .filter(item => item.type === type)
-                                                                    .map(({ actionId, score }) => {
-                                                                        const data = result?.actions?.[actionId];
-                                                                        const isSelected = selectedCombineActionIds.includes(actionId);
-                                                                        return (
-                                                                            <tr
-                                                                                key={actionId}
-                                                                                className={isSelected ? 'selected' : ''}
-                                                                                onClick={() => toggleActionSelection(actionId)}
-                                                                                style={{ cursor: 'pointer', background: isSelected ? '#fff9db' : (data ? '#fdfdfd' : 'white') }}
-                                                                            >
-                                                                                <td style={{ width: '10px', paddingRight: 0 }}>
-                                                                                    <input type="checkbox" checked={isSelected} readOnly style={{ cursor: 'pointer' }} />
-                                                                                </td>
-                                                                                <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{actionId}</td>
-                                                                                <td style={{ width: '60px' }}>
-                                                                                    <span className="metric-badge metric-score" style={{ scale: '0.9' }}>
-                                                                                        {score.toFixed(2)}
-                                                                                    </span>
-                                                                                </td>
-                                                                                <td style={{ width: '80px' }}>
-                                                                                    {data ? (
-                                                                                        <span className="metric-badge metric-rho" style={{
-                                                                                            scale: '0.9',
-                                                                                            background: data.max_rho > monitoringFactor ? '#ffebee' : data.max_rho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
-                                                                                            color: data.max_rho > monitoringFactor ? '#c62828' : data.max_rho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32'
-                                                                                        }}>
-                                                                                            {(data.max_rho * 100).toFixed(1)}%
-                                                                                        </span>
-                                                                                    ) : (
-                                                                                        <span style={{ color: '#aaa', fontStyle: 'italic', fontSize: '10px' }}>Untested</span>
-                                                                                    )}
-                                                                                </td>
-                                                                                <td onClick={(e) => e.stopPropagation()} style={{ width: '90px' }}>
-                                                                                    <button
-                                                                                        onClick={() => handleSimulateUnitaryFromModal(actionId)}
-                                                                                        disabled={simulatingActionId === actionId}
-                                                                                        style={{ padding: '3px 8px', background: data ? '#95a5a6' : '#2980b9', color: 'white', border: 'none', borderRadius: '4px', cursor: (simulatingActionId === actionId) ? 'not-allowed' : 'pointer', fontSize: '10px' }}
-                                                                                    >
-                                                                                        {simulatingActionId === actionId ? '...' : (data ? 'Re-run' : 'Simulate')}
-                                                                                    </button>
-                                                                                </td>
-                                                                            </tr>
-                                                                        );
-                                                                    })
-                                                                }
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                ))}
-                                            {scoredActionsList.length === 0 && (
-                                                <div style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', padding: '40px 20px' }}>
-                                                    No scored actions available. Run analysis first.
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div style={{ marginTop: '15px' }}>
-                                            {(() => {
-                                                const hasRestricted = selectedCombineActionIds.some(id => {
-                                                    const detail = result?.actions?.[id];
-                                                    return id.includes('load_shedding') || !!detail?.load_shedding_details ||
-                                                        id.includes('renewable_curtailment') || !!detail?.curtailment_details;
-                                                });
-                                                return (
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                        {!superpositionResult ? (
-                                                            <button
-                                                                onClick={handleComputeSuperposition}
-                                                                disabled={selectedCombineActionIds.length !== 2 || isComputingSuperposition || hasRestricted}
-                                                                style={{
-                                                                    width: '100%',
-                                                                    padding: '12px',
-                                                                    background: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasRestricted) ? '#3498db' : '#ecf0f1',
-                                                                    color: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasRestricted) ? 'white' : '#bdc3c7',
-                                                                    border: 'none',
-                                                                    borderRadius: '6px',
-                                                                    cursor: (selectedCombineActionIds.length !== 2 || isComputingSuperposition || hasRestricted) ? 'not-allowed' : 'pointer',
-                                                                    fontWeight: 'bold',
-                                                                    fontSize: '14px',
-                                                                    transition: 'all 0.2s',
-                                                                    boxShadow: (selectedCombineActionIds.length === 2 && !isComputingSuperposition && !hasRestricted) ? '0 4px 6px rgba(52,152,219,0.2)' : 'none'
-                                                                }}
-                                                            >
-                                                                {isComputingSuperposition ? '⚙️ Estimating Combination...' : (selectedCombineActionIds.length === 2 ? (hasRestricted ? 'Combination not allowed' : 'Estimate combination effect') : 'Select 2 actions to estimate')}
-                                                            </button>
-                                                        ) : (
-                                                            <div style={{ padding: '15px', background: superpositionResult.error ? '#fff3cd' : '#e1f5fe', borderRadius: '8px', borderLeft: '5px solid ' + (superpositionResult.error ? '#856404' : '#0288d1'), boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
-                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                                                                    <div style={{ flex: 1 }}>
-                                                                        {superpositionResult.betas && (
-                                                                            <div style={{ marginBottom: '8px', fontSize: '11px', color: '#666', background: 'rgba(255,255,255,0.6)', padding: '2px 8px', borderRadius: '4px', display: 'inline-block', fontWeight: 600 }}>
-                                                                                Betas: {superpositionResult.betas.map(b => b.toFixed(3)).join(', ')}
-                                                                            </div>
-                                                                        )}
-                                                                        <div style={{ fontWeight: 800, color: superpositionResult.error ? '#856404' : '#01579b', fontSize: '15px' }}>
-                                                                            {superpositionResult.error ? '⚠️ Estimation Failed' : 'Explore Pairs Comparison'}
-                                                                        </div>
-                                                                    </div>
-                                                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                                                        <button
-                                                                            onClick={handleComputeSuperposition}
-                                                                            disabled={isComputingSuperposition || hasRestricted}
-                                                                            style={{ padding: '6px 12px', background: 'white', border: '1px solid #3498db', color: '#3498db', borderRadius: '4px', cursor: (isComputingSuperposition || hasRestricted) ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 'bold' }}
-                                                                        >
-                                                                            {isComputingSuperposition ? '...' : (hasRestricted ? 'Locked' : 'Estimate combination effect')}
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => handleSimulateCombined()}
-                                                                            disabled={isSimulatingCombined || hasRestricted}
-                                                                            style={{ padding: '6px 16px', background: (isSimulatingCombined || hasRestricted) ? '#6c757d' : '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: (isSimulatingCombined || hasRestricted) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '12px', boxShadow: (isSimulatingCombined || hasRestricted) ? 'none' : '0 2px 4px rgba(39,174,96,0.2)', minWidth: '140px' }}
-                                                                        >
-                                                                            {isSimulatingCombined ? '⌛ Simulating...' : (hasRestricted ? 'Simulation Locked' : 'Simulate Combined')}
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-
-                                                                {!superpositionResult.error && (
-                                                                    <div style={{ display: 'flex', gap: '30px', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '12px' }}>
-                                                                        <div style={{ flex: 1, borderRight: '1px solid rgba(0,0,0,0.05)', paddingRight: '15px' }}>
-                                                                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Estimated Effect</div>
-                                                                            <div style={{ fontSize: '13px', marginBottom: '4px' }}>
-                                                                                Estimated Max Loading: <strong style={{ color: superpositionResult.max_rho <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{(superpositionResult.max_rho * 100).toFixed(1)}%</strong>
-                                                                            </div>
-                                                                            <div style={{ fontSize: '12px', color: '#666' }}>
-                                                                                Line: {superpositionResult.max_rho_line}
-                                                                            </div>
-                                                                        </div>
-                                                                        <div style={{ flex: 1 }}>
-                                                                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Simulation Result</div>
-                                                                            {isSimulatingCombined && (
-                                                                                <div style={{ color: '#0056b3', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                                    <span>⌛</span> Simulating combined action...
-                                                                                </div>
-                                                                            )}
-                                                                            {!isSimulatingCombined && combinedSimulationFeedback && (
-                                                                                <>
-                                                                                    <div style={{ fontSize: '13px', marginBottom: '4px' }}>
-                                                                                        Actual Max Loading: <strong style={{ color: (combinedSimulationFeedback.max_rho ?? 1) <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{combinedSimulationFeedback.max_rho != null ? `${(combinedSimulationFeedback.max_rho * 100).toFixed(1)}%` : 'N/A'}</strong>
-                                                                                    </div>
-                                                                                    <div style={{ fontSize: '12px', color: '#666' }}>
-                                                                                        Line: {combinedSimulationFeedback.max_rho_line}
-                                                                                    </div>
-                                                                                    {combinedSimulationFeedback.is_islanded && (
-                                                                                        <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
-                                                                                            Islanding detected ({combinedSimulationFeedback.disconnected_mw?.toFixed(1)} MW disconnected)
-                                                                                        </div>
-                                                                                    )}
-                                                                                    {combinedSimulationFeedback.non_convergence && (
-                                                                                        <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
-                                                                                            Non-convergence: {combinedSimulationFeedback.non_convergence}
-                                                                                        </div>
-                                                                                    )}
-                                                                                </>
-                                                                            )}
-                                                                            {!isSimulatingCombined && !combinedSimulationFeedback && (
-                                                                                <div style={{ color: '#aaa', fontSize: '12px', fontStyle: 'italic', marginTop: '5px' }}>Click "Simulate Combined" to run</div>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-                                                                {superpositionResult.error && (
-                                                                    <div style={{ fontSize: '13px', color: '#856404' }}>{superpositionResult.error}</div>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })()}
-                                        </div>
-                                    </>
+                                    <ExplorePairsTab
+                                        result={result}
+                                        monitoringFactor={monitoringFactor}
+                                        selectedCombineActionIds={selectedCombineActionIds}
+                                        setSelectedCombineActionIds={setSelectedCombineActionIds}
+                                        exploreFilter={exploreFilter}
+                                        setExploreFilter={setExploreFilter}
+                                        scoredActionsList={scoredActionsList}
+                                        toggleActionSelection={toggleActionSelection}
+                                        handleSimulateUnitaryFromModal={handleSimulateUnitaryFromModal}
+                                        simulatingActionId={simulatingActionId}
+                                        handleComputeSuperposition={handleComputeSuperposition}
+                                        isComputingSuperposition={isComputingSuperposition}
+                                        superpositionResult={superpositionResult}
+                                        handleSimulateCombined={handleSimulateCombined}
+                                        isSimulatingCombined={isSimulatingCombined}
+                                        combinedSimulationFeedback={combinedSimulationFeedback}
+                                    />
                                 )}
 
                                 <div className="modal-footer">
