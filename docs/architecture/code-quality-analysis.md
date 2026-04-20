@@ -261,17 +261,18 @@ the current HEAD. Re-generate via
 
 ```
 Backend (expert_backend/)
-  Source files (non-test):     8
-  Total lines:                 5,124
-  Largest module:              analysis_mixin.py (1,115 lines)
+  Source files (non-test):     9 (added simulation_helpers.py)
+  Total lines:                 5,491
+  Largest module:              analysis_mixin.py (1,116 lines)
   Top 3 longest functions:
-    simulate_manual_action     599 lines
-    compute_superposition      285 lines
-    run_analysis               171 lines
+    run_analysis               169 lines
+    update_config              166 lines
+    simulate_manual_action     146 lines  (was 599 — split via helpers)
+                               compute_superposition → 108 lines (was 285)
   print() calls in source:     0  (was 80+)
   traceback.print_exc() calls: 0  (was distributed across mixins)
   Silent except: pass:         0  (was 80+)
-  Test files:                  40
+  Test files:                  41 (+ test_simulation_helpers.py with 66 tests)
 
 Frontend (frontend/src/)
   Source files (non-test):     37
@@ -442,3 +443,41 @@ Expected CI behaviour after the sweep: the new `code-quality` job is
 green at current HEAD, and any regression (new `print(`, new module
 crossing the ceiling, new `any` in frontend source, &c.) fails the
 job with a prescriptive message.
+
+---
+
+## 10. Delta — 2026-04-20 (follow-up: function decomposition)
+
+Second pass targeted at the two longest functions flagged in §6 by the
+continuous reporter:
+
+| Function | Before | After | Lever |
+|----------|--------|-------|-------|
+| `simulate_manual_action` | 599 | **146** | 12 private helpers + 11 helpers in new `simulation_helpers.py` |
+| `compute_superposition` | 285 | **108** | 5 private helpers (pair-simulate / identify-with-PST-fallback / care-mask / metrics / diagnostics) |
+
+The new stateless module `expert_backend/services/simulation_helpers.py`
+(403 LoC) owns the pieces that don't need `self`:
+`canonicalize_action_id`, `compute_reduction_setpoint`,
+`parse_pst_tap_id` + `clamp_tap`, `classify_action_content`,
+`is_pst_action` + `pst_fallback_line_idxs`, `build_care_mask`,
+`resolve_lines_overloaded`, `compute_action_metrics`,
+`extract_action_topology`, `serialize_action_result`,
+`normalise_non_convergence`, `build_combined_description`, and
+`compute_combined_rho`.
+
+Coverage: 66 focused unit tests in
+`expert_backend/tests/test_simulation_helpers.py` — one test class per
+helper, exercising edge cases that previously lived as implicit
+branches inside the god-method (islanding, PST-tap-only topologies,
+heuristic power-reduction fallback, pre-existing overload exclusion,
+combined-pair description building, sign-preserving rho superposition).
+
+Test surface: the 130 existing simulation + superposition tests
+continue to pass (same mocks, same call order). The extraction is
+behaviour-preserving — helpers were pulled from the method body
+verbatim wherever possible.
+
+Next candidates (see §6 metrics): `run_analysis` (169 lines),
+`update_config` (166 lines), `_enrich_actions` (125 lines).
+
