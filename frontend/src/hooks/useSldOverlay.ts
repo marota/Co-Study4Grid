@@ -17,6 +17,15 @@ export interface SldOverlayState {
     handleVlDoubleClick: (actionId: string, vlName: string) => void;
     handleOverlaySldTabChange: (sldTab: SldTab) => void;
     handleOverlayClose: () => void;
+    /**
+     * Re-fetch the currently-open SLD if it matches the given actionId.
+     * Called after a manual re-simulation (MW edit on a load-shedding or
+     * curtailment action, tap edit on a PST) so the SLD's load-state
+     * highlights, flow deltas and asset deltas reflect the new backend
+     * result instead of the pre-resimulation snapshot. No-op when the
+     * overlay is closed or targets a different action.
+     */
+    refreshCurrentIfAction: (actionId: string) => void;
 }
 
 /**
@@ -137,6 +146,11 @@ export function useSldOverlay(activeTab: TabId, liveSelectedActionId?: string | 
         setVlOverlay(null);
     }, []);
 
+    const refreshCurrentIfAction = useCallback((actionId: string) => {
+        if (!vlOverlay || vlOverlay.actionId !== actionId) return;
+        fetchSldVariant(vlOverlay.vlName, vlOverlay.actionId, vlOverlay.tab, selectedBranchForSld.current);
+    }, [vlOverlay, fetchSldVariant]);
+
     return {
         vlOverlay,
         setVlOverlay,
@@ -144,5 +158,6 @@ export function useSldOverlay(activeTab: TabId, liveSelectedActionId?: string | 
         handleVlDoubleClick,
         handleOverlaySldTabChange,
         handleOverlayClose,
+        refreshCurrentIfAction,
     };
 }

@@ -314,4 +314,76 @@ describe('useSldOverlay', () => {
             expect(api.getActionVariantSld).toHaveBeenCalledWith('ACT_A', 'VL_400');
         });
     });
+
+    describe('refreshCurrentIfAction', () => {
+        // Regression: before this wiring a manual re-simulation (MW edit
+        // on load-shedding / curtailment, tap edit on PST) updated
+        // `result.actions[actionId]` but the SLD overlay kept showing
+        // the pre-resimulation highlights and flow deltas because
+        // `vlOverlay.svg` was stale.
+        it('re-fetches the SLD when the overlay matches the given action', async () => {
+            vi.mocked(api.getActionVariantSld).mockResolvedValue({
+                svg: '<svg>SLD_v1</svg>',
+                sld_metadata: null,
+                flow_deltas: {},
+                reactive_flow_deltas: {},
+                asset_deltas: {},
+                changed_switches: {},
+            } as unknown as Awaited<ReturnType<typeof api.getActionVariantSld>>);
+            const { result } = renderHook(() => useSldOverlay('action'));
+
+            act(() => {
+                result.current.handleVlDoubleClick('ACT_LS', 'VL_400');
+            });
+            await vi.waitFor(() => {
+                expect(result.current.vlOverlay!.loading).toBe(false);
+            });
+            expect(api.getActionVariantSld).toHaveBeenCalledTimes(1);
+
+            act(() => {
+                result.current.refreshCurrentIfAction('ACT_LS');
+            });
+            await vi.waitFor(() => {
+                expect(api.getActionVariantSld).toHaveBeenCalledTimes(2);
+            });
+            expect(api.getActionVariantSld).toHaveBeenLastCalledWith('ACT_LS', 'VL_400');
+        });
+
+        it('does nothing when the overlay is closed', () => {
+            const { result } = renderHook(() => useSldOverlay('n'));
+            expect(result.current.vlOverlay).toBeNull();
+
+            act(() => {
+                result.current.refreshCurrentIfAction('ACT_LS');
+            });
+
+            expect(api.getActionVariantSld).not.toHaveBeenCalled();
+        });
+
+        it('does nothing when the overlay is open on a DIFFERENT action', async () => {
+            vi.mocked(api.getActionVariantSld).mockResolvedValue({
+                svg: '<svg/>',
+                sld_metadata: null,
+                flow_deltas: {},
+                reactive_flow_deltas: {},
+                asset_deltas: {},
+                changed_switches: {},
+            } as unknown as Awaited<ReturnType<typeof api.getActionVariantSld>>);
+            const { result } = renderHook(() => useSldOverlay('action'));
+
+            act(() => {
+                result.current.handleVlDoubleClick('ACT_A', 'VL_400');
+            });
+            await vi.waitFor(() => {
+                expect(result.current.vlOverlay!.loading).toBe(false);
+            });
+            vi.mocked(api.getActionVariantSld).mockClear();
+
+            act(() => {
+                result.current.refreshCurrentIfAction('ACT_OTHER');
+            });
+
+            expect(api.getActionVariantSld).not.toHaveBeenCalled();
+        });
+    });
 });

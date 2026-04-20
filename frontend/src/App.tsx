@@ -351,10 +351,21 @@ function App() {
 
   // Re-simulation of an already-present action (edit Target MW / tap on a
   // suggested card). Does NOT move the action into the selected bucket.
+  //
+  // When the SLD overlay is open on this action, refresh it so the
+  // per-equipment load-shedding / curtailment / PST highlights (and the
+  // flow deltas baked into the backend SLD response) reflect the new
+  // simulation result instead of the pre-resimulation snapshot.
+  // Covers all three editable action families: MW edits on load-shedding
+  // and renewable-curtailment, and tap edits on PST — all three flow
+  // through `onActionResimulated` in ActionFeed.tsx, so one refresh
+  // hook-up covers them.
   const wrappedActionResimulated = useCallback(
-    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) =>
-      actionsHook.handleActionResimulated(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect),
-    [actionsHook, setResult, wrappedForcedActionSelect]
+    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => {
+      actionsHook.handleActionResimulated(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect);
+      diagrams.refreshSldIfAction(actionId);
+    },
+    [actionsHook, setResult, wrappedForcedActionSelect, diagrams]
   );
 
   const handleUpdateCombinedEstimation = useCallback(

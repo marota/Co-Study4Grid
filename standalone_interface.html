@@ -627,10 +627,17 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             background: white;
             padding: 20px;
             border-radius: 8px;
-            width: 80%;
-            max-width: 1150px;
+            /* Widened from 80% / max-width 1150px (which forced horizontal
+               scroll or content clipping when a combined-pair row carried
+               long equipment IDs) to (almost) the full viewport, matching
+               React's `CombinedActionsModal` (`width: 95vw`). Cells carry
+               `word-break: break-word` so content wraps instead of
+               stretching the table past the modal edge. */
+            width: 95vw;
+            max-width: 95vw;
             max-height: 80vh;
             overflow-y: auto;
+            overflow-x: hidden;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
             position: relative;
         }
@@ -664,6 +671,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
             padding: 8px;
             text-align: left;
             border-bottom: 1px solid #eee;
+            /* Long equipment IDs would stretch the table past the modal
+               container and either trigger a horizontal scrollbar or get
+               clipped invisibly. `overflow-wrap: anywhere` lets the cell
+               break mid-word so content stays visible and the modal
+               fits its width. Parity with `frontend/src/index.css:52`. */
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .action-table th {
@@ -5812,6 +5826,16 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     // re-simulation of the already-selected action
                     // re-fetches instead of toggling it off.
                     handleActionSelect(actionId, true);
+                    // If the SLD overlay is currently open on this same
+                    // action, refetch it so the per-equipment
+                    // load-shedding / curtailment highlights and the
+                    // flow deltas baked into the backend SLD response
+                    // reflect the new MW. Without this the overlay kept
+                    // showing the pre-resimulation markers. Parity with
+                    // `frontend/src/hooks/useSldOverlay.ts::refreshCurrentIfAction`.
+                    if (vlOverlay && vlOverlay.actionId === actionId) {
+                        fetchSldVariant(vlOverlay.vlName, actionId, vlOverlay.tab);
+                    }
                 } catch (err) {
                     console.error('Re-simulation failed:', err);
                 } finally {
@@ -5877,6 +5901,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     // Force-select so the action variant diagram re-fetches
                     // (matches the React `wrappedForcedActionSelect` path).
                     handleActionSelect(actionId, true);
+                    // If the SLD overlay is currently open on this PST
+                    // action, refetch it so the tap highlight + flow
+                    // deltas reflect the new tap position (parity with
+                    // the MW re-simulate path + React's refreshCurrentIfAction).
+                    if (vlOverlay && vlOverlay.actionId === actionId) {
+                        fetchSldVariant(vlOverlay.vlName, actionId, vlOverlay.tab);
+                    }
                 } catch (err) {
                     console.error('PST re-simulation failed:', err);
                 } finally {
