@@ -5433,41 +5433,52 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
                     const isLoadShedding = actionDetail.load_shedding_details && actionDetail.load_shedding_details.length > 0;
                     const isRenewableCurtailment = actionDetail.curtailment_details && actionDetail.curtailment_details.length > 0;
 
-                    if (topo) {
-                        // For coupling actions: only highlight breaker, not branches
-                        if (!isCoupling) {
-                            const targetEquipIds = new Set();
+                    // Collect LS / curtailment / PST targets regardless of
+                    // whether action_topology is populated — manually
+                    // simulated actions can arrive with `topo = {}` but the
+                    // enrichment-detail arrays are always present, so the
+                    // block is now OUTSIDE the `if (topo)` gate. Parity
+                    // with `frontend/src/components/SldOverlay.tsx:528-568`.
+                    if (!isCoupling) {
+                        const targetEquipIds = new Set();
+                        if (topo) {
                             for (const id of Object.keys(topo.lines_ex_bus || {})) targetEquipIds.add(id);
                             for (const id of Object.keys(topo.lines_or_bus || {})) targetEquipIds.add(id);
                             for (const id of Object.keys(topo.gens_bus || {})) targetEquipIds.add(id);
                             for (const id of Object.keys(topo.loads_bus || {})) targetEquipIds.add(id);
                             for (const id of Object.keys(topo.pst_tap || {})) targetEquipIds.add(id);
+                            for (const id of Object.keys(topo.loads_p || {})) targetEquipIds.add(id);
+                            for (const id of Object.keys(topo.gens_p || {})) targetEquipIds.add(id);
+                        }
+                        // Detail-array fallback — covers LS / curtailment / PST
+                        // actions whose topology was not round-tripped.
+                        (actionDetail.curtailment_details || []).forEach(rc => { if (rc.gen_name) targetEquipIds.add(rc.gen_name); });
+                        (actionDetail.load_shedding_details || []).forEach(ls => { if (ls.load_name) targetEquipIds.add(ls.load_name); });
+                        (actionDetail.pst_details || []).forEach(p => { if (p.pst_name) targetEquipIds.add(p.pst_name); });
 
-                            // Fallback from enrichment details (if topology match fails or metadata is missing)
-                            (actionDetail.curtailment_details || []).forEach(rc => { if (rc.gen_name) targetEquipIds.add(rc.gen_name); });
-                            (actionDetail.load_shedding_details || []).forEach(ls => { if (ls.load_name) targetEquipIds.add(ls.load_name); });
+                        for (const equipId of targetEquipIds) {
+                            let cell = findCellForEquipment(equipId);
 
-                            for (const equipId of targetEquipIds) {
-                                let cell = findCellForEquipment(equipId);
-
-                                // Extreme fallback for RC/LS: direct text search in the SVG
-                                if (!cell && (isRenewableCurtailment || isLoadShedding)) {
-                                    const texts = container.querySelectorAll('text');
-                                    const q = equipId.toLowerCase().substring(0, 5);
-                                    for (const txt of texts) {
-                                        if (txt.textContent.toLowerCase().includes(q)) {
-                                            cell = walkUpToCell(txt);
-                                            if (cell) break;
-                                        }
+                            // Extreme fallback for RC/LS: direct text search in the SVG
+                            if (!cell && (isRenewableCurtailment || isLoadShedding)) {
+                                const texts = container.querySelectorAll('text');
+                                const q = equipId.toLowerCase().substring(0, 5);
+                                for (const txt of texts) {
+                                    if (txt.textContent.toLowerCase().includes(q)) {
+                                        cell = walkUpToCell(txt);
+                                        if (cell) break;
                                     }
                                 }
+                            }
 
-                                if (cell && !highlightedCells.has(cell)) {
-                                    cloneHighlight(cell, 'sld-highlight-action');
-                                    highlightedCells.add(cell);
-                                }
+                            if (cell && !highlightedCells.has(cell)) {
+                                cloneHighlight(cell, 'sld-highlight-action');
+                                highlightedCells.add(cell);
                             }
                         }
+                    }
+
+                    if (topo) {
 
                         // Highlight affected breakers/switches.
                         // Prefer changed_switches from SLD response (robust N-1 vs action comparison)

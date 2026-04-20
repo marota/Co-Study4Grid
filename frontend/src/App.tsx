@@ -343,10 +343,16 @@ function App() {
     [actionsHook, setResult]
   );
 
+  // Manually-added (first-time simulated) action. Same SLD refresh
+  // rationale as `wrappedActionResimulated` below: the new detail
+  // carries fresh `load_shedding_details` / `curtailment_details` /
+  // `pst_details` arrays which the SLD highlight pass needs to see.
   const wrappedManualActionAdded = useCallback(
-    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) =>
-      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect),
-    [actionsHook, setResult, wrappedForcedActionSelect]
+    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => {
+      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect);
+      diagrams.refreshSldIfAction(actionId);
+    },
+    [actionsHook, setResult, wrappedForcedActionSelect, diagrams]
   );
 
   // Re-simulation of an already-present action (edit Target MW / tap on a

@@ -380,6 +380,14 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         // them), re-apply.
         const actionDetailForSig: ActionDetail | undefined =
             (vlOverlay.actionId && result?.actions) ? result.actions[vlOverlay.actionId] : undefined;
+        // Include load-shedding / curtailment / PST identity AND
+        // magnitudes in the signature so an in-place re-simulation
+        // (which keeps `actionId` the same but bumps the MW / tap
+        // value) forces the highlight pass to re-run against the
+        // refreshed SLD instead of short-circuiting on stale clones.
+        const ls = actionDetailForSig?.load_shedding_details ?? [];
+        const cu = actionDetailForSig?.curtailment_details ?? [];
+        const pst = actionDetailForSig?.pst_details ?? [];
         const sig = JSON.stringify({
             svgLen: vlOverlay.svg.length,
             meta: vlOverlay.sldMetadata?.length ?? 0,
@@ -391,6 +399,9 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             branch: selectedBranch,
             n1Overloads: result?.lines_overloaded ?? [],
             actionOverloads: actionDetailForSig?.lines_overloaded_after ?? [],
+            ls: ls.map(d => `${d.load_name}:${d.shedded_mw}`).sort(),
+            cu: cu.map(d => `${d.gen_name}:${d.curtailed_mw}`).sort(),
+            pst: pst.map(d => `${d.pst_name}:${d.tap_position}`).sort(),
         });
         const clonesExist = container.querySelector('.sld-highlight-clone') !== null;
         if (sig === appliedSigRef.current && clonesExist) {
@@ -525,11 +536,21 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             const topo = actionDetail.action_topology;
             const isCoupling = isCouplingAction(actionId, actionDetail.description_unitaire);
 
-            if (topo) {
-                // For coupling actions: only highlight the breaker/switch, not branches.
-                // For other actions: highlight affected lines/gens/loads.
-                if (!isCoupling) {
-                    const targetEquipIds = new Set<string>();
+            // Collect target equipment IDs from BOTH `action_topology`
+            // and the dedicated detail arrays. The two sources can
+            // disagree: manually-simulated load-shedding / curtailment
+            // actions sometimes arrive with `action_topology = {}` (the
+            // grid2op Action object does not expose the fields as public
+            // attributes — the backend normally back-fills them in
+            // `simulation_mixin.py:598-607` but the fallback has edge
+            // cases), while `load_shedding_details` / `curtailment_details`
+            // / `pst_details` always carry the equipment names the
+            // backend computed for the ActionCard breakdown. Feeding
+            // both into `findCellForEquipment` makes the SLD highlight
+            // robust regardless of which side populated the data.
+            if (!isCoupling) {
+                const targetEquipIds = new Set<string>();
+                if (topo) {
                     for (const id of Object.keys(topo.lines_ex_bus || {})) targetEquipIds.add(id);
                     for (const id of Object.keys(topo.lines_or_bus || {})) targetEquipIds.add(id);
                     for (const id of Object.keys(topo.gens_bus || {})) targetEquipIds.add(id);
@@ -537,15 +558,29 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                     for (const id of Object.keys(topo.pst_tap || {})) targetEquipIds.add(id);
                     for (const id of Object.keys(topo.loads_p || {})) targetEquipIds.add(id);
                     for (const id of Object.keys(topo.gens_p || {})) targetEquipIds.add(id);
+                }
+                // Detail-array fallback — covers LS / curtailment / PST
+                // actions whose topology was not round-tripped.
+                for (const d of actionDetail.load_shedding_details ?? []) {
+                    if (d?.load_name) targetEquipIds.add(d.load_name);
+                }
+                for (const d of actionDetail.curtailment_details ?? []) {
+                    if (d?.gen_name) targetEquipIds.add(d.gen_name);
+                }
+                for (const d of actionDetail.pst_details ?? []) {
+                    if (d?.pst_name) targetEquipIds.add(d.pst_name);
+                }
 
-                    for (const equipId of targetEquipIds) {
-                        const cell = findCellForEquipment(equipId);
-                        if (cell && !highlightedCells.has(cell)) {
-                            cloneHighlight(cell, 'sld-highlight-action');
-                            highlightedCells.add(cell);
-                        }
+                for (const equipId of targetEquipIds) {
+                    const cell = findCellForEquipment(equipId);
+                    if (cell && !highlightedCells.has(cell)) {
+                        cloneHighlight(cell, 'sld-highlight-action');
+                        highlightedCells.add(cell);
                     }
                 }
+            }
+
+            if (topo) {
 
                 // Highlight affected breakers/switches.
                 // Prefer changed_switches from SLD response (robust N-1 vs action comparison)
