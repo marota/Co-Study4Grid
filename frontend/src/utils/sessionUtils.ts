@@ -114,6 +114,14 @@ export function buildSessionResult(input: SessionInput): SessionResult {
             message: result.message,
             dc_fallback: result.dc_fallback,
             action_scores: result.action_scores,
+            // Persist the monitored-line set and the superposition cache
+            // so `useSession::handleRestoreSession` can re-push them to
+            // the backend via `/api/restore-analysis-context`. Without
+            // this, reloaded sessions silently fall back to the
+            // backend's default monitored-line policy on the next
+            // simulate-action call — a regression invisible to the UI.
+            lines_we_care_about: result.lines_we_care_about ?? null,
+            computed_pairs: result.computed_pairs ?? null,
             actions: Object.fromEntries(
                 Object.entries(result.actions).map(([id, detail]): [string, SavedActionEntry] => [
                     id,

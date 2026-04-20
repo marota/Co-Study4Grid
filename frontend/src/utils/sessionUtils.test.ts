@@ -225,6 +225,31 @@ describe('buildSessionResult — structure', () => {
             .toEqual(['LINE_D', 'LINE_E']);
     });
 
+    it('persists lines_we_care_about so the monitored-line set survives save → reload (regression)', () => {
+        // Session-fidelity contract: without this the backend's
+        // default monitored-line policy silently replaces the
+        // per-study set captured during the original analysis run
+        // on any simulate-action triggered after reload. Standalone
+        // HTML mirror saves it at standalone_interface.html:3652.
+        const monitored = ['LINE_D', 'LINE_E', 'LINE_F'];
+        const out = buildSessionResult({
+            ...baseInput,
+            result: makeResult({ lines_we_care_about: monitored }),
+        });
+        expect(out.analysis!.lines_we_care_about).toEqual(monitored);
+    });
+
+    it('persists computed_pairs for re-push on reload', () => {
+        // Keyed superposition cache. Round-tripping avoids re-scoring
+        // every combined pair from scratch after reload.
+        const pairs = { 'actA+actB': { max_rho: 0.87 } };
+        const out = buildSessionResult({
+            ...baseInput,
+            result: makeResult({ computed_pairs: pairs }),
+        });
+        expect(out.analysis!.computed_pairs).toEqual(pairs);
+    });
+
     it('retains lines_overloaded_after as an empty array when all overloads are resolved', () => {
         // Empty array means "action solved every overload" — distinct
         // from undefined, which means "field unknown / not computed".

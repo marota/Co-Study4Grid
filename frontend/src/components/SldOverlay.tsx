@@ -18,6 +18,16 @@ export interface SldOverlayProps {
     actionDiagram: DiagramData | null;
     selectedBranch: string;
     result: AnalysisResult | null;
+    /**
+     * User-configured monitoring-factor threshold (typically 0.95).
+     * Used to gate the post-action overload highlight on the `action`
+     * tab: when `actionDetail.max_rho <= monitoringFactor` the card
+     * is classified "Solved" (orange = low margin, green = clean) so
+     * the overload halo is suppressed to match. Defaults to 0.95
+     * when the parent hasn't plumbed it through yet — preserves the
+     * pre-fix behaviour for legacy callers.
+     */
+    monitoringFactor?: number;
 }
 
 const SldOverlay: React.FC<SldOverlayProps> = ({
@@ -25,6 +35,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
     onOverlayClose, onOverlaySldTabChange,
     n1Diagram, actionDiagram,
     selectedBranch, result,
+    monitoringFactor = 0.95,
 }) => {
     const overlayBodyRef = useRef<HTMLDivElement>(null);
     const [overlayPos, setOverlayPos] = useState({ x: 16, y: 16 });
@@ -380,6 +391,14 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         // them), re-apply.
         const actionDetailForSig: ActionDetail | undefined =
             (vlOverlay.actionId && result?.actions) ? result.actions[vlOverlay.actionId] : undefined;
+        // Include load-shedding / curtailment / PST identity AND
+        // magnitudes in the signature so an in-place re-simulation
+        // (which keeps `actionId` the same but bumps the MW / tap
+        // value) forces the highlight pass to re-run against the
+        // refreshed SLD instead of short-circuiting on stale clones.
+        const ls = actionDetailForSig?.load_shedding_details ?? [];
+        const cu = actionDetailForSig?.curtailment_details ?? [];
+        const pst = actionDetailForSig?.pst_details ?? [];
         const sig = JSON.stringify({
             svgLen: vlOverlay.svg.length,
             meta: vlOverlay.sldMetadata?.length ?? 0,
@@ -391,6 +410,9 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             branch: selectedBranch,
             n1Overloads: result?.lines_overloaded ?? [],
             actionOverloads: actionDetailForSig?.lines_overloaded_after ?? [],
+            ls: ls.map(d => `${d.load_name}:${d.shedded_mw}`).sort(),
+            cu: cu.map(d => `${d.gen_name}:${d.curtailed_mw}`).sort(),
+            pst: pst.map(d => `${d.pst_name}:${d.tap_position}`).sort(),
         });
         const clonesExist = container.querySelector('.sld-highlight-clone') !== null;
         if (sig === appliedSigRef.current && clonesExist) {
@@ -525,11 +547,24 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             const topo = actionDetail.action_topology;
             const isCoupling = isCouplingAction(actionId, actionDetail.description_unitaire);
 
-            if (topo) {
-                // For coupling actions: only highlight the breaker/switch, not branches.
-                // For other actions: highlight affected lines/gens/loads.
-                if (!isCoupling) {
-                    const targetEquipIds = new Set<string>();
+            // Collect target equipment IDs from BOTH `action_topology`
+            // and the dedicated detail arrays. The two sources can
+            // disagree: manually-simulated load-shedding / curtailment
+            // actions sometimes arrive with `action_topology = {}` (the
+            // grid2op Action object does not expose the fields as public
+            // attributes — the backend normally back-fills them in
+            // `simulation_mixin.py:598-607` but the fallback has edge
+            // cases), while `load_shedding_details` / `curtailment_details`
+            // / `pst_details` always carry the equipment names the
+            // backend computed for the ActionCard breakdown. Feeding
+            // both into `findCellForEquipment` makes the SLD highlight
+            // robust regardless of which side populated the data.
+            const isLoadShedding = (actionDetail.load_shedding_details?.length ?? 0) > 0;
+            const isRenewableCurtailment = (actionDetail.curtailment_details?.length ?? 0) > 0;
+
+            if (!isCoupling) {
+                const targetEquipIds = new Set<string>();
+                if (topo) {
                     for (const id of Object.keys(topo.lines_ex_bus || {})) targetEquipIds.add(id);
                     for (const id of Object.keys(topo.lines_or_bus || {})) targetEquipIds.add(id);
                     for (const id of Object.keys(topo.gens_bus || {})) targetEquipIds.add(id);
@@ -537,15 +572,58 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                     for (const id of Object.keys(topo.pst_tap || {})) targetEquipIds.add(id);
                     for (const id of Object.keys(topo.loads_p || {})) targetEquipIds.add(id);
                     for (const id of Object.keys(topo.gens_p || {})) targetEquipIds.add(id);
+                }
+                // Detail-array fallback — covers LS / curtailment / PST
+                // actions whose topology was not round-tripped.
+                for (const d of actionDetail.load_shedding_details ?? []) {
+                    if (d?.load_name) targetEquipIds.add(d.load_name);
+                }
+                for (const d of actionDetail.curtailment_details ?? []) {
+                    if (d?.gen_name) targetEquipIds.add(d.gen_name);
+                }
+                for (const d of actionDetail.pst_details ?? []) {
+                    if (d?.pst_name) targetEquipIds.add(d.pst_name);
+                }
 
-                    for (const equipId of targetEquipIds) {
-                        const cell = findCellForEquipment(equipId);
-                        if (cell && !highlightedCells.has(cell)) {
-                            cloneHighlight(cell, 'sld-highlight-action');
-                            highlightedCells.add(cell);
+                for (const equipId of targetEquipIds) {
+                    let cell: Element | null = findCellForEquipment(equipId);
+
+                    // Extreme fallback for load-shedding / curtailment:
+                    // when the SLD metadata's `equipmentId` doesn't match
+                    // the grid2op load / generator name (e.g. pypowsybl
+                    // returns a fully-qualified IIDM connectable ID but
+                    // the action carries a bare "P.SAO3TR311"), fall back
+                    // to matching on the rendered text label. The label
+                    // almost always carries the short grid2op name, so
+                    // scanning <text> nodes for a 5-character prefix
+                    // reliably lands on the shed load / curtailed
+                    // generator cell. Parity with the legacy standalone
+                    // at `standalone_interface_legacy.html:5462-5472`,
+                    // which is what made the LS highlight work on the
+                    // `bare_env_small_grid_test` data where metadata
+                    // equipment IDs and action names disagree.
+                    if (!cell && (isRenewableCurtailment || isLoadShedding)) {
+                        const texts = container.querySelectorAll('text');
+                        const q = equipId.toLowerCase().substring(0, 5);
+                        if (q) {
+                            for (const txt of Array.from(texts)) {
+                                const content = (txt.textContent ?? '').toLowerCase();
+                                if (content.includes(q)) {
+                                    cell = walkUpToCell(txt);
+                                    if (cell) break;
+                                }
+                            }
                         }
                     }
+
+                    if (cell && !highlightedCells.has(cell)) {
+                        cloneHighlight(cell, 'sld-highlight-action');
+                        highlightedCells.add(cell);
+                    }
                 }
+            }
+
+            if (topo) {
 
                 // Highlight affected breakers/switches.
                 // Prefer changed_switches from SLD response (robust N-1 vs action comparison)
@@ -598,11 +676,22 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         // N-1 tab: highlight overloads present in the N-1 state.
         // Action tab: highlight post-action overloads (overloads that persist or new
         // ones that emerged). Overloads solved by the action are NOT highlighted here.
+        //
+        // "Solved" = max_rho <= monitoringFactor — matches the ActionCard's
+        // orange/green severity classification. Suppressing the halo in
+        // this band aligns the SLD with the card's label and with the
+        // corresponding NAD gate in App.tsx. Without this, manually
+        // simulated actions in the low-margin band (raw rho in
+        // `[mf, 1.0)`) showed halos while suggested actions with the
+        // same displayed max_rho did not — the backend thresholds
+        // diverge (`simulation_mixin.py:536` vs `analysis_mixin.py:97`).
         let overloadedLinesToShow: string[] | undefined;
         if (vlOverlay.tab === 'n-1') {
             overloadedLinesToShow = result?.lines_overloaded;
         } else if (vlOverlay.tab === 'action' && actionDetail) {
-            overloadedLinesToShow = actionDetail.lines_overloaded_after;
+            const isSolved = actionDetail.max_rho != null
+                && actionDetail.max_rho <= monitoringFactor;
+            overloadedLinesToShow = isSolved ? [] : actionDetail.lines_overloaded_after;
         }
         if (overloadedLinesToShow && overloadedLinesToShow.length > 0) {
             for (const lineId of overloadedLinesToShow) {

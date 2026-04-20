@@ -54,6 +54,13 @@ body {
   padding: 8px;
   text-align: left;
   border-bottom: 1px solid #eee;
+  /* Long equipment IDs (LINE.XYZ_ABC_LONG_NAME) would otherwise stretch
+     the table past the modal container and either trigger a horizontal
+     scrollbar or get clipped invisibly by the parent's `overflow: hidden`.
+     `overflow-wrap: anywhere` lets the cell break mid-word when needed
+     so content stays visible and the modal fits its natural width. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .action-table th {

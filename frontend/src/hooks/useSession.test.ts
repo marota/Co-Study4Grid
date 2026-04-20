@@ -20,6 +20,11 @@ const mockGetBranches = vi.fn();
 const mockGetVoltageLevels = vi.fn();
 const mockGetNominalVoltages = vi.fn();
 const mockGetNetworkDiagram = vi.fn().mockResolvedValue({ svg: '<svg/>', metadata: null });
+const mockRestoreAnalysisContext = vi.fn().mockResolvedValue({
+    status: 'success',
+    lines_we_care_about_count: 0,
+    computed_pairs_count: 0,
+});
 
 vi.mock('../api', () => ({
     api: {
@@ -31,7 +36,7 @@ vi.mock('../api', () => ({
         getVoltageLevels: (...args: unknown[]) => mockGetVoltageLevels(...args),
         getNominalVoltages: (...args: unknown[]) => mockGetNominalVoltages(...args),
         getNetworkDiagram: (...args: unknown[]) => mockGetNetworkDiagram(...args),
-        restoreAnalysisContext: vi.fn().mockResolvedValue({}),
+        restoreAnalysisContext: (...args: unknown[]) => mockRestoreAnalysisContext(...args),
     },
 }));
 
@@ -437,6 +442,59 @@ describe('useSession — handleRestoreSession', () => {
         expect(ctx.committedNetworkPathRef.current).toBe('');
     });
 
+    it('sets restoringSessionRef BEFORE setSelectedBranch so the N-1 fetch effect bypasses its hasAnalysisState short-circuit (regression)', async () => {
+        // Without the ref being flipped to `true` first, the N-1
+        // useEffect in App.tsx short-circuits the second a session
+        // with existing analysis state is restored — because the
+        // restored `result` is non-null so `hasAnalysisState() ===
+        // true`, which the early-return gate used to treat as "no
+        // fetch needed". The ref lets the gate distinguish
+        // "already-analyzed this branch" from "session just
+        // restored, still need N-1 diagram". Verified here via the
+        // call-order of the ref-set vs the setSelectedBranch call.
+        const order: string[] = [];
+        const ctx = makeCtx();
+        const restoringRef = { current: false };
+        Object.defineProperty(restoringRef, 'current', {
+            set(v: boolean) {
+                if (v) order.push('restoringSessionRef=true');
+                Object.defineProperty(this, '_v', { value: v, writable: true, configurable: true });
+            },
+            get() { return (this as unknown as { _v?: boolean })._v ?? false; },
+            configurable: true,
+        });
+        ctx.restoringSessionRef = restoringRef as unknown as typeof ctx.restoringSessionRef;
+        const committedBranchRef = { current: '' };
+        Object.defineProperty(committedBranchRef, 'current', {
+            set(v: string) {
+                order.push(`committedBranchRef=${v}`);
+                Object.defineProperty(this, '_v', { value: v, writable: true, configurable: true });
+            },
+            get() { return (this as unknown as { _v?: string })._v ?? ''; },
+            configurable: true,
+        });
+        ctx.committedBranchRef = committedBranchRef as unknown as typeof ctx.committedBranchRef;
+        ctx.setSelectedBranch = vi.fn(() => order.push('setSelectedBranch'));
+
+        mockLoadSession.mockResolvedValue(makeSession({
+            contingency: { disconnected_element: 'LINE_A', selected_overloads: [], monitor_deselected: false },
+        }));
+        const { result } = renderHook(() => useSession());
+        await act(async () => {
+            await result.current.handleRestoreSession('session_ref_order', ctx);
+        });
+
+        // The ref must flip to true before setSelectedBranch is called,
+        // otherwise the N-1 effect sees `restoringSessionRef.current === false`
+        // and wipes the just-restored analysis state.
+        const refIdx = order.indexOf('restoringSessionRef=true');
+        const branchIdx = order.indexOf('setSelectedBranch');
+        expect(refIdx).toBeGreaterThanOrEqual(0);
+        expect(branchIdx).toBeGreaterThanOrEqual(0);
+        expect(refIdx).toBeLessThan(branchIdx);
+        expect(committedBranchRef.current).toBe('LINE_A');
+    });
+
     it('surfaces backend errors via ctx.setError and leaves the ref empty', async () => {
         mockLoadSession.mockRejectedValue({ response: { data: { detail: 'not found' } } });
         const ctx = makeCtx();
@@ -624,6 +682,99 @@ describe('useSession — handleRestoreSession', () => {
         expect(ctx.setSuggestedByRecommenderIds).toHaveBeenCalledWith(
             new Set(['act_fav', 'act_rej']),
         );
+    });
+
+    it('re-pushes lines_we_care_about to the backend via /api/restore-analysis-context (regression)', async () => {
+        // Without this call, a simulate-action triggered after reload
+        // silently falls back to the backend default monitored-line
+        // set instead of the per-study set captured at save time.
+        // Parity with the standalone HTML mirror (PR
+        // `claude/auto-generate-standalone-interface-Hhogk`).
+        mockLoadSession.mockResolvedValue(makeSession({
+            overloads: {
+                n_overloads: [],
+                n1_overloads: ['LINE_OL1'],
+                resolved_overloads: ['LINE_OL1'],
+            },
+            analysis: {
+                message: 'ok',
+                dc_fallback: false,
+                action_scores: {},
+                combined_actions: {},
+                actions: {},
+                lines_we_care_about: ['LINE_MON1', 'LINE_MON2', 'LINE_MON3'],
+                computed_pairs: { 'act_a+act_b': { max_rho: 0.87 } },
+            },
+        }));
+        const ctx = makeCtx();
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('session_with_context', ctx);
+        });
+
+        expect(mockRestoreAnalysisContext).toHaveBeenCalledOnce();
+        expect(mockRestoreAnalysisContext).toHaveBeenCalledWith({
+            lines_we_care_about: ['LINE_MON1', 'LINE_MON2', 'LINE_MON3'],
+            disconnected_element: 'LINE_A',
+            lines_overloaded: ['LINE_OL1'],
+            computed_pairs: { 'act_a+act_b': { max_rho: 0.87 } },
+        });
+    });
+
+    it('skips /api/restore-analysis-context when the saved session predates lines_we_care_about', async () => {
+        // Older session dumps never persisted the monitored-line set.
+        // The restore path must stay silent rather than call the
+        // endpoint with null payloads (which would wipe whatever
+        // default the backend already has).
+        mockLoadSession.mockResolvedValue(makeSession({
+            analysis: {
+                message: 'ok',
+                dc_fallback: false,
+                action_scores: {},
+                combined_actions: {},
+                actions: {},
+                // no lines_we_care_about / computed_pairs
+            },
+        }));
+        const ctx = makeCtx();
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('legacy_session', ctx);
+        });
+
+        expect(mockRestoreAnalysisContext).not.toHaveBeenCalled();
+    });
+
+    it('swallows /api/restore-analysis-context failures without aborting the reload', async () => {
+        // If the context push fails (e.g. backend was restarted since
+        // save), the reload must still complete — the user simply
+        // loses the monitored-line set, but the rest of the session
+        // state is preserved. Mirrors the standalone try/catch at
+        // standalone_interface.html:3866.
+        mockLoadSession.mockResolvedValue(makeSession({
+            analysis: {
+                message: 'ok',
+                dc_fallback: false,
+                action_scores: {},
+                combined_actions: {},
+                actions: {},
+                lines_we_care_about: ['LINE_MON1'],
+            },
+        }));
+        mockRestoreAnalysisContext.mockRejectedValueOnce(new Error('backend offline'));
+        const ctx = makeCtx();
+        const { result } = renderHook(() => useSession());
+
+        await act(async () => {
+            await result.current.handleRestoreSession('session_crash_context', ctx);
+        });
+
+        expect(mockRestoreAnalysisContext).toHaveBeenCalledOnce();
+        // Contingency setters still ran → reload did not abort.
+        expect(ctx.setMonitorDeselected).toHaveBeenCalled();
+        expect(ctx.setSelectedOverloads).toHaveBeenCalled();
     });
 
     it('does not crash when action entries omit the new enrichment fields (legacy shape)', async () => {

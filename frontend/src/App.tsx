@@ -343,18 +343,35 @@ function App() {
     [actionsHook, setResult]
   );
 
+  // Manually-added (first-time simulated) action. Same SLD refresh
+  // rationale as `wrappedActionResimulated` below: the new detail
+  // carries fresh `load_shedding_details` / `curtailment_details` /
+  // `pst_details` arrays which the SLD highlight pass needs to see.
   const wrappedManualActionAdded = useCallback(
-    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) =>
-      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect),
-    [actionsHook, setResult, wrappedForcedActionSelect]
+    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => {
+      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect);
+      diagrams.refreshSldIfAction(actionId);
+    },
+    [actionsHook, setResult, wrappedForcedActionSelect, diagrams]
   );
 
   // Re-simulation of an already-present action (edit Target MW / tap on a
   // suggested card). Does NOT move the action into the selected bucket.
+  //
+  // When the SLD overlay is open on this action, refresh it so the
+  // per-equipment load-shedding / curtailment / PST highlights (and the
+  // flow deltas baked into the backend SLD response) reflect the new
+  // simulation result instead of the pre-resimulation snapshot.
+  // Covers all three editable action families: MW edits on load-shedding
+  // and renewable-curtailment, and tap edits on PST — all three flow
+  // through `onActionResimulated` in ActionFeed.tsx, so one refresh
+  // hook-up covers them.
   const wrappedActionResimulated = useCallback(
-    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) =>
-      actionsHook.handleActionResimulated(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect),
-    [actionsHook, setResult, wrappedForcedActionSelect]
+    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => {
+      actionsHook.handleActionResimulated(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect);
+      diagrams.refreshSldIfAction(actionId);
+    },
+    [actionsHook, setResult, wrappedForcedActionSelect, diagrams]
   );
 
   const handleUpdateCombinedEstimation = useCallback(
@@ -715,22 +732,48 @@ function App() {
 
     if (branches.length > 0 && !branches.includes(selectedBranch)) return;
 
-    if (selectedBranch === diagrams.committedBranchRef.current && (n1Diagram || hasAnalysisState() || n1Loading || analysisLoading)) return;
+    // Short-circuit when we already have the N-1 diagram / fetch /
+    // analysis for this branch — EXCEPT on session restore, where
+    // `hasAnalysisState()` is already true (actions were rehydrated
+    // by `useSession::handleRestoreSession`) while `n1Diagram` is
+    // still null. In that case the early-return would silently skip
+    // the N-1 fetch, leaving the N-1 tab blank and the N-1 overloads
+    // panel empty. `restoringSessionRef.current` is the signal we
+    // use to force the fetch through.
+    if (selectedBranch === diagrams.committedBranchRef.current
+        && !diagrams.restoringSessionRef.current
+        && (n1Diagram || hasAnalysisState() || n1Loading || analysisLoading)) return;
 
     if (selectedBranch !== diagrams.committedBranchRef.current && hasAnalysisState() && !diagrams.restoringSessionRef.current) {
       setConfirmDialog({ type: 'contingency', pendingBranch: selectedBranch });
       setSelectedBranch(diagrams.committedBranchRef.current);
       return;
     }
+    // Capture BEFORE we reset the ref so the rest of this effect can
+    // distinguish "user changed contingency" from "session was just
+    // restored". Without the local capture, any later branch in
+    // this effect would see `restoringSessionRef.current === false`
+    // and incorrectly wipe the just-restored analysis state via
+    // `clearContingencyState()`.
+    const isRestoring = diagrams.restoringSessionRef.current;
     diagrams.restoringSessionRef.current = false;
 
     diagrams.committedBranchRef.current = selectedBranch;
-    clearContingencyState();
-    diagrams.setN1Diagram(null);
+    if (!isRestoring) {
+      clearContingencyState();
+      diagrams.setN1Diagram(null);
+    }
 
     const fetchN1 = async () => {
       diagrams.setN1Loading(true);
-      diagrams.setActiveTab('n-1');
+      // On user-initiated contingency change, switch to N-1 so the
+      // fetched diagram is visible. On session restore, leave the
+      // active tab alone so the user lands on whichever tab the
+      // VisualizationPanel default (Action / Overflow) resolves to
+      // given the restored state.
+      if (!isRestoring) {
+        diagrams.setActiveTab('n-1');
+      }
       try {
         const res = await api.getN1Diagram(selectedBranch);
         const { svg, viewBox } = processSvg(res.svg, voltageLevels.length);
@@ -864,23 +907,45 @@ function App() {
         // Same ordering rule as the N-1 tab: clone-based highlights
         // first (so they capture pristine elements), delta visuals
         // last. Overload halos render in both Flows and Impacts modes.
+        //
+        // ActionCard severity classification (`components/ActionCard.tsx:76-78`):
+        //   - red:    `max_rho > monitoringFactor`         ("Still overloaded")
+        //   - orange: `max_rho > monitoringFactor - 0.05`  ("Solved — low margin")
+        //   - green:  else                                 ("Solves overload")
+        // When the card says "Solved" (orange or green) no line in the
+        // post-action state exceeds the operator's tolerance threshold,
+        // so overload halos on the NAD contradict the card's label.
+        // The backend's manual-simulation path flags `lines_overloaded_after`
+        // on raw rho >= monitoring_factor (0.95) whereas the analysis
+        // path uses raw rho >= 1.0 (`analysis_mixin.py:97` vs
+        // `simulation_mixin.py:536`). In the low-margin band — raw rho
+        // in `[mf, 1.0)` — the two paths disagree: manual ships a
+        // non-empty list, analysis ships an empty one. Without this
+        // gate, halos appear on manual low-margin actions but not on
+        // suggested ones with the same displayed max_rho — the exact
+        // user-reported bug (commit-time 2026-04-20).
+        const isSolved =
+          actionDetail.max_rho != null && actionDetail.max_rho <= monitoringFactor;
+
         let overloadsToHighlight: string[] = [];
 
-        if (actionDetail.lines_overloaded_after && actionDetail.lines_overloaded_after.length > 0) {
-          overloadsToHighlight = actionDetail.lines_overloaded_after;
-        } else {
-          // Fallback for legacy results or actions without full enrichment
-          if (overloadedLines.length > 0 && actionDetail.rho_after) {
-            overloadedLines.forEach((name, i) => {
-              const rho = actionDetail.rho_after![i];
-              if (rho != null && rho > monitoringFactor) {
-                overloadsToHighlight.push(name);
+        if (!isSolved) {
+          if (actionDetail.lines_overloaded_after && actionDetail.lines_overloaded_after.length > 0) {
+            overloadsToHighlight = actionDetail.lines_overloaded_after;
+          } else {
+            // Fallback for legacy results or actions without full enrichment
+            if (overloadedLines.length > 0 && actionDetail.rho_after) {
+              overloadedLines.forEach((name, i) => {
+                const rho = actionDetail.rho_after![i];
+                if (rho != null && rho > monitoringFactor) {
+                  overloadsToHighlight.push(name);
+                }
+              });
+            }
+            if (actionDetail.max_rho != null && actionDetail.max_rho > monitoringFactor && actionDetail.max_rho_line) {
+              if (!overloadsToHighlight.includes(actionDetail.max_rho_line)) {
+                overloadsToHighlight.push(actionDetail.max_rho_line);
               }
-            });
-          }
-          if (actionDetail.max_rho != null && actionDetail.max_rho > monitoringFactor && actionDetail.max_rho_line) {
-            if (!overloadsToHighlight.includes(actionDetail.max_rho_line)) {
-              overloadsToHighlight.push(actionDetail.max_rho_line);
             }
           }
         }

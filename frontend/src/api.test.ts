@@ -359,4 +359,35 @@ describe('api client', () => {
             expect((api as Record<string, unknown>).runAnalysis).toBeUndefined();
         });
     });
+
+    describe('restoreAnalysisContext', () => {
+        it('sends POST to /api/restore-analysis-context with the monitored-line set', async () => {
+            // Parity with the standalone HTML mirror
+            // (standalone_interface.html:3857). Re-pushes the session's
+            // `lines_we_care_about` to the backend on reload so later
+            // simulate-action calls use the per-study set instead of
+            // the backend's default.
+            mockedAxios.post.mockResolvedValue({
+                data: {
+                    status: 'success',
+                    lines_we_care_about_count: 3,
+                    computed_pairs_count: 0,
+                },
+            });
+
+            const params = {
+                lines_we_care_about: ['LINE_MON1', 'LINE_MON2', 'LINE_MON3'],
+                disconnected_element: 'LINE_A',
+                lines_overloaded: ['LINE_OL1'],
+                computed_pairs: null,
+            };
+            const result = await api.restoreAnalysisContext(params);
+            expect(mockedAxios.post).toHaveBeenCalledWith(
+                'http://127.0.0.1:8000/api/restore-analysis-context',
+                params,
+            );
+            expect(result.status).toBe('success');
+            expect(result.lines_we_care_about_count).toBe(3);
+        });
+    });
 });

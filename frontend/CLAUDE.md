@@ -98,8 +98,10 @@ in `App.tsx` because it needs multiple hook instances at once.
      pair in `useSettings()`.
   2. `components/modals/SettingsModal.tsx` — input wired to the
      setter.
-  3. `standalone_interface.html` — manual mirror of the field +
-     input (the standalone HTML does NOT import React).
+  3. ~~Manual mirror in `standalone_interface.html`~~ — no longer
+     required. The legacy file has been decommissioned; the
+     auto-generated `frontend/dist-standalone/standalone.html`
+     inherits the field on the next `npm run build:standalone`.
 
 ## Data flow (happy path)
 
@@ -225,9 +227,9 @@ npm run test:watch   # watch mode
    `useAnalysis`, diagrams → `useDiagrams`, session → `useSession`).
 4. Wire any new state through to presentational components via
    typed props.
-5. **Mirror the call in `standalone_interface.html`** if the
-   feature is user-facing — that file is a self-contained single-
-   file version of the UI and ships independently.
+5. ~~Mirror the call in `standalone_interface.html`~~ — no longer
+   required. The auto-generated `frontend/dist-standalone/standalone.html`
+   inherits the new endpoint automatically after `npm run build:standalone`.
 
 ## Code style
 
@@ -268,10 +270,56 @@ a sub-component, a hook, or a helper in `utils/`. `App.tsx` is the
 single intentional exception — it's a state orchestration hub by
 design, but even it should not grow large inline JSX blocks.
 
-## Standalone interface mirror
+## Standalone bundle (auto-generated)
 
-The repo also ships `standalone_interface.html` at the project root
-— a single-file HTML version of the entire UI. It does NOT import
-React components; it has its own inline JSX. **Any UI change made
-here must be manually mirrored there**. The settings modal, the
-analysis flow, and the SVG visualization are all duplicated.
+The single-file HTML distribution is now auto-generated from this
+React source tree by `npm run build:standalone` in `frontend/` (see
+`frontend/vite.config.standalone.ts`). Output:
+`frontend/dist-standalone/standalone.html` — a ~1 MB single file
+with React + CSS inlined, favicon inlined as a data URI, no
+external network dependencies. This artifact replaces the former
+hand-maintained `standalone_interface.html` (renamed to
+`standalone_interface_legacy.html` at the project root, committed
+as a frozen snapshot of its last version — do NOT edit further).
+
+Consequence for day-to-day dev: **no manual mirroring is required**
+when you add a component, setting, endpoint, or gesture. Land the
+change in `frontend/src/`, run the tests, and the standalone
+inherits it on the next build.
+
+## Parity audit
+
+The working record of the standalone-vs-React parity effort —
+feature inventory, mirror-status table, Layer 1–4 conformity
+findings, gap-priority list, regression-guard matrix and deltas
+— lives in [`frontend/PARITY_AUDIT.md`](./PARITY_AUDIT.md) (split
+out of the root `CLAUDE.md` on 2026-04-20). Regenerate the
+machine-authored tables with:
+
+```bash
+python scripts/check_standalone_parity.py --emit-markdown
+python scripts/check_session_fidelity.py --json
+python scripts/check_gesture_sequence.py --json
+python scripts/check_invariants.py --json
+```
+
+All four scripts accept `COSTUDY4GRID_STANDALONE_PATH=<path>` to
+re-target any artifact, and default to `dist-standalone/standalone.html`
+with a fallback to the legacy file when the auto-gen is not built.
+
+## How to make a UI change today
+
+1. Edit the React source in `src/` — components, hooks, styles.
+2. Run `npm run test` — the Vitest suite covers session
+   save/reload, SLD highlights, action card re-simulation,
+   settings logging, datalist clamping, and ~930 other specs.
+3. Run `npm run build:standalone` — produces the single-file
+   `dist-standalone/standalone.html` artifact. This is what ships
+   as the standalone distribution.
+4. Optionally run the parity scripts in `scripts/` if the change
+   touches an interaction gesture, a settings field, an API
+   endpoint, or a session-JSON field — those are the four
+   contract surfaces each layer guards.
+
+No manual mirror in any separate HTML file. The React source is
+the single source of truth.

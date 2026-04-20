@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -61,7 +62,18 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_SRC = REPO_ROOT / "frontend" / "src"
-STANDALONE = REPO_ROOT / "standalone_interface.html"
+# Default target: the auto-generated `frontend/dist-standalone/standalone.html`
+# if it exists (run `npm run build:standalone` first); otherwise the legacy
+# hand-maintained file retained for reference. Override via
+# `COSTUDY4GRID_STANDALONE_PATH` to audit a different artifact.
+_DEFAULT_STANDALONE = REPO_ROOT / "frontend" / "dist-standalone" / "standalone.html"
+_LEGACY_STANDALONE = REPO_ROOT / "standalone_interface_legacy.html"
+STANDALONE = Path(
+    os.environ.get(
+        "COSTUDY4GRID_STANDALONE_PATH",
+        str(_DEFAULT_STANDALONE if _DEFAULT_STANDALONE.exists() else _LEGACY_STANDALONE),
+    )
+)
 
 
 # ---------------------------------------------------------------------

@@ -271,6 +271,27 @@ export function useSession(): SessionState {
       // 4. Consume base diagram
       ctx.ingestBaseDiagram(diagramRaw, vlRes.voltage_levels.length);
 
+      // 4b. Re-push the monitored-line set + computed-pair cache
+      // captured at save time into the backend, so any subsequent
+      // simulate-action call on this reloaded session uses the SAME
+      // `lines_we_care_about` policy as the original study — not the
+      // backend's default (all lines / on-disk lines-monitoring file).
+      // Parity with the standalone HTML mirror (PR
+      // `claude/auto-generate-standalone-interface-Hhogk`). No-ops
+      // silently for older session dumps that predate the fields.
+      if (session.analysis?.lines_we_care_about) {
+        try {
+          await api.restoreAnalysisContext({
+            lines_we_care_about: session.analysis.lines_we_care_about,
+            disconnected_element: session.contingency.disconnected_element,
+            lines_overloaded: session.overloads?.resolved_overloads ?? null,
+            computed_pairs: session.analysis.computed_pairs ?? null,
+          });
+        } catch (ctxErr) {
+          console.warn('Failed to restore analysis context:', ctxErr);
+        }
+      }
+
       // 5. Restore contingency
       const contingency = session.contingency;
       ctx.setMonitorDeselected(contingency.monitor_deselected);

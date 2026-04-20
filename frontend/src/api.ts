@@ -203,6 +203,25 @@ export const api = {
         );
         return response.data;
     },
+    /**
+     * Re-pushes the monitored-line set and computed-pair cache captured in a saved
+     * session back into the backend so that any subsequent simulate-action call uses
+     * the SAME `lines_we_care_about` policy as the original study — instead of the
+     * backend's default (all lines, or the lines-monitoring file on disk). Called
+     * from `useSession::handleRestoreSession` right after the base-study XHRs
+     * complete, before the user can kick off a new simulation.
+     *
+     * Parity with `standalone_interface.html:3857`.
+     */
+    restoreAnalysisContext: async (params: {
+        lines_we_care_about?: string[] | null;
+        disconnected_element?: string | null;
+        lines_overloaded?: string[] | null;
+        computed_pairs?: Record<string, unknown> | null;
+    }): Promise<{ status: string; lines_we_care_about_count: number; computed_pairs_count: number }> => {
+        const response = await axios.post(`${API_BASE_URL}/api/restore-analysis-context`, params);
+        return response.data;
+    },
     runAnalysisStep1: async (disconnected_element: string): Promise<{ lines_overloaded: string[]; message: string; can_proceed: boolean }> => {
         const response = await axios.post(`${API_BASE_URL}/api/run-analysis-step1`, { disconnected_element });
         return response.data;
