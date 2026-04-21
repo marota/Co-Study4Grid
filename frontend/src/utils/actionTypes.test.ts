@@ -65,6 +65,48 @@ describe('classifyActionType', () => {
         expect(classifyActionType('xyz', null, 'node_splitting')).toBe('open');
     });
 
+    // Line vs coupling: "Ouverture X DJ_OC dans le poste Y"
+    // describes opening a breaker on a LINE (not a bus coupling), so
+    // it must land in DISCO — even though the description contains
+    // both "poste" and "ouverture". Coupling actions carry either a
+    // `_coupling` suffix on the id, a `COUPL` segment in the
+    // description, or the specific "du poste 'X'" phrasing.
+    describe('line vs coupling when description contains "poste"', () => {
+        it('DJ_OC on a line (id without coupling token) → DISCO', () => {
+            const id = 'b1a3225d-b06a-4c09-8890-9c8d6061d1db_C.FOUP3_C.FOU3MERVA.1';
+            const desc = 'Ouverture C.FOUP3_C.FOU3MERVA.1 DJ_OC dans le poste C.FOUP3';
+            expect(classifyActionType(id, desc, null)).toBe('disco');
+        });
+
+        it('DJ_OC with _coupling suffix in id → OPEN', () => {
+            const id = 'f344b395-9908-43c2-bca0-75c5f298465e_COUCHP6_coupling';
+            const desc = 'Ouverture COUCHP6_COUCH6COUPL DJ_OC dans le poste COUCHP6';
+            expect(classifyActionType(id, desc, null)).toBe('open');
+        });
+
+        it('DJ_OC with "COUPL" / "coupling" inside the description → OPEN', () => {
+            const id = '3617076a-a7f5-4f8a-9009-127ac9b85cff_VIELMP6';
+            const desc = 'Ouverture VIELMP6_VIELM6COUPL DJ_OC dans le poste VIELMP6';
+            expect(classifyActionType(id, desc, null)).toBe('open');
+        });
+
+        it('"Ouverture du poste \'X\'" with coupling-less id → OPEN (coupling-is-target phrasing)', () => {
+            expect(classifyActionType('some_id', "Ouverture du poste 'VL_FAR'", null)).toBe('open');
+        });
+
+        it('line RECONNECTION with "dans le poste" phrasing → RECO', () => {
+            const id = 'abc_LINE_A_LINE_B.1';
+            const desc = 'Fermeture LINE_A_LINE_B.1 DJ_FE dans le poste POSTE_A';
+            expect(classifyActionType(id, desc, null)).toBe('reco');
+        });
+
+        it('coupling CLOSE with _coupling id AND "Fermeture ... dans le poste" desc → CLOSE', () => {
+            const id = 'zyx_COUCHP6_coupling';
+            const desc = 'Fermeture COUCHP6_COUCH6COUPL DJ_FE dans le poste COUCHP6';
+            expect(classifyActionType(id, desc, null)).toBe('close');
+        });
+    });
+
     it('classifies PST tap changes — and DOES NOT mis-bucket "PST" inside a coupling description', () => {
         expect(classifyActionType('pst_PST_X', 'PST tap change', 'pst_tap_change')).toBe('pst');
         // coupling description that mentions PST must still be open/close

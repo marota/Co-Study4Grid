@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import type { CombinedAction, AnalysisResult, ActionTypeFilterToken } from '../types';
 import ActionTypeFilterChips from './ActionTypeFilterChips';
+import { matchesActionTypeFilter } from '../utils/actionTypes';
 
 interface SimulationFeedback {
     max_rho: number | null;
@@ -104,18 +105,9 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
             {/* Grouped Table */}
             <div style={{ flex: 1, maxHeight: '350px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '4px', marginBottom: '15px' }}>
                 {(() => {
-                    const filteredList = scoredActionsList.filter(item => {
-                        if (exploreFilter === 'all') return true;
-                        const t = item.type.toLowerCase();
-                        if (exploreFilter === 'disco') return t.includes('disco') || t.includes('line_disconnection') || t.includes('open_line');
-                        if (exploreFilter === 'reco') return t.includes('reco') || t.includes('line_reconnection') || t.includes('close_line');
-                        if (exploreFilter === 'open') return t.includes('open_coupling');
-                        if (exploreFilter === 'close') return t.includes('close_coupling');
-                        if (exploreFilter === 'pst') return t.includes('pst');
-                        if (exploreFilter === 'ls') return t.includes('load_shedding') || t.includes('ls');
-                        if (exploreFilter === 'rc') return t.includes('renewable_curtailment') || t.includes('rc') || t.includes('open_gen');
-                        return t.includes(exploreFilter);
-                    });
+                    const filteredList = scoredActionsList.filter(item =>
+                        matchesActionTypeFilter(exploreFilter, item.actionId, null, item.type),
+                    );
 
                     const types = Array.from(new Set(filteredList.map(item => item.type)));
 

@@ -45,33 +45,56 @@ export const classifyActionType = (
     const aid = actionId.toLowerCase();
     const desc = (description ?? '').toLowerCase();
 
-    // Couplings take precedence: an id / desc like "open_coupling" or
-    // "Ouverture du poste" is unambiguously a bus-coupling operation,
-    // NOT a line disconnection — even though the description contains
-    // "ouverture". Without this precedence the desc-based disco check
-    // below would mis-classify them as 'disco'.
+    // A two-step classification for couplings vs lines:
     //
-    // `node_merging_*` / `node_splitting_*` are coupling actions
-    // expressed as node operations (merging two buses = closing the
-    // coupling between them; splitting = opening). They carry no
-    // `open_coupling` / `close_coupling` token in their id or
-    // description, so we match them explicitly here — otherwise they
-    // fall through to the `unknown` bucket and disappear when the
-    // operator picks the CLOSE / OPEN chip.
-    const isOpenCoupling = t.includes('open_coupling')
+    //   1. `isCouplingSignal` — does anything in the id / type /
+    //      description say "this operates on a bus coupling"? We
+    //      check id tokens (`_coupling`, `busbar`, `node_merging`,
+    //      `node_splitting`, `noeud`), score-table types with the
+    //      same tokens, AND description markers (`coupl` which
+    //      matches both `coupling` and uppercase `COUPL` post-
+    //      lowercasing, `busbar`, and the specific French phrasing
+    //      `"du poste 'X'"` used when the coupling/poste itself
+    //      is the target). The earlier "desc contains 'poste' AND
+    //      'ouverture'" rule mis-classified line-opening actions
+    //      whose description has `... DJ_OC dans le poste POSTE`
+    //      because `dans le poste` also contains the substring
+    //      "poste" — regression fix.
+    //
+    //   2. OPEN/CLOSE/DISCO/RECO buckets are then gated by this
+    //      signal: direction heuristics (ouverture/fermeture /
+    //      open_* / close_* / node_splitting / node_merging) only
+    //      land in the coupling bucket when `isCouplingSignal` is
+    //      true, otherwise they land in disco/reco.
+    const isCouplingSignal = t.includes('coupling')
+        || t.includes('node_merging')
+        || t.includes('node_splitting')
+        || aid.includes('coupling')
+        || aid.includes('busbar')
+        || aid.includes('noeud')
+        || aid.includes('node_merging')
+        || aid.includes('node_splitting')
+        || desc.includes('coupl')
+        || desc.includes('busbar')
+        || /du poste\s+['"]/.test(desc);
+
+    const opensViaSignal = t.includes('open_coupling')
         || aid.includes('open_coupling')
         || aid.includes('node_splitting')
         || t.includes('node_splitting')
-        || (desc.includes('poste') && desc.includes('ouverture'));
-    const isCloseCoupling = t.includes('close_coupling')
+        || desc.includes('ouverture');
+    const closesViaSignal = t.includes('close_coupling')
         || aid.includes('close_coupling')
         || aid.includes('node_merging')
         || t.includes('node_merging')
-        || (desc.includes('poste') && desc.includes('fermeture'));
-    const isDisco = !isOpenCoupling && (
+        || desc.includes('fermeture');
+
+    const isOpenCoupling = isCouplingSignal && opensViaSignal;
+    const isCloseCoupling = isCouplingSignal && closesViaSignal;
+    const isDisco = !isCouplingSignal && (
         t.includes('disco') || t.includes('open_line') || t.includes('open_load') || desc.includes('ouverture')
     );
-    const isReco = !isCloseCoupling && (
+    const isReco = !isCouplingSignal && (
         t.includes('reco') || t.includes('close_line') || t.includes('close_load') || desc.includes('fermeture')
     );
     // PST / LS / RC classifiers defer to the coupling checks above so

@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig, DiagramData, ActionOverviewFilters } from '../types';
 import { actionPassesOverviewFilter } from '../utils/svgUtils';
-import { matchesActionTypeFilter } from '../utils/actionTypes';
+import { classifyActionType, matchesActionTypeFilter } from '../utils/actionTypes';
 import { api } from '../api';
 import { interactionLogger } from '../utils/interactionLogger';
 import CombinedActionsModal from './CombinedActionsModal';
@@ -235,35 +235,25 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         setTimeout(() => searchInputRef.current?.focus(), 50);
     };
 
-    // Filter actions for dropdown
+    // Filter actions for dropdown. Delegates bucket classification
+    // to the shared `classifyActionType` so the manual-selection
+    // search row and the overview chip row share a single source of
+    // truth (including the line-vs-coupling distinction).
     const filteredActions = useMemo(() => {
         const q = searchQuery.toLowerCase();
         const alreadyShown = new Set(Object.keys(actions));
         return availableActions
             .filter(a => !alreadyShown.has(a.id))
             .filter(a => {
-                const t = (a.type || 'unknown').toLowerCase();
-                const actionId = a.id.toLowerCase();
-                const actionDesc = (a.description || '').toLowerCase();
-
-                const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
-                const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
-                const isOpenCoupling = t.includes('open_coupling');
-                const isCloseCoupling = t.includes('close_coupling');
-                const isPstAction = (actionId.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
-                const isLoadShedding = (actionId.includes('load_shedding') || actionDesc.includes('load shedding') || t.includes('load_shedding')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction;
-                const isRenewableCurtailment = (t.includes('renewable_curtailment') || t.includes('open_gen')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction && !isLoadShedding;
-
-                if (isDisco) return typeFilters.disco;
-                if (isReco) return typeFilters.reco;
-                if (isOpenCoupling) return typeFilters.open;
-                if (isCloseCoupling) return typeFilters.close;
-                if (isPstAction) return typeFilters.pst;
-                if (isLoadShedding) return typeFilters.ls;
-                if (isRenewableCurtailment) return typeFilters.rc;
-
-                // Handle unknown or categories not explicitly listed above
-                return typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
+                const bucket = classifyActionType(a.id, a.description || null, a.type || null);
+                if (bucket === 'unknown') {
+                    // Unknown buckets fall back to "show only when
+                    // every filter is on" — same behaviour as before.
+                    return typeFilters.disco && typeFilters.reco
+                        && typeFilters.open && typeFilters.close
+                        && typeFilters.pst;
+                }
+                return typeFilters[bucket];
             })
             .filter(a => a.id.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q))
             .slice(0, 20);
@@ -298,30 +288,21 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
 
             const scores = data?.scores || {};
             for (const [actionId, score] of Object.entries(scores)) {
-                // Determine if this specific action should be filtered out
                 const actionDetail = actions[actionId];
-                const actionDesc = (actionDetail?.description_unitaire || '').toLowerCase();
-                const aid = actionId.toLowerCase();
-                const t = type.toLowerCase();
-
-                const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
-                const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
-                const isOpenCoupling = t.includes('open_coupling');
-                const isCloseCoupling = t.includes('close_coupling');
-                const isPstAction = (aid.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
-                const isLoadShedding = (aid.includes('load_shedding') || actionDesc.includes('load shedding') || t.includes('load_shedding')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction;
-                const isRenewableCurtailment = (t.includes('renewable_curtailment') || t.includes('open_gen')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction && !isLoadShedding;
-
-                let shouldShow = false;
-                if (isDisco) shouldShow = typeFilters.disco;
-                else if (isReco) shouldShow = typeFilters.reco;
-                else if (isOpenCoupling) shouldShow = typeFilters.open;
-                else if (isCloseCoupling) shouldShow = typeFilters.close;
-                else if (isPstAction) shouldShow = typeFilters.pst;
-                else if (isLoadShedding) shouldShow = typeFilters.ls;
-                else if (isRenewableCurtailment) shouldShow = typeFilters.rc;
-                else shouldShow = typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst && typeFilters.ls && typeFilters.rc;
-
+                // Same shared classifier as the search dropdown so
+                // the two views agree on bucket membership (e.g. a
+                // line-opening DJ_OC whose description has
+                // "dans le poste" is DISCO, not OPEN).
+                const bucket = classifyActionType(
+                    actionId,
+                    actionDetail?.description_unitaire || null,
+                    type,
+                );
+                const shouldShow = bucket === 'unknown'
+                    ? (typeFilters.disco && typeFilters.reco
+                        && typeFilters.open && typeFilters.close
+                        && typeFilters.pst && typeFilters.ls && typeFilters.rc)
+                    : typeFilters[bucket];
                 if (!shouldShow) continue;
 
                 const mwStartMap = (data as { mw_start?: Record<string, number | null> })?.mw_start;
