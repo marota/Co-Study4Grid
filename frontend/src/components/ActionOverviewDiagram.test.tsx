@@ -1080,6 +1080,133 @@ describe('ActionOverviewDiagram', () => {
             expect(onFiltersChange).toHaveBeenCalledTimes(1);
             expect(onFiltersChange.mock.calls[0][0].showUnsimulated).toBe(true);
         });
+
+        // Regression: after the parent (App.tsx) resolves the
+        // simulation triggered by a double-click and adds the action
+        // to `result.actions`, the ActionOverviewDiagram must (a)
+        // drop the dimmed dashed pin from the un-simulated layer AND
+        // (b) render a fully-coloured pin for the id instead — same
+        // treatment as any action simulated via the Manual Selection
+        // dropdown.
+        it('recolours the pin when the action moves from scored-only to simulated', () => {
+            const baseProps = {
+                ...defaultProps(),
+                filters: { categories: allCategories, threshold: 1.5, showUnsimulated: true },
+                unsimulatedActionIds: ['LINE_D'] as readonly string[],
+            };
+            const { container, rerender } = render(<ActionOverviewDiagram {...baseProps} />);
+            // Before: a single dimmed un-simulated pin for LINE_D.
+            const beforeUnsimulated = container.querySelectorAll('.nad-action-overview-pin-unsimulated');
+            expect(beforeUnsimulated.length).toBe(1);
+            expect(beforeUnsimulated[0].getAttribute('data-action-id')).toBe('LINE_D');
+
+            // App.tsx streams the simulation result and calls
+            // `wrappedManualActionAdded` → `handleManualActionAdded`
+            // which inserts the new entry into `result.actions`. The
+            // App then clears the id from `unsimulatedActionIds`
+            // because it now exists in `result.actions`. We mimic
+            // that two-prop update here.
+            const actionsAfter: Record<string, ActionDetail> = {
+                ...baseProps.actions,
+                LINE_D: makeAction({
+                    action_topology: { lines_ex_bus: { LINE_D: -1 }, lines_or_bus: { LINE_D: -1 }, gens_bus: {}, loads_bus: {} },
+                    max_rho: 0.6,  // green severity
+                    max_rho_line: 'LINE_D',
+                    is_manual: true,
+                }),
+            };
+            rerender(
+                <ActionOverviewDiagram
+                    {...baseProps}
+                    actions={actionsAfter}
+                    unsimulatedActionIds={[]}
+                />,
+            );
+            // After: no more dashed un-simulated pin for LINE_D.
+            const afterUnsimulated = container.querySelectorAll('.nad-action-overview-pin-unsimulated');
+            expect(afterUnsimulated.length).toBe(0);
+
+            // And LINE_D is now a regular, fully-coloured pin (not
+            // dashed, not dimmed, not marked unsimulated).
+            const linePin = container.querySelector('[data-action-id="LINE_D"]');
+            expect(linePin).not.toBeNull();
+            expect(linePin!.classList.contains('nad-action-overview-pin-unsimulated')).toBe(false);
+            expect(linePin!.getAttribute('data-dimmed-by-filter')).toBeNull();
+            expect(linePin!.getAttribute('data-unsimulated')).toBeNull();
+            expect(linePin!.getAttribute('opacity')).toBeNull();
+        });
+
+        it('recolours the pin even when the "Show unsimulated" toggle is OFF', () => {
+            // Before simulation with the toggle off, the pin isn't
+            // drawn at all (no dashed preview). After simulation it
+            // must still appear as a regular coloured pin — the
+            // toggle only gates the un-simulated preview layer.
+            const baseProps = {
+                ...defaultProps(),
+                filters: { categories: allCategories, threshold: 1.5, showUnsimulated: false },
+                unsimulatedActionIds: ['LINE_D'] as readonly string[],
+            };
+            const { container, rerender } = render(<ActionOverviewDiagram {...baseProps} />);
+            expect(container.querySelector('[data-action-id="LINE_D"]')).toBeNull();
+
+            const actionsAfter: Record<string, ActionDetail> = {
+                ...baseProps.actions,
+                LINE_D: makeAction({
+                    action_topology: { lines_ex_bus: { LINE_D: -1 }, lines_or_bus: { LINE_D: -1 }, gens_bus: {}, loads_bus: {} },
+                    max_rho: 0.6,
+                    max_rho_line: 'LINE_D',
+                    is_manual: true,
+                }),
+            };
+            rerender(
+                <ActionOverviewDiagram
+                    {...baseProps}
+                    actions={actionsAfter}
+                    unsimulatedActionIds={[]}
+                />,
+            );
+            const linePin = container.querySelector('[data-action-id="LINE_D"]');
+            expect(linePin).not.toBeNull();
+            expect(linePin!.classList.contains('nad-action-overview-pin-unsimulated')).toBe(false);
+        });
+
+        it('shows the now-selected status on the recoloured pin (gold star) when the parent starred it', () => {
+            // Manual-selection flow (the one unsimulated double-click
+            // mirrors) adds the id to selectedActionIds too. The
+            // coloured pin should then pick up the selected styling
+            // (the gold star above the teardrop).
+            const baseProps = {
+                ...defaultProps(),
+                filters: { categories: allCategories, threshold: 1.5, showUnsimulated: true },
+                unsimulatedActionIds: ['LINE_D'] as readonly string[],
+            };
+            const { container, rerender } = render(<ActionOverviewDiagram {...baseProps} />);
+            const actionsAfter: Record<string, ActionDetail> = {
+                ...baseProps.actions,
+                LINE_D: makeAction({
+                    action_topology: { lines_ex_bus: { LINE_D: -1 }, lines_or_bus: { LINE_D: -1 }, gens_bus: {}, loads_bus: {} },
+                    max_rho: 0.6,
+                    max_rho_line: 'LINE_D',
+                    is_manual: true,
+                }),
+            };
+            rerender(
+                <ActionOverviewDiagram
+                    {...baseProps}
+                    actions={actionsAfter}
+                    unsimulatedActionIds={[]}
+                    selectedActionIds={new Set(['LINE_D'])}
+                />,
+            );
+            const linePin = container.querySelector('[data-action-id="LINE_D"]');
+            expect(linePin).not.toBeNull();
+            // Selected pins get a gold star path — see
+            // applyActionOverviewPins. The star element is the only
+            // <path> carrying a #eab308 fill.
+            const goldFills = Array.from(linePin!.querySelectorAll('path'))
+                .filter(p => p.getAttribute('fill') === '#eab308');
+            expect(goldFills.length).toBeGreaterThan(0);
+        });
     });
 
     describe('detached-window popover placement', () => {

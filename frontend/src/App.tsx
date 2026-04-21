@@ -415,7 +415,29 @@ function App() {
         let streamErr: string | null = null;
         while (true) {
           const { value, done } = await reader.read();
-          if (done) break;
+          if (done) {
+            // Flush any trailing content that lacked a final \n.
+            // Backend always appends \n today, but this guard keeps
+            // the path robust if a future change emits a final
+            // event without one.
+            if (buffer.trim()) {
+              try {
+                const event = JSON.parse(buffer) as Record<string, unknown>;
+                if (event.type === 'metrics') {
+                  const { type: _t, ...rest } = event;
+                  void _t;
+                  metrics = rest as Awaited<ReturnType<typeof api.simulateManualAction>>;
+                } else if (event.type === 'diagram') {
+                  const { type: _t, ...rest } = event;
+                  void _t;
+                  diagrams.primeActionDiagram(actionId, rest as unknown as DiagramData, voltageLevels.length);
+                } else if (event.type === 'error') {
+                  streamErr = (event.message as string) || 'stream error';
+                }
+              } catch { /* ignore malformed trailing bytes */ }
+            }
+            break;
+          }
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
           buffer = lines.pop()!;
