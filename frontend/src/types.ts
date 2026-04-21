@@ -457,6 +457,9 @@ export type InteractionType =
     | 'overview_zoom_out'
     | 'overview_zoom_fit'
     | 'overview_inspect_changed'
+    | 'overview_filter_changed'
+    | 'overview_unsimulated_toggled'
+    | 'overview_unsimulated_pin_simulated'
     // Session Management
     | 'session_saved'
     | 'session_reload_modal_opened'
@@ -469,4 +472,22 @@ export interface InteractionLogEntry {
     details: Record<string, unknown>;
     correlation_id?: string;
     duration_ms?: number;
+}
+
+// ===== Action Overview Filters =====
+
+export type ActionSeverityCategory = 'green' | 'orange' | 'red' | 'grey';
+
+export interface ActionOverviewFilters {
+    categories: Record<ActionSeverityCategory, boolean>;
+    /**
+     * Only display actions whose max_rho (loading rate) is strictly below
+     * this threshold. Expressed as a ratio (1.5 == 150%). Applied to both
+     * the overview pins and the sidebar action feed cards. Actions whose
+     * max_rho is null (divergent / islanded) are always shown when the
+     * "grey" category is enabled and ignore the threshold.
+     */
+    threshold: number;
+    /** When true, un-simulated scored actions are drawn as dimmed pins. */
+    showUnsimulated: boolean;
 }

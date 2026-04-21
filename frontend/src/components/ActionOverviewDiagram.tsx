@@ -6,12 +6,13 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ActionDetail, DiagramData, MetadataIndex, ViewBox } from '../types';
+import type { ActionDetail, ActionOverviewFilters, ActionSeverityCategory, DiagramData, MetadataIndex, ViewBox } from '../types';
 import {
     applyActionOverviewHighlights,
     applyActionOverviewPins,
     buildActionOverviewPins,
     buildCombinedActionPins,
+    buildUnsimulatedActionPins,
     computeActionOverviewFitRect,
     computeEquipmentFitRect,
     invalidateIdMapCache,
@@ -108,6 +109,25 @@ interface ActionOverviewDiagramProps {
     isDetached?: boolean;
     /** Resolve an element/VL ID to its human-readable display name. */
     displayName?: (id: string) => string;
+    /**
+     * Active category + threshold filters shared with the ActionFeed.
+     * When omitted all categories are enabled and the threshold is 1.5.
+     */
+    filters?: ActionOverviewFilters;
+    /** Update the filter state (owned by App.tsx). */
+    onFiltersChange?: (next: ActionOverviewFilters) => void;
+    /**
+     * Ids of scored-but-not-simulated actions the pin layer can render
+     * as dimmed, dashed pins when {@link filters}.showUnsimulated is
+     * enabled. Supplied by App.tsx from `result.action_scores`.
+     */
+    unsimulatedActionIds?: readonly string[];
+    /**
+     * Kick off a manual simulation for an unsimulated action when its
+     * pin is double-clicked. Expected to call the same code path as
+     * the Manual Selection dropdown.
+     */
+    onSimulateUnsimulatedAction?: (actionId: string) => void;
 }
 
 const ZOOM_STEP_IN = 0.8;
@@ -119,6 +139,12 @@ const scaleViewBox = (vb: ViewBox, factor: number): ViewBox => ({
     w: vb.w * factor,
     h: vb.h * factor,
 });
+
+const DEFAULT_FILTERS: ActionOverviewFilters = {
+    categories: { green: true, orange: true, red: true, grey: true },
+    threshold: 1.5,
+    showUnsimulated: false,
+};
 
 const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     n1Diagram,
@@ -140,7 +166,12 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     onToggleTie,
     isDetached,
     displayName,
+    filters,
+    onFiltersChange,
+    unsimulatedActionIds,
+    onSimulateUnsimulatedAction,
 }) => {
+    const activeFilters = filters ?? DEFAULT_FILTERS;
     const containerRef = useRef<HTMLDivElement | null>(null);
     // Pull the svg string into a local so the React Compiler can
     // see that both the injection effect and the initialViewBox memo
@@ -232,16 +263,26 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     const pins = useMemo(() => {
         if (!n1MetaIndex || !actions) return [];
         performance.mark('aod:buildPins:start');
-        const result = buildActionOverviewPins(actions, n1MetaIndex, monitoringFactor);
+        const result = buildActionOverviewPins(
+            actions, n1MetaIndex, monitoringFactor, undefined,
+            { categories: activeFilters.categories, threshold: activeFilters.threshold },
+        );
         performance.mark('aod:buildPins:end');
         perfMeasure('aod:buildPins', 'aod:buildPins:start', 'aod:buildPins:end');
         return result;
-    }, [n1MetaIndex, actions, monitoringFactor]);
+    }, [n1MetaIndex, actions, monitoringFactor, activeFilters.categories, activeFilters.threshold]);
 
     const combinedPins = useMemo(() => {
         if (!actions || pins.length === 0) return [];
         return buildCombinedActionPins(actions, pins, monitoringFactor);
     }, [actions, pins, monitoringFactor]);
+
+    const unsimulatedPins = useMemo(() => {
+        if (!activeFilters.showUnsimulated) return [];
+        if (!n1MetaIndex || !unsimulatedActionIds || unsimulatedActionIds.length === 0) return [];
+        const simulatedIds = new Set(Object.keys(actions ?? {}));
+        return buildUnsimulatedActionPins(unsimulatedActionIds, simulatedIds, n1MetaIndex);
+    }, [activeFilters.showUnsimulated, n1MetaIndex, unsimulatedActionIds, actions]);
 
     // Deterministic auto-fit rectangle derived from the bounding
     // box of contingency + overloads + pins. Recomputed whenever any
@@ -250,9 +291,9 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     // re-applies the fit automatically.
     const fitRect = useMemo<ViewBox | null>(() => {
         if (!n1MetaIndex) return null;
-        const allPinPositions = [...pins, ...combinedPins];
+        const allPinPositions = [...pins, ...combinedPins, ...unsimulatedPins];
         return computeActionOverviewFitRect(n1MetaIndex, contingency, overloadedLines, allPinPositions);
-    }, [n1MetaIndex, contingency, overloadedLines, pins, combinedPins]);
+    }, [n1MetaIndex, contingency, overloadedLines, pins, combinedPins, unsimulatedPins]);
 
     // Fall back to the original NAD viewBox if we couldn't build a
     // fit rectangle (e.g. no analysis has run yet) — that way the
@@ -368,6 +409,19 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
         onActionSelect(actionId);
     }, [onActionSelect]);
 
+    const handleUnsimulatedPinDoubleClick = useCallback((actionId: string) => {
+        interactionLogger.record('overview_unsimulated_pin_simulated', { action_id: actionId });
+        setPopoverPin(null);
+        if (onSimulateUnsimulatedAction) {
+            onSimulateUnsimulatedAction(actionId);
+        } else {
+            // Fall back on the default select path so the operator is
+            // never stranded when the parent hasn't wired the simulate
+            // callback yet.
+            onActionSelect(actionId);
+        }
+    }, [onSimulateUnsimulatedAction, onActionSelect]);
+
     // (Re)apply contingency + overload highlights whenever the
     // contingency or the N-1 overload set changes.  Mirrors what
     // the N-1 tab shows so the operator keeps the same situational
@@ -398,10 +452,12 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
             selectedActionIds,
             rejectedActionIds,
             combinedPins,
+            unsimulatedPins,
+            onUnsimulatedPinDoubleClick: handleUnsimulatedPinDoubleClick,
         });
         performance.mark('aod:applyPins:end');
         perfMeasure('aod:applyPins', 'aod:applyPins:start', 'aod:applyPins:end');
-    }, [pins, handlePinClick, handlePinDoubleClick, svgReady, preparedSvg, selectedActionIds, rejectedActionIds, combinedPins]);
+    }, [pins, handlePinClick, handlePinDoubleClick, svgReady, preparedSvg, selectedActionIds, rejectedActionIds, combinedPins, unsimulatedPins, handleUnsimulatedPinDoubleClick]);
 
     // Screen-constant pin compensation.
     //
@@ -579,6 +635,49 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
         };
     }, [popoverPin, closePopover]);
 
+    // ----- Filter controls (category toggles + threshold slider +
+    //        un-simulated-pin toggle). These mutate shared filter
+    //        state owned by App.tsx so the ActionFeed follows the
+    //        same visibility rules.
+    const pushFilters = useCallback((next: ActionOverviewFilters) => {
+        onFiltersChange?.(next);
+    }, [onFiltersChange]);
+
+    const toggleCategory = useCallback((cat: ActionSeverityCategory) => {
+        const nextCats = { ...activeFilters.categories, [cat]: !activeFilters.categories[cat] };
+        interactionLogger.record('overview_filter_changed', {
+            kind: 'category',
+            category: cat,
+            enabled: nextCats[cat],
+        });
+        pushFilters({ ...activeFilters, categories: nextCats });
+    }, [activeFilters, pushFilters]);
+
+    const setAllCategories = useCallback((enabled: boolean) => {
+        const nextCats: Record<ActionSeverityCategory, boolean> = {
+            green: enabled, orange: enabled, red: enabled, grey: enabled,
+        };
+        interactionLogger.record('overview_filter_changed', {
+            kind: 'categories_bulk',
+            enabled,
+        });
+        pushFilters({ ...activeFilters, categories: nextCats });
+    }, [activeFilters, pushFilters]);
+
+    const setThreshold = useCallback((threshold: number) => {
+        interactionLogger.record('overview_filter_changed', {
+            kind: 'threshold',
+            threshold,
+        });
+        pushFilters({ ...activeFilters, threshold });
+    }, [activeFilters, pushFilters]);
+
+    const toggleUnsimulated = useCallback(() => {
+        const next = !activeFilters.showUnsimulated;
+        interactionLogger.record('overview_unsimulated_toggled', { enabled: next });
+        pushFilters({ ...activeFilters, showUnsimulated: next });
+    }, [activeFilters, pushFilters]);
+
     // Pre-compute the props ActionCard needs for the popover render.
     const popoverDetails = popoverPin && actions ? actions[popoverPin.id] : null;
     const popoverIndex = useMemo(() => {
@@ -632,14 +731,86 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                     {hasAnyAction && (
                         <span style={{ marginLeft: 8, fontWeight: 400, color: '#64748b' }}>
                             {pins.length} pin{pins.length === 1 ? '' : 's'} on the N-1 network
+                            {unsimulatedPins.length > 0
+                                ? ` (+ ${unsimulatedPins.length} unsimulated)`
+                                : ''}
                         </span>
                     )}
                 </div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <Legend color="#28a745" label="Solves overload" />
-                    <Legend color="#f0ad4e" label="Low margin" />
-                    <Legend color="#dc3545" label="Still overloaded" />
-                    <Legend color="#9ca3af" label="Divergent / islanded" />
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <CategoryToggle
+                        testId="filter-category-green"
+                        color="#28a745" label="Solves overload"
+                        enabled={activeFilters.categories.green}
+                        onToggle={() => toggleCategory('green')}
+                    />
+                    <CategoryToggle
+                        testId="filter-category-orange"
+                        color="#f0ad4e" label="Low margin"
+                        enabled={activeFilters.categories.orange}
+                        onToggle={() => toggleCategory('orange')}
+                    />
+                    <CategoryToggle
+                        testId="filter-category-red"
+                        color="#dc3545" label="Still overloaded"
+                        enabled={activeFilters.categories.red}
+                        onToggle={() => toggleCategory('red')}
+                    />
+                    <CategoryToggle
+                        testId="filter-category-grey"
+                        color="#9ca3af" label="Divergent / islanded"
+                        enabled={activeFilters.categories.grey}
+                        onToggle={() => toggleCategory('grey')}
+                    />
+                    <button
+                        data-testid="filter-select-all"
+                        type="button"
+                        onClick={() => setAllCategories(true)}
+                        title="Enable all categories"
+                        style={filterChipButtonStyle}
+                    >
+                        All
+                    </button>
+                    <button
+                        data-testid="filter-select-none"
+                        type="button"
+                        onClick={() => setAllCategories(false)}
+                        title="Disable all categories"
+                        style={filterChipButtonStyle}
+                    >
+                        None
+                    </button>
+                    <label
+                        data-testid="filter-threshold"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                        title="Hide actions whose max loading rate exceeds this threshold"
+                    >
+                        <span style={{ color: '#475569' }}>Max loading</span>
+                        <input
+                            type="range"
+                            min={0.5}
+                            max={3}
+                            step={0.05}
+                            value={activeFilters.threshold}
+                            onChange={e => setThreshold(parseFloat(e.target.value))}
+                            style={{ width: 110 }}
+                        />
+                        <span style={{ minWidth: 38, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#1f2937', fontWeight: 600 }}>
+                            {`${Math.round(activeFilters.threshold * 100)}%`}
+                        </span>
+                    </label>
+                    <label
+                        data-testid="filter-show-unsimulated"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}
+                        title="Show scored-but-not-yet-simulated actions as dimmed pins. Double-click a dimmed pin to run its simulation."
+                    >
+                        <input
+                            type="checkbox"
+                            checked={activeFilters.showUnsimulated}
+                            onChange={toggleUnsimulated}
+                        />
+                        <span style={{ color: '#475569' }}>Show unsimulated</span>
+                    </label>
                 </div>
             </div>
 
@@ -900,8 +1071,50 @@ const controlButtonStyle: React.CSSProperties = {
     boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
 };
 
-const Legend: React.FC<{ color: string; label: string }> = ({ color, label }) => (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+const filterChipButtonStyle: React.CSSProperties = {
+    background: 'white',
+    color: '#334155',
+    border: '1px solid #cbd5e1',
+    borderRadius: 4,
+    padding: '3px 8px',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 600,
+};
+
+/**
+ * Clickable severity chip used in the overview header. Acts as a
+ * toggle: when enabled the matching pins and cards are visible,
+ * when disabled both are hidden. Doubles as a legend by always
+ * showing the severity colour.
+ */
+const CategoryToggle: React.FC<{
+    color: string;
+    label: string;
+    enabled: boolean;
+    onToggle: () => void;
+    testId?: string;
+}> = ({ color, label, enabled, onToggle, testId }) => (
+    <button
+        type="button"
+        onClick={onToggle}
+        data-testid={testId}
+        aria-pressed={enabled}
+        title={enabled ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+        style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            cursor: 'pointer',
+            background: enabled ? 'white' : '#eef2f7',
+            border: `1px solid ${enabled ? color : '#cbd5e1'}`,
+            borderRadius: 12,
+            padding: '2px 8px',
+            fontSize: 12,
+            color: enabled ? '#1f2937' : '#94a3b8',
+            opacity: enabled ? 1 : 0.65,
+        }}
+    >
         <span
             aria-hidden
             style={{
@@ -910,10 +1123,11 @@ const Legend: React.FC<{ color: string; label: string }> = ({ color, label }) =>
                 height: 10,
                 borderRadius: '50%',
                 background: color,
+                opacity: enabled ? 1 : 0.5,
             }}
         />
-        <span style={{ color: '#475569' }}>{label}</span>
-    </span>
+        <span>{label}</span>
+    </button>
 );
 
 export default React.memo(ActionOverviewDiagram);

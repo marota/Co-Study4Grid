@@ -6,7 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import React, { useState, useMemo, useRef, type RefObject } from 'react';
-import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab, MetadataIndex } from '../types';
+import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab, MetadataIndex, ActionOverviewFilters } from '../types';
 import MemoizedSvgContainer from './MemoizedSvgContainer';
 import SldOverlay from './SldOverlay';
 import DetachableTabHost from './DetachableTabHost';
@@ -241,6 +241,14 @@ interface VisualizationPanelProps {
     monitoringFactor?: number;
     /** Resolve an element/VL ID to its human-readable display name. */
     displayName?: (id: string) => string;
+    /** Shared category + threshold + un-simulated filter state. */
+    overviewFilters?: ActionOverviewFilters;
+    /** Setter for the shared overview filter state (owned by App.tsx). */
+    onOverviewFiltersChange?: (next: ActionOverviewFilters) => void;
+    /** Ids of scored-but-not-simulated actions to render as dimmed pins. */
+    unsimulatedActionIds?: readonly string[];
+    /** Kick off a manual simulation when an un-simulated pin is double-clicked. */
+    onSimulateUnsimulatedAction?: (actionId: string) => void;
 }
 
 
@@ -299,6 +307,10 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onOverviewPzChange,
     monitoringFactor,
     displayName,
+    overviewFilters,
+    onOverviewFiltersChange,
+    unsimulatedActionIds,
+    onSimulateUnsimulatedAction,
 }) => {
     // No-op fallbacks so conditional branches don't need to guard.
     const detachTabCb = onDetachTab ?? (() => {});
@@ -1049,6 +1061,10 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             onToggleTie={() => toggleTabTieCb('action')}
                             isDetached={!!detachedTabs['action']}
                             displayName={displayName}
+                            filters={overviewFilters}
+                            onFiltersChange={onOverviewFiltersChange}
+                            unsimulatedActionIds={unsimulatedActionIds}
+                            onSimulateUnsimulatedAction={onSimulateUnsimulatedAction}
                         />
                         {actionDiagramLoading && (
                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>

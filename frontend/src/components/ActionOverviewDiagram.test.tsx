@@ -894,4 +894,191 @@ describe('ActionOverviewDiagram', () => {
             expect(entry!.details.action).toBe('cleared');
         });
     });
+
+    describe('filters', () => {
+        const allCategories = { green: true, orange: true, red: true, grey: true };
+
+        it('renders category toggle chips + threshold slider + unsimulated checkbox', () => {
+            const { getByTestId } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
+                />,
+            );
+            expect(getByTestId('filter-category-green')).toBeInTheDocument();
+            expect(getByTestId('filter-category-orange')).toBeInTheDocument();
+            expect(getByTestId('filter-category-red')).toBeInTheDocument();
+            expect(getByTestId('filter-category-grey')).toBeInTheDocument();
+            expect(getByTestId('filter-select-all')).toBeInTheDocument();
+            expect(getByTestId('filter-select-none')).toBeInTheDocument();
+            expect(getByTestId('filter-threshold')).toBeInTheDocument();
+            expect(getByTestId('filter-show-unsimulated')).toBeInTheDocument();
+        });
+
+        it('clicking a category chip flips the matching category and fires onFiltersChange', () => {
+            const onFiltersChange = vi.fn();
+            const { getByTestId } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
+                    onFiltersChange={onFiltersChange}
+                />,
+            );
+            fireEvent.click(getByTestId('filter-category-red'));
+            expect(onFiltersChange).toHaveBeenCalledTimes(1);
+            const next = onFiltersChange.mock.calls[0][0];
+            expect(next.categories.red).toBe(false);
+            expect(next.categories.green).toBe(true);
+        });
+
+        it('Select All / None bulk-sets every category', () => {
+            const onFiltersChange = vi.fn();
+            const { getByTestId } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
+                    onFiltersChange={onFiltersChange}
+                />,
+            );
+            fireEvent.click(getByTestId('filter-select-none'));
+            const [firstCall] = onFiltersChange.mock.calls;
+            expect(firstCall[0].categories).toEqual({ green: false, orange: false, red: false, grey: false });
+            fireEvent.click(getByTestId('filter-select-all'));
+            const secondCall = onFiltersChange.mock.calls[1];
+            expect(secondCall[0].categories).toEqual({ green: true, orange: true, red: true, grey: true });
+        });
+
+        it('threshold slider update fires onFiltersChange with the new threshold', () => {
+            const onFiltersChange = vi.fn();
+            const { getByTestId } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
+                    onFiltersChange={onFiltersChange}
+                />,
+            );
+            const slider = getByTestId('filter-threshold').querySelector('input[type="range"]') as HTMLInputElement;
+            fireEvent.change(slider, { target: { value: '1.0' } });
+            expect(onFiltersChange).toHaveBeenCalledTimes(1);
+            expect(onFiltersChange.mock.calls[0][0].threshold).toBeCloseTo(1.0);
+        });
+
+        it('disabling the red category hides red-severity pins from the overview', () => {
+            // defaultProps has one red pin (coupling_VL_FAR max_rho=1.1) and
+            // one green pin (disco_LINE_A max_rho=0.5).
+            const { container, rerender } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 2.0, showUnsimulated: false }}
+                />,
+            );
+            const pinsBefore = container.querySelectorAll('.nad-action-overview-pin:not(.nad-action-overview-pin-unsimulated)');
+            expect(pinsBefore.length).toBe(2);
+
+            rerender(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{
+                        categories: { ...allCategories, red: false },
+                        threshold: 2.0,
+                        showUnsimulated: false,
+                    }}
+                />,
+            );
+            const pinsAfter = container.querySelectorAll('.nad-action-overview-pin:not(.nad-action-overview-pin-unsimulated)');
+            expect(pinsAfter.length).toBe(1);
+            expect(pinsAfter[0].getAttribute('data-action-id')).toBe('disco_LINE_A');
+        });
+
+        it('threshold cap hides actions whose max_rho exceeds it', () => {
+            // Threshold 1.0 keeps the green 0.5 pin; the red 1.1 pin is above cap.
+            const { container } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.0, showUnsimulated: false }}
+                />,
+            );
+            const pins = container.querySelectorAll('.nad-action-overview-pin:not(.nad-action-overview-pin-unsimulated)');
+            expect(pins.length).toBe(1);
+            expect(pins[0].getAttribute('data-action-id')).toBe('disco_LINE_A');
+        });
+    });
+
+    describe('unsimulated pins', () => {
+        const allCategories = { green: true, orange: true, red: true, grey: true };
+
+        it('does NOT render unsimulated pins when showUnsimulated is false', () => {
+            const { container } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
+                    unsimulatedActionIds={['LINE_D']}
+                />,
+            );
+            const dimmed = container.querySelectorAll('.nad-action-overview-pin-unsimulated');
+            expect(dimmed.length).toBe(0);
+        });
+
+        it('renders dimmed, dashed pins when showUnsimulated is true', () => {
+            const { container } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: true }}
+                    unsimulatedActionIds={['LINE_D']}
+                />,
+            );
+            const dimmed = container.querySelectorAll('.nad-action-overview-pin-unsimulated');
+            expect(dimmed.length).toBe(1);
+            expect(dimmed[0].getAttribute('data-unsimulated')).toBe('true');
+            expect(dimmed[0].getAttribute('opacity')).toBe('0.5');
+        });
+
+        it('skips unsimulated ids that are already simulated (no duplicate pin)', () => {
+            // LINE_A is already the target of `disco_LINE_A` in defaultProps;
+            // the unsimulated builder should drop it.
+            const { container } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: true }}
+                    unsimulatedActionIds={['disco_LINE_A', 'LINE_D']}
+                />,
+            );
+            const dimmed = container.querySelectorAll('.nad-action-overview-pin-unsimulated');
+            expect(dimmed.length).toBe(1);
+            expect(dimmed[0].getAttribute('data-action-id')).toBe('LINE_D');
+        });
+
+        it('double-clicking an unsimulated pin fires onSimulateUnsimulatedAction', () => {
+            const onSimulateUnsimulatedAction = vi.fn();
+            const { container } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: true }}
+                    unsimulatedActionIds={['LINE_D']}
+                    onSimulateUnsimulatedAction={onSimulateUnsimulatedAction}
+                />,
+            );
+            const pin = container.querySelector('.nad-action-overview-pin-unsimulated') as SVGGElement;
+            expect(pin).not.toBeNull();
+            act(() => { fireEvent.dblClick(pin); });
+            expect(onSimulateUnsimulatedAction).toHaveBeenCalledTimes(1);
+            expect(onSimulateUnsimulatedAction.mock.calls[0][0]).toBe('LINE_D');
+        });
+
+        it('logs overview_unsimulated_toggled when the checkbox is flipped', () => {
+            const onFiltersChange = vi.fn();
+            const { getByTestId } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
+                    onFiltersChange={onFiltersChange}
+                />,
+            );
+            const label = getByTestId('filter-show-unsimulated');
+            const checkbox = label.querySelector('input[type="checkbox"]') as HTMLInputElement;
+            fireEvent.click(checkbox);
+            expect(onFiltersChange).toHaveBeenCalledTimes(1);
+            expect(onFiltersChange.mock.calls[0][0].showUnsimulated).toBe(true);
+        });
+    });
 });

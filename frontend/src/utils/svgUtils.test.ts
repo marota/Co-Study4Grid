@@ -19,6 +19,8 @@ import {
     applyActionTargetHighlights,
     applyContingencyHighlight,
     buildActionOverviewPins,
+    buildUnsimulatedActionPins,
+    actionPassesOverviewFilter,
     buildCombinedActionPins,
     applyActionOverviewPins,
     applyActionOverviewHighlights,
@@ -1324,6 +1326,111 @@ describe('buildActionOverviewPins', () => {
         };
         const pins = buildActionOverviewPins(actions, metaIndex, 0.95, ['a']);
         expect(pins.map(p => p.id)).toEqual(['a']);
+    });
+
+    it('hides pins whose severity is disabled via the overview filter', () => {
+        const actions: Record<string, ActionDetail> = {
+            'green_a': makeAction({
+                action_topology: { lines_ex_bus: { LINE_A: -1 }, lines_or_bus: { LINE_A: -1 }, gens_bus: {}, loads_bus: {} },
+                max_rho: 0.5,
+            }),
+            'red_b': makeAction({
+                action_topology: { lines_ex_bus: { LINE_B: -1 }, lines_or_bus: { LINE_B: -1 }, gens_bus: {}, loads_bus: {} },
+                max_rho: 1.3,
+            }),
+        };
+        const pins = buildActionOverviewPins(actions, metaIndex, 0.95, undefined, {
+            categories: { green: true, orange: true, red: false, grey: true },
+            threshold: 2.0,
+        });
+        expect(pins.map(p => p.id)).toEqual(['green_a']);
+    });
+
+    it('hides pins whose max_rho exceeds the threshold', () => {
+        const actions: Record<string, ActionDetail> = {
+            'green_a': makeAction({
+                action_topology: { lines_ex_bus: { LINE_A: -1 }, lines_or_bus: { LINE_A: -1 }, gens_bus: {}, loads_bus: {} },
+                max_rho: 0.5,
+            }),
+            'red_b': makeAction({
+                action_topology: { lines_ex_bus: { LINE_B: -1 }, lines_or_bus: { LINE_B: -1 }, gens_bus: {}, loads_bus: {} },
+                max_rho: 1.6,
+            }),
+        };
+        const pins = buildActionOverviewPins(actions, metaIndex, 0.95, undefined, {
+            categories: { green: true, orange: true, red: true, grey: true },
+            threshold: 1.5,
+        });
+        expect(pins.map(p => p.id)).toEqual(['green_a']);
+    });
+});
+
+describe('actionPassesOverviewFilter', () => {
+    const cats = (overrides: Partial<{ green: boolean; orange: boolean; red: boolean; grey: boolean }> = {}) => ({
+        green: true, orange: true, red: true, grey: true, ...overrides,
+    });
+
+    it('returns true for a green action when every category is enabled', () => {
+        const detail = makeAction({ max_rho: 0.5 });
+        expect(actionPassesOverviewFilter(detail, 0.95, cats(), 1.5)).toBe(true);
+    });
+
+    it('returns false when the matching category is disabled', () => {
+        const detail = makeAction({ max_rho: 1.2 });
+        expect(actionPassesOverviewFilter(detail, 0.95, cats({ red: false }), 2.0)).toBe(false);
+    });
+
+    it('returns false when max_rho exceeds the threshold', () => {
+        const detail = makeAction({ max_rho: 1.8 });
+        expect(actionPassesOverviewFilter(detail, 0.95, cats(), 1.5)).toBe(false);
+    });
+
+    it('ignores the threshold for divergent/islanded actions (max_rho null)', () => {
+        const detail = makeAction({ max_rho: null, non_convergence: 'diverged' });
+        expect(actionPassesOverviewFilter(detail, 0.95, cats(), 1.0)).toBe(true);
+    });
+
+    it('hides divergent/islanded actions when the grey category is disabled', () => {
+        const detail = makeAction({ max_rho: null, is_islanded: true });
+        expect(actionPassesOverviewFilter(detail, 0.95, cats({ grey: false }), 2.0)).toBe(false);
+    });
+});
+
+describe('buildUnsimulatedActionPins', () => {
+    const metaIndex = makeOverviewMetaIndex();
+
+    it('creates dimmed pins for line ids resolved via edgesByEquipmentId', () => {
+        const pins = buildUnsimulatedActionPins(['LINE_A'], new Set(), metaIndex);
+        expect(pins).toHaveLength(1);
+        expect(pins[0].id).toBe('LINE_A');
+        expect(pins[0].unsimulated).toBe(true);
+        expect(pins[0].severity).toBe('grey');
+        // LINE_A midpoint = (50, 0)
+        expect(pins[0].x).toBe(50);
+        expect(pins[0].y).toBe(0);
+    });
+
+    it('creates dimmed pins for VL ids resolved via nodesByEquipmentId', () => {
+        const pins = buildUnsimulatedActionPins(['VL_FAR'], new Set(), metaIndex);
+        expect(pins).toHaveLength(1);
+        expect(pins[0].id).toBe('VL_FAR');
+        expect(pins[0].x).toBe(500);
+        expect(pins[0].y).toBe(500);
+    });
+
+    it('skips ids that cannot be resolved', () => {
+        const pins = buildUnsimulatedActionPins(['GHOST_LINE'], new Set(), metaIndex);
+        expect(pins).toHaveLength(0);
+    });
+
+    it('skips ids that are already simulated', () => {
+        const pins = buildUnsimulatedActionPins(['LINE_A', 'LINE_B'], new Set(['LINE_A']), metaIndex);
+        expect(pins.map(p => p.id)).toEqual(['LINE_B']);
+    });
+
+    it('dedupes repeated ids in the input list', () => {
+        const pins = buildUnsimulatedActionPins(['LINE_A', 'LINE_A'], new Set(), metaIndex);
+        expect(pins).toHaveLength(1);
     });
 });
 

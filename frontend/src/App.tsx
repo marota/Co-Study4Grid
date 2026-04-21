@@ -18,7 +18,7 @@ import type { ConfirmDialogState } from './components/modals/ConfirmationDialog'
 import { api } from './api';
 import { applyOverloadedHighlights, applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight, processSvg } from './utils/svgUtils';
 import { computeN1OverloadHighlights } from './utils/overloadHighlights';
-import type { ActionDetail, TabId, RecommenderDisplayConfig } from './types';
+import type { ActionDetail, ActionOverviewFilters, DiagramData, TabId, RecommenderDisplayConfig } from './types';
 import { useSettings } from './hooks/useSettings';
 import { useActions } from './hooks/useActions';
 import { useAnalysis } from './hooks/useAnalysis';
@@ -164,6 +164,38 @@ function App() {
     scrollSeqRef.current += 1;
     setScrollTarget({ id: actionId, seq: scrollSeqRef.current });
   }, []);
+
+  // Shared filter state for the Remedial Action overview. The same
+  // `ActionOverviewFilters` drives (a) the pin visibility + dimmed
+  // un-simulated pins on ActionOverviewDiagram and (b) the card
+  // visibility in the sidebar ActionFeed, so both views stay in
+  // lock-step regardless of which entry point the operator uses.
+  const [overviewFilters, setOverviewFilters] = useState<ActionOverviewFilters>({
+    categories: { green: true, orange: true, red: true, grey: true },
+    threshold: 1.5,
+    showUnsimulated: false,
+  });
+
+  // Flat list of action ids that appear in `action_scores` but are
+  // not yet simulated. Feeds ActionOverviewDiagram's un-simulated pin
+  // layer. We dedupe across action_scores.<type>.scores to avoid
+  // pinning the same id twice.
+  const unsimulatedActionIds = useMemo(() => {
+    const scores = analysis.result?.action_scores;
+    if (!scores) return [] as string[];
+    const simulated = new Set(Object.keys(analysis.result?.actions ?? {}));
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const data of Object.values(scores)) {
+      const per = (data as { scores?: Record<string, number> })?.scores || {};
+      for (const id of Object.keys(per)) {
+        if (simulated.has(id) || seen.has(id)) continue;
+        seen.add(id);
+        out.push(id);
+      }
+    }
+    return out;
+  }, [analysis.result?.action_scores, analysis.result?.actions]);
 
   const contingencyOptions = useMemo(() => {
     const q = selectedBranch.toUpperCase();
@@ -353,6 +385,83 @@ function App() {
       diagrams.refreshSldIfAction(actionId);
     },
     [actionsHook, setResult, wrappedForcedActionSelect, diagrams]
+  );
+
+  // Double-click on an un-simulated pin in ActionOverviewDiagram —
+  // mirrors the Manual Selection flow in ActionFeed but without the
+  // editable MW / tap inputs (those aren't available on the overview
+  // pin). Uses the diagram-priming streaming endpoint so the
+  // subsequent action-variant render is paint-ready instantly, same
+  // as the feed add path.
+  const handleSimulateUnsimulatedAction = useCallback(
+    async (actionId: string) => {
+      if (!selectedBranch) {
+        setError('Select a contingency first.');
+        return;
+      }
+      try {
+        const response = await api.simulateAndVariantDiagramStream({
+          action_id: actionId,
+          disconnected_element: selectedBranch,
+          action_content: null,
+          lines_overloaded: result?.lines_overloaded ?? null,
+          target_mw: null,
+          target_tap: null,
+        });
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let metrics: Awaited<ReturnType<typeof api.simulateManualAction>> | null = null;
+        let streamErr: string | null = null;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop()!;
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            let event: Record<string, unknown>;
+            try { event = JSON.parse(line); } catch { continue; }
+            if (event.type === 'metrics') {
+              const { type: _t, ...rest } = event;
+              void _t;
+              metrics = rest as Awaited<ReturnType<typeof api.simulateManualAction>>;
+            } else if (event.type === 'diagram') {
+              const { type: _t, ...rest } = event;
+              void _t;
+              diagrams.primeActionDiagram(actionId, rest as unknown as DiagramData, voltageLevels.length);
+            } else if (event.type === 'error') {
+              streamErr = (event.message as string) || 'stream error';
+            }
+          }
+        }
+        if (streamErr) throw new Error(streamErr);
+        if (!metrics) throw new Error('Stream ended without metrics event');
+        const detail: ActionDetail = {
+          description_unitaire: metrics.description_unitaire,
+          rho_before: metrics.rho_before,
+          rho_after: metrics.rho_after,
+          max_rho: metrics.max_rho,
+          max_rho_line: metrics.max_rho_line,
+          is_rho_reduction: metrics.is_rho_reduction,
+          is_islanded: metrics.is_islanded,
+          n_components: metrics.n_components,
+          disconnected_mw: metrics.disconnected_mw,
+          non_convergence: metrics.non_convergence,
+          lines_overloaded_after: metrics.lines_overloaded_after,
+          load_shedding_details: metrics.load_shedding_details,
+          curtailment_details: metrics.curtailment_details,
+          pst_details: metrics.pst_details,
+        };
+        wrappedManualActionAdded(actionId, detail, metrics.lines_overloaded || []);
+      } catch (e: unknown) {
+        console.error('Unsimulated pin simulation failed:', e);
+        const err = e as { response?: { data?: { detail?: string } } };
+        setError(err?.response?.data?.detail || 'Simulation failed');
+      }
+    },
+    [selectedBranch, result?.lines_overloaded, diagrams, voltageLevels.length, wrappedManualActionAdded]
   );
 
   // Re-simulation of an already-present action (edit Target MW / tap on a
@@ -1272,6 +1381,7 @@ function App() {
               displayName={displayName}
               onActionDiagramPrimed={diagrams.primeActionDiagram}
               voltageLevelsLength={voltageLevels.length}
+              overviewFilters={overviewFilters}
             />
           </div>
         </div>
@@ -1331,6 +1441,10 @@ function App() {
             onOverviewPzChange={handleOverviewPzChange}
             monitoringFactor={monitoringFactor}
             displayName={displayName}
+            overviewFilters={overviewFilters}
+            onOverviewFiltersChange={setOverviewFilters}
+            unsimulatedActionIds={unsimulatedActionIds}
+            onSimulateUnsimulatedAction={handleSimulateUnsimulatedAction}
           />
         </div>
       </div>

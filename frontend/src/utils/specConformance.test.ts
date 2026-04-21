@@ -97,6 +97,9 @@ const SPEC: Record<string, SpecRow> = {
   overview_zoom_out:              { required: new Set() },
   overview_zoom_fit:              { required: new Set() },
   overview_inspect_changed:       { required: new Set(['query', 'action']) },
+  overview_filter_changed:        { required: new Set(['kind']), optional: new Set(['category', 'enabled', 'threshold']) },
+  overview_unsimulated_toggled:   { required: new Set(['enabled']) },
+  overview_unsimulated_pin_simulated: { required: new Set(['action_id']) },
   // --- SLD Overlay ---
   sld_overlay_opened:             { required: new Set(['vl_name', 'action_id']) },
   sld_overlay_tab_changed:        { required: new Set(['tab', 'vl_name']) },

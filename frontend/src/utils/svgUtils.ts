@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
-import type { AssetDelta, ViewBox, MetadataIndex, NodeMeta, EdgeMeta, ActionDetail } from '../types';
+import type { AssetDelta, ViewBox, MetadataIndex, NodeMeta, EdgeMeta, ActionDetail, ActionSeverityCategory } from '../types';
 
 // ===== Cached DOM ID Map =====
 // Avoids repeated querySelectorAll('[id]') scans on large SVG containers.
@@ -742,6 +742,13 @@ export interface ActionPinInfo {
     severity: 'green' | 'orange' | 'red' | 'grey';
     label: string;
     title: string;
+    /**
+     * When true this pin represents an action from the scored table
+     * that has NOT yet been simulated. Rendered with a dashed outline
+     * and reduced opacity, and double-clicking it kicks off a manual
+     * simulation (the same code path as the Manual Selection dropdown).
+     */
+    unsimulated?: boolean;
 }
 
 /**
@@ -797,7 +804,7 @@ const severityFillHighlighted: Record<ActionPinInfo['severity'], string> = {
 };
 
 
-const computeActionSeverity = (
+export const computeActionSeverity = (
     details: ActionDetail,
     monitoringFactor: number,
 ): ActionPinInfo['severity'] => {
@@ -808,6 +815,31 @@ const computeActionSeverity = (
     if (details.max_rho > monitoringFactor) return 'red';
     if (details.max_rho > monitoringFactor - 0.05) return 'orange';
     return 'green';
+};
+
+/**
+ * Predicate used by both the overview (pin visibility) and the sidebar
+ * ActionFeed (card visibility) to decide whether an action passes the
+ * active category + threshold filters.
+ *
+ * - `categoryEnabled` controls the four severity buckets (green / orange
+ *   / red / grey); if the action's bucket is disabled, it is hidden.
+ * - `threshold` is a max-loading cap: actions whose `max_rho` is
+ *   **strictly greater** than the threshold are hidden. Actions with a
+ *   null `max_rho` (divergent / islanded — all in the 'grey' bucket)
+ *   bypass the threshold so the operator keeps seeing non-numeric
+ *   outcomes when the grey category is enabled.
+ */
+export const actionPassesOverviewFilter = (
+    details: ActionDetail,
+    monitoringFactor: number,
+    categoryEnabled: Record<ActionSeverityCategory, boolean>,
+    threshold: number,
+): boolean => {
+    const severity = computeActionSeverity(details, monitoringFactor);
+    if (!categoryEnabled[severity]) return false;
+    if (details.max_rho != null && details.max_rho > threshold) return false;
+    return true;
 };
 
 /**
@@ -888,12 +920,21 @@ export const resolveActionAnchor = (
 /**
  * Build the list of pin descriptors for the action-overview view.
  * Pure function — no DOM access — so it can be unit-tested.
+ *
+ * When `overviewFilter` is provided, pins whose action does not pass
+ * the active category + threshold filters are dropped. The same
+ * predicate drives the ActionFeed card filtering, keeping the two
+ * views in lock-step.
  */
 export const buildActionOverviewPins = (
     actions: Record<string, ActionDetail>,
     metaIndex: MetadataIndex,
     monitoringFactor: number,
     filterIds?: Iterable<string>,
+    overviewFilter?: {
+        categories: Record<ActionSeverityCategory, boolean>;
+        threshold: number;
+    } | null,
 ): ActionPinInfo[] => {
     const allowed = filterIds ? new Set(filterIds) : null;
     const pins: ActionPinInfo[] = [];
@@ -903,6 +944,9 @@ export const buildActionOverviewPins = (
         // rendered separately by buildCombinedActionPins with a curved
         // connection between their constituent unitary pins.
         if (actionId.includes('+')) continue;
+        if (overviewFilter && !actionPassesOverviewFilter(
+            details, monitoringFactor, overviewFilter.categories, overviewFilter.threshold,
+        )) continue;
         const anchor = resolveActionAnchor(actionId, details, metaIndex);
         if (!anchor) continue;
         const severity = computeActionSeverity(details, monitoringFactor);
@@ -946,6 +990,83 @@ export const buildActionOverviewPins = (
         // to expose each pin's clickable area without scattering them
         // too far from the original anchor.
         const offsetR = 30 * 1.2; // conservative default
+        const angleStep = (2 * Math.PI) / indices.length;
+        indices.forEach((idx, i) => {
+            const angle = -Math.PI / 2 + i * angleStep;
+            pins[idx] = {
+                ...pins[idx],
+                x: pins[idx].x + offsetR * Math.cos(angle),
+                y: pins[idx].y + offsetR * Math.sin(angle),
+            };
+        });
+    }
+
+    return pins;
+};
+
+/**
+ * Build pin descriptors for actions that appear in the score table but
+ * have NOT yet been simulated. These are rendered as dimmed, dashed
+ * pins the operator can double-click to trigger a manual simulation.
+ *
+ * An unsimulated action has no `ActionDetail`, so anchoring goes
+ * through `resolveActionAnchor` with a minimal stub; the helper
+ * internally falls back on edge/VL lookups based on the id alone,
+ * which matches what the score table does for line / coupling / PST
+ * actions. Items that cannot be resolved are silently skipped.
+ *
+ * Pins whose id is already present in `simulatedIds` are skipped so
+ * we never double-pin an action that is both scored and simulated.
+ *
+ * Pure function — no DOM access.
+ */
+export const buildUnsimulatedActionPins = (
+    scoredActionIds: readonly string[],
+    simulatedIds: ReadonlySet<string>,
+    metaIndex: MetadataIndex,
+): ActionPinInfo[] => {
+    const pins: ActionPinInfo[] = [];
+    const seen = new Set<string>();
+    const stub: ActionDetail = {
+        description_unitaire: '',
+        rho_before: null,
+        rho_after: null,
+        max_rho: null,
+        max_rho_line: '',
+        is_rho_reduction: false,
+    };
+    for (const rawId of scoredActionIds) {
+        const id = rawId.trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        if (simulatedIds.has(id)) continue;
+        const anchor = resolveActionAnchor(id, stub, metaIndex);
+        if (!anchor) continue;
+        pins.push({
+            id,
+            x: anchor.x,
+            y: anchor.y,
+            severity: 'grey',
+            label: '?',
+            title: `${id} — not yet simulated (double-click to run)`,
+            unsimulated: true,
+        });
+    }
+
+    // Fan out overlapping pins to keep each individually clickable,
+    // mirroring the grouping logic in `buildActionOverviewPins`.
+    const bucketKey = (p: ActionPinInfo) =>
+        `${Math.round(p.x * 100)}:${Math.round(p.y * 100)}`;
+    const groups = new Map<string, number[]>();
+    pins.forEach((p, i) => {
+        const k = bucketKey(p);
+        const arr = groups.get(k);
+        if (arr) arr.push(i);
+        else groups.set(k, [i]);
+    });
+    for (const indices of groups.values()) {
+        if (indices.length < 2) continue;
+        const offsetR = 30 * 1.2;
         const angleStep = (2 * Math.PI) / indices.length;
         indices.forEach((idx, i) => {
             const angle = -Math.PI / 2 + i * angleStep;
@@ -1361,6 +1482,16 @@ export interface ApplyPinsOptions {
     selectedActionIds?: Set<string>;
     rejectedActionIds?: Set<string>;
     combinedPins?: readonly CombinedPinInfo[];
+    /**
+     * Dimmed, dashed pins for scored-but-not-yet-simulated actions.
+     * Rendered with their own double-click handler
+     * ({@link onUnsimulatedPinDoubleClick}) so that a drill-down gesture
+     * on one of them kicks off a manual simulation instead of the
+     * action-variant view.
+     */
+    unsimulatedPins?: readonly ActionPinInfo[];
+    /** Fires when an unsimulated pin is double-clicked. */
+    onUnsimulatedPinDoubleClick?: (actionId: string) => void;
 }
 
 /**
@@ -1403,7 +1534,9 @@ export const applyActionOverviewPins = (
     svg.querySelectorAll('.nad-action-overview-pins').forEach(el => el.remove());
 
     const combinedPins = opts?.combinedPins ?? [];
-    if (pins.length === 0 && combinedPins.length === 0) return;
+    const unsimulatedPins = opts?.unsimulatedPins ?? [];
+    const onUnsimulatedPinDoubleClick = opts?.onUnsimulatedPinDoubleClick;
+    if (pins.length === 0 && combinedPins.length === 0 && unsimulatedPins.length === 0) return;
 
     const selectedIds = opts?.selectedActionIds;
     const rejectedIds = opts?.rejectedActionIds;
@@ -1661,6 +1794,46 @@ export const applyActionOverviewPins = (
         }
 
         attachClickListeners(g, pin.id, onPinClick, onPinDoubleClick);
+        frag.appendChild(g);
+    });
+
+    // ── 3. Unsimulated (scored-but-not-simulated) pins ──
+    // Rendered with a dashed stroke + reduced opacity so they read as
+    // "preview" glyphs the operator can promote to a real simulation
+    // with a double-click. They use the 'grey' severity palette since
+    // we have no rho_after for them yet.
+    unsimulatedPins.forEach(pin => {
+        const g = document.createElementNS(SVG_NS, 'g');
+        g.setAttribute('class', 'nad-action-overview-pin nad-action-overview-pin-unsimulated');
+        g.setAttribute('transform', `translate(${pin.x} ${pin.y})`);
+        g.setAttribute('data-action-id', pin.id);
+        g.setAttribute('data-unsimulated', 'true');
+        g.setAttribute('opacity', '0.5');
+        (g as unknown as SVGGElement).style.cursor = 'pointer';
+
+        const body = document.createElementNS(SVG_NS, 'g');
+        body.setAttribute('class', 'nad-action-overview-pin-body');
+        body.setAttribute('transform', 'scale(1)');
+        g.appendChild(body);
+
+        const fill = severityFillDimmed[pin.severity];
+        buildPinGlyph(body, r, fill, pin.label, pin.title, '#6b7280', r * 0.08);
+
+        // Override the stroke with a dashed pattern to visually
+        // distinguish un-simulated pins from the solid-outline
+        // simulated ones.
+        const pinPath = body.querySelector('path');
+        if (pinPath) {
+            pinPath.setAttribute('stroke-dasharray', `${r * 0.35} ${r * 0.2}`);
+        }
+
+        // Double-click runs a manual simulation; single click still
+        // opens the (minimal) preview popover via onPinClick so the
+        // operator gets identical affordances to the simulated pins.
+        attachClickListeners(
+            g, pin.id, onPinClick,
+            onUnsimulatedPinDoubleClick ?? onPinDoubleClick,
+        );
         frag.appendChild(g);
     });
 

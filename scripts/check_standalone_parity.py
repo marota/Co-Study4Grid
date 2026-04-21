@@ -167,6 +167,9 @@ SPEC_DETAILS: dict[str, dict] = {
     "overview_zoom_out":        _spec_row(set()),
     "overview_zoom_fit":        _spec_row(set()),
     "overview_inspect_changed": _spec_row({"query", "action"}),
+    "overview_filter_changed":  _spec_row({"kind"}, optional={"category", "enabled", "threshold"}),
+    "overview_unsimulated_toggled":     _spec_row({"enabled"}),
+    "overview_unsimulated_pin_simulated": _spec_row({"action_id"}),
     # --- SLD Overlay ---
     "sld_overlay_opened":       _spec_row({"vl_name", "action_id"}),
     "sld_overlay_tab_changed":  _spec_row({"tab", "vl_name"}),

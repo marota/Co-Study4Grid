@@ -6,7 +6,8 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig, DiagramData } from '../types';
+import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig, DiagramData, ActionOverviewFilters } from '../types';
+import { actionPassesOverviewFilter } from '../utils/svgUtils';
 import { api } from '../api';
 import { interactionLogger } from '../utils/interactionLogger';
 import CombinedActionsModal from './CombinedActionsModal';
@@ -67,6 +68,14 @@ interface ActionFeedProps {
     /** Current voltage-levels count, forwarded to the primer callback's
      * `processSvg` pass. Unused when onActionDiagramPrimed is absent. */
     voltageLevelsLength?: number;
+    /**
+     * Shared category + threshold filters from the Remedial Action
+     * overview. When provided, action cards whose severity bucket is
+     * disabled OR whose max_rho exceeds the threshold are hidden from
+     * the Suggested / Rejected / Selected lists — so the operator
+     * sees the same set of actions on the overview and in the feed.
+     */
+    overviewFilters?: ActionOverviewFilters;
 }
 
 const ActionFeed: React.FC<ActionFeedProps> = ({
@@ -103,6 +112,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     displayName = (id: string) => id,
     onActionDiagramPrimed,
     voltageLevelsLength,
+    overviewFilters,
 }) => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -550,11 +560,22 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         return Object.entries(actions)
             .filter(([id, details]) => {
                 const isCombined = id.includes('+');
-                if (!isCombined) return true;
-                // Only show combined if it has been fully simulated (not just estimated)
-                // Simulated actions will NOT have the is_estimated flag set.
-                if (details.is_estimated) return false;
-                return details.rho_after && details.rho_after.length > 0;
+                if (isCombined) {
+                    // Only show combined if it has been fully simulated (not just estimated)
+                    // Simulated actions will NOT have the is_estimated flag set.
+                    if (details.is_estimated) return false;
+                    if (!details.rho_after || details.rho_after.length === 0) return false;
+                }
+                // Shared overview filter: hide cards whose severity or
+                // max_rho falls outside the active category/threshold
+                // picked from the overview header. We skip the filter
+                // when overviewFilters is undefined so isolated tests
+                // (which don't wire it) keep their existing behaviour.
+                if (overviewFilters && !actionPassesOverviewFilter(
+                    details, monitoringFactor,
+                    overviewFilters.categories, overviewFilters.threshold,
+                )) return false;
+                return true;
             })
             .sort(([, a], [, b]) => {
                 const aIslanded = !!a.is_islanded;
@@ -562,7 +583,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 if (aIslanded !== bIslanded) return aIslanded ? 1 : -1;
                 return (a.max_rho ?? 999) - (b.max_rho ?? 999);
             });
-    }, [actions]);
+    }, [actions, overviewFilters, monitoringFactor]);
 
     const analysisActionIds = useMemo(() => {
         const ids = new Set<string>();
