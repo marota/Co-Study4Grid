@@ -1432,6 +1432,75 @@ describe('buildUnsimulatedActionPins', () => {
         const pins = buildUnsimulatedActionPins(['LINE_A', 'LINE_A'], new Set(), metaIndex);
         expect(pins).toHaveLength(1);
     });
+
+    it('uses a generic tooltip when no score info is provided', () => {
+        const pins = buildUnsimulatedActionPins(['LINE_A'], new Set(), metaIndex);
+        expect(pins[0].title).toBe('LINE_A — not yet simulated (double-click to run)');
+    });
+
+    it('enriches the tooltip with type, score, rank, max-in-category when score info is provided', () => {
+        const info = {
+            LINE_A: {
+                type: 'line_disconnection',
+                score: 0.82,
+                mwStart: null,
+                tapStart: null,
+                rankInType: 3,
+                countInType: 12,
+                maxScoreInType: 0.95,
+            },
+        };
+        const pins = buildUnsimulatedActionPins(['LINE_A'], new Set(), metaIndex, info);
+        expect(pins[0].title).toContain('Type: line_disconnection');
+        expect(pins[0].title).toContain('Score: 0.82');
+        expect(pins[0].title).toContain('rank 3 of 12');
+        expect(pins[0].title).toContain('max 0.95');
+    });
+
+    it('adds MW start to the tooltip when provided (load-shedding / curtailment)', () => {
+        const info = {
+            LINE_A: {
+                type: 'load_shedding',
+                score: 1.0,
+                mwStart: 24.5,
+                tapStart: null,
+                rankInType: 1,
+                countInType: 4,
+                maxScoreInType: 1.0,
+            },
+        };
+        const pins = buildUnsimulatedActionPins(['LINE_A'], new Set(), metaIndex, info);
+        expect(pins[0].title).toContain('MW start: 24.5 MW');
+        expect(pins[0].title).not.toContain('Tap start');
+    });
+
+    it('adds Tap start (with range) to the tooltip for PST actions', () => {
+        const info = {
+            LINE_A: {
+                type: 'pst_tap_change',
+                score: 0.7,
+                mwStart: null,
+                tapStart: { pst_name: 'PST_X', tap: 0, low_tap: -8, high_tap: 8 },
+                rankInType: 2,
+                countInType: 5,
+                maxScoreInType: 0.9,
+            },
+        };
+        const pins = buildUnsimulatedActionPins(['LINE_A'], new Set(), metaIndex, info);
+        expect(pins[0].title).toContain('Tap start: 0');
+        expect(pins[0].title).toContain('range -8 … 8');
+    });
+
+    it('falls back to the generic tooltip when the id is missing from scoreInfo', () => {
+        const info = {
+            OTHER_ID: {
+                type: 'line_disconnection', score: 0.5, mwStart: null, tapStart: null,
+                rankInType: 1, countInType: 1, maxScoreInType: 0.5,
+            },
+        };
+        const pins = buildUnsimulatedActionPins(['LINE_A'], new Set(), metaIndex, info);
+        expect(pins[0].title).toBe('LINE_A — not yet simulated (double-click to run)');
+    });
 });
 
 describe('applyActionOverviewPins', () => {

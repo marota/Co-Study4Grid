@@ -491,3 +491,30 @@ export interface ActionOverviewFilters {
     /** When true, un-simulated scored actions are drawn as dimmed pins. */
     showUnsimulated: boolean;
 }
+
+/**
+ * Enriched info for an un-simulated scored action — derived from
+ * `action_scores` in App.tsx and forwarded to the overview so the
+ * dimmed pin tooltip can show the same score-table data the Manual
+ * Selection dropdown exposes.
+ */
+export interface UnsimulatedActionScoreInfo {
+    /** Action-score bucket (e.g. "line_disconnection", "pst_tap_change"). */
+    type: string;
+    score: number;
+    /** Starting MW for load-shedding / renewable-curtailment actions. */
+    mwStart?: number | null;
+    /** Starting tap for PST actions. */
+    tapStart?: {
+        pst_name: string;
+        tap: number;
+        low_tap: number | null;
+        high_tap: number | null;
+    } | null;
+    /** 1-based rank inside the action's type bucket (1 = highest score). */
+    rankInType: number;
+    /** Number of actions in the type bucket — used to print "rank X of Y". */
+    countInType: number;
+    /** Highest score in the type bucket. */
+    maxScoreInType: number;
+}

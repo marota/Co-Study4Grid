@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
-import type { AssetDelta, ViewBox, MetadataIndex, NodeMeta, EdgeMeta, ActionDetail, ActionSeverityCategory } from '../types';
+import type { AssetDelta, ViewBox, MetadataIndex, NodeMeta, EdgeMeta, ActionDetail, ActionSeverityCategory, UnsimulatedActionScoreInfo } from '../types';
 
 // ===== Cached DOM ID Map =====
 // Avoids repeated querySelectorAll('[id]') scans on large SVG containers.
@@ -1027,10 +1027,44 @@ export const buildActionOverviewPins = (
  *
  * Pure function — no DOM access.
  */
+/**
+ * Format the SVG-title tooltip shown on hover for an un-simulated pin.
+ * When {@link scoreInfo} is provided the tooltip carries the same
+ * score-table data the Manual Selection dropdown exposes (type,
+ * score, rank in category, MW/tap start), so the operator can triage
+ * without leaving the overview. Falls back to a generic prompt when
+ * score info is absent (e.g. older session reloads).
+ */
+const buildUnsimulatedPinTitle = (
+    id: string,
+    info: UnsimulatedActionScoreInfo | undefined,
+): string => {
+    if (!info) {
+        return `${id} — not yet simulated (double-click to run)`;
+    }
+    const lines: string[] = [
+        `${id} — not yet simulated (double-click to run)`,
+        `Type: ${info.type}`,
+        `Score: ${info.score.toFixed(2)} — rank ${info.rankInType} of ${info.countInType} (max ${info.maxScoreInType.toFixed(2)})`,
+    ];
+    if (info.mwStart != null) {
+        lines.push(`MW start: ${info.mwStart.toFixed(1)} MW`);
+    }
+    if (info.tapStart) {
+        const ts = info.tapStart;
+        const range = ts.low_tap != null && ts.high_tap != null
+            ? ` (range ${ts.low_tap} … ${ts.high_tap})`
+            : '';
+        lines.push(`Tap start: ${ts.tap}${range}`);
+    }
+    return lines.join('\n');
+};
+
 export const buildUnsimulatedActionPins = (
     scoredActionIds: readonly string[],
     simulatedIds: ReadonlySet<string>,
     metaIndex: MetadataIndex,
+    scoreInfo?: Readonly<Record<string, UnsimulatedActionScoreInfo>>,
 ): ActionPinInfo[] => {
     const pins: ActionPinInfo[] = [];
     const seen = new Set<string>();
@@ -1055,7 +1089,7 @@ export const buildUnsimulatedActionPins = (
             y: anchor.y,
             severity: 'grey',
             label: '?',
-            title: `${id} — not yet simulated (double-click to run)`,
+            title: buildUnsimulatedPinTitle(id, scoreInfo?.[id]),
             unsimulated: true,
         });
     }

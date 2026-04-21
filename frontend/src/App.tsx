@@ -18,7 +18,7 @@ import type { ConfirmDialogState } from './components/modals/ConfirmationDialog'
 import { api } from './api';
 import { applyOverloadedHighlights, applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight, processSvg } from './utils/svgUtils';
 import { computeN1OverloadHighlights } from './utils/overloadHighlights';
-import type { ActionDetail, ActionOverviewFilters, DiagramData, TabId, RecommenderDisplayConfig } from './types';
+import type { ActionDetail, ActionOverviewFilters, DiagramData, TabId, RecommenderDisplayConfig, UnsimulatedActionScoreInfo } from './types';
 import { useSettings } from './hooks/useSettings';
 import { useActions } from './hooks/useActions';
 import { useAnalysis } from './hooks/useAnalysis';
@@ -179,22 +179,46 @@ function App() {
   // Flat list of action ids that appear in `action_scores` but are
   // not yet simulated. Feeds ActionOverviewDiagram's un-simulated pin
   // layer. We dedupe across action_scores.<type>.scores to avoid
-  // pinning the same id twice.
-  const unsimulatedActionIds = useMemo(() => {
+  // pinning the same id twice. Computed alongside `unsimulatedActionInfo`
+  // so the two structures always stay in sync.
+  const { unsimulatedActionIds, unsimulatedActionInfo } = useMemo(() => {
     const scores = analysis.result?.action_scores;
-    if (!scores) return [] as string[];
+    if (!scores) return { unsimulatedActionIds: [] as string[], unsimulatedActionInfo: {} as Record<string, UnsimulatedActionScoreInfo> };
     const simulated = new Set(Object.keys(analysis.result?.actions ?? {}));
-    const out: string[] = [];
+    const ids: string[] = [];
+    const info: Record<string, UnsimulatedActionScoreInfo> = {};
     const seen = new Set<string>();
-    for (const data of Object.values(scores)) {
-      const per = (data as { scores?: Record<string, number> })?.scores || {};
-      for (const id of Object.keys(per)) {
+    for (const [type, rawData] of Object.entries(scores)) {
+      const data = rawData as {
+        scores?: Record<string, number>;
+        mw_start?: Record<string, number | null>;
+        tap_start?: Record<string, { pst_name: string; tap: number; low_tap: number | null; high_tap: number | null } | null>;
+      };
+      const per = data.scores ?? {};
+      const mwStartMap = data.mw_start ?? {};
+      const tapStartMap = data.tap_start ?? {};
+      // Rank is assigned by descending score so the operator sees
+      // the top-scoring un-simulated candidate as "rank 1".
+      const rankedEntries = Object.entries(per).sort(([, a], [, b]) => b - a);
+      const maxScoreInType = rankedEntries.length > 0 ? rankedEntries[0][1] : 0;
+      const countInType = rankedEntries.length;
+      for (let i = 0; i < rankedEntries.length; i++) {
+        const [id, score] = rankedEntries[i];
         if (simulated.has(id) || seen.has(id)) continue;
         seen.add(id);
-        out.push(id);
+        ids.push(id);
+        info[id] = {
+          type,
+          score,
+          mwStart: mwStartMap[id] ?? null,
+          tapStart: tapStartMap[id] ?? null,
+          rankInType: i + 1,
+          countInType,
+          maxScoreInType,
+        };
       }
     }
-    return out;
+    return { unsimulatedActionIds: ids, unsimulatedActionInfo: info };
   }, [analysis.result?.action_scores, analysis.result?.actions]);
 
   const contingencyOptions = useMemo(() => {
@@ -1466,6 +1490,7 @@ function App() {
             overviewFilters={overviewFilters}
             onOverviewFiltersChange={setOverviewFilters}
             unsimulatedActionIds={unsimulatedActionIds}
+            unsimulatedActionInfo={unsimulatedActionInfo}
             onSimulateUnsimulatedAction={handleSimulateUnsimulatedAction}
           />
         </div>

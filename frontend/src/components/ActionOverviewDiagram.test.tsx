@@ -1048,6 +1048,40 @@ describe('ActionOverviewDiagram', () => {
             expect(dimmed[0].getAttribute('data-action-id')).toBe('LINE_D');
         });
 
+        it('renders score metadata inside the unsimulated pin <title> when info is provided', () => {
+            // App.tsx computes `unsimulatedActionInfo` from
+            // action_scores and forwards it so the dimmed pin's
+            // hover tooltip carries the same data the Manual
+            // Selection dropdown exposes — operator can triage
+            // without leaving the overview.
+            const { container } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: true }}
+                    unsimulatedActionIds={['LINE_D']}
+                    unsimulatedActionInfo={{
+                        LINE_D: {
+                            type: 'load_shedding',
+                            score: 0.82,
+                            mwStart: 24.5,
+                            tapStart: null,
+                            rankInType: 3,
+                            countInType: 12,
+                            maxScoreInType: 0.95,
+                        },
+                    }}
+                />,
+            );
+            const pin = container.querySelector('.nad-action-overview-pin-unsimulated') as SVGGElement;
+            const title = pin.querySelector('title')?.textContent ?? '';
+            expect(title).toContain('LINE_D');
+            expect(title).toContain('Type: load_shedding');
+            expect(title).toContain('Score: 0.82');
+            expect(title).toContain('rank 3 of 12');
+            expect(title).toContain('max 0.95');
+            expect(title).toContain('MW start: 24.5 MW');
+        });
+
         it('double-clicking an unsimulated pin fires onSimulateUnsimulatedAction', () => {
             const onSimulateUnsimulatedAction = vi.fn();
             const { container } = render(

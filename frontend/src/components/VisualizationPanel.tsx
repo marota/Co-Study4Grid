@@ -6,7 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import React, { useState, useMemo, useRef, type RefObject } from 'react';
-import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab, MetadataIndex, ActionOverviewFilters } from '../types';
+import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab, MetadataIndex, ActionOverviewFilters, UnsimulatedActionScoreInfo } from '../types';
 import MemoizedSvgContainer from './MemoizedSvgContainer';
 import SldOverlay from './SldOverlay';
 import DetachableTabHost from './DetachableTabHost';
@@ -247,6 +247,8 @@ interface VisualizationPanelProps {
     onOverviewFiltersChange?: (next: ActionOverviewFilters) => void;
     /** Ids of scored-but-not-simulated actions to render as dimmed pins. */
     unsimulatedActionIds?: readonly string[];
+    /** Per-id score metadata used to enrich the un-simulated pin tooltip. */
+    unsimulatedActionInfo?: Readonly<Record<string, UnsimulatedActionScoreInfo>>;
     /** Kick off a manual simulation when an un-simulated pin is double-clicked. */
     onSimulateUnsimulatedAction?: (actionId: string) => void;
 }
@@ -310,6 +312,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     overviewFilters,
     onOverviewFiltersChange,
     unsimulatedActionIds,
+    unsimulatedActionInfo,
     onSimulateUnsimulatedAction,
 }) => {
     // No-op fallbacks so conditional branches don't need to guard.
@@ -1064,6 +1067,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             filters={overviewFilters}
                             onFiltersChange={onOverviewFiltersChange}
                             unsimulatedActionIds={unsimulatedActionIds}
+                            unsimulatedActionInfo={unsimulatedActionInfo}
                             onSimulateUnsimulatedAction={onSimulateUnsimulatedAction}
                         />
                         {actionDiagramLoading && (

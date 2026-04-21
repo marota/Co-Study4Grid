@@ -6,7 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ActionDetail, ActionOverviewFilters, ActionSeverityCategory, DiagramData, MetadataIndex, ViewBox } from '../types';
+import type { ActionDetail, ActionOverviewFilters, ActionSeverityCategory, DiagramData, MetadataIndex, UnsimulatedActionScoreInfo, ViewBox } from '../types';
 import {
     actionPassesOverviewFilter,
     applyActionOverviewHighlights,
@@ -124,6 +124,13 @@ interface ActionOverviewDiagramProps {
      */
     unsimulatedActionIds?: readonly string[];
     /**
+     * Per-id score metadata (type, score, MW/tap start, rank in
+     * category, max score in category) — when provided, enriches the
+     * pin tooltip so the operator can triage un-simulated actions
+     * without leaving the overview.
+     */
+    unsimulatedActionInfo?: Readonly<Record<string, UnsimulatedActionScoreInfo>>;
+    /**
      * Kick off a manual simulation for an unsimulated action when its
      * pin is double-clicked. Expected to call the same code path as
      * the Manual Selection dropdown.
@@ -170,6 +177,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     filters,
     onFiltersChange,
     unsimulatedActionIds,
+    unsimulatedActionInfo,
     onSimulateUnsimulatedAction,
 }) => {
     const activeFilters = filters ?? DEFAULT_FILTERS;
@@ -331,8 +339,8 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
         if (!activeFilters.showUnsimulated) return [];
         if (!n1MetaIndex || !unsimulatedActionIds || unsimulatedActionIds.length === 0) return [];
         const simulatedIds = new Set(Object.keys(actions ?? {}));
-        return buildUnsimulatedActionPins(unsimulatedActionIds, simulatedIds, n1MetaIndex);
-    }, [activeFilters.showUnsimulated, n1MetaIndex, unsimulatedActionIds, actions]);
+        return buildUnsimulatedActionPins(unsimulatedActionIds, simulatedIds, n1MetaIndex, unsimulatedActionInfo);
+    }, [activeFilters.showUnsimulated, n1MetaIndex, unsimulatedActionIds, actions, unsimulatedActionInfo]);
 
     // Deterministic auto-fit rectangle derived from the bounding
     // box of contingency + overloads + pins. Recomputed whenever any
