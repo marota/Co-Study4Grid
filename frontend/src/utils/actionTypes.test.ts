@@ -48,6 +48,23 @@ describe('classifyActionType', () => {
         expect(classifyActionType('open_coupling_VL_A', null, null)).toBe('open');
     });
 
+    it('classifies node_merging_* as CLOSE coupling (id-based)', () => {
+        // Regression: node_merging actions carry no "close_coupling"
+        // or "fermeture" token — they used to fall into 'unknown'
+        // and disappear when the CLOSE chip was active.
+        expect(classifyActionType('node_merging_PYMONP3', null, null)).toBe('close');
+        expect(classifyActionType('node_merging_PYMONP3', 'No description available', null)).toBe('close');
+    });
+
+    it('classifies node_splitting_* as OPEN coupling (id-based)', () => {
+        expect(classifyActionType('node_splitting_VL_X', null, null)).toBe('open');
+    });
+
+    it('classifies node_merging/node_splitting from the score-table type too', () => {
+        expect(classifyActionType('xyz', null, 'node_merging')).toBe('close');
+        expect(classifyActionType('xyz', null, 'node_splitting')).toBe('open');
+    });
+
     it('classifies PST tap changes — and DOES NOT mis-bucket "PST" inside a coupling description', () => {
         expect(classifyActionType('pst_PST_X', 'PST tap change', 'pst_tap_change')).toBe('pst');
         // coupling description that mentions PST must still be open/close

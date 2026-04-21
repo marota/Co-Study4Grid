@@ -229,8 +229,12 @@ describe('ActionOverviewDiagram', () => {
     });
 
     it('shows the pin count in the header', () => {
-        const { container } = render(<ActionOverviewDiagram {...defaultProps()} />);
-        expect(container.textContent).toContain('2 pins on the N-1 network');
+        const { getByTestId } = render(<ActionOverviewDiagram {...defaultProps()} />);
+        // The counter is now a compact 📍<n> chip — the full
+        // "on the N-1 network" phrasing moved to the title tooltip.
+        const counter = getByTestId('overview-pin-counter');
+        expect(counter.textContent).toContain('2');
+        expect(counter.getAttribute('title')).toContain('2 pins on the N-1 network');
     });
 
     it('hides itself when visible=false', () => {

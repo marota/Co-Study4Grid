@@ -50,11 +50,23 @@ export const classifyActionType = (
     // NOT a line disconnection — even though the description contains
     // "ouverture". Without this precedence the desc-based disco check
     // below would mis-classify them as 'disco'.
+    //
+    // `node_merging_*` / `node_splitting_*` are coupling actions
+    // expressed as node operations (merging two buses = closing the
+    // coupling between them; splitting = opening). They carry no
+    // `open_coupling` / `close_coupling` token in their id or
+    // description, so we match them explicitly here — otherwise they
+    // fall through to the `unknown` bucket and disappear when the
+    // operator picks the CLOSE / OPEN chip.
     const isOpenCoupling = t.includes('open_coupling')
         || aid.includes('open_coupling')
+        || aid.includes('node_splitting')
+        || t.includes('node_splitting')
         || (desc.includes('poste') && desc.includes('ouverture'));
     const isCloseCoupling = t.includes('close_coupling')
         || aid.includes('close_coupling')
+        || aid.includes('node_merging')
+        || t.includes('node_merging')
         || (desc.includes('poste') && desc.includes('fermeture'));
     const isDisco = !isOpenCoupling && (
         t.includes('disco') || t.includes('open_line') || t.includes('open_load') || desc.includes('ouverture')

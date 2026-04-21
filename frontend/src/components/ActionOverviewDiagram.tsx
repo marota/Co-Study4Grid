@@ -842,34 +842,40 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                 zIndex: 15,
             }}
         >
-            {/* Header strip — title + severity legend, mirrors the
-                card palette so the operator understands the colour
-                encoding at a glance. */}
+            {/* Single-row header: compact pin counter (no
+                "Remedial actions overview" title — the tab label
+                already carries it) + every filter on the same line.
+                Consolidated to claim back the ~30 px row previously
+                spent on a dedicated action-type chip sub-banner. */}
             <div
+                data-testid="action-overview-header"
                 style={{
                     flexShrink: 0,
-                    padding: '8px 14px',
+                    padding: '6px 14px',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
                     gap: '10px',
+                    rowGap: '6px',
                     fontSize: '12px',
                     background: '#f8fafc',
                     borderBottom: '1px solid #e2e8f0',
                     color: '#334155',
                 }}
             >
-                <div style={{ fontWeight: 700 }}>
-                    {'\uD83D\uDCCD Remedial actions overview'}
-                    {hasAnyAction && (
-                        <span style={{ marginLeft: 8, fontWeight: 400, color: '#64748b' }}>
-                            {pins.length} pin{pins.length === 1 ? '' : 's'} on the N-1 network
-                            {unsimulatedPins.length > 0
-                                ? ` (+ ${unsimulatedPins.length} unsimulated)`
-                                : ''}
+                {hasAnyAction && (
+                    <span
+                        data-testid="overview-pin-counter"
+                        title={`${pins.length} pin${pins.length === 1 ? '' : 's'} on the N-1 network${unsimulatedPins.length > 0 ? ` (+ ${unsimulatedPins.length} un-simulated)` : ''}`}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600, color: '#1f2937' }}
+                    >
+                        <span aria-hidden>{'\uD83D\uDCCD'}</span>
+                        <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {pins.length}
+                            {unsimulatedPins.length > 0 ? ` (+${unsimulatedPins.length})` : ''}
                         </span>
-                    )}
-                </div>
+                    </span>
+                )}
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <CategoryToggle
                         testId="filter-category-green"
@@ -944,27 +950,24 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                         />
                         <span style={{ color: '#475569' }}>Show unsimulated</span>
                     </label>
+                    {/* Vertical separator + action-type chips
+                        inline on the same row. */}
+                    <span
+                        aria-hidden
+                        style={{
+                            display: 'inline-block',
+                            width: 1,
+                            height: 18,
+                            background: '#cbd5e1',
+                            margin: '0 2px',
+                        }}
+                    />
+                    <ActionTypeFilterChips
+                        testIdPrefix="overview-action-type-filter"
+                        value={activeFilters.actionType}
+                        onChange={setActionType}
+                    />
                 </div>
-            </div>
-
-            {/* Action-type chip row — single-select filter that
-                hides pins + sidebar cards whose action type doesn't
-                match the chosen bucket. Shares styling with the
-                Explore Pairs filter so the affordance feels
-                identical. */}
-            <div
-                style={{
-                    flexShrink: 0,
-                    padding: '6px 14px',
-                    background: '#ffffff',
-                    borderBottom: '1px solid #e2e8f0',
-                }}
-            >
-                <ActionTypeFilterChips
-                    testIdPrefix="overview-action-type-filter"
-                    value={activeFilters.actionType}
-                    onChange={setActionType}
-                />
             </div>
 
             {/* SVG body: the pan/zoom container. Wheel + drag work
