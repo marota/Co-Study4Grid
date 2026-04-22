@@ -1,0 +1,14 @@
+{
+  "name": "costudy4grid-parity-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Layer-3 E2E parity spec: React frontend vs standalone_interface.html",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "install-browser": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
+  }
+}

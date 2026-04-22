@@ -75,9 +75,35 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._cached_env_context = None
         # N-state PST tap positions captured at network load time
         self._initial_pst_taps = None  # dict: pst_name -> {tap, low_tap, high_tap}
+        # LF status cache keyed by N-1 variant id (populated when
+        # `_get_n1_variant` runs the AC LF on a fresh variant).
+        # `get_n1_diagram` can read this instead of re-running AC LF
+        # for the sole purpose of getting the status — saves ~600 ms
+        # per N-1 diagram on the PyPSA-EUR France grid (cold path) and
+        # ~1 s on the warm path (repeat views of same contingency).
+        self._lf_status_by_variant = {}
+        # Grid-layout DataFrame cache (populated by `DiagramMixin._load_layout`,
+        # keyed by `(path, mtime)`). Owned here so `reset()` can clear it when
+        # a new study is loaded — otherwise a stale layout can leak across
+        # studies that share the same layout filename / mtime, producing a
+        # NAD whose `fixed_positions` reference the previous grid's substations.
+        self._layout_cache = None
+        # Pre-fetched base NAD (populated by `prefetch_base_nad_async` during
+        # `update_config`, consumed by `/api/network-diagram`). See
+        # docs/performance/history/nad-prefetch.md.
+        self._prefetched_base_nad = None       # dict result (see DiagramMixin.get_network_diagram)
+        self._prefetched_base_nad_error = None  # Exception if the prefetch thread failed
+        self._prefetched_base_nad_event = None  # threading.Event signalling completion
+        self._prefetched_base_nad_thread = None # threading.Thread handle (join on reset)
 
     def reset(self):
         """Clear all cached analysis state. Called when loading a new study."""
+        # Drain any in-flight NAD prefetch thread BEFORE we tear down the
+        # network it depends on. A dangling thread that finishes after
+        # reset() would write into the next study's `_prefetched_base_nad`
+        # and serve stale SVG.
+        self._drain_pending_base_nad_prefetch()
+
         self._last_result = None
         self._is_running = False
         self._generator = None
@@ -94,6 +120,121 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._cached_obs_n1_id = None
         self._cached_env_context = None
         self._initial_pst_taps = None
+        self._lf_status_by_variant = {}
+        # Layout cache must be cleared when a new study is loaded so the
+        # next `_load_layout()` call reads the fresh `grid_layout.json`
+        # for the new grid. Without this, the previous study's layout
+        # DataFrame could be re-served for the new grid if `(path, mtime)`
+        # happens to match (shared filename, coarse filesystem mtime
+        # resolution), producing a NAD whose `fixed_positions` reference
+        # substation IDs from the wrong grid.
+        self._layout_cache = None
+
+        self._prefetched_base_nad = None
+        self._prefetched_base_nad_error = None
+        self._prefetched_base_nad_event = None
+        self._prefetched_base_nad_thread = None
+
+    # ------------------------------------------------------------------
+    # Base-NAD prefetch (concurrent with update_config's env-setup phase)
+    # ------------------------------------------------------------------
+
+    def _drain_pending_base_nad_prefetch(self):
+        """Wait for the in-flight NAD prefetch thread to finish and discard
+        its result. Called on `reset()` so a still-running prefetch cannot
+        leak into the next study by writing into fresh prefetch state."""
+        thread = self._prefetched_base_nad_thread
+        if thread is not None and thread.is_alive():
+            # join is safe here — the thread only calls pypowsybl and
+            # returns; it has no other blocking I/O.
+            thread.join(timeout=60)
+
+    def prefetch_base_nad_async(self):
+        """Kick off base-NAD generation in a background thread.
+
+        Designed to be called from `update_config` just before the expensive
+        `setup_environment_configs_pypowsybl()` step, so the two pieces of
+        pypowsybl work overlap and the client's subsequent
+        `/api/network-diagram` XHR becomes a near-instant cache hit.
+
+        Thread-safety notes:
+          - `self._base_network` is pre-loaded in the main thread *before*
+            the worker starts (see below), so the worker never races on the
+            lazy-init path of `_get_base_network()`.
+          - The grid2op environment built in parallel uses its own
+            pypowsybl network instance (grid2op backends wrap their own
+            `pp.network.load()`), so variant switching inside
+            `_generate_diagram` does not collide with env setup.
+          - We swallow exceptions in the worker and surface them on the
+            foreground call to `get_prefetched_base_nad()`; the foreground
+            thread MUST NOT see a partially-populated cache.
+        """
+        import threading
+
+        # Cancel any in-flight previous prefetch (defensive; reset() normally
+        # runs first, but a direct re-call of update_config would bypass it).
+        self._drain_pending_base_nad_prefetch()
+
+        # Pre-warm the network cache in the main thread so the worker only
+        # sees an O(1) attribute access — eliminates the lazy-init race.
+        try:
+            self._get_base_network()
+        except Exception as e:
+            # If we can't even load the network, don't spawn a worker that
+            # will fail the same way — record the error directly and mark
+            # the prefetch as already-completed.
+            self._prefetched_base_nad = None
+            self._prefetched_base_nad_error = e
+            ev = threading.Event()
+            ev.set()
+            self._prefetched_base_nad_event = ev
+            self._prefetched_base_nad_thread = None
+            return
+
+        event = threading.Event()
+        self._prefetched_base_nad = None
+        self._prefetched_base_nad_error = None
+        self._prefetched_base_nad_event = event
+
+        def _worker():
+            try:
+                diagram = self.get_network_diagram()
+                self._prefetched_base_nad = diagram
+            except Exception as exc:  # noqa: BLE001 — any failure is surfaced to the caller
+                logger.warning(f"[prefetch_base_nad_async] NAD prefetch failed: {exc}")
+                self._prefetched_base_nad_error = exc
+            finally:
+                event.set()
+
+        t = threading.Thread(target=_worker, name="NADPrefetch", daemon=True)
+        self._prefetched_base_nad_thread = t
+        t.start()
+
+    def get_prefetched_base_nad(self, timeout=60):
+        """Return the prefetched NAD if one was queued, else None.
+
+        If the prefetch is still running, waits up to `timeout` seconds for
+        it to finish. If the prefetch failed, re-raises the stored exception.
+        Returns None when no prefetch was ever started (e.g. update_config
+        was not called in this process, or a direct test bypasses it).
+        """
+        event = self._prefetched_base_nad_event
+        if event is None:
+            return None
+        finished = event.wait(timeout=timeout)
+        if not finished:
+            # Prefetch is still running after `timeout`; fall back to fresh
+            # compute in the caller. Leave the prefetch running — it will
+            # complete eventually and its result will be discarded on the
+            # next `reset()`.
+            logger.warning(
+                "[get_prefetched_base_nad] Prefetch did not complete within "
+                f"{timeout}s; caller should fall back to fresh compute."
+            )
+            return None
+        if self._prefetched_base_nad_error is not None:
+            raise self._prefetched_base_nad_error
+        return self._prefetched_base_nad
 
     def restore_analysis_context(self, lines_we_care_about, disconnected_element=None, lines_overloaded=None, computed_pairs=None):
         """Restore analysis context from a saved session.
@@ -189,7 +330,19 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
             except Exception as e:
                 logger.warning(f"Failed to count lines in {config.LINES_MONITORING_FILE}: {e}")
                 config.MONITORED_LINES_COUNT = -1
-        
+
+        # Kick off the base-NAD prefetch worker here — at the earliest point
+        # where all the config globals the worker depends on are set
+        # (ENV_PATH, LAYOUT_FILE_PATH, IGNORE_LINES_MONITORING, MONITORING_FACTOR_*).
+        # The worker runs in parallel with THE REST of update_config (action
+        # dict load + enrich_actions_lazy ≈ 2 s, then env setup ≈ 2 s), giving
+        # it ~4 s of parallel runtime instead of ~2 s when spawned later.
+        # NAD compute is ~6 s → by the time /api/config returns, the worker
+        # is ~2 s from done instead of ~4 s, so the subsequent
+        # /api/network-diagram XHR wait drops from ~2 s to ~0-1 s on large
+        # grids. See docs/performance/history/nad-prefetch-earlier-spawn.md.
+        self.prefetch_base_nad_async()
+
         # Load and cache the action dictionary immediately if path changed or not loaded
         new_action_path = Path(settings.action_file_path)
         if getattr(self, '_last_action_path', None) != new_action_path or self._dict_action is None:
@@ -237,12 +390,34 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         if not config.SAVE_FOLDER_VISUALIZATION.exists():
             config.SAVE_FOLDER_VISUALIZATION.mkdir(parents=True, exist_ok=True)
 
+        # (base-NAD prefetch was kicked off earlier — right after the
+        # monitoring config block — so it has more parallel runtime with
+        # the enrich + env-setup work below. See docstring above in
+        # `update_config` for the rationale.)
+
         # Pre-build SimulationEnvironment so run_analysis_step1 can reuse it
         # (avoids ~4s network load + AC/DC LF + ~3.8s detect_non_reconnectable_lines on every call)
+        #
+        # We inject the already-loaded pypowsybl Network (`self._base_network`,
+        # pre-warmed above by `prefetch_base_nad_async`) so the upstream
+        # helper skips its own `pp.network.load()` call — saves ~1-5 s of
+        # duplicate XML parse on large grids. Requires
+        # expert_op4grid_recommender >= 0.2.0.post1 (the `network=` kwarg).
+        # See docs/performance/history/grid2op-shared-network.md.
         try:
             from expert_op4grid_recommender.environment_pypowsybl import setup_environment_configs_pypowsybl
+            # `skip_initial_obs=True`: we discard `_obs` below anyway, and
+            # `_cached_env_context` does not store it. Upstream's
+            # `env.get_obs()` call on large grids is ~3-5 s of pypowsybl
+            # reads that we simply waste. When `run_analysis_step1` later
+            # needs an observation, it calls `env.get_obs()` itself.
+            # Requires expert_op4grid_recommender >= 0.2.0.post3.
+            # See docs/performance/history/skip-initial-obs.md.
             env, _obs, env_path, chronic_name, custom_layout, _raw_dict, lines_non_reconnectable, lines_we_care_about = \
-                setup_environment_configs_pypowsybl()
+                setup_environment_configs_pypowsybl(
+                    network=self._base_network,
+                    skip_initial_obs=True,
+                )
             self._cached_env_context = {
                 'env': env,
                 'path_chronic': env_path,
@@ -274,9 +449,48 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         return lf.run_ac(network, parameters=params)
 
     def _get_base_network(self):
-        """Load and return the base pypowsybl network from config path, caching it."""
+        """Return the base pypowsybl network, caching it on the service.
+
+        **Mutualises `network_service.network`** when it is available, so the
+        same .xiidm file is not re-parsed twice by pypowsybl. On large grids
+        the XML parse alone is ~3-5 s — previously we paid it twice because
+        `network_service` and `recommender_service` each called
+        `pp.network.load()` on the same path.
+
+        Sharing is safe:
+          - `network_service` only READS the network (get_lines,
+            get_voltage_levels, …), never switches variants.
+          - `recommender_service` switches variants inside
+            `_get_n_variant` / `_get_n1_variant` but always restores the
+            original variant in a try/finally, so `network_service` reads
+            see a consistent state.
+
+        Falls back to `pp.network.load(config.ENV_PATH)` when
+        `network_service.network` is None — preserves the behaviour for
+        unit tests that construct a `RecommenderService` directly without
+        going through `/api/config`.
+        """
         if self._base_network is not None:
             return self._base_network
+
+        # Prefer the Network instance already loaded by network_service.
+        # See docstring for the safety argument.
+        try:
+            from expert_backend.services.network_service import network_service
+            if network_service.network is not None:
+                n = network_service.network
+                # Convenience method not in pypowsybl API: return line IDs as a list.
+                # Idempotent: re-attaching on an already-monkey-patched network
+                # is a no-op since it's the same lambda shape.
+                n.get_line_ids = lambda: n.get_lines().index.tolist()
+                self._base_network = n
+                # PST tap snapshot must still run (recommender-specific state).
+                self._capture_initial_pst_taps(n)
+                return self._base_network
+        except Exception as e:
+            # Fall through to the standalone load — don't let a network_service
+            # import error break the recommender's own path.
+            logger.warning(f"[_get_base_network] network_service unavailable, loading standalone: {e}")
 
         import pypowsybl as pp
 
@@ -295,7 +509,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
 
         if not network_file.exists():
             raise FileNotFoundError(f"Network file not found: {network_file}")
-        
+
         n = pp.network.load(str(network_file))
         # Convenience method not in pypowsybl API: return line IDs as a list
         n.get_line_ids = lambda: n.get_lines().index.tolist()
@@ -334,10 +548,18 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         if variant_id not in n.get_variant_ids():
             original_variant = n.get_working_variant_id()
             n.clone_variant(original_variant, variant_id)
-            n.set_working_variant(variant_id)
-            params = create_olf_rte_parameter()
-            self._run_ac_with_fallback(n, params)
-            n.set_working_variant(original_variant)
+            # Use try/finally so an exception during the AC load flow cannot
+            # leave the shared Network stuck on `variant_id` — the base
+            # Network is now shared with `network_service` and grid2op's
+            # backend (see docs/performance/history/grid2op-shared-network.md) so leaving
+            # it on an unexpected variant would silently corrupt reads
+            # from those consumers.
+            try:
+                n.set_working_variant(variant_id)
+                params = create_olf_rte_parameter()
+                self._run_ac_with_fallback(n, params)
+            finally:
+                n.set_working_variant(original_variant)
         return variant_id
 
     def _get_n1_variant(self, contingency: str):
@@ -356,16 +578,113 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
             # may have been left on a simulation variant with modified topology.
             n_variant_id = self._get_n_variant()
             n.clone_variant(n_variant_id, variant_id)
-            n.set_working_variant(variant_id)
-            if contingency:
+            # try/finally protects shared-Network consumers from being stuck
+            # on an N-1 variant if the AC load flow raises — same rationale
+            # as in `_get_n_variant` above.
+            try:
+                n.set_working_variant(variant_id)
+                if contingency:
+                    try:
+                        n.disconnect(contingency)
+                    except Exception as e:
+                        logger.warning(f"Failed to disconnect {contingency} for N-1 variant: {e}")
+                params = create_olf_rte_parameter()
+                results = self._run_ac_with_fallback(n, params)
+                # Cache the LF result so `get_n1_diagram` doesn't need
+                # to re-run AC LF just to extract convergence status.
+                # Saves ~600 ms per diagram on PyPSA-EUR France.
                 try:
-                    n.disconnect(contingency)
+                    converged = any(r.status.name == 'CONVERGED' for r in results)
+                    status_name = results[0].status.name if results else "UNKNOWN"
+                    self._lf_status_by_variant[variant_id] = {
+                        "converged": converged,
+                        "lf_status": status_name,
+                    }
                 except Exception as e:
-                    logger.warning(f"Failed to disconnect {contingency} for N-1 variant: {e}")
-            params = create_olf_rte_parameter()
-            self._run_ac_with_fallback(n, params)
-            n.set_working_variant(original_variant)
+                    logger.debug(f"Could not cache LF status for {variant_id}: {e}")
+            finally:
+                n.set_working_variant(original_variant)
         return variant_id
+
+    # ------------------------------------------------------------------
+    # Variant-state guard for analyze/simulate entry points
+    # ------------------------------------------------------------------
+
+    def _ensure_n_state_ready(self):
+        """Guarantee the shared pypowsybl Network is positioned on the N
+        variant with no background work still touching it.
+
+        Called at the entry of `run_analysis` and `run_analysis_step1`,
+        which start from a fresh N state before computing the
+        contingency. `simulate_manual_action` and `compute_superposition`
+        use `_ensure_n1_state_ready(disconnected_element)` instead —
+        they operate on top of an already-known contingency and the
+        natural entry state is N-1.
+
+        Steps:
+
+        1. `_drain_pending_base_nad_prefetch()` — joins the NAD worker if
+           still alive. After this, no other thread is mutating the Network.
+        2. Resolve the N variant (creating it if this is the first call
+           post-config) and set it as the working variant on the shared
+           Network. Subsequent `env.get_obs()` / pypowsybl reads see the
+           N state without races.
+
+        Safe to call multiple times (idempotent) and safe to call before
+        `_base_network` is populated — in that case the guard is a no-op
+        and the caller's later `_get_base_network()` will raise its own
+        clear error.
+        """
+        self._drain_pending_base_nad_prefetch()
+        # If /api/config was never called (e.g. a test that bypasses it,
+        # or an HTTP call before the first study is loaded), `_base_network`
+        # is None and there is nothing meaningful to guard. Let the caller
+        # produce its own error when it actually needs the network.
+        if self._base_network is None and getattr(config, 'ENV_PATH', None) is None:
+            return
+        try:
+            n = self._get_base_network()
+            n_variant = self._get_n_variant()
+            n.set_working_variant(n_variant)
+        except Exception as e:
+            # Don't swallow the caller's error if the network really isn't
+            # loadable — log and let downstream code raise with a clearer
+            # message.
+            logger.warning(f"[_ensure_n_state_ready] Could not position N variant: {e}")
+
+    def _ensure_n1_state_ready(self, disconnected_element: str):
+        """Guarantee the shared pypowsybl Network is positioned on the
+        N-1 variant for `disconnected_element` with no background work
+        still touching it.
+
+        Called at the entry of `simulate_manual_action` and
+        `compute_superposition`, whose natural entry state is N-1:
+        they simulate actions ON TOP of a contingency that is already
+        the subject of the current analysis session.
+
+        Same drain-then-position pattern as `_ensure_n_state_ready`,
+        just with `_get_n1_variant(disconnected_element)` as the target.
+        Creating the N-1 variant on a cold cache triggers an AC load
+        flow (~2-5 s on large grids) — that's a one-off cost amortised
+        across every subsequent action simulation against this
+        contingency.
+        """
+        self._drain_pending_base_nad_prefetch()
+        if self._base_network is None and getattr(config, 'ENV_PATH', None) is None:
+            return
+        if not disconnected_element:
+            # Nothing to position on — simulation endpoints do pass a
+            # contingency; an empty string here means the caller
+            # skipped the analysis flow entirely. Drain-only, no
+            # variant assertion.
+            return
+        try:
+            n = self._get_base_network()
+            n1_variant = self._get_n1_variant(disconnected_element)
+            n.set_working_variant(n1_variant)
+        except Exception as e:
+            logger.warning(f"[_ensure_n1_state_ready] Could not position N-1 variant "
+                           f"for {disconnected_element!r}: {e}")
 
     def _get_simulation_env(self):
         """Return a SimulationEnvironment instance, caching it."""

@@ -9,7 +9,7 @@ import { useState, useCallback, useMemo, type Dispatch, type SetStateAction, typ
 import { api } from '../api';
 import { buildSessionResult } from '../utils/sessionUtils';
 import { interactionLogger } from '../utils/interactionLogger';
-import type { AnalysisResult, CombinedAction, ActionDetail, SessionResult } from '../types';
+import type { AnalysisResult, CombinedAction, ActionDetail, SessionResult, DiagramData } from '../types';
 
 export interface SessionState {
   showReloadModal: boolean;
@@ -83,6 +83,7 @@ export interface RestoreContext {
   setUniqueVoltages: (v: number[]) => void;
   setVoltageRange: (v: [number, number]) => void;
   fetchBaseDiagram: (vlCount: number) => void;
+  ingestBaseDiagram: (raw: DiagramData & { svg: string }, vlCount: number) => void;
   setMonitorDeselected: (v: boolean) => void;
   setSelectedOverloads: (v: Set<string>) => void;
   setResult: Dispatch<SetStateAction<AnalysisResult | null>>;
@@ -248,11 +249,15 @@ export function useSession(): SessionState {
       // empty) or misfiring against a stale previous value.
       ctx.committedNetworkPathRef.current = cfg.network_path;
 
-      // 3. Fetch study data
-      const [branchRes, vlRes, nomVRes] = await Promise.all([
+      // 3. Fetch study data — all 4 XHRs in parallel. The base-diagram
+      // call is the slowest (server-side NAD), so overlapping it with
+      // branches/voltage-levels/nominal-voltages shaves the branches gap
+      // off the critical path. See docs/performance/history/loading-parallel.md.
+      const [branchRes, vlRes, nomVRes, diagramRaw] = await Promise.all([
         api.getBranches(),
         api.getVoltageLevels(),
         api.getNominalVoltages(),
+        api.getNetworkDiagram(),
       ]);
       ctx.setBranches(branchRes.branches);
       ctx.setVoltageLevels(vlRes.voltage_levels);
@@ -263,8 +268,29 @@ export function useSession(): SessionState {
         ctx.setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
       }
 
-      // 4. Fetch base diagram
-      ctx.fetchBaseDiagram(vlRes.voltage_levels.length);
+      // 4. Consume base diagram
+      ctx.ingestBaseDiagram(diagramRaw, vlRes.voltage_levels.length);
+
+      // 4b. Re-push the monitored-line set + computed-pair cache
+      // captured at save time into the backend, so any subsequent
+      // simulate-action call on this reloaded session uses the SAME
+      // `lines_we_care_about` policy as the original study — not the
+      // backend's default (all lines / on-disk lines-monitoring file).
+      // Parity with the standalone HTML mirror (PR
+      // `claude/auto-generate-standalone-interface-Hhogk`). No-ops
+      // silently for older session dumps that predate the fields.
+      if (session.analysis?.lines_we_care_about) {
+        try {
+          await api.restoreAnalysisContext({
+            lines_we_care_about: session.analysis.lines_we_care_about,
+            disconnected_element: session.contingency.disconnected_element,
+            lines_overloaded: session.overloads?.resolved_overloads ?? null,
+            computed_pairs: session.analysis.computed_pairs ?? null,
+          });
+        } catch (ctxErr) {
+          console.warn('Failed to restore analysis context:', ctxErr);
+        }
+      }
 
       // 5. Restore contingency
       const contingency = session.contingency;

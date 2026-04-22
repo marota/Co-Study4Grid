@@ -101,6 +101,30 @@ circle.nad-highlight {
     display: none !important;
 }
 
+/*
+ * Disconnected branch marker used by the svgPatch DOM-recycling path
+ * (see docs/performance/history/svg-dom-recycling.md). Applied to
+ * edges whose equipment ID is listed in the patch payload's
+ * `disconnected_edges` — the contingency line on the N-1 tab, plus
+ * any action-induced extras. Mirrors pypowsybl's native
+ * disconnected-branch look so a patched N-1 reads the same as a
+ * full-fetch N-1. `vector-effect: non-scaling-stroke` keeps the
+ * dash length stable at zoom-out on large grids (same rationale as
+ * the guard in docs/performance/rendering-optimization-plan.md).
+ */
+.nad-disconnected,
+.nad-disconnected > g,
+.nad-disconnected path,
+.nad-disconnected line,
+.nad-disconnected polyline,
+.nad-disconnected > g path,
+.nad-disconnected > g line,
+.nad-disconnected > g polyline {
+    stroke-dasharray: 20 10 !important;
+    stroke-opacity: 1 !important;
+    vector-effect: non-scaling-stroke !important;
+}
+
 /* Remedial action targets: purple-pink */
 .nad-action-target {
     opacity: 1 !important;

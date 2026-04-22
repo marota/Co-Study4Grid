@@ -81,10 +81,25 @@ def analysis_results(scenario_data):
             self.lines_monitoring_path = None
             self.do_visualization = False
 
-    # Load the network BEFORE updating config, so that self.network is available
-    # for enrich_actions_lazy called inside update_config.
+    # `reset()` mirrors what `/api/config` does in production: clears
+    # `_base_network` (and thus any N-1 variants cached on it) plus the
+    # cached LF / observation state. Without it, N-1 variants cloned by
+    # earlier test modules on the same `bare_env_small_grid_test` network
+    # are reused under the cache-by-variant-id path in `_get_n1_variant`,
+    # which caused a small drift in the flow deltas measured below when
+    # the full pytest suite ran in file order (see README / CI note).
+    # Then load the network so `self.network` is available for the
+    # `enrich_actions_lazy` call inside `update_config`.
     from expert_backend.services.network_service import network_service
+    recommender_service.reset()
     network_service.load_network(str(network_path))
+
+    # Force-disable fast mode at fixture-setup time too — the module-
+    # level `config.PYPOWSYBL_FAST_MODE = False` at import time may have
+    # been overwritten by previously-run modules (e.g. the `reset_config`
+    # autouse fixture restores its snapshot from BEFORE our module-level
+    # line ran).
+    config.PYPOWSYBL_FAST_MODE = False
 
     recommender_service.update_config(Settings(network_path, action_file_path))
 

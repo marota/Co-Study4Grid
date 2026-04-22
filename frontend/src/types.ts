@@ -106,6 +106,15 @@ export interface AnalysisResult {
     combined_actions?: Record<string, CombinedAction>;
     message: string;
     dc_fallback: boolean;
+    // Monitored-line set the analysis ran against. Round-tripped through
+    // session.json so a reloaded session can re-push it to the backend
+    // via `/api/restore-analysis-context` and preserve the original
+    // per-study monitored-line policy for subsequent simulations.
+    lines_we_care_about?: string[];
+    // Superposition-computed pair cache (key = `"actionA+actionB"`).
+    // Persisted + re-pushed on reload for the same reason as
+    // `lines_we_care_about`.
+    computed_pairs?: Record<string, unknown>;
 }
 
 export interface BranchResponse {
@@ -121,7 +130,17 @@ export interface BranchResponse {
 export type NameMap = Record<string, string>;
 
 export interface DiagramData {
-    svg: string;
+    /**
+     * SVG payload. Usually a raw XML string from pypowsybl; when the
+     * N-1 or Action tab is populated via the svgPatch DOM-recycling
+     * path (see docs/performance/history/svg-dom-recycling.md) it is a
+     * pre-parsed SVGSVGElement that MemoizedSvgContainer moves into
+     * the target container via `replaceChildren` — no additional
+     * parse. Consumers that need the raw XML (e.g.
+     * ActionOverviewDiagram) must branch and clone the element when
+     * given an SVGSVGElement.
+     */
+    svg: string | SVGSVGElement;
     metadata: unknown;
     lf_converged?: boolean;
     lf_status?: string;
@@ -194,6 +213,73 @@ export interface MetadataIndex {
     nodesBySvgId: Map<string, NodeMeta>;
     edgesByEquipmentId: Map<string, EdgeMeta>;
     edgesByNode: Map<string, EdgeMeta[]>;
+}
+
+/**
+ * Payload returned by `/api/n1-diagram-patch` and
+ * `/api/action-variant-diagram-patch`. Carries only the incremental
+ * information needed to transform a clone of the N-state SVG DOM into
+ * the target state (N-1 or post-action) — NO SVG body. See
+ * `docs/performance/history/svg-dom-recycling.md`.
+ */
+export interface DiagramPatch {
+    patchable: boolean;
+    reason?: string;
+    contingency_id?: string;
+    action_id?: string;
+    lf_converged: boolean;
+    lf_status: string;
+    non_convergence?: string | null;
+    /** Equipment IDs of edges that should render dashed (disconnected). */
+    disconnected_edges?: string[];
+    /** Absolute flow values to overwrite the base-state edge-info labels. */
+    absolute_flows?: {
+        p1: Record<string, number>;
+        p2: Record<string, number>;
+        q1: Record<string, number>;
+        q2: Record<string, number>;
+        vl1: Record<string, string>;
+        vl2: Record<string, string>;
+    };
+    lines_overloaded?: string[];
+    lines_overloaded_rho?: number[];
+    flow_deltas?: Record<string, FlowDelta>;
+    reactive_flow_deltas?: Record<string, FlowDelta>;
+    asset_deltas?: Record<string, AssetDelta>;
+    /**
+     * Per-voltage-level node subtrees to splice into the cloned base
+     * diagram. Populated only for actions that change bus count at
+     * one or more VLs (node merging / splitting / coupling).
+     *
+     * For each affected VL:
+     *  - `node_svg` — `<g id="nad-vl-{subSvgId}">...</g>` fragment
+     *    rendered by pypowsybl against the same `fixed_positions` as
+     *    the main NAD, so the splice lands geometrically identical
+     *    to a native full NAD.
+     *  - `node_sub_svg_id` — the svgId pypowsybl assigned to this VL
+     *    in the focused sub-diagram (typically `nad-vl-0`). Differs
+     *    from the main diagram's svgId (positional, e.g. `nad-vl-42`);
+     *    the client must REWRITE the spliced element's `id` attribute
+     *    to the main svgId from `baseMetaIndex.nodesByEquipmentId`
+     *    so the halo / delta lookups keep working.
+     *  - `edge_fragments` — one `<g id="nad-l-{subSvgId}">` (or
+     *    `nad-t-*`) subtree per branch terminating at this VL, so
+     *    the branch's piercing geometry (which internal bus it
+     *    connects to) matches the new bus count. Each entry also
+     *    carries `sub_svg_id` for the same client-side rewrite.
+     *
+     * Omitted for actions with no VL topology change. See
+     * docs/performance/history/svg-dom-recycling.md.
+     */
+    vl_subtrees?: Record<string, {
+        node_svg: string;
+        node_sub_svg_id: string;
+        edge_fragments?: Record<string, { svg: string; sub_svg_id: string }>;
+    }>;
+    meta?: {
+        base_state?: 'N' | 'N-1';
+        elapsed_ms?: number;
+    };
 }
 
 export type TabId = 'n' | 'n-1' | 'action' | 'overflow';
@@ -361,6 +447,20 @@ export interface SessionResult {
         action_scores: Record<string, Record<string, unknown>> | undefined;
         actions: Record<string, SavedActionEntry>;
         combined_actions: Record<string, SavedCombinedAction>;
+        // Set of monitored line IDs the analysis was run against.
+        // Persisted so we can re-push it to the backend via
+        // `/api/restore-analysis-context` on session reload —
+        // otherwise simulate-action calls post-reload fall back to
+        // the backend default (all lines / lines-monitoring file)
+        // instead of the captured per-study set. Optional for
+        // backwards compatibility with older session dumps.
+        lines_we_care_about?: string[] | null;
+        // Superposition-computed pair cache keyed by
+        // `"actionA_id+actionB_id"`. Persisted alongside
+        // `lines_we_care_about` and re-pushed to the backend on
+        // reload so the Combine modal does not re-score everything
+        // from scratch.
+        computed_pairs?: Record<string, unknown> | null;
     } | null;
     interaction_log?: InteractionLogEntry[];
 }
@@ -434,6 +534,9 @@ export type InteractionType =
     | 'overview_zoom_out'
     | 'overview_zoom_fit'
     | 'overview_inspect_changed'
+    | 'overview_filter_changed'
+    | 'overview_unsimulated_toggled'
+    | 'overview_unsimulated_pin_simulated'
     // Session Management
     | 'session_saved'
     | 'session_reload_modal_opened'
@@ -446,4 +549,63 @@ export interface InteractionLogEntry {
     details: Record<string, unknown>;
     correlation_id?: string;
     duration_ms?: number;
+}
+
+// ===== Action Overview Filters =====
+
+export type ActionSeverityCategory = 'green' | 'orange' | 'red' | 'grey';
+
+/**
+ * Action-type chip filter value. 'all' means no restriction, the
+ * other tokens map 1:1 to the action-type buckets surfaced by
+ * `classifyActionType` (see `utils/actionTypes.ts`).
+ */
+export type ActionTypeFilterToken = 'all' | 'disco' | 'reco' | 'ls' | 'rc' | 'open' | 'close' | 'pst';
+
+export interface ActionOverviewFilters {
+    categories: Record<ActionSeverityCategory, boolean>;
+    /**
+     * Only display actions whose max_rho (loading rate) is strictly below
+     * this threshold. Expressed as a ratio (1.5 == 150%). Applied to both
+     * the overview pins and the sidebar action feed cards. Actions whose
+     * max_rho is null (divergent / islanded) are always shown when the
+     * "grey" category is enabled and ignore the threshold.
+     */
+    threshold: number;
+    /** When true, un-simulated scored actions are drawn as dimmed pins. */
+    showUnsimulated: boolean;
+    /**
+     * Single-select action-type filter (DISCO / RECO / LS / RC / OPEN
+     * / CLOSE / PST). 'all' disables the filter. Applied to both the
+     * overview pins and the sidebar action feed cards so the two views
+     * stay in sync regardless of which chip row the operator uses.
+     */
+    actionType: ActionTypeFilterToken;
+}
+
+/**
+ * Enriched info for an un-simulated scored action — derived from
+ * `action_scores` in App.tsx and forwarded to the overview so the
+ * dimmed pin tooltip can show the same score-table data the Manual
+ * Selection dropdown exposes.
+ */
+export interface UnsimulatedActionScoreInfo {
+    /** Action-score bucket (e.g. "line_disconnection", "pst_tap_change"). */
+    type: string;
+    score: number;
+    /** Starting MW for load-shedding / renewable-curtailment actions. */
+    mwStart?: number | null;
+    /** Starting tap for PST actions. */
+    tapStart?: {
+        pst_name: string;
+        tap: number;
+        low_tap: number | null;
+        high_tap: number | null;
+    } | null;
+    /** 1-based rank inside the action's type bucket (1 = highest score). */
+    rankInType: number;
+    /** Number of actions in the type bucket — used to print "rank X of Y". */
+    countInType: number;
+    /** Highest score in the type bucket. */
+    maxScoreInType: number;
 }

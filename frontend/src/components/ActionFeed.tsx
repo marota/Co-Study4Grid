@@ -6,7 +6,9 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig } from '../types';
+import type { ActionDetail, ActionTypeFilterToken, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig, DiagramData, ActionOverviewFilters } from '../types';
+import { actionPassesOverviewFilter } from '../utils/svgUtils';
+import { classifyActionType, matchesActionTypeFilter } from '../utils/actionTypes';
 import { api } from '../api';
 import { interactionLogger } from '../utils/interactionLogger';
 import CombinedActionsModal from './CombinedActionsModal';
@@ -52,6 +54,31 @@ interface ActionFeedProps {
     onUpdateCombinedEstimation?: (pairId: string, estimation: { estimated_max_rho: number; estimated_max_rho_line: string }) => void;
     /** Resolve an element/VL ID to its human-readable display name. Falls back to the ID. */
     displayName?: (id: string) => string;
+    /**
+     * Optional pre-fetch hook. When provided, the Add-action / target-MW /
+     * target-tap handlers stream both the simulation metrics AND the
+     * post-action NAD in a single request, and invoke this callback with
+     * the ready-to-render diagram. A subsequent click on the action card
+     * reads this cache (see useDiagrams.handleActionSelect) and paints
+     * instantly — saving ~5-7 s of pypowsybl NAD regeneration on large
+     * grids. When the prop is absent, the legacy `simulateManualAction`
+     * single-shot call is used, preserving backward compat for tests and
+     * call sites that do not wire the cache through.
+     */
+    onActionDiagramPrimed?: (actionId: string, diagram: DiagramData & { svg: string }, voltageLevelsLength: number) => void;
+    /** Current voltage-levels count, forwarded to the primer callback's
+     * `processSvg` pass. Unused when onActionDiagramPrimed is absent. */
+    voltageLevelsLength?: number;
+    /**
+     * Shared category + threshold filters from the Remedial Action
+     * overview. When provided, action cards whose severity bucket is
+     * disabled OR whose max_rho exceeds the threshold are hidden from
+     * the Suggested / Rejected / Selected lists — so the operator
+     * sees the same set of actions on the overview and in the feed.
+     */
+    overviewFilters?: ActionOverviewFilters;
+    /** Update the shared filter state (owned by App.tsx). */
+    onOverviewFiltersChange?: (next: ActionOverviewFilters) => void;
 }
 
 const ActionFeed: React.FC<ActionFeedProps> = ({
@@ -86,6 +113,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     combinedActions,
     onUpdateCombinedEstimation,
     displayName = (id: string) => id,
+    onActionDiagramPrimed,
+    voltageLevelsLength,
+    overviewFilters,
 }) => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -94,7 +124,6 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     const [loadingActions, setLoadingActions] = useState(false);
     const [simulating, setSimulating] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [typeFilters, setTypeFilters] = useState({ disco: true, reco: true, open: true, close: true, pst: true, ls: true, rc: true });
     const searchInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [tooltip, setTooltip] = useState<{ content: React.ReactNode; x: number; y: number } | null>(null);
@@ -117,6 +146,75 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     };
     const hideTooltip = () => setTooltip(null);
 
+    // Shared helper: simulate a manual action and — when the parent hook
+    // provided `onActionDiagramPrimed` — also pre-fetch the post-action NAD
+    // in the same streamed request. Returns the same `simulate_manual_action`
+    // shape used downstream so the three call sites (Add / target_mw /
+    // target_tap re-sim) stay structurally identical to the pre-stream code.
+    //
+    // When `onActionDiagramPrimed` is not wired up (older tests, call sites
+    // that don't care about the cache), this transparently falls back to
+    // the single-shot `api.simulateManualAction` endpoint.
+    // Whether the parent hook wired up the pre-fetch primer. When false we
+    // keep firing the legacy single-shot `api.simulateManualAction` directly
+    // from each call site (preserving exact call arity for tests that assert
+    // on it). When true each call site funnels through
+    // `streamSimulateAndPrimeDiagram` instead, which consumes the NDJSON
+    // stream, returns the metrics event shape (same as
+    // `simulate_manual_action`), and pushes the diagram event into the
+    // `useDiagrams` cache so a subsequent click on the action card paints
+    // the SVG instantly.
+    const canPrimeDiagram = !!onActionDiagramPrimed && voltageLevelsLength != null;
+    const streamSimulateAndPrimeDiagram = async (
+        actionId: string,
+        disconnectedEl: string,
+        actionContent: Record<string, unknown> | null,
+        linesOvl: string[] | null,
+        targetMw: number | null | undefined,
+        targetTap: number | null | undefined,
+    ): Promise<Awaited<ReturnType<typeof api.simulateManualAction>>> => {
+        const response = await api.simulateAndVariantDiagramStream({
+            action_id: actionId,
+            disconnected_element: disconnectedEl,
+            action_content: actionContent,
+            lines_overloaded: linesOvl,
+            target_mw: targetMw ?? null,
+            target_tap: targetTap ?? null,
+        });
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let metrics: Awaited<ReturnType<typeof api.simulateManualAction>> | null = null;
+        let streamErr: string | null = null;
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop()!;
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                let event: Record<string, unknown>;
+                try { event = JSON.parse(line); } catch { continue; }
+                if (event.type === 'metrics') {
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                    const { type: _t, ...rest } = event;
+                    metrics = rest as Awaited<ReturnType<typeof api.simulateManualAction>>;
+                } else if (event.type === 'diagram') {
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                    const { type: _t, ...rest } = event;
+                    // `canPrimeDiagram` is verified before this helper is called.
+                    onActionDiagramPrimed!(actionId, rest as unknown as DiagramData & { svg: string }, voltageLevelsLength!);
+                } else if (event.type === 'error') {
+                    streamErr = (event.message as string) || 'stream error';
+                }
+            }
+        }
+        if (streamErr) throw new Error(streamErr);
+        if (!metrics) throw new Error('Stream ended without metrics event');
+        return metrics;
+    };
+
     // Fetch available actions when search is opened
     const handleOpenSearch = async () => {
         if (searchOpen) { setSearchOpen(false); return; }
@@ -138,95 +236,40 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         setTimeout(() => searchInputRef.current?.focus(), 50);
     };
 
-    // Filter actions for dropdown
+    // Local filter for the manual-selection dropdown and scored table.
+    // Independent from overviewFilters.actionType which drives the
+    // overview diagram and the action cards list.
+    const [dropdownTypeFilter, setDropdownTypeFilter] = useState<ActionTypeFilterToken>('all');
+
     const filteredActions = useMemo(() => {
         const q = searchQuery.toLowerCase();
         const alreadyShown = new Set(Object.keys(actions));
         return availableActions
             .filter(a => !alreadyShown.has(a.id))
             .filter(a => {
-                const t = (a.type || 'unknown').toLowerCase();
-                const actionId = a.id.toLowerCase();
-                const actionDesc = (a.description || '').toLowerCase();
-
-                const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
-                const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
-                const isOpenCoupling = t.includes('open_coupling');
-                const isCloseCoupling = t.includes('close_coupling');
-                const isPstAction = (actionId.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
-                const isLoadShedding = (actionId.includes('load_shedding') || actionDesc.includes('load shedding') || t.includes('load_shedding')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction;
-                const isRenewableCurtailment = (t.includes('renewable_curtailment') || t.includes('open_gen')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction && !isLoadShedding;
-
-                if (isDisco) return typeFilters.disco;
-                if (isReco) return typeFilters.reco;
-                if (isOpenCoupling) return typeFilters.open;
-                if (isCloseCoupling) return typeFilters.close;
-                if (isPstAction) return typeFilters.pst;
-                if (isLoadShedding) return typeFilters.ls;
-                if (isRenewableCurtailment) return typeFilters.rc;
-
-                // Handle unknown or categories not explicitly listed above
-                return typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
+                if (dropdownTypeFilter === 'all') return true;
+                return matchesActionTypeFilter(dropdownTypeFilter, a.id, a.description || null, a.type || null);
             })
             .filter(a => a.id.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q))
             .slice(0, 20);
-    }, [searchQuery, availableActions, actions, typeFilters]);
+    }, [searchQuery, availableActions, actions, dropdownTypeFilter]);
 
     // Format scored actions
     const scoredActionsList = useMemo(() => {
         if (!actionScores) return [];
         const list: { type: string; actionId: string; score: number; mwStart: number | null }[] = [];
         for (const [type, data] of Object.entries(actionScores)) {
-            // Apply filtering logic consistent with the search dropdown
-            const isDiscoType = type === 'line_disconnection';
-            const isRecoType = type === 'line_reconnection';
-            const isOpenType = type === 'open_coupling';
-            const isCloseType = type === 'close_coupling';
-            const isPstType = type === 'pst_tap_change' || type.includes('pst');
-
-            if (isDiscoType && !typeFilters.disco) continue;
-            if (isRecoType && !typeFilters.reco) continue;
-            if (isOpenType && !typeFilters.open) continue;
-            if (isCloseType && !typeFilters.close) continue;
-            if (isPstType && !typeFilters.pst) continue;
-            if ((type === 'load_shedding' || type.includes('load_shedding')) && !typeFilters.ls) continue;
-            if ((type === 'renewable_curtailment' || type.includes('renewable_curtailment')) && !typeFilters.rc) continue;
-
-            // If it's a known type but its filter is off, it's already skipped.
-            // If it's an unknown type, we show it only if ALL filters are active.
-            const isKnownType = isDiscoType || isRecoType || isOpenType || isCloseType || isPstType || type === 'load_shedding' || type.includes('load_shedding') || type === 'renewable_curtailment' || type.includes('renewable_curtailment');
-            if (!isKnownType && !(typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst && typeFilters.ls && typeFilters.rc)) {
-                continue;
-            }
-
             const scores = data?.scores || {};
             for (const [actionId, score] of Object.entries(scores)) {
-                // Determine if this specific action should be filtered out
-                const actionDetail = actions[actionId];
-                const actionDesc = (actionDetail?.description_unitaire || '').toLowerCase();
-                const aid = actionId.toLowerCase();
-                const t = type.toLowerCase();
-
-                const isDisco = t.includes('disco') || t.includes('open_line') || t.includes('open_load') || actionDesc.includes('ouverture');
-                const isReco = t.includes('reco') || t.includes('close_line') || t.includes('close_load') || actionDesc.includes('fermeture');
-                const isOpenCoupling = t.includes('open_coupling');
-                const isCloseCoupling = t.includes('close_coupling');
-                const isPstAction = (aid.includes('pst') || actionDesc.includes('pst') || t.includes('pst')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
-                const isLoadShedding = (aid.includes('load_shedding') || actionDesc.includes('load shedding') || t.includes('load_shedding')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction;
-                const isRenewableCurtailment = (t.includes('renewable_curtailment') || t.includes('open_gen')) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction && !isLoadShedding;
-
-                let shouldShow = false;
-                if (isDisco) shouldShow = typeFilters.disco;
-                else if (isReco) shouldShow = typeFilters.reco;
-                else if (isOpenCoupling) shouldShow = typeFilters.open;
-                else if (isCloseCoupling) shouldShow = typeFilters.close;
-                else if (isPstAction) shouldShow = typeFilters.pst;
-                else if (isLoadShedding) shouldShow = typeFilters.ls;
-                else if (isRenewableCurtailment) shouldShow = typeFilters.rc;
-                else shouldShow = typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst && typeFilters.ls && typeFilters.rc;
-
-                if (!shouldShow) continue;
-
+                if (dropdownTypeFilter !== 'all') {
+                    const actionDetail = actions[actionId];
+                    const bucket = classifyActionType(
+                        actionId,
+                        actionDetail?.description_unitaire || null,
+                        type,
+                    );
+                    if (bucket === 'unknown' || bucket !== dropdownTypeFilter) continue;
+                }
                 const mwStartMap = (data as { mw_start?: Record<string, number | null> })?.mw_start;
                 const mwStart = mwStartMap?.[actionId] ?? null;
                 list.push({ type, actionId, score: Number(score), mwStart: mwStart != null ? Number(mwStart) : null });
@@ -240,7 +283,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             }
             return b.score - a.score;
         });
-    }, [actionScores, typeFilters, actions]);
+    }, [actionScores, dropdownTypeFilter, actions]);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -286,7 +329,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 }
             }
 
-            const result = await api.simulateManualAction(trimmedId, disconnectedElement, actionContent, linesOverloaded, targetMw, targetTap);
+            const result = canPrimeDiagram
+                ? await streamSimulateAndPrimeDiagram(trimmedId, disconnectedElement, actionContent, linesOverloaded, targetMw, targetTap)
+                : await api.simulateManualAction(trimmedId, disconnectedElement, actionContent, linesOverloaded, targetMw, targetTap);
             const detail: ActionDetail = {
                 description_unitaire: result.description_unitaire,
                 rho_before: result.rho_before,
@@ -368,7 +413,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         try {
             const detail = actions[actionId];
             const actionContent = detail?.action_topology ? detail.action_topology as unknown as Record<string, unknown> : null;
-            const result = await api.simulateManualAction(actionId, disconnectedElement, actionContent, linesOverloaded, newTargetMw);
+            const result = canPrimeDiagram
+                ? await streamSimulateAndPrimeDiagram(actionId, disconnectedElement, actionContent, linesOverloaded, newTargetMw, undefined)
+                : await api.simulateManualAction(actionId, disconnectedElement, actionContent, linesOverloaded, newTargetMw);
             const newDetail: ActionDetail = {
                 description_unitaire: result.description_unitaire,
                 rho_before: result.rho_before,
@@ -418,7 +465,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         try {
             const detail = actions[actionId];
             const actionContent = detail?.action_topology ? detail.action_topology as unknown as Record<string, unknown> : null;
-            const result = await api.simulateManualAction(actionId, disconnectedElement, actionContent, linesOverloaded, null, newTap);
+            const result = canPrimeDiagram
+                ? await streamSimulateAndPrimeDiagram(actionId, disconnectedElement, actionContent, linesOverloaded, null, newTap)
+                : await api.simulateManualAction(actionId, disconnectedElement, actionContent, linesOverloaded, null, newTap);
             const newDetail: ActionDetail = {
                 description_unitaire: result.description_unitaire,
                 rho_before: result.rho_before,
@@ -458,11 +507,45 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         return Object.entries(actions)
             .filter(([id, details]) => {
                 const isCombined = id.includes('+');
-                if (!isCombined) return true;
-                // Only show combined if it has been fully simulated (not just estimated)
-                // Simulated actions will NOT have the is_estimated flag set.
-                if (details.is_estimated) return false;
-                return details.rho_after && details.rho_after.length > 0;
+                if (isCombined) {
+                    // Only show combined if it has been fully simulated (not just estimated)
+                    // Simulated actions will NOT have the is_estimated flag set.
+                    if (details.is_estimated) return false;
+                    if (!details.rho_after || details.rho_after.length === 0) return false;
+                }
+                // Shared overview filter: hide cards whose severity or
+                // max_rho falls outside the active category/threshold
+                // picked from the overview header. We skip the filter
+                // when overviewFilters is undefined so isolated tests
+                // (which don't wire it) keep their existing behaviour.
+                if (overviewFilters && !actionPassesOverviewFilter(
+                    details, monitoringFactor,
+                    overviewFilters.categories, overviewFilters.threshold,
+                )) return false;
+                // Shared action-type chip filter. Combined actions
+                // (key contains '+') are considered in scope when
+                // EITHER constituent matches — they're inherently
+                // multi-type, so hiding them because only one side
+                // matches would surprise the operator.
+                // `actionType ?? 'all'` keeps legacy call sites that
+                // don't yet set the field (older session reloads /
+                // tests) behaving as "no type filter".
+                const typeFilter = overviewFilters?.actionType ?? 'all';
+                if (typeFilter !== 'all') {
+                    if (id.includes('+')) {
+                        const [id1, id2] = id.split('+');
+                        const d1 = actions[id1];
+                        const d2 = actions[id2];
+                        const ok = (d1 && matchesActionTypeFilter(typeFilter, id1, d1.description_unitaire, null))
+                            || (d2 && matchesActionTypeFilter(typeFilter, id2, d2.description_unitaire, null));
+                        if (!ok) return false;
+                    } else if (!matchesActionTypeFilter(
+                        typeFilter, id, details.description_unitaire, null,
+                    )) {
+                        return false;
+                    }
+                }
+                return true;
             })
             .sort(([, a], [, b]) => {
                 const aIslanded = !!a.is_islanded;
@@ -470,7 +553,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 if (aIslanded !== bIslanded) return aIslanded ? 1 : -1;
                 return (a.max_rho ?? 999) - (b.max_rho ?? 999);
             });
-    }, [actions]);
+    }, [actions, overviewFilters, monitoringFactor]);
 
     const analysisActionIds = useMemo(() => {
         const ids = new Set<string>();
@@ -652,8 +735,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         searchInputRef={searchInputRef}
                         searchQuery={searchQuery}
                         onSearchQueryChange={setSearchQuery}
-                        typeFilters={typeFilters}
-                        onTypeFilterChange={(key) => setTypeFilters(prev => ({ ...prev, [key]: !prev[key] }))}
+                        actionTypeFilter={dropdownTypeFilter}
+                        onActionTypeFilterChange={setDropdownTypeFilter}
                         error={error}
                         loadingActions={loadingActions}
                         scoredActionsList={scoredActionsList}
@@ -719,29 +802,44 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '5px 0 15px 0' }}>
                         <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: 0 }}>Select an action manually or from suggested ones.</p>
-                        <button
-                            onClick={handleOpenSearch}
-                            data-testid="make-first-guess-button"
-                            style={{
-                                padding: '10px',
-                                backgroundColor: '#f8f9fa',
-                                border: '1px dashed #007bff',
-                                color: '#007bff',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                fontWeight: 600,
-                                fontSize: '14px',
-                                transition: 'all 0.2s',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '8px',
-                            }}
-                            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#e7f1ff'; }}
-                            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#f8f9fa'; }}
-                        >
-                            <span style={{ fontSize: '16px' }}>💡</span> Make a first guess
-                        </button>
+                        {/* "Make a first guess" is a pre-analysis shortcut.
+                            Once the operator has launched "Analyze & Suggest"
+                            (or the analysis has completed / is pending
+                            display), we stop offering the shortcut so the
+                            UI funnels the user through the Manual Selection
+                            dropdown (which now carries the score table).
+                            The button re-appears only after a full reset
+                            (contingency change, study reload) — at which
+                            point `actionScores` / `pendingAnalysisResult` /
+                            `actions` are all cleared by `resetAllState`. */}
+                        {!analysisLoading
+                            && !pendingAnalysisResult
+                            && (!actionScores || Object.keys(actionScores).length === 0)
+                            && Object.keys(actions).length === 0 && (
+                            <button
+                                onClick={handleOpenSearch}
+                                data-testid="make-first-guess-button"
+                                style={{
+                                    padding: '10px',
+                                    backgroundColor: '#f8f9fa',
+                                    border: '1px dashed #007bff',
+                                    color: '#007bff',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontWeight: 600,
+                                    fontSize: '14px',
+                                    transition: 'all 0.2s',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                }}
+                                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#e7f1ff'; }}
+                                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#f8f9fa'; }}
+                            >
+                                <span style={{ fontSize: '16px' }}>💡</span> Make a first guess
+                            </button>
+                        )}
                     </div>
                 )}
             </div>

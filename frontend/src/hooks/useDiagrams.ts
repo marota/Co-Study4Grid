@@ -13,6 +13,7 @@ import {
   getIdMap, invalidateIdMapCache,
 } from '../utils/svgUtils';
 import { processSvg } from '../utils/svgUtils';
+import { cloneBaseSvg, applyPatchToClone } from '../utils/svgPatch';
 import type { DiagramData, ViewBox, MetadataIndex, TabId, VlOverlay, SldTab, AnalysisResult, ActionDetail } from '../types';
 import { interactionLogger } from '../utils/interactionLogger';
 import { useSldOverlay } from './useSldOverlay';
@@ -126,6 +127,13 @@ export interface DiagramsState {
 
   // Handlers
   fetchBaseDiagram: (vlCount: number) => void;
+  /**
+   * Consume a pre-fetched base-diagram payload (processSvg + state set).
+   * Used by callers that fire `api.getNetworkDiagram()` themselves in
+   * parallel with `branches`/`voltage-levels`/`nominal-voltages` to
+   * shave the serial-dependency gap off the initial load.
+   */
+  ingestBaseDiagram: (raw: DiagramData & { svg: string }, vlCount: number) => void;
   handleActionSelect: (
     actionId: string | null,
     result: AnalysisResult | null,
@@ -155,6 +163,20 @@ export interface DiagramsState {
 
   // Internal ref for SLD selectedBranch
   selectedBranchForSld: MutableRefObject<string>;
+
+  // Cache primer — ActionFeed calls this with the diagram event from the
+  // streamed simulate-and-variant-diagram endpoint. A subsequent click
+  // on the same action card is served from cache (no XHR, no pypowsybl).
+  // Cache is automatically cleared when `selectedBranch` changes.
+  primeActionDiagram: (actionId: string, diagram: DiagramData & { svg: string }, voltageLevelsLength: number) => void;
+
+  /**
+   * Re-fetch the SLD overlay if it is currently open on the given
+   * action. Wired by App.tsx into the re-simulate flow so editable
+   * actions (load-shedding MW, curtailment MW, PST tap) refresh the
+   * SLD's per-equipment highlights and flow deltas after a user edit.
+   */
+  refreshSldIfAction: (actionId: string) => void;
 }
 
 export function useDiagrams(
@@ -186,8 +208,15 @@ export function useDiagrams(
 
   // View mode
   const [actionViewMode, setActionViewMode] = useState<'network' | 'delta'>('network');
+  // Pure state setter — no interaction-log emission here. The
+  // spec-conformant event (`view_mode_changed` with `{ mode, tab,
+  // scope }`) is emitted by `App.tsx::handleViewModeChangeForTab`,
+  // which has access to the `detachedTabs` map needed to compute
+  // `scope`. Emitting from the hook would require passing that map
+  // into every caller, and would risk drifting from the spec if
+  // someone forgets one of the fields — see the regression caught
+  // by `utils/specConformance.test.ts`.
   const handleViewModeChange = useCallback((mode: 'network' | 'delta') => {
-    interactionLogger.record('view_mode_changed', { mode });
     setActionViewMode(mode);
   }, []);
 
@@ -246,6 +275,45 @@ export function useDiagrams(
   const committedBranchRef = useRef('');
   const restoringSessionRef = useRef(false);
 
+  // Action-variant diagram cache. Populated by ActionFeed when it adds or
+  // re-simulates a manual action through the streamed
+  // `simulateAndVariantDiagramStream` endpoint — the `{type:"diagram",...}`
+  // event yields a ready-to-render diagram while the user is still reading
+  // the sidebar card. If the user subsequently clicks that card,
+  // `handleActionSelect` reads the cache and paints the SVG instantly,
+  // saving the 5-7 s server-side pypowsybl NAD regeneration that the fast
+  // path (`getActionVariantDiagram`) would otherwise trigger.
+  //
+  // Keyed by action id. Values are ALREADY processed (processSvg ran, so
+  // the entry has `originalViewBox` and the scaled SVG). Cleared whenever
+  // the contingency changes so a stale post-action NAD from a previous
+  // N-1 can't leak through.
+  const actionDiagramCacheRef = useRef<Map<string, DiagramData>>(new Map());
+  useEffect(() => {
+    actionDiagramCacheRef.current.clear();
+  }, [selectedBranch]);
+
+  // Tracks the last actionId the user clicked. Written synchronously
+  // at the top of `handleActionSelect`, read after each async await
+  // inside the selector: if the id diverged, the handler drops the
+  // in-flight response so a late-arriving patch can't override a
+  // more recent user click (the "blank flash" symptom on large
+  // grids — `setActionDiagram(stale)` would repaint the action tab
+  // with the previous selection for a moment, or, worse, overwrite
+  // the current one with an older version).
+  const latestActionSelectRef = useRef<string | null>(null);
+
+  // Exposed to ActionFeed via App.tsx props: processes the raw NDJSON
+  // diagram event's SVG and stores it for later click-to-view.
+  const primeActionDiagram = useCallback((actionId: string, raw: DiagramData & { svg: string }, voltageLevelsLength: number) => {
+    try {
+      const { svg, viewBox } = processSvg(raw.svg, voltageLevelsLength);
+      actionDiagramCacheRef.current.set(actionId, { ...raw, svg, originalViewBox: viewBox });
+    } catch (e) {
+      console.warn('[primeActionDiagram] processSvg failed for', actionId, e);
+    }
+  }, []);
+
   // Voltage filter
   const [nominalVoltageMap, setNominalVoltageMap] = useState<Record<string, number>>({});
   const [uniqueVoltages, setUniqueVoltages] = useState<number[]>([]);
@@ -257,7 +325,7 @@ export function useDiagrams(
   // SLD that was opened from the N or N-1 tab (the stored
   // vlOverlay.actionId is '' in that case).
   const sldOverlay = useSldOverlay(activeTab, selectedActionId);
-  const { vlOverlay, setVlOverlay, selectedBranchForSld, handleVlDoubleClick, handleOverlaySldTabChange, handleOverlayClose } = sldOverlay;
+  const { vlOverlay, setVlOverlay, selectedBranchForSld, handleVlDoubleClick, handleOverlaySldTabChange, handleOverlayClose, refreshCurrentIfAction: refreshSldIfAction } = sldOverlay;
 
   // Metadata
   const nMetaIndex = useMemo(() => buildMetadataIndex(nDiagram?.metadata), [nDiagram?.metadata]);
@@ -288,6 +356,17 @@ export function useDiagrams(
     }
   }, []);
 
+  // Consume a pre-fetched base-diagram payload. Split from `fetchBaseDiagram`
+  // so callers can fire `api.getNetworkDiagram()` in parallel with
+  // branches/voltage-levels/nominal-voltages (serveur NAD ~6.6s dwarfs the
+  // other three calls — parallelising shaves the ~0.8s branches gap off
+  // the critical path of the initial load).
+  const ingestBaseDiagram = useCallback((raw: DiagramData & { svg: string }, vlCount: number) => {
+    const { svg, viewBox } = processSvg(raw.svg, vlCount || 0);
+    if (viewBox) setOriginalViewBox(viewBox);
+    setNDiagram({ ...raw, svg, originalViewBox: viewBox });
+  }, []);
+
   // ===== Action Select =====
   // When `force` is true, skip the "already-selected → deselect" toggle path
   // and always re-fetch the action diagram. Used after a fresh (re)simulation
@@ -304,17 +383,20 @@ export function useDiagrams(
     const isActionDetached = !!detachedTabsRef.current?.['action'];
 
     if (!force && actionId === selectedActionId) {
-      interactionLogger.record('action_deselected', { action_id: actionId });
+      // Replay contract (docs/features/interaction-logging.md): after this
+      // event fires no action is selected any more, so the id
+      // carried is the PREVIOUSLY-selected action, not the current.
+      interactionLogger.record('action_deselected', { previous_action_id: actionId });
       setSelectedActionId(null);
       setActionDiagram(null);
-      // Only fall back to the N-1 tab in the main window when the
-      // action tab is currently inline (i.e. the user was actually
-      // looking at the action tab in the main window). When the
-      // action tab is detached into a popup, the main window is
-      // already showing N or N-1 and must not be force-switched.
-      if (!isActionDetached) {
-        setActiveTab('n-1');
-      }
+      // Stay on the current tab. When the user was on the action tab,
+      // clearing `selectedActionId` naturally falls back to the
+      // ActionOverviewDiagram (pin view) — same UX as clicking the
+      // ✕ chip on the action tab header, which also just nulls the
+      // selection without switching tabs. We used to force-switch to
+      // N-1 here, which was surprising: it erased the pin overview
+      // the user had just returned to. See VisualizationPanel tab
+      // label for the matching ✕-chip path.
       return;
     }
 
@@ -338,9 +420,18 @@ export function useDiagrams(
       interactionLogger.record('action_selected', { action_id: actionId });
     }
     setSelectedActionId(actionId);
-    setActionDiagram(null);
-    if (actionId === null) return;
+    // Do NOT clear actionDiagram synchronously here — the patch path
+    // is fast enough that nulling the diagram just to repopulate
+    // ~200-500 ms later causes a visible "blank flash" on large
+    // grids. Leave the previous action's SVG in place; the new
+    // cloned+patched DOM atomically replaces it when setActionDiagram
+    // is called with the fresh payload below.
+    if (actionId === null) {
+      setActionDiagram(null);
+      return;
+    }
 
+    latestActionSelectRef.current = actionId;
     setActionDiagramLoading(true);
     // Switching the main window's activeTab to 'action' would blank the
     // current N or N-1 view and replace it with the "Detached" placeholder.
@@ -350,12 +441,90 @@ export function useDiagrams(
     if (!isActionDetached) {
       setActiveTab('action');
     }
+    // Fast path #0: ActionFeed may have already fetched and processed
+    // the post-action diagram while the user was still reading the
+    // sidebar card (via the streamed simulate-and-variant-diagram
+    // endpoint). If so, paint it instantly — no XHR, no extra pypowsybl.
+    const cached = actionDiagramCacheRef.current.get(actionId);
+    if (cached) {
+      console.log('[svgPatch] action cache HIT — no network call', actionId);
+      setActionDiagram(cached);
+      setActionDiagramLoading(false);
+      return;
+    }
+    // Fast path — svgPatch DOM-recycling for actions. Clone the
+    // already-loaded N-1 SVG (fall back to N if N-1 is not loaded)
+    // and mutate only the flow labels for the action state. The
+    // backend flags topology-changing actions with `patchable: false`,
+    // in which case we fall back to the full /api/action-variant-diagram
+    // endpoint. See docs/performance/history/svg-dom-recycling.md.
+    const baseSvgEl =
+      (n1SvgContainerRef.current?.querySelector('svg') as SVGSVGElement | null) ??
+      (nSvgContainerRef.current?.querySelector('svg') as SVGSVGElement | null);
+    const baseMeta = n1MetaIndex ?? nMetaIndex;
+    const baseMetadataRaw = n1Diagram?.metadata ?? nDiagram?.metadata ?? null;
+    const baseViewBoxRaw = n1Diagram?.originalViewBox ?? nDiagram?.originalViewBox ?? null;
+    // Fresh object reference per patch — usePanZoom re-caches
+    // svgElRef via useLayoutEffect([initialViewBox]).
+    const baseViewBox = baseViewBoxRaw ? { ...baseViewBoxRaw } : null;
+    if (baseSvgEl && baseMeta && !restoringSessionRef.current) {
+      console.log('[svgPatch] action patch PATH — calling /api/action-variant-diagram-patch', actionId);
+      try {
+        const patch = await api.getActionVariantDiagramPatch(actionId);
+        if (patch.patchable) {
+          // Stale-response guard: if the user clicked a newer action
+          // while this patch was in flight, drop the response without
+          // touching state — the newer click is already running.
+          if (latestActionSelectRef.current !== actionId) {
+            console.log('[svgPatch] action patch response dropped (stale)', actionId);
+            return;
+          }
+          console.log('[svgPatch] action patch applied (patchable=true)', actionId);
+          const cloned = cloneBaseSvg(baseSvgEl);
+          applyPatchToClone(cloned, baseMeta, patch);
+          setActionDiagram({
+            svg: cloned,
+            metadata: baseMetadataRaw,
+            originalViewBox: baseViewBox,
+            action_id: actionId,
+            lines_overloaded: patch.lines_overloaded,
+            lines_overloaded_rho: patch.lines_overloaded_rho,
+            flow_deltas: patch.flow_deltas,
+            reactive_flow_deltas: patch.reactive_flow_deltas,
+            asset_deltas: patch.asset_deltas,
+            lf_converged: patch.lf_converged,
+            lf_status: patch.lf_status,
+          });
+          setActionDiagramLoading(false);
+          return;
+        } else {
+          console.log('[svgPatch] action patch REJECTED — falling back to full NAD', actionId, 'reason:', patch.reason);
+        }
+      } catch (e) {
+        console.warn('[svgPatch] action patch threw — falling back', actionId, e);
+      }
+    } else {
+      console.log('[svgPatch] action patch SKIPPED — no base SVG/meta in DOM yet. baseSvgEl:', !!baseSvgEl, 'baseMeta:', !!baseMeta, 'restoring:', restoringSessionRef.current);
+    }
+
     try {
       const res = await api.getActionVariantDiagram(actionId);
+      // Stale-response guard: see the patch-path comment above.
+      if (latestActionSelectRef.current !== actionId) {
+        console.log('[svgPatch] full-NAD response dropped (stale)', actionId);
+        return;
+      }
       const { svg, viewBox } = processSvg(res.svg, voltageLevelsLength);
       setActionDiagram({ ...res, svg, originalViewBox: viewBox });
     } catch {
       if (selectedBranch) {
+        // Fallback path: action isn't in the recommender's prioritised list yet
+        // so the backend has no post-action observation cached. Previously this
+        // was a two-shot HTTP call (simulateManualAction then getActionVariantDiagram),
+        // which serialised the grid2op simulation and the pypowsybl NAD
+        // generation across two round-trips. We now use the combined streamed
+        // endpoint: the action card's rho numbers update as soon as the
+        // simulation completes (≈5 s earlier than the diagram on large grids).
         try {
           let actionContent: Record<string, unknown> | null = null;
           if (actionId.includes('+')) {
@@ -371,34 +540,80 @@ export function useDiagrams(
             actionContent = (detail?.action_topology as unknown as Record<string, unknown>) ?? null;
           }
           const linesOvl = result?.lines_overloaded?.length ? result.lines_overloaded : null;
-          const simRes = await api.simulateManualAction(actionId, selectedBranch, actionContent, linesOvl);
-          setResult(prev => {
-            if (!prev) return prev;
-            const existing = prev.actions[actionId] || {} as Partial<ActionDetail>;
-            const hasRho = (existing.rho_before?.length ?? 0) > 0;
-            return {
-              ...prev,
-              actions: {
-                ...prev.actions,
-                [actionId]: {
-                  ...existing,
-                  description_unitaire: existing.description_unitaire || simRes.description_unitaire,
-                  rho_before: hasRho ? existing.rho_before : simRes.rho_before,
-                  rho_after: hasRho ? existing.rho_after : simRes.rho_after,
-                  max_rho: hasRho ? existing.max_rho : simRes.max_rho,
-                  max_rho_line: hasRho ? existing.max_rho_line : simRes.max_rho_line,
-                  is_rho_reduction: hasRho ? existing.is_rho_reduction : simRes.is_rho_reduction,
-                  non_convergence: simRes.non_convergence,
-                  is_islanded: simRes.is_islanded,
-                  n_components: simRes.n_components,
-                  disconnected_mw: simRes.disconnected_mw,
-                } as ActionDetail,
-              },
-            };
+
+          const response = await api.simulateAndVariantDiagramStream({
+            action_id: actionId,
+            disconnected_element: selectedBranch,
+            action_content: actionContent,
+            lines_overloaded: linesOvl,
           });
-          const res = await api.getActionVariantDiagram(actionId);
-          const { svg, viewBox } = processSvg(res.svg, voltageLevelsLength);
-          setActionDiagram({ ...res, svg, originalViewBox: viewBox });
+          const reader = response.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let streamErr: string | null = null;
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop()!;
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              let event: Record<string, unknown>;
+              try {
+                event = JSON.parse(line);
+              } catch {
+                continue; // incomplete row
+              }
+              if (event.type === 'metrics') {
+                const simRes = event as unknown as {
+                  description_unitaire: string;
+                  rho_before: number[] | null;
+                  rho_after: number[] | null;
+                  max_rho: number | null;
+                  max_rho_line: string;
+                  is_rho_reduction: boolean;
+                  non_convergence: string | null;
+                  is_islanded?: boolean;
+                  n_components?: number;
+                  disconnected_mw?: number;
+                };
+                setResult(prev => {
+                  if (!prev) return prev;
+                  const existing = prev.actions[actionId] || {} as Partial<ActionDetail>;
+                  const hasRho = (existing.rho_before?.length ?? 0) > 0;
+                  return {
+                    ...prev,
+                    actions: {
+                      ...prev.actions,
+                      [actionId]: {
+                        ...existing,
+                        description_unitaire: existing.description_unitaire || simRes.description_unitaire,
+                        rho_before: hasRho ? existing.rho_before : simRes.rho_before,
+                        rho_after: hasRho ? existing.rho_after : simRes.rho_after,
+                        max_rho: hasRho ? existing.max_rho : simRes.max_rho,
+                        max_rho_line: hasRho ? existing.max_rho_line : simRes.max_rho_line,
+                        is_rho_reduction: hasRho ? existing.is_rho_reduction : simRes.is_rho_reduction,
+                        non_convergence: simRes.non_convergence,
+                        is_islanded: simRes.is_islanded,
+                        n_components: simRes.n_components,
+                        disconnected_mw: simRes.disconnected_mw,
+                      } as ActionDetail,
+                    },
+                  };
+                });
+              } else if (event.type === 'diagram') {
+                const diag = event as unknown as DiagramData & { svg: string };
+                const { svg, viewBox } = processSvg(diag.svg, voltageLevelsLength);
+                setActionDiagram({ ...diag, svg, originalViewBox: viewBox });
+              } else if (event.type === 'error') {
+                streamErr = (event.message as string) || 'stream error';
+              }
+            }
+          }
+          if (streamErr) {
+            throw new Error(streamErr);
+          }
         } catch (simErr) {
           console.error('Failed to simulate and fetch diagram for', actionId, simErr);
           setError('Failed to load action diagram for ' + actionId);
@@ -409,7 +624,7 @@ export function useDiagrams(
     } finally {
       setActionDiagramLoading(false);
     }
-  }, [selectedActionId, actionPZ.viewBox, n1PZ.viewBox, nPZ.viewBox]);
+  }, [selectedActionId, actionPZ.viewBox, n1PZ.viewBox, nPZ.viewBox, nDiagram, n1Diagram, nMetaIndex, n1MetaIndex]);
 
   // Helper used by per-tab inspect overlays: records which tab
   // should be zoomed on the auto-zoom effect's next tick, then
@@ -849,6 +1064,7 @@ export function useDiagrams(
     committedBranchRef, restoringSessionRef,
     lastZoomState, actionSyncSourceRef,
     fetchBaseDiagram,
+    ingestBaseDiagram,
     handleActionSelect,
     handleManualZoomIn,
     handleManualZoomOut,
@@ -860,6 +1076,8 @@ export function useDiagrams(
     zoomToElement,
     inspectableItems,
     selectedBranchForSld,
+    primeActionDiagram,
+    refreshSldIfAction,
   }), [
     activeTab, nDiagram, n1Diagram, n1Loading,
     selectedActionId, actionDiagram, actionDiagramLoading, actionViewMode, handleViewModeChange,
@@ -867,11 +1085,13 @@ export function useDiagrams(
     nPZ, n1PZ, actionPZ,
     nMetaIndex, n1MetaIndex, actionMetaIndex,
     nominalVoltageMap, uniqueVoltages, voltageRange,
-    vlOverlay, fetchBaseDiagram, handleActionSelect,
+    vlOverlay, fetchBaseDiagram, ingestBaseDiagram, handleActionSelect,
     handleManualZoomIn, handleManualZoomOut, handleManualReset,
     handleVlDoubleClick, handleOverlaySldTabChange, handleOverlayClose,
     handleAssetClick, zoomToElement, inspectableItems,
     selectedBranchForSld, setVlOverlay,
     setInspectQueryForTab,
+    primeActionDiagram,
+    refreshSldIfAction,
   ]);
 }

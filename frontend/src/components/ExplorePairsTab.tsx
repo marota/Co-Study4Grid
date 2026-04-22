@@ -6,7 +6,9 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import React, { useState } from 'react';
-import type { CombinedAction, AnalysisResult } from '../types';
+import type { CombinedAction, AnalysisResult, ActionTypeFilterToken } from '../types';
+import ActionTypeFilterChips from './ActionTypeFilterChips';
+import { matchesActionTypeFilter } from '../utils/actionTypes';
 
 interface SimulationFeedback {
     max_rho: number | null;
@@ -63,7 +65,7 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
     onSimulateSingle,
     displayName = (id: string) => id,
 }) => {
-    const [exploreFilter, setExploreFilter] = useState<string>('all');
+    const [actionTypeFilter, setActionTypeFilter] = useState<ActionTypeFilterToken>('all');
 
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -91,45 +93,22 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                 </div>
             </div>
 
-            {/* Filter Buttons */}
-            <div style={{ marginBottom: '12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {['all', 'disco', 'reco', 'ls', 'rc', 'open', 'close', 'pst'].map(f => (
-                    <button
-                        key={f}
-                        onClick={() => setExploreFilter(f)}
-                        style={{
-                            padding: '4px 12px',
-                            borderRadius: '15px',
-                            border: '1px solid',
-                            borderColor: exploreFilter === f ? '#007bff' : '#ddd',
-                            background: exploreFilter === f ? '#007bff' : 'white',
-                            color: exploreFilter === f ? 'white' : '#666',
-                            fontSize: '11px',
-                            cursor: 'pointer',
-                            fontWeight: exploreFilter === f ? 'bold' : 'normal',
-                            transition: 'all 0.2s'
-                        }}
-                    >
-                        {f.toUpperCase()}
-                    </button>
-                ))}
+            {/* Filter Buttons — reuses the shared chip row so
+                styling stays in sync with the action-overview filter. */}
+            <div style={{ marginBottom: '12px' }}>
+                <ActionTypeFilterChips
+                    testIdPrefix="explore-pairs-filter"
+                    value={actionTypeFilter}
+                    onChange={setActionTypeFilter}
+                />
             </div>
 
             {/* Grouped Table */}
             <div style={{ flex: 1, maxHeight: '350px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '4px', marginBottom: '15px' }}>
                 {(() => {
-                    const filteredList = scoredActionsList.filter(item => {
-                        if (exploreFilter === 'all') return true;
-                        const t = item.type.toLowerCase();
-                        if (exploreFilter === 'disco') return t.includes('disco') || t.includes('line_disconnection') || t.includes('open_line');
-                        if (exploreFilter === 'reco') return t.includes('reco') || t.includes('line_reconnection') || t.includes('close_line');
-                        if (exploreFilter === 'open') return t.includes('open_coupling');
-                        if (exploreFilter === 'close') return t.includes('close_coupling');
-                        if (exploreFilter === 'pst') return t.includes('pst');
-                        if (exploreFilter === 'ls') return t.includes('load_shedding') || t.includes('ls');
-                        if (exploreFilter === 'rc') return t.includes('renewable_curtailment') || t.includes('rc') || t.includes('open_gen');
-                        return t.includes(exploreFilter);
-                    });
+                    const filteredList = scoredActionsList.filter(item =>
+                        matchesActionTypeFilter(actionTypeFilter, item.actionId, null, item.type),
+                    );
 
                     const types = Array.from(new Set(filteredList.map(item => item.type)));
 

@@ -6,7 +6,8 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import React, { type RefObject } from 'react';
-import type { ActionDetail, AvailableAction } from '../types';
+import type { ActionDetail, ActionTypeFilterToken, AvailableAction } from '../types';
+import ActionTypeFilterChips from './ActionTypeFilterChips';
 
 export interface ScoredActionItem {
     type: string;
@@ -15,23 +16,13 @@ export interface ScoredActionItem {
     mwStart: number | null;
 }
 
-export type TypeFilters = {
-    disco: boolean;
-    reco: boolean;
-    open: boolean;
-    close: boolean;
-    pst: boolean;
-    ls: boolean;
-    rc: boolean;
-};
-
 interface ActionSearchDropdownProps {
     dropdownRef: RefObject<HTMLDivElement | null>;
     searchInputRef: RefObject<HTMLInputElement | null>;
     searchQuery: string;
     onSearchQueryChange: (query: string) => void;
-    typeFilters: TypeFilters;
-    onTypeFilterChange: (key: keyof TypeFilters) => void;
+    actionTypeFilter: ActionTypeFilterToken;
+    onActionTypeFilterChange: (token: ActionTypeFilterToken) => void;
     error: string | null;
     loadingActions: boolean;
     scoredActionsList: ScoredActionItem[];
@@ -56,8 +47,8 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
     searchInputRef,
     searchQuery,
     onSearchQueryChange,
-    typeFilters,
-    onTypeFilterChange,
+    actionTypeFilter,
+    onActionTypeFilterChange,
     error,
     loadingActions,
     scoredActionsList,
@@ -110,19 +101,12 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                     }}
                 />
             </div>
-            {/* Action type filter checkboxes */}
-            <div style={{ padding: '4px 8px', display: 'flex', flexWrap: 'wrap', gap: '6px', borderTop: '1px solid #eee', fontSize: '11px' }}>
-                {([['disco', 'Disconnections'], ['reco', 'Reconnections'], ['ls', 'Load Shedding'], ['rc', 'Renewable Curtailment'], ['pst', 'PST'], ['open', 'Open coupling'], ['close', 'Close coupling']] as const).map(([key, label]) => (
-                    <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', color: '#555' }}>
-                        <input
-                            type="checkbox"
-                            checked={typeFilters[key]}
-                            onChange={() => onTypeFilterChange(key)}
-                            style={{ margin: 0, cursor: 'pointer' }}
-                        />
-                        {label}
-                    </label>
-                ))}
+            <div style={{ padding: '4px 8px', borderTop: '1px solid #eee' }}>
+                <ActionTypeFilterChips
+                    testIdPrefix="search-dropdown-filter"
+                    value={actionTypeFilter}
+                    onChange={onActionTypeFilterChange}
+                />
             </div>
             {error && (
                 <div style={{
@@ -159,6 +143,37 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                                 onShowTooltip={onShowTooltip}
                                 onHideTooltip={onHideTooltip}
                             />
+                        )}
+
+                        {/* No-relevant-action warning: analysis ran
+                            (actionScores present) but the selected type
+                            filter yields zero scored actions, so we fall
+                            back to the full network action list below.
+                            The banner tells the operator that nothing from
+                            the analysis recommends actions of this type. */}
+                        {!searchQuery
+                            && scoredActionsList.length === 0
+                            && actionTypeFilter !== 'all'
+                            && !!actionScores
+                            && Object.values(actionScores).some(d =>
+                                d && typeof d === 'object'
+                                && Object.keys((d as { scores?: Record<string, number> }).scores ?? {}).length > 0
+                            ) && (
+                            <div
+                                data-testid="no-relevant-action-warning"
+                                style={{
+                                    margin: '6px 8px',
+                                    padding: '6px 8px',
+                                    background: '#fff3cd',
+                                    border: '1px solid #ffeeba',
+                                    borderRadius: 4,
+                                    color: '#856404',
+                                    fontSize: 12,
+                                    lineHeight: 1.35,
+                                }}
+                            >
+                                ⚠️ Warning: no relevant action detected with regards to overflow analysis
+                            </div>
                         )}
 
                         {/* Search Results */}

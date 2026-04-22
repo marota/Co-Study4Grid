@@ -19,6 +19,9 @@ import {
     applyActionTargetHighlights,
     applyContingencyHighlight,
     buildActionOverviewPins,
+    buildUnsimulatedActionPins,
+    actionPassesOverviewFilter,
+    buildCombinedActionPins,
     applyActionOverviewPins,
     applyActionOverviewHighlights,
     rescaleActionOverviewPins,
@@ -334,6 +337,82 @@ describe('getActionTargetLines', () => {
         expect(result).toContain('LINE_A');
         expect(result).toContain('LINE_B');
         expect(result).toHaveLength(2);
+    });
+
+    it('extracts the line target of a combined disco+coupling action', () => {
+        // Regression: the combined ID contains "coupling" via the
+        // second sub-action, which used to trip the global
+        // `isCouplingAction` check and suppress ALL line-target
+        // extraction — the disco line lost its pink halo AND its
+        // action-card badge. After the fix, the coupling flag is
+        // evaluated per `+`-split part so the disco sub-action's
+        // line target is still returned.
+        const detail: ActionDetail = {
+            description_unitaire: "Ouverture de la ligne 'BEON L31P.SAO' + Ouverture COUCHP6_COUCH6COUPL DJ_OC dans le poste COUCHP6",
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+            // Combined topology: merged bus changes from disco + coupling.
+            action_topology: {
+                lines_ex_bus: { 'BEON L31P.SAO': -1 },
+                lines_or_bus: { 'BEON L31P.SAO': -1 },
+                gens_bus: {},
+                loads_bus: {},
+            },
+        };
+        const result = getActionTargetLines(
+            detail,
+            'disco_BEON L31P.SAO+f344b395-9908-43c2-bca0-75c5f298465e_COUCHP6_coupling',
+            makeEdgeMap('BEON L31P.SAO'),
+        );
+        expect(result).toContain('BEON L31P.SAO');
+    });
+
+    it('returns no line targets for combined coupling+coupling actions', () => {
+        // Both sub-actions are VL-level — all targets flow through
+        // getActionTargetVoltageLevels instead. This stays empty.
+        const detail: ActionDetail = {
+            description_unitaire: 'Ouverture COUCHP6 + Ouverture C.REGP6',
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+        };
+        const result = getActionTargetLines(
+            detail,
+            '466f2c03-90ce-401e-a458-fa177ad45abc_C.REGP6_coupling+f344b395-9908-43c2-bca0-75c5f298465e_COUCHP6_coupling',
+            makeEdgeMap('LINE_A'),
+        );
+        expect(result).toEqual([]);
+    });
+
+    it('extracts PST targets in a combined PST+coupling action', () => {
+        // pst_tap is always explicit in the topology, regardless of
+        // whether the combined action also contains a coupling.
+        const detail: ActionDetail = {
+            description_unitaire: 'PST tap + coupling',
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+            action_topology: {
+                lines_ex_bus: {},
+                lines_or_bus: {},
+                gens_bus: {},
+                loads_bus: {},
+                pst_tap: { PST_LINE_1: 5 },
+            },
+        };
+        const result = getActionTargetLines(
+            detail,
+            'pst_PST_LINE_1+uuid_VL_X_coupling',
+            makeEdgeMap('PST_LINE_1'),
+        );
+        expect(result).toContain('PST_LINE_1');
     });
 
     it('extracts lines from pst_tap in topology', () => {
@@ -1168,6 +1247,96 @@ describe('Highlight Layering', () => {
             expect(deltaIdx).toBeGreaterThan(Math.max(overloadIdx, contingencyIdx, actionTargetIdx));
         });
     });
+
+    // REGRESSION (Remedial Action tab post–action-variant-diagram-patch):
+    // The three NAD halo primitives append clones to
+    // `#nad-background-layer` in call-order; the last-appended clone
+    // draws on top (SVG paints in document order). The product
+    // spec is "action halo > overload halo > contingency halo"
+    // (bottom-to-top), so the call order must be contingency →
+    // overload → action. Before the fix, useDiagramHighlights invoked
+    // them as overload → action → contingency on the Remedial Action
+    // tab, which put the yellow contingency halo on top of the pink
+    // action halo — reversed.
+    describe('Halo layering order (contingency below overload below action)', () => {
+        const buildNAD = () => {
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <svg>
+                    <g id="svg-cont" data-role="contingency"></g>
+                    <g id="svg-ovl" data-role="overload"></g>
+                    <g id="svg-act" data-role="action"></g>
+                </svg>
+            `;
+            return container;
+        };
+
+        const metaIndex = {
+            edgesByEquipmentId: new Map([
+                ['CONT_LINE', { equipmentId: 'CONT_LINE', svgId: 'svg-cont' } as EdgeMeta],
+                ['OVL_LINE', { equipmentId: 'OVL_LINE', svgId: 'svg-ovl' } as EdgeMeta],
+                ['ACT_LINE', { equipmentId: 'ACT_LINE', svgId: 'svg-act' } as EdgeMeta],
+            ]),
+            nodesByEquipmentId: new Map(),
+            nodesBySvgId: new Map(),
+            edgesByNode: new Map(),
+        } as MetadataIndex;
+
+        it('Remedial Action tab call-order (contingency → overload → action) stacks halos bottom → top', () => {
+            const container = buildNAD();
+            const actionDetail = {
+                description_unitaire: "Ouvrir 'ACT_LINE'",
+                action_topology: { lines_ex_bus: { ACT_LINE: -1 } },
+            } as unknown as ActionDetail;
+
+            // Exact order of useDiagramHighlights.applyHighlightsForTab('action'):
+            applyContingencyHighlight(container, metaIndex, 'CONT_LINE');
+            applyOverloadedHighlights(container, metaIndex, ['OVL_LINE']);
+            applyActionTargetHighlights(container, metaIndex, actionDetail, 'act-1');
+
+            const bgLayer = container.querySelector('#nad-background-layer');
+            expect(bgLayer).not.toBeNull();
+            const children = Array.from(bgLayer!.children) as Element[];
+            // First appended is drawn at the bottom; last appended is on top.
+            const classes = children.map(c => {
+                if (c.classList.contains('nad-contingency-highlight')) return 'contingency';
+                if (c.classList.contains('nad-overloaded')) return 'overload';
+                if (c.classList.contains('nad-action-target')) return 'action';
+                return 'other';
+            });
+            const contingencyIdx = classes.indexOf('contingency');
+            const overloadIdx = classes.indexOf('overload');
+            const actionIdx = classes.indexOf('action');
+            expect(contingencyIdx).toBeGreaterThanOrEqual(0);
+            expect(overloadIdx).toBeGreaterThanOrEqual(0);
+            expect(actionIdx).toBeGreaterThanOrEqual(0);
+            // Bottom → top: contingency, then overload, then action.
+            expect(contingencyIdx).toBeLessThan(overloadIdx);
+            expect(overloadIdx).toBeLessThan(actionIdx);
+        });
+
+        it('N-1 tab call-order (contingency → overload) stacks contingency below overload', () => {
+            const container = buildNAD();
+
+            // Exact order of useDiagramHighlights.applyHighlightsForTab('n-1'):
+            applyContingencyHighlight(container, metaIndex, 'CONT_LINE');
+            applyOverloadedHighlights(container, metaIndex, ['OVL_LINE']);
+
+            const bgLayer = container.querySelector('#nad-background-layer');
+            expect(bgLayer).not.toBeNull();
+            const children = Array.from(bgLayer!.children) as Element[];
+            const contingencyIdx = children.findIndex(c =>
+                c.classList.contains('nad-contingency-highlight'),
+            );
+            const overloadIdx = children.findIndex(c =>
+                c.classList.contains('nad-overloaded'),
+            );
+            expect(contingencyIdx).toBeGreaterThanOrEqual(0);
+            expect(overloadIdx).toBeGreaterThanOrEqual(0);
+            // Bottom → top: contingency, then overload.
+            expect(contingencyIdx).toBeLessThan(overloadIdx);
+        });
+    });
 });
 
 // ============================================================
@@ -1323,6 +1492,180 @@ describe('buildActionOverviewPins', () => {
         };
         const pins = buildActionOverviewPins(actions, metaIndex, 0.95, ['a']);
         expect(pins.map(p => p.id)).toEqual(['a']);
+    });
+
+    it('hides pins whose severity is disabled via the overview filter', () => {
+        const actions: Record<string, ActionDetail> = {
+            'green_a': makeAction({
+                action_topology: { lines_ex_bus: { LINE_A: -1 }, lines_or_bus: { LINE_A: -1 }, gens_bus: {}, loads_bus: {} },
+                max_rho: 0.5,
+            }),
+            'red_b': makeAction({
+                action_topology: { lines_ex_bus: { LINE_B: -1 }, lines_or_bus: { LINE_B: -1 }, gens_bus: {}, loads_bus: {} },
+                max_rho: 1.3,
+            }),
+        };
+        const pins = buildActionOverviewPins(actions, metaIndex, 0.95, undefined, {
+            categories: { green: true, orange: true, red: false, grey: true },
+            threshold: 2.0,
+        });
+        expect(pins.map(p => p.id)).toEqual(['green_a']);
+    });
+
+    it('hides pins whose max_rho exceeds the threshold', () => {
+        const actions: Record<string, ActionDetail> = {
+            'green_a': makeAction({
+                action_topology: { lines_ex_bus: { LINE_A: -1 }, lines_or_bus: { LINE_A: -1 }, gens_bus: {}, loads_bus: {} },
+                max_rho: 0.5,
+            }),
+            'red_b': makeAction({
+                action_topology: { lines_ex_bus: { LINE_B: -1 }, lines_or_bus: { LINE_B: -1 }, gens_bus: {}, loads_bus: {} },
+                max_rho: 1.6,
+            }),
+        };
+        const pins = buildActionOverviewPins(actions, metaIndex, 0.95, undefined, {
+            categories: { green: true, orange: true, red: true, grey: true },
+            threshold: 1.5,
+        });
+        expect(pins.map(p => p.id)).toEqual(['green_a']);
+    });
+});
+
+describe('actionPassesOverviewFilter', () => {
+    const cats = (overrides: Partial<{ green: boolean; orange: boolean; red: boolean; grey: boolean }> = {}) => ({
+        green: true, orange: true, red: true, grey: true, ...overrides,
+    });
+
+    it('returns true for a green action when every category is enabled', () => {
+        const detail = makeAction({ max_rho: 0.5 });
+        expect(actionPassesOverviewFilter(detail, 0.95, cats(), 1.5)).toBe(true);
+    });
+
+    it('returns false when the matching category is disabled', () => {
+        const detail = makeAction({ max_rho: 1.2 });
+        expect(actionPassesOverviewFilter(detail, 0.95, cats({ red: false }), 2.0)).toBe(false);
+    });
+
+    it('returns false when max_rho exceeds the threshold', () => {
+        const detail = makeAction({ max_rho: 1.8 });
+        expect(actionPassesOverviewFilter(detail, 0.95, cats(), 1.5)).toBe(false);
+    });
+
+    it('ignores the threshold for divergent/islanded actions (max_rho null)', () => {
+        const detail = makeAction({ max_rho: null, non_convergence: 'diverged' });
+        expect(actionPassesOverviewFilter(detail, 0.95, cats(), 1.0)).toBe(true);
+    });
+
+    it('hides divergent/islanded actions when the grey category is disabled', () => {
+        const detail = makeAction({ max_rho: null, is_islanded: true });
+        expect(actionPassesOverviewFilter(detail, 0.95, cats({ grey: false }), 2.0)).toBe(false);
+    });
+});
+
+describe('buildUnsimulatedActionPins', () => {
+    const metaIndex = makeOverviewMetaIndex();
+
+    it('creates dimmed pins for line ids resolved via edgesByEquipmentId', () => {
+        const pins = buildUnsimulatedActionPins(['LINE_A'], new Set(), metaIndex);
+        expect(pins).toHaveLength(1);
+        expect(pins[0].id).toBe('LINE_A');
+        expect(pins[0].unsimulated).toBe(true);
+        expect(pins[0].severity).toBe('grey');
+        // LINE_A midpoint = (50, 0)
+        expect(pins[0].x).toBe(50);
+        expect(pins[0].y).toBe(0);
+    });
+
+    it('creates dimmed pins for VL ids resolved via nodesByEquipmentId', () => {
+        const pins = buildUnsimulatedActionPins(['VL_FAR'], new Set(), metaIndex);
+        expect(pins).toHaveLength(1);
+        expect(pins[0].id).toBe('VL_FAR');
+        expect(pins[0].x).toBe(500);
+        expect(pins[0].y).toBe(500);
+    });
+
+    it('skips ids that cannot be resolved', () => {
+        const pins = buildUnsimulatedActionPins(['GHOST_LINE'], new Set(), metaIndex);
+        expect(pins).toHaveLength(0);
+    });
+
+    it('skips ids that are already simulated', () => {
+        const pins = buildUnsimulatedActionPins(['LINE_A', 'LINE_B'], new Set(['LINE_A']), metaIndex);
+        expect(pins.map(p => p.id)).toEqual(['LINE_B']);
+    });
+
+    it('dedupes repeated ids in the input list', () => {
+        const pins = buildUnsimulatedActionPins(['LINE_A', 'LINE_A'], new Set(), metaIndex);
+        expect(pins).toHaveLength(1);
+    });
+
+    it('uses a generic tooltip when no score info is provided', () => {
+        const pins = buildUnsimulatedActionPins(['LINE_A'], new Set(), metaIndex);
+        expect(pins[0].title).toBe('LINE_A — not yet simulated (double-click to run)');
+    });
+
+    it('enriches the tooltip with type, score, rank, max-in-category when score info is provided', () => {
+        const info = {
+            LINE_A: {
+                type: 'line_disconnection',
+                score: 0.82,
+                mwStart: null,
+                tapStart: null,
+                rankInType: 3,
+                countInType: 12,
+                maxScoreInType: 0.95,
+            },
+        };
+        const pins = buildUnsimulatedActionPins(['LINE_A'], new Set(), metaIndex, info);
+        expect(pins[0].title).toContain('Type: line_disconnection');
+        expect(pins[0].title).toContain('Score: 0.82');
+        expect(pins[0].title).toContain('rank 3 of 12');
+        expect(pins[0].title).toContain('max 0.95');
+    });
+
+    it('adds MW start to the tooltip when provided (load-shedding / curtailment)', () => {
+        const info = {
+            LINE_A: {
+                type: 'load_shedding',
+                score: 1.0,
+                mwStart: 24.5,
+                tapStart: null,
+                rankInType: 1,
+                countInType: 4,
+                maxScoreInType: 1.0,
+            },
+        };
+        const pins = buildUnsimulatedActionPins(['LINE_A'], new Set(), metaIndex, info);
+        expect(pins[0].title).toContain('MW start: 24.5 MW');
+        expect(pins[0].title).not.toContain('Tap start');
+    });
+
+    it('adds Tap start (with range) to the tooltip for PST actions', () => {
+        const info = {
+            LINE_A: {
+                type: 'pst_tap_change',
+                score: 0.7,
+                mwStart: null,
+                tapStart: { pst_name: 'PST_X', tap: 0, low_tap: -8, high_tap: 8 },
+                rankInType: 2,
+                countInType: 5,
+                maxScoreInType: 0.9,
+            },
+        };
+        const pins = buildUnsimulatedActionPins(['LINE_A'], new Set(), metaIndex, info);
+        expect(pins[0].title).toContain('Tap start: 0');
+        expect(pins[0].title).toContain('range -8 … 8');
+    });
+
+    it('falls back to the generic tooltip when the id is missing from scoreInfo', () => {
+        const info = {
+            OTHER_ID: {
+                type: 'line_disconnection', score: 0.5, mwStart: null, tapStart: null,
+                rankInType: 1, countInType: 1, maxScoreInType: 0.5,
+            },
+        };
+        const pins = buildUnsimulatedActionPins(['LINE_A'], new Set(), metaIndex, info);
+        expect(pins[0].title).toBe('LINE_A — not yet simulated (double-click to run)');
     });
 });
 
@@ -2030,5 +2373,428 @@ describe('rescaleActionOverviewPins — baseRadius caching', () => {
 
         // The cached path should skip the circle[r] lookup entirely.
         expect(circleQueryCount).toBe(0);
+    });
+});
+
+// ============================================================
+// Pin selection/rejection symbols, combined-action pins, and
+// load-shedding/curtailment VL anchoring
+// ============================================================
+
+describe('buildActionOverviewPins — combined pair exclusion', () => {
+    const metaIndex = makeOverviewMetaIndex();
+
+    it('skips action IDs containing "+" (combined pairs)', () => {
+        const actions: Record<string, ActionDetail> = {
+            'disco_LINE_A': makeAction({ max_rho: 0.5, action_topology: { lines_ex_bus: { LINE_A: -1 }, lines_or_bus: {}, gens_bus: {}, loads_bus: {} } }),
+            'reco_LINE_B': makeAction({ max_rho: 0.6, action_topology: { lines_ex_bus: { LINE_B: 1 }, lines_or_bus: {}, gens_bus: {}, loads_bus: {} } }),
+            'disco_LINE_A+reco_LINE_B': makeAction({ max_rho: 0.4 }),
+        };
+        const pins = buildActionOverviewPins(actions, metaIndex, 0.95);
+        const ids = pins.map(p => p.id);
+        expect(ids).toContain('disco_LINE_A');
+        expect(ids).toContain('reco_LINE_B');
+        expect(ids).not.toContain('disco_LINE_A+reco_LINE_B');
+        expect(pins).toHaveLength(2);
+    });
+});
+
+describe('buildActionOverviewPins — load shedding / curtailment VL anchoring', () => {
+    const metaIndex = makeOverviewMetaIndex();
+
+    it('anchors load shedding actions on the voltage level node', () => {
+        const actions: Record<string, ActionDetail> = {
+            'load_shedding_X': makeAction({
+                max_rho: 0.8,
+                load_shedding_details: [{ load_name: 'LOAD_1', voltage_level_id: 'VL_FAR', shedded_mw: 50 }],
+            }),
+        };
+        const pins = buildActionOverviewPins(actions, metaIndex, 0.95);
+        expect(pins).toHaveLength(1);
+        expect(pins[0].x).toBe(500);
+        expect(pins[0].y).toBe(500);
+    });
+
+    it('anchors curtailment actions on the voltage level node', () => {
+        const actions: Record<string, ActionDetail> = {
+            'curtail_GEN': makeAction({
+                max_rho: 0.85,
+                curtailment_details: [{ gen_name: 'GEN_1', voltage_level_id: 'VL_N3', curtailed_mw: 30 }],
+            }),
+        };
+        const pins = buildActionOverviewPins(actions, metaIndex, 0.95);
+        expect(pins).toHaveLength(1);
+        expect(pins[0].x).toBe(0);
+        expect(pins[0].y).toBe(100);
+    });
+
+    it('falls back to generic resolution when voltage_level_id is null', () => {
+        const actions: Record<string, ActionDetail> = {
+            'load_shedding_X': makeAction({
+                max_rho: 0.7,
+                max_rho_line: 'LINE_A',
+                load_shedding_details: [{ load_name: 'LOAD_1', voltage_level_id: null, shedded_mw: 50 }],
+            }),
+        };
+        const pins = buildActionOverviewPins(actions, metaIndex, 0.95);
+        expect(pins).toHaveLength(1);
+        // Falls back to max_rho_line (LINE_A midpoint)
+        expect(pins[0].x).toBe(50);
+        expect(pins[0].y).toBe(0);
+    });
+});
+
+describe('buildActionOverviewPins — overlapping pin fan-out', () => {
+    const metaIndex = makeOverviewMetaIndex();
+
+    it('fans out pins sharing the same anchor position', () => {
+        const actions: Record<string, ActionDetail> = {
+            'action_1': makeAction({ max_rho: 0.5, max_rho_line: 'LINE_A' }),
+            'action_2': makeAction({ max_rho: 0.6, max_rho_line: 'LINE_A' }),
+        };
+        const pins = buildActionOverviewPins(actions, metaIndex, 0.95);
+        expect(pins).toHaveLength(2);
+        // Both would have anchored on LINE_A midpoint (50, 0) but should be offset
+        const dx = pins[0].x - pins[1].x;
+        const dy = pins[0].y - pins[1].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        expect(dist).toBeGreaterThan(0);
+    });
+
+    it('does not offset pins at different positions', () => {
+        const actions: Record<string, ActionDetail> = {
+            'disco_LINE_A': makeAction({ max_rho: 0.5, action_topology: { lines_ex_bus: { LINE_A: -1 }, lines_or_bus: {}, gens_bus: {}, loads_bus: {} } }),
+            'disco_LINE_B': makeAction({ max_rho: 0.6, action_topology: { lines_ex_bus: { LINE_B: -1 }, lines_or_bus: {}, gens_bus: {}, loads_bus: {} } }),
+        };
+        const pins = buildActionOverviewPins(actions, metaIndex, 0.95);
+        expect(pins).toHaveLength(2);
+        // LINE_A midpoint = (50,0), LINE_B midpoint = (100,50) — different, no fan-out
+        const pinA = pins.find(p => p.id === 'disco_LINE_A')!;
+        const pinB = pins.find(p => p.id === 'disco_LINE_B')!;
+        expect(pinA.x).toBe(50);
+        expect(pinA.y).toBe(0);
+        expect(pinB.x).toBe(100);
+        expect(pinB.y).toBe(50);
+    });
+});
+
+describe('buildCombinedActionPins', () => {
+    const metaIndex = makeOverviewMetaIndex();
+    const makeUnitaryPins = () => buildActionOverviewPins({
+        'disco_LINE_A': makeAction({ max_rho: 0.5, action_topology: { lines_ex_bus: { LINE_A: -1 }, lines_or_bus: {}, gens_bus: {}, loads_bus: {} } }),
+        'reco_LINE_B': makeAction({ max_rho: 0.6, action_topology: { lines_ex_bus: { LINE_B: 1 }, lines_or_bus: {}, gens_bus: {}, loads_bus: {} } }),
+    }, metaIndex, 0.95);
+
+    it('returns empty array when actions is null', () => {
+        expect(buildCombinedActionPins(null, [], 0.95)).toEqual([]);
+    });
+
+    it('returns empty array when no action keys contain "+"', () => {
+        const actions: Record<string, ActionDetail> = {
+            'disco_LINE_A': makeAction({ max_rho: 0.5 }),
+        };
+        expect(buildCombinedActionPins(actions, makeUnitaryPins(), 0.95)).toEqual([]);
+    });
+
+    it('builds a combined pin when a "+" key exists and both constituents have pins', () => {
+        const unitaryPins = makeUnitaryPins();
+        const actions: Record<string, ActionDetail> = {
+            'disco_LINE_A': makeAction({ max_rho: 0.5 }),
+            'reco_LINE_B': makeAction({ max_rho: 0.6 }),
+            'disco_LINE_A+reco_LINE_B': makeAction({ max_rho: 0.45, max_rho_line: 'LINE_C', description_unitaire: 'Combined' }),
+        };
+        const combined = buildCombinedActionPins(actions, unitaryPins, 0.95);
+        expect(combined).toHaveLength(1);
+        expect(combined[0].pairId).toBe('disco_LINE_A+reco_LINE_B');
+        expect(combined[0].action1Id).toBe('disco_LINE_A');
+        expect(combined[0].action2Id).toBe('reco_LINE_B');
+    });
+
+    it('places the combined pin at the Bezier midpoint, not on either constituent', () => {
+        const unitaryPins = makeUnitaryPins();
+        const pin1 = unitaryPins.find(p => p.id === 'disco_LINE_A')!;
+        const pin2 = unitaryPins.find(p => p.id === 'reco_LINE_B')!;
+        const actions: Record<string, ActionDetail> = {
+            'disco_LINE_A': makeAction({ max_rho: 0.5 }),
+            'reco_LINE_B': makeAction({ max_rho: 0.6 }),
+            'disco_LINE_A+reco_LINE_B': makeAction({ max_rho: 0.45 }),
+        };
+        const combined = buildCombinedActionPins(actions, unitaryPins, 0.95);
+        const cp = combined[0];
+        // Must not be at either constituent position
+        const atPin1 = cp.x === pin1.x && cp.y === pin1.y;
+        const atPin2 = cp.x === pin2.x && cp.y === pin2.y;
+        expect(atPin1).toBe(false);
+        expect(atPin2).toBe(false);
+    });
+
+    it('assigns severity from the combined ActionDetail', () => {
+        const unitaryPins = makeUnitaryPins();
+        const actions: Record<string, ActionDetail> = {
+            'disco_LINE_A': makeAction({ max_rho: 0.5 }),
+            'reco_LINE_B': makeAction({ max_rho: 0.6 }),
+            'disco_LINE_A+reco_LINE_B': makeAction({ max_rho: 1.1 }),
+        };
+        const combined = buildCombinedActionPins(actions, unitaryPins, 0.95);
+        expect(combined[0].severity).toBe('red');
+    });
+
+    it('formats label as percentage from max_rho', () => {
+        const unitaryPins = makeUnitaryPins();
+        const actions: Record<string, ActionDetail> = {
+            'disco_LINE_A': makeAction({ max_rho: 0.5 }),
+            'reco_LINE_B': makeAction({ max_rho: 0.6 }),
+            'disco_LINE_A+reco_LINE_B': makeAction({ max_rho: 0.657 }),
+        };
+        const combined = buildCombinedActionPins(actions, unitaryPins, 0.95);
+        expect(combined[0].label).toBe('66%');
+    });
+
+    it('skips pairs where one constituent has no pin', () => {
+        const unitaryPins = makeUnitaryPins();
+        const actions: Record<string, ActionDetail> = {
+            'disco_LINE_A': makeAction({ max_rho: 0.5 }),
+            'reco_LINE_B': makeAction({ max_rho: 0.6 }),
+            'disco_LINE_A+unknown_action': makeAction({ max_rho: 0.4 }),
+        };
+        const combined = buildCombinedActionPins(actions, unitaryPins, 0.95);
+        expect(combined).toHaveLength(0);
+    });
+
+    it('stores constituent pin positions in p1 and p2', () => {
+        const unitaryPins = makeUnitaryPins();
+        const pin1 = unitaryPins.find(p => p.id === 'disco_LINE_A')!;
+        const pin2 = unitaryPins.find(p => p.id === 'reco_LINE_B')!;
+        const actions: Record<string, ActionDetail> = {
+            'disco_LINE_A': makeAction({ max_rho: 0.5 }),
+            'reco_LINE_B': makeAction({ max_rho: 0.6 }),
+            'disco_LINE_A+reco_LINE_B': makeAction({ max_rho: 0.4 }),
+        };
+        const combined = buildCombinedActionPins(actions, unitaryPins, 0.95);
+        expect(combined[0].p1).toEqual({ x: pin1.x, y: pin1.y });
+        expect(combined[0].p2).toEqual({ x: pin2.x, y: pin2.y });
+    });
+});
+
+describe('applyActionOverviewPins — selected/rejected status', () => {
+    const makeSvgContainer = () => {
+        const container = document.createElement('div');
+        container.innerHTML = '<svg viewBox="0 0 200 200"><g class="nad-vl-nodes"><circle r="30"/></g></svg>';
+        return container;
+    };
+    const pins = [
+        { id: 'sel', x: 10, y: 10, severity: 'green' as const, label: '50%', title: 'Selected' },
+        { id: 'rej', x: 50, y: 50, severity: 'red' as const, label: '110%', title: 'Rejected' },
+        { id: 'neu', x: 90, y: 90, severity: 'orange' as const, label: '92%', title: 'Neutral' },
+    ];
+
+    it('renders a gold star symbol above selected pins', () => {
+        const container = makeSvgContainer();
+        applyActionOverviewPins(container, pins, () => {}, undefined, {
+            selectedActionIds: new Set(['sel']),
+        });
+        const selPin = container.querySelector('g[data-action-id="sel"]');
+        expect(selPin).not.toBeNull();
+        // Star is a path inside the pin body (after teardrop path, circle, text)
+        const paths = selPin!.querySelectorAll('.nad-action-overview-pin-body path');
+        // First path = teardrop, second path = star
+        expect(paths.length).toBeGreaterThanOrEqual(2);
+        const starPath = paths[1];
+        expect(starPath.getAttribute('fill')).toBe('#eab308'); // gold
+    });
+
+    it('renders a red cross symbol above rejected pins', () => {
+        const container = makeSvgContainer();
+        applyActionOverviewPins(container, pins, () => {}, undefined, {
+            rejectedActionIds: new Set(['rej']),
+        });
+        const rejPin = container.querySelector('g[data-action-id="rej"]');
+        expect(rejPin).not.toBeNull();
+        const paths = rejPin!.querySelectorAll('.nad-action-overview-pin-body path');
+        expect(paths.length).toBeGreaterThanOrEqual(2);
+        const crossPath = paths[1];
+        expect(crossPath.getAttribute('fill')).toBe('#ef4444'); // red
+    });
+
+    it('dims rejected pins to 0.55 opacity', () => {
+        const container = makeSvgContainer();
+        applyActionOverviewPins(container, pins, () => {}, undefined, {
+            rejectedActionIds: new Set(['rej']),
+        });
+        const rejPin = container.querySelector('g[data-action-id="rej"]');
+        expect(rejPin!.getAttribute('opacity')).toBe('0.55');
+    });
+
+    it('uses highlighted fill for selected pins', () => {
+        const container = makeSvgContainer();
+        applyActionOverviewPins(container, pins, () => {}, undefined, {
+            selectedActionIds: new Set(['sel']),
+        });
+        const selPin = container.querySelector('g[data-action-id="sel"]');
+        const teardrop = selPin!.querySelector('.nad-action-overview-pin-body path');
+        // highlighted green = #1e9e3a (not standard #28a745)
+        expect(teardrop!.getAttribute('fill')).toBe('#1e9e3a');
+    });
+
+    it('uses dimmed fill for rejected pins', () => {
+        const container = makeSvgContainer();
+        applyActionOverviewPins(container, pins, () => {}, undefined, {
+            rejectedActionIds: new Set(['rej']),
+        });
+        const rejPin = container.querySelector('g[data-action-id="rej"]');
+        const teardrop = rejPin!.querySelector('.nad-action-overview-pin-body path');
+        // dimmed red = #d4a5ab (not standard #dc3545)
+        expect(teardrop!.getAttribute('fill')).toBe('#d4a5ab');
+    });
+
+    it('uses gold stroke on selected pin teardrop', () => {
+        const container = makeSvgContainer();
+        applyActionOverviewPins(container, pins, () => {}, undefined, {
+            selectedActionIds: new Set(['sel']),
+        });
+        const teardrop = container.querySelector('g[data-action-id="sel"] .nad-action-overview-pin-body path');
+        expect(teardrop!.getAttribute('stroke')).toBe('#eab308');
+    });
+
+    it('does not add symbols or modify fill for neutral pins', () => {
+        const container = makeSvgContainer();
+        applyActionOverviewPins(container, pins, () => {}, undefined, {
+            selectedActionIds: new Set(['sel']),
+            rejectedActionIds: new Set(['rej']),
+        });
+        const neuPin = container.querySelector('g[data-action-id="neu"]');
+        const paths = neuPin!.querySelectorAll('.nad-action-overview-pin-body path');
+        expect(paths.length).toBe(1); // only teardrop, no symbol
+        expect(paths[0].getAttribute('fill')).toBe('#f0ad4e'); // standard orange
+        expect(neuPin!.hasAttribute('opacity')).toBe(false);
+    });
+});
+
+describe('applyActionOverviewPins — combined action rendering', () => {
+    const makeSvgContainer = () => {
+        const container = document.createElement('div');
+        container.innerHTML =
+            '<svg viewBox="0 0 200 200">' +
+            '  <g class="nad-vl-nodes"><circle r="30"/></g>' +
+            '  <g class="nad-edge-paths"><path style="stroke-width: 5"/></g>' +
+            '</svg>';
+        return container;
+    };
+    const unitaryPins = [
+        { id: 'a1', x: 10, y: 10, severity: 'green' as const, label: '50%', title: '' },
+        { id: 'a2', x: 100, y: 100, severity: 'red' as const, label: '110%', title: '' },
+    ];
+
+    it('renders a curved dashed path between constituent pins', () => {
+        const container = makeSvgContainer();
+        const combinedPins = [{
+            pairId: 'a1+a2', action1Id: 'a1', action2Id: 'a2',
+            p1: { x: 10, y: 10 }, p2: { x: 100, y: 100 },
+            x: 55, y: 55, label: '45%', title: 'combined', severity: 'green' as const,
+        }];
+        applyActionOverviewPins(container, unitaryPins, () => {}, undefined, { combinedPins });
+        const curves = container.querySelectorAll('.nad-combined-action-curve');
+        expect(curves.length).toBe(1);
+        const d = curves[0].getAttribute('d')!;
+        expect(d).toMatch(/^M 10 10 Q/); // starts at p1
+        expect(d).toMatch(/100 100$/); // ends at p2
+    });
+
+    it('uses edge stroke-width for curve thickness', () => {
+        const container = makeSvgContainer();
+        const combinedPins = [{
+            pairId: 'a1+a2', action1Id: 'a1', action2Id: 'a2',
+            p1: { x: 10, y: 10 }, p2: { x: 100, y: 100 },
+            x: 55, y: 55, label: '45%', title: '', severity: 'green' as const,
+        }];
+        applyActionOverviewPins(container, unitaryPins, () => {}, undefined, { combinedPins });
+        const curve = container.querySelector('.nad-combined-action-curve')!;
+        expect(curve.getAttribute('stroke-width')).toBe('5'); // matches edge path
+    });
+
+    it('renders a combined pin with "+" badge at the midpoint', () => {
+        const container = makeSvgContainer();
+        const combinedPins = [{
+            pairId: 'a1+a2', action1Id: 'a1', action2Id: 'a2',
+            p1: { x: 10, y: 10 }, p2: { x: 100, y: 100 },
+            x: 55, y: 55, label: '45%', title: '', severity: 'green' as const,
+        }];
+        applyActionOverviewPins(container, unitaryPins, () => {}, undefined, { combinedPins });
+        const combinedPin = container.querySelector('.nad-combined-action-pin');
+        expect(combinedPin).not.toBeNull();
+        expect(combinedPin!.getAttribute('data-action-id')).toBe('a1+a2');
+        // Check for "+" text badge
+        const texts = combinedPin!.querySelectorAll('text');
+        const plusText = Array.from(texts).find(t => t.textContent === '+');
+        expect(plusText).toBeDefined();
+    });
+
+    it('uses severity fill for curve stroke (not blue)', () => {
+        const container = makeSvgContainer();
+        const combinedPins = [{
+            pairId: 'a1+a2', action1Id: 'a1', action2Id: 'a2',
+            p1: { x: 10, y: 10 }, p2: { x: 100, y: 100 },
+            x: 55, y: 55, label: '45%', title: '', severity: 'green' as const,
+        }];
+        applyActionOverviewPins(container, unitaryPins, () => {}, undefined, { combinedPins });
+        const curve = container.querySelector('.nad-combined-action-curve')!;
+        expect(curve.getAttribute('stroke')).toBe('#28a745'); // green severity
+    });
+
+    it('uses severity fill for the combined pin teardrop', () => {
+        const container = makeSvgContainer();
+        const combinedPins = [{
+            pairId: 'a1+a2', action1Id: 'a1', action2Id: 'a2',
+            p1: { x: 10, y: 10 }, p2: { x: 100, y: 100 },
+            x: 55, y: 55, label: '45%', title: '', severity: 'red' as const,
+        }];
+        applyActionOverviewPins(container, unitaryPins, () => {}, undefined, { combinedPins });
+        const teardrop = container.querySelector('.nad-combined-action-pin .nad-action-overview-pin-body path');
+        expect(teardrop!.getAttribute('fill')).toBe('#dc3545'); // red severity
+    });
+
+    it('falls back to 3 SVG units for edge stroke when no edge path exists', () => {
+        const container = document.createElement('div');
+        container.innerHTML = '<svg viewBox="0 0 200 200"><g class="nad-vl-nodes"><circle r="30"/></g></svg>';
+        const combinedPins = [{
+            pairId: 'a1+a2', action1Id: 'a1', action2Id: 'a2',
+            p1: { x: 10, y: 10 }, p2: { x: 100, y: 100 },
+            x: 55, y: 55, label: '45%', title: '', severity: 'green' as const,
+        }];
+        applyActionOverviewPins(container, unitaryPins, () => {}, undefined, { combinedPins });
+        const curve = container.querySelector('.nad-combined-action-curve')!;
+        expect(curve.getAttribute('stroke-width')).toBe('3'); // fallback
+    });
+});
+
+describe('rescaleActionOverviewPins — does not rescale curves', () => {
+    it('does not modify curve stroke-width during rescale', () => {
+        const container = document.createElement('div');
+        container.innerHTML =
+            '<svg viewBox="0 0 1000 1000">' +
+            '  <g class="nad-vl-nodes"><circle r="30"/></g>' +
+            '  <g class="nad-edge-paths"><path style="stroke-width: 5"/></g>' +
+            '</svg>';
+        const combinedPins = [{
+            pairId: 'a+b', action1Id: 'a', action2Id: 'b',
+            p1: { x: 10, y: 10 }, p2: { x: 100, y: 100 },
+            x: 55, y: 55, label: '45%', title: '', severity: 'green' as const,
+        }];
+        applyActionOverviewPins(container, [
+            { id: 'a', x: 10, y: 10, severity: 'green', label: '50%', title: '' },
+            { id: 'b', x: 100, y: 100, severity: 'red', label: '110%', title: '' },
+        ], () => {}, undefined, { combinedPins });
+
+        const curve = container.querySelector('.nad-combined-action-curve')!;
+        const initialStrokeW = curve.getAttribute('stroke-width');
+
+        // Simulate zoom-out by changing viewBox
+        const svg = container.querySelector('svg')!;
+        svg.setAttribute('viewBox', '0 0 5000 5000');
+        Object.defineProperty(container, 'clientWidth', { value: 500, configurable: true });
+        rescaleActionOverviewPins(container);
+
+        // Curve stroke-width must remain unchanged
+        expect(curve.getAttribute('stroke-width')).toBe(initialStrokeW);
     });
 });

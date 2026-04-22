@@ -15,6 +15,7 @@ vi.mock('../api', () => ({
     api: {
         getAvailableActions: vi.fn(async () => []),
         simulateManualAction: vi.fn(),
+        simulateAndVariantDiagramStream: vi.fn(),
         getNetworkDiagram: vi.fn(),
         computeSuperposition: vi.fn(),
     }
@@ -30,6 +31,9 @@ vi.mock('../utils/svgUtils', () => ({
     applyActionTargetHighlights: vi.fn(),
     applyContingencyHighlight: vi.fn(),
     isCouplingAction: vi.fn(() => false),
+    // Always passing the severity/threshold gate isolates the
+    // action-type filter tests from the category/threshold filter.
+    actionPassesOverviewFilter: vi.fn(() => true),
 }));
 
 import ActionFeed from './ActionFeed';
@@ -99,6 +103,82 @@ describe('ActionFeed', () => {
         expect(screen.queryByPlaceholderText(/Search action by ID/)).not.toBeInTheDocument();
         fireEvent.click(screen.getByTestId('make-first-guess-button'));
         expect(screen.getByPlaceholderText(/Search action by ID/)).toBeInTheDocument();
+    });
+
+    describe('"Make a first guess" gating after Analyze & Suggest', () => {
+        // Product rule: once the user has triggered Analyze & Suggest
+        // (or it's currently running, or its result is pending
+        // display), the pre-analysis "Make a first guess" shortcut is
+        // suppressed. It should reappear only after a state reset
+        // (contingency change, study reload) clears actionScores /
+        // pendingAnalysisResult / actions.
+
+        it('hides the button while analysis is in progress', () => {
+            render(<ActionFeed {...defaultProps} analysisLoading={true} />);
+            expect(screen.queryByTestId('make-first-guess-button')).not.toBeInTheDocument();
+        });
+
+        it('hides the button while a pending analysis result is awaiting display', () => {
+            const pending = {
+                actions: {},
+                lines_overloaded: [],
+                action_scores: {},
+            } as unknown as AnalysisResult;
+            render(<ActionFeed {...defaultProps} pendingAnalysisResult={pending} />);
+            expect(screen.queryByTestId('make-first-guess-button')).not.toBeInTheDocument();
+        });
+
+        it('hides the button when action scores are present (analysis completed)', () => {
+            const actionScores = {
+                line_disconnection: { scores: { 'disco_A': 1.0 }, params: {} },
+            };
+            render(<ActionFeed {...defaultProps} actionScores={actionScores} />);
+            expect(screen.queryByTestId('make-first-guess-button')).not.toBeInTheDocument();
+        });
+
+        it('hides the button when the actions dict is non-empty (at least one simulated action)', () => {
+            const actions = {
+                manually_added: {
+                    description_unitaire: 'Manual',
+                    action_topology: emptyTopo,
+                    is_manual: true,
+                } as unknown as ActionDetail,
+            };
+            render(<ActionFeed {...defaultProps} actions={actions} />);
+            expect(screen.queryByTestId('make-first-guess-button')).not.toBeInTheDocument();
+        });
+
+        it('still shows the button when actionScores is an empty object (analysis never ran)', () => {
+            // The defaultProps already use `actionScores: {}` which is
+            // the initial "analysis has not produced anything yet"
+            // state — a truthy but empty object. The button must still
+            // appear.
+            render(<ActionFeed {...defaultProps} actionScores={{}} />);
+            expect(screen.getByTestId('make-first-guess-button')).toBeInTheDocument();
+        });
+
+        it('re-appears after a simulated reset (all analysis-related state cleared)', () => {
+            const { rerender } = render(
+                <ActionFeed
+                    {...defaultProps}
+                    actionScores={{ line_disconnection: { scores: { 'disco_A': 1.0 }, params: {} } }}
+                />,
+            );
+            expect(screen.queryByTestId('make-first-guess-button')).not.toBeInTheDocument();
+
+            // Simulate state reset: parent clears result/actionScores
+            // (emulating resetAllState on contingency/study change).
+            rerender(
+                <ActionFeed
+                    {...defaultProps}
+                    actionScores={{}}
+                    pendingAnalysisResult={null}
+                    analysisLoading={false}
+                    actions={{}}
+                />,
+            );
+            expect(screen.getByTestId('make-first-guess-button')).toBeInTheDocument();
+        });
     });
 
     it('keeps a manually added action in Selected and shows the overlap warning when it is ALSO suggested by the analysis', () => {
@@ -389,115 +469,91 @@ describe('ActionFeed', () => {
         expect(goodIndex).toBeLessThan(badIndex);
     });
 
-    it('filters PST actions based on the PST checkbox', async () => {
+    it('shows only PST actions in dropdown after clicking the PST chip', async () => {
         const pstAction = { id: 'pst_tap_up', description: 'PST action', type: 'pst_tap_change' };
         const regularAction = { id: 'line_reco_1', description: 'Regular action', type: 'line_reconnection' };
 
-        // Mock API to return both actions
         vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstAction, regularAction]);
 
         render(<ActionFeed {...defaultProps} />);
-
-        // Open search
         fireEvent.click(screen.getByText('+ Manual Selection'));
+        const pstChip = await screen.findByTestId('search-dropdown-filter-pst');
+        fireEvent.click(pstChip);
 
-        // Both should be visible initially (PST filter is true by default)
+        // PST action visible, reco action hidden
         expect(await screen.findByText('pst_tap_up')).toBeInTheDocument();
-        expect(screen.getByText('line_reco_1')).toBeInTheDocument();
-
-        // Find and click the PST checkbox to uncheck it
-        const pstCheckbox = screen.getByLabelText('PST');
-        fireEvent.click(pstCheckbox);
-
-        // PST action should be hidden, regular action should remain
-        expect(screen.queryByText('pst_tap_up')).not.toBeInTheDocument();
-        expect(screen.getByText('line_reco_1')).toBeInTheDocument();
-
-        // Check it again
-        fireEvent.click(pstCheckbox);
-        expect(await screen.findByText('pst_tap_up')).toBeInTheDocument();
+        expect(screen.queryByText('line_reco_1')).not.toBeInTheDocument();
     });
 
-    it('hides PST actions matching search query when PST filter is unchecked', async () => {
+    it('shows all actions in dropdown when ALL chip is active (default)', async () => {
+        const pstAction = { id: 'pst_tap_up', description: 'PST action', type: 'pst_tap_change' };
+        const regularAction = { id: 'line_reco_1', description: 'Regular action', type: 'line_reconnection' };
+
+        vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstAction, regularAction]);
+
+        render(<ActionFeed {...defaultProps} />);
+        fireEvent.click(screen.getByText('+ Manual Selection'));
+
+        expect(await screen.findByText('pst_tap_up')).toBeInTheDocument();
+        expect(screen.getByText('line_reco_1')).toBeInTheDocument();
+    });
+
+    it('hides PST actions in search results after setting filter to RECO', async () => {
         const pstAction = { id: 'pst_tap_up', description: 'PST action' };
 
         vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstAction]);
 
         render(<ActionFeed {...defaultProps} />);
-
-        // Open search
         fireEvent.click(screen.getByText('+ Manual Selection'));
 
-        // Uncheck PST filter
-        const pstCheckbox = screen.getByLabelText('PST');
-        fireEvent.click(pstCheckbox);
+        // Set filter to RECO
+        const recoChip = await screen.findByTestId('search-dropdown-filter-reco');
+        fireEvent.click(recoChip);
 
         // Type "pst" in search
         const searchInput = screen.getByPlaceholderText(/Search action/);
         fireEvent.change(searchInput, { target: { value: 'pst' } });
 
-        // Wait for loading to finish if it hasn't already
         await waitFor(() => {
             expect(screen.queryByText('Loading actions...')).not.toBeInTheDocument();
         });
 
-        // PST action should NOT be visible even if it matches search query
+        // PST action NOT visible because filter is 'reco'
         expect(screen.queryByText('pst_tap_up')).not.toBeInTheDocument();
-        expect(screen.getByText('No other matching actions')).toBeInTheDocument();
-        
-        // Manual simulation option should be visible
+        // Manual simulation option still visible
         expect(screen.getByText(/Simulate manual ID:/)).toBeInTheDocument();
-        expect(screen.getByText('pst')).toBeInTheDocument();
     });
 
-    it('shows ONLY PST actions when only PST filter is checked', async () => {
+    it('shows only PST actions in dropdown after clicking PST chip (excludes disco and unknown)', async () => {
         const pstAction = { id: 'pst_1', description: 'PST action' };
-        const discoAction = { id: 'abc', description: 'Ouverture de ligne' }; // Should be recognized as disco
+        const discoAction = { id: 'abc', description: 'Ouverture de ligne' };
         const unknownAction = { id: 'xyz', description: 'Some unknown action' };
 
         vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstAction, discoAction, unknownAction]);
 
         render(<ActionFeed {...defaultProps} />);
-
-        // Open search
         fireEvent.click(screen.getByText('+ Manual Selection'));
+        const pstChip = await screen.findByTestId('search-dropdown-filter-pst');
+        fireEvent.click(pstChip);
 
-        // Uncheck everything except PST
-        fireEvent.click(screen.getByLabelText('Disconnections'));
-        fireEvent.click(screen.getByLabelText('Reconnections'));
-        fireEvent.click(screen.getByLabelText('Open coupling'));
-        fireEvent.click(screen.getByLabelText('Close coupling'));
-
-        // PST should be visible
         expect(await screen.findByText('pst_1')).toBeInTheDocument();
-
-        // Disco and Unknown should NOT be visible
         expect(screen.queryByText('abc')).not.toBeInTheDocument();
         expect(screen.queryByText('xyz')).not.toBeInTheDocument();
     });
-    
-    it('shows Load shedding actions when Load shedding filter is checked', async () => {
+
+    it('shows only LS actions in dropdown after clicking LS chip', async () => {
         const lsAction = { id: 'load_shedding_LOAD1', description: 'Load shedding LOAD1' };
         const regularAction = { id: 'line_reco_1', description: 'Reconnexion' };
 
         vi.mocked(api.getAvailableActions).mockResolvedValueOnce([lsAction, regularAction]);
 
         render(<ActionFeed {...defaultProps} />);
-
-        // Open search
         fireEvent.click(screen.getByText('+ Manual Selection'));
+        const lsChip = await screen.findByTestId('search-dropdown-filter-ls');
+        fireEvent.click(lsChip);
 
-        // Both visible initially
         expect(await screen.findByText('load_shedding_LOAD1')).toBeInTheDocument();
-        expect(screen.getByText('line_reco_1')).toBeInTheDocument();
-
-        // Uncheck Load shedding filter
-        const lsCheckbox = screen.getByLabelText('Load Shedding');
-        fireEvent.click(lsCheckbox);
-
-        // Load shedding should be hidden
-        expect(screen.queryByText('load_shedding_LOAD1')).not.toBeInTheDocument();
-        expect(screen.getByText('line_reco_1')).toBeInTheDocument();
+        expect(screen.queryByText('line_reco_1')).not.toBeInTheDocument();
     });
 
     it('triggers manual simulation when "Simulate manual ID" is clicked', async () => {
@@ -530,29 +586,22 @@ describe('ActionFeed', () => {
         );
     });
 
-    it('hides disconnections on PST branches when Disconnections filter is off but PST is on', async () => {
+    it('hides actions that classify as disco even when their score type is pst, when filter is "pst"', async () => {
+        // classifyActionType puts this action in 'disco' because the description
+        // starts with "Ouverture" — it should NOT appear under the PST chip filter.
         const pstDiscoAction = {
             id: 'disco_pst_branch',
             description: 'Ouverture de la branche PST',
-            type: 'pst_tap_change' // Simulating backend tagging it as PST
+            type: 'pst_tap_change',
         };
 
         vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstDiscoAction]);
 
         render(<ActionFeed {...defaultProps} />);
-
-        // Open search
         fireEvent.click(screen.getByText('+ Manual Selection'));
+        const pstChip = await screen.findByTestId('search-dropdown-filter-pst');
+        fireEvent.click(pstChip);
 
-        // Ensure Disconnections is unchecked, PST is checked
-        const discoCheckbox = screen.getByLabelText('Disconnections') as HTMLInputElement;
-        if (discoCheckbox.checked) fireEvent.click(discoCheckbox);
-
-        const pstCheckbox = screen.getByLabelText('PST') as HTMLInputElement;
-        if (!pstCheckbox.checked) fireEvent.click(pstCheckbox);
-
-        // PST branch disco should NOT be visible because it's a disconnection
-        // even if it has "pst" in id/type
         await waitFor(() => {
             expect(screen.queryByText('Loading actions...')).not.toBeInTheDocument();
         });
@@ -2519,6 +2568,254 @@ describe('ActionFeed', () => {
             );
             await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
             expect(card.scrollIntoView).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    // Regression coverage for the "Add manual action → click card" pre-fetch
+    // flow. When the parent wires `onActionDiagramPrimed` + `voltageLevelsLength`,
+    // ActionFeed streams the combined `/api/simulate-and-variant-diagram`
+    // endpoint instead of firing `simulateManualAction` on its own: the
+    // metrics event feeds `onManualActionAdded` as before, AND the diagram
+    // event is pushed into the useDiagrams cache so the next click on the
+    // card paints the SVG without a second XHR. See
+    // docs/performance/history/combined-action-endpoint.md "Option B".
+    describe('Pre-fetch diagram on Add (option B)', () => {
+        const buildNdjsonResponse = (events: Array<Record<string, unknown>>) => {
+            const body = events.map(e => JSON.stringify(e)).join('\n') + '\n';
+            const bytes = new TextEncoder().encode(body);
+            let pushed = false;
+            return {
+                ok: true,
+                body: {
+                    getReader: () => ({
+                        read: async () => {
+                            if (pushed) return { done: true, value: undefined } as const;
+                            pushed = true;
+                            return { done: false, value: bytes } as const;
+                        },
+                    }),
+                },
+            } as unknown as Response;
+        };
+
+        beforeEach(() => {
+            vi.clearAllMocks();
+        });
+
+        it('uses the streamed endpoint, calls onManualActionAdded with metrics, and primes the diagram', async () => {
+            const metricsEvent = {
+                type: 'metrics',
+                action_id: 'manual_act',
+                description_unitaire: 'Open LINE_Z',
+                rho_before: [0.95],
+                rho_after: [0.80],
+                max_rho: 0.80,
+                max_rho_line: 'LINE_1',
+                is_rho_reduction: true,
+                non_convergence: null,
+                lines_overloaded: ['LINE_1'],
+            };
+            const diagramEvent = {
+                type: 'diagram',
+                svg: '<svg>post-action</svg>',
+                metadata: '{}',
+                action_id: 'manual_act',
+                lf_converged: true,
+                lf_status: 'CONVERGED',
+            };
+            vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
+            (api.simulateAndVariantDiagramStream as ReturnType<typeof vi.fn>)
+                .mockResolvedValueOnce(buildNdjsonResponse([metricsEvent, diagramEvent]));
+
+            const onActionDiagramPrimed = vi.fn();
+            const onManualActionAdded = vi.fn();
+
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    onManualActionAdded={onManualActionAdded}
+                    onActionDiagramPrimed={onActionDiagramPrimed}
+                    voltageLevelsLength={42}
+                />
+            );
+
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            const searchInput = await screen.findByPlaceholderText(/Search action/i);
+            fireEvent.change(searchInput, { target: { value: 'manual_act' } });
+            const manualOption = await screen.findByText(/Simulate manual ID:/);
+            fireEvent.click(manualOption);
+
+            await waitFor(() => {
+                expect(api.simulateAndVariantDiagramStream).toHaveBeenCalledTimes(1);
+            });
+            // Legacy single-shot endpoint must NOT be called on this path.
+            expect(api.simulateManualAction).not.toHaveBeenCalled();
+
+            await waitFor(() => {
+                expect(onManualActionAdded).toHaveBeenCalledTimes(1);
+            });
+            const [, detail, linesOvl] = (onManualActionAdded.mock.calls[0] as unknown) as [string, ActionDetail, string[]];
+            expect(detail.rho_after).toEqual([0.80]);
+            expect(detail.max_rho_line).toBe('LINE_1');
+            expect(linesOvl).toEqual(['LINE_1']);
+
+            // Diagram event was forwarded to the cache primer.
+            await waitFor(() => {
+                expect(onActionDiagramPrimed).toHaveBeenCalledTimes(1);
+            });
+            expect(onActionDiagramPrimed.mock.calls[0][0]).toBe('manual_act');
+            expect((onActionDiagramPrimed.mock.calls[0][1] as { svg: string }).svg).toBe('<svg>post-action</svg>');
+            expect(onActionDiagramPrimed.mock.calls[0][2]).toBe(42);
+        });
+
+        it('falls back to simulateManualAction when the primer prop is not wired', async () => {
+            // Without `onActionDiagramPrimed`, the legacy single-shot path
+            // is preserved — this is what older tests and the existing
+            // backward-compatible callers rely on.
+            const mockResult = {
+                action_id: 'manual_act',
+                description_unitaire: 'Open LINE_Z',
+                rho_before: [0.95],
+                rho_after: [0.80],
+                max_rho: 0.80,
+                max_rho_line: 'LINE_1',
+                is_rho_reduction: true,
+                non_convergence: null,
+                lines_overloaded: ['LINE_1'],
+            };
+            vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
+            (api.simulateManualAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mockResult);
+
+            const onManualActionAdded = vi.fn();
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    onManualActionAdded={onManualActionAdded}
+                    // intentionally no onActionDiagramPrimed
+                />
+            );
+
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            const searchInput = await screen.findByPlaceholderText(/Search action/i);
+            fireEvent.change(searchInput, { target: { value: 'manual_act' } });
+            const manualOption = await screen.findByText(/Simulate manual ID:/);
+            fireEvent.click(manualOption);
+
+            await waitFor(() => {
+                expect(api.simulateManualAction).toHaveBeenCalledTimes(1);
+            });
+            expect(api.simulateAndVariantDiagramStream).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('action-type filter — overview cards (overviewFilters.actionType)', () => {
+        const makeFilter = (actionType: 'all' | 'disco' | 'reco' | 'ls' | 'rc' | 'open' | 'close' | 'pst') => ({
+            categories: { green: true, orange: true, red: true, grey: true },
+            threshold: 1.5,
+            showUnsimulated: false,
+            actionType,
+        });
+
+        const actionsMix: Record<string, ActionDetail> = {
+            disco_LINE_A: {
+                description_unitaire: 'Ouverture de la ligne LINE_A',
+                rho_before: [1.1],
+                rho_after: [0.9],
+                max_rho: 0.9,
+                max_rho_line: 'LINE_A',
+                is_rho_reduction: true,
+                action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} },
+            },
+            reco_LINE_B: {
+                description_unitaire: 'Fermeture de la ligne LINE_B',
+                rho_before: [1.2],
+                rho_after: [0.95],
+                max_rho: 0.95,
+                max_rho_line: 'LINE_B',
+                is_rho_reduction: true,
+                action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} },
+            },
+        };
+
+        it('hides cards of the other bucket in the Selected list when overviewFilters.actionType is "disco"', () => {
+            render(<ActionFeed
+                {...defaultProps}
+                actions={actionsMix}
+                selectedActionIds={new Set(['disco_LINE_A', 'reco_LINE_B'])}
+                overviewFilters={makeFilter('disco')}
+            />);
+            expect(screen.getByTestId('action-card-disco_LINE_A')).toBeInTheDocument();
+            expect(screen.queryByTestId('action-card-reco_LINE_B')).not.toBeInTheDocument();
+        });
+
+        it('shows every card when overviewFilters.actionType is "all"', () => {
+            render(<ActionFeed
+                {...defaultProps}
+                actions={actionsMix}
+                selectedActionIds={new Set(['disco_LINE_A', 'reco_LINE_B'])}
+                overviewFilters={makeFilter('all')}
+            />);
+            expect(screen.getByTestId('action-card-disco_LINE_A')).toBeInTheDocument();
+            expect(screen.getByTestId('action-card-reco_LINE_B')).toBeInTheDocument();
+        });
+
+        it('shows every card when overviewFilters is undefined', () => {
+            render(<ActionFeed
+                {...defaultProps}
+                actions={actionsMix}
+                selectedActionIds={new Set(['disco_LINE_A', 'reco_LINE_B'])}
+            />);
+            expect(screen.getByTestId('action-card-disco_LINE_A')).toBeInTheDocument();
+            expect(screen.getByTestId('action-card-reco_LINE_B')).toBeInTheDocument();
+        });
+    });
+
+    describe('action-type filter — dropdown chips (local state, independent of overview)', () => {
+        it('dropdown chip click does NOT call onOverviewFiltersChange', async () => {
+            const onOverviewFiltersChange = vi.fn();
+            vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
+            render(<ActionFeed
+                {...defaultProps}
+                overviewFilters={{ categories: { green: true, orange: true, red: true, grey: true }, threshold: 1.5, showUnsimulated: false, actionType: 'all' }}
+                onOverviewFiltersChange={onOverviewFiltersChange}
+            />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            const discoChip = await screen.findByTestId('search-dropdown-filter-disco');
+            fireEvent.click(discoChip);
+            // Local state update — does NOT bubble up to the overview filter
+            expect(onOverviewFiltersChange).not.toHaveBeenCalled();
+        });
+
+        it('marks the active chip with aria-pressed="true" after clicking LS in the search dropdown', async () => {
+            vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
+            render(<ActionFeed {...defaultProps} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            const lsChip = await screen.findByTestId('search-dropdown-filter-ls');
+            fireEvent.click(lsChip);
+            expect(lsChip.getAttribute('aria-pressed')).toBe('true');
+            expect(screen.getByTestId('search-dropdown-filter-all').getAttribute('aria-pressed')).toBe('false');
+        });
+
+        it('filters the Scored Actions table after clicking DISCO chip', async () => {
+            const actionScores = {
+                line_disconnection: { scores: { disco_LINE_A: 10 } },
+                line_reconnection: { scores: { reco_LINE_B: 20 } },
+            };
+            vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
+            render(<ActionFeed {...defaultProps} actionScores={actionScores} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            const discoChip = await screen.findByTestId('search-dropdown-filter-disco');
+            fireEvent.click(discoChip);
+            expect(await screen.findByText('disco_LINE_A')).toBeInTheDocument();
+            expect(screen.queryByText('reco_LINE_B')).not.toBeInTheDocument();
+        });
+
+        it('clicking a dropdown chip does not throw', async () => {
+            vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
+            render(<ActionFeed {...defaultProps} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            const discoChip = await screen.findByTestId('search-dropdown-filter-disco');
+            expect(() => fireEvent.click(discoChip)).not.toThrow();
         });
     });
 });

@@ -173,3 +173,42 @@ describe('computePopoverStyle', () => {
         expect(POPOVER_MAX_HEIGHT).toBe(480);
     });
 });
+
+describe('detached-window viewport handling', () => {
+    // Regression: in a detached popup the main-window viewport is
+    // irrelevant — the component must pass the popup's viewport so
+    // the above/below decision reflects the pin's actual on-screen
+    // position. These tests feed an explicit viewport to mimic the
+    // popup-window dimensions.
+    it('same pin Y is "BELOW" in a tall popup but "ABOVE" in a short popup', () => {
+        const pinY = 600;
+        const tall = decidePopoverPlacement(800, pinY, { width: 1600, height: 1400 });
+        expect(tall.placeAbove).toBe(false);
+        const short = decidePopoverPlacement(800, pinY, { width: 1600, height: 700 });
+        expect(short.placeAbove).toBe(true);
+    });
+
+    it('computes `bottom` anchor using the explicit viewport height, not main-window height', () => {
+        const popupViewport = { width: 1200, height: 600 };
+        const style = computePopoverStyle({
+            screenX: 800,
+            screenY: 550,
+            placeAbove: true,
+            horizontalAlign: 'center',
+        }, popupViewport);
+        // `bottom` must use the popup height (600), not whatever
+        // the default (main window) viewport is.
+        expect(style.bottom).toBe(popupViewport.height - 550 + POPOVER_PIN_OFFSET);
+    });
+
+    it('horizontal clamp uses the explicit viewport width', () => {
+        const popupViewport = { width: 900, height: 600 };
+        const style = computePopoverStyle({
+            screenX: popupViewport.width - 10,
+            screenY: 300,
+            placeAbove: false,
+            horizontalAlign: 'center',
+        }, popupViewport);
+        expect(style.left).toBe(popupViewport.width - POPOVER_WIDTH - POPOVER_VIEWPORT_MARGIN);
+    });
+});

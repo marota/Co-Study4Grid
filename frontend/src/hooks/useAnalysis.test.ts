@@ -613,22 +613,38 @@ describe('useAnalysis', () => {
             expect(s2End.correlation_id).toBe(s2Start.correlation_id);
             expect(s2Start.correlation_id).not.toBe(s1Start.correlation_id);
 
-            // step2 completion has actions_count
-            expect(s2End.details.actions_count).toBe(1);
+            // step2 completion carries the action count under the
+            // spec-conformant `n_actions` key (was `actions_count`).
+            expect(s2End.details.n_actions).toBe(1);
         });
 
-        it('logs overload_toggled with correct overload name', () => {
+        it('logs overload_toggled with overload + selected (spec-conformant)', () => {
+            // Replay contract (docs/features/interaction-logging.md):
+            //   { overload: string, selected: boolean }
+            // `selected` must reflect the state AFTER the toggle so a
+            // replay agent knows whether this click was a check or uncheck.
             const { result } = renderHook(() => useAnalysis());
 
+            // First toggle — overload moves from unselected → selected.
             act(() => { result.current.handleToggleOverload('LINE_B'); });
-
-            const log = interactionLogger.getLog();
+            let log = interactionLogger.getLog();
             expect(log).toHaveLength(1);
             expect(log[0].type).toBe('overload_toggled');
-            expect(log[0].details).toEqual({ overload: 'LINE_B' });
+            expect(log[0].details).toEqual({ overload: 'LINE_B', selected: true });
+
+            // Second toggle on the same overload — now selected → unselected.
+            act(() => { result.current.handleToggleOverload('LINE_B'); });
+            log = interactionLogger.getLog();
+            expect(log).toHaveLength(2);
+            expect(log[1].details).toEqual({ overload: 'LINE_B', selected: false });
         });
 
-        it('logs prioritized_actions_displayed with count', () => {
+        it('logs prioritized_actions_displayed with n_actions (spec-conformant)', () => {
+            // Replay contract (docs/features/interaction-logging.md):
+            //   { n_actions: number }
+            // Previously emitted `{ actions_count }` — the key name drifted
+            // from the spec and any replay agent reading
+            // `details.n_actions` would see `undefined`.
             const { result } = renderHook(() => useAnalysis());
 
             act(() => {
@@ -648,7 +664,7 @@ describe('useAnalysis', () => {
             const log = interactionLogger.getLog();
             expect(log).toHaveLength(1);
             expect(log[0].type).toBe('prioritized_actions_displayed');
-            expect(log[0].details).toEqual({ actions_count: 2 });
+            expect(log[0].details).toEqual({ n_actions: 2 });
         });
 
         it('does not log when handleRunAnalysis is called with empty branch', async () => {
@@ -661,7 +677,12 @@ describe('useAnalysis', () => {
             expect(interactionLogger.getLog()).toHaveLength(0);
         });
 
-        it('step2_started includes selected_overloads in details', async () => {
+        it('step2_started carries the full spec payload (element + selected_overloads + all_overloads + monitor_deselected)', async () => {
+            // Replay contract (docs/features/interaction-logging.md):
+            //   { element, selected_overloads, all_overloads, monitor_deselected }
+            // Previously the hook emitted only the latter two, so a
+            // replay agent had no way to know which contingency or
+            // which overload set was in scope.
             const detected = ['LINE_A', 'LINE_B'];
             mockRunAnalysisStep1.mockResolvedValue({
                 can_proceed: true, message: '', lines_overloaded: detected,
@@ -679,7 +700,9 @@ describe('useAnalysis', () => {
             });
 
             const s2Start = interactionLogger.getLog().find(e => e.type === 'analysis_step2_started')!;
+            expect(s2Start.details.element).toBe('LINE_X');
             expect(s2Start.details.selected_overloads).toEqual(detected);
+            expect(s2Start.details.all_overloads).toEqual(detected);
             expect(s2Start.details.monitor_deselected).toBe(false);
         });
     });

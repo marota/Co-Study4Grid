@@ -82,12 +82,39 @@ describe('api client', () => {
     });
 
     describe('getNetworkDiagram', () => {
-        it('returns diagram data', async () => {
-            const diagramData = { svg: '<svg/>', metadata: '{}' };
-            mockedAxios.get.mockResolvedValue({ data: diagramData });
+        it('parses the text/plain header+SVG response', async () => {
+            // Server now returns:  {json header}\n<svg>...</svg>
+            // The client splits on the first newline rather than doing
+            // a JSON.parse of the full body (saves ~500 ms on 25 MB
+            // grids — see docs/performance/history/loading-parallel.md).
+            const header = { metadata: null, lines_overloaded: ['X'], lines_overloaded_rho: [1.05] };
+            const svg = '<svg id="n"/>';
+            const body = JSON.stringify(header) + '\n' + svg;
+            const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                text: async () => body,
+            } as Response);
 
             const result = await api.getNetworkDiagram();
-            expect(result).toEqual(diagramData);
+            expect(fetchSpy).toHaveBeenCalledWith(
+                'http://127.0.0.1:8000/api/network-diagram?format=text'
+            );
+            expect(result).toEqual({ ...header, svg });
+            fetchSpy.mockRestore();
+        });
+
+        it('throws on non-ok status', async () => {
+            const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+                ok: false,
+                status: 500,
+                statusText: 'Server Error',
+                text: async () => 'boom',
+            } as Response);
+
+            await expect(api.getNetworkDiagram()).rejects.toThrow(/HTTP 500/);
+            fetchSpy.mockRestore();
         });
     });
 
@@ -330,6 +357,37 @@ describe('api client', () => {
     describe('legacy runAnalysis removal', () => {
         it('api object does not have a runAnalysis method', () => {
             expect((api as Record<string, unknown>).runAnalysis).toBeUndefined();
+        });
+    });
+
+    describe('restoreAnalysisContext', () => {
+        it('sends POST to /api/restore-analysis-context with the monitored-line set', async () => {
+            // Parity with the standalone HTML mirror
+            // (standalone_interface.html:3857). Re-pushes the session's
+            // `lines_we_care_about` to the backend on reload so later
+            // simulate-action calls use the per-study set instead of
+            // the backend's default.
+            mockedAxios.post.mockResolvedValue({
+                data: {
+                    status: 'success',
+                    lines_we_care_about_count: 3,
+                    computed_pairs_count: 0,
+                },
+            });
+
+            const params = {
+                lines_we_care_about: ['LINE_MON1', 'LINE_MON2', 'LINE_MON3'],
+                disconnected_element: 'LINE_A',
+                lines_overloaded: ['LINE_OL1'],
+                computed_pairs: null,
+            };
+            const result = await api.restoreAnalysisContext(params);
+            expect(mockedAxios.post).toHaveBeenCalledWith(
+                'http://127.0.0.1:8000/api/restore-analysis-context',
+                params,
+            );
+            expect(result.status).toBe('success');
+            expect(result.lines_we_care_about_count).toBe(3);
         });
     });
 });

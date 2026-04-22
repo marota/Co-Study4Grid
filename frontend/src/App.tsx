@@ -5,20 +5,20 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import './App.css';
 import VisualizationPanel from './components/VisualizationPanel';
 import ActionFeed from './components/ActionFeed';
 import OverloadPanel from './components/OverloadPanel';
 import Header from './components/Header';
+import AppSidebar from './components/AppSidebar';
+import StatusToasts from './components/StatusToasts';
 import SettingsModal from './components/modals/SettingsModal';
 import ReloadSessionModal from './components/modals/ReloadSessionModal';
 import ConfirmationDialog from './components/modals/ConfirmationDialog';
 import type { ConfirmDialogState } from './components/modals/ConfirmationDialog';
 import { api } from './api';
-import { applyOverloadedHighlights, applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight, processSvg } from './utils/svgUtils';
-import { computeN1OverloadHighlights } from './utils/overloadHighlights';
-import type { ActionDetail, TabId, RecommenderDisplayConfig } from './types';
+import type { ActionDetail, ActionOverviewFilters, DiagramData, TabId, RecommenderDisplayConfig, UnsimulatedActionScoreInfo } from './types';
 import { useSettings } from './hooks/useSettings';
 import { useActions } from './hooks/useActions';
 import { useAnalysis } from './hooks/useAnalysis';
@@ -26,7 +26,10 @@ import { useDiagrams } from './hooks/useDiagrams';
 import { useSession } from './hooks/useSession';
 import { useDetachedTabs } from './hooks/useDetachedTabs';
 import { useTiedTabsSync, type PZInstance } from './hooks/useTiedTabsSync';
+import { useN1Fetch } from './hooks/useN1Fetch';
+import { useDiagramHighlights } from './hooks/useDiagramHighlights';
 import { interactionLogger } from './utils/interactionLogger';
+import { DEFAULT_ACTION_OVERVIEW_FILTERS } from './utils/actionTypes';
 
 function App() {
   // ===== Settings Hook =====
@@ -110,7 +113,7 @@ function App() {
   // When a detached tab is "tied", its viewBox is mirrored one-way
   // into the main window's active tab on every pan/zoom change —
   // supporting side-by-side comparison workflows. See
-  // docs/detachable-viz-tabs.md#tied-detached-tabs for the full
+  // docs/features/detachable-viz-tabs.md#tied-detached-tabs for the full
   // design rationale.
   const tiedTabsHook = useTiedTabsSync(
     { 'n': diagrams.nPZ, 'n-1': diagrams.n1PZ, 'action': actionPZForTie },
@@ -164,6 +167,58 @@ function App() {
     scrollSeqRef.current += 1;
     setScrollTarget({ id: actionId, seq: scrollSeqRef.current });
   }, []);
+
+  // Shared filter state for the Remedial Action overview. The same
+  // `ActionOverviewFilters` drives (a) the pin visibility + dimmed
+  // un-simulated pins on ActionOverviewDiagram and (b) the card
+  // visibility in the sidebar ActionFeed, so both views stay in
+  // lock-step regardless of which entry point the operator uses.
+  const [overviewFilters, setOverviewFilters] = useState<ActionOverviewFilters>(DEFAULT_ACTION_OVERVIEW_FILTERS);
+
+  // Flat list of action ids that appear in `action_scores` but are
+  // not yet simulated. Feeds ActionOverviewDiagram's un-simulated pin
+  // layer. We dedupe across action_scores.<type>.scores to avoid
+  // pinning the same id twice. Computed alongside `unsimulatedActionInfo`
+  // so the two structures always stay in sync.
+  const { unsimulatedActionIds, unsimulatedActionInfo } = useMemo(() => {
+    const scores = analysis.result?.action_scores;
+    if (!scores) return { unsimulatedActionIds: [] as string[], unsimulatedActionInfo: {} as Record<string, UnsimulatedActionScoreInfo> };
+    const simulated = new Set(Object.keys(analysis.result?.actions ?? {}));
+    const ids: string[] = [];
+    const info: Record<string, UnsimulatedActionScoreInfo> = {};
+    const seen = new Set<string>();
+    for (const [type, rawData] of Object.entries(scores)) {
+      const data = rawData as {
+        scores?: Record<string, number>;
+        mw_start?: Record<string, number | null>;
+        tap_start?: Record<string, { pst_name: string; tap: number; low_tap: number | null; high_tap: number | null } | null>;
+      };
+      const per = data.scores ?? {};
+      const mwStartMap = data.mw_start ?? {};
+      const tapStartMap = data.tap_start ?? {};
+      // Rank is assigned by descending score so the operator sees
+      // the top-scoring un-simulated candidate as "rank 1".
+      const rankedEntries = Object.entries(per).sort(([, a], [, b]) => b - a);
+      const maxScoreInType = rankedEntries.length > 0 ? rankedEntries[0][1] : 0;
+      const countInType = rankedEntries.length;
+      for (let i = 0; i < rankedEntries.length; i++) {
+        const [id, score] = rankedEntries[i];
+        if (simulated.has(id) || seen.has(id)) continue;
+        seen.add(id);
+        ids.push(id);
+        info[id] = {
+          type,
+          score,
+          mwStart: mwStartMap[id] ?? null,
+          tapStart: tapStartMap[id] ?? null,
+          rankInType: i + 1,
+          countInType,
+          maxScoreInType,
+        };
+      }
+    }
+    return { unsimulatedActionIds: ids, unsimulatedActionInfo: info };
+  }, [analysis.result?.action_scores, analysis.result?.actions]);
 
   const contingencyOptions = useMemo(() => {
     const q = selectedBranch.toUpperCase();
@@ -343,18 +398,134 @@ function App() {
     [actionsHook, setResult]
   );
 
+  // Manually-added (first-time simulated) action. Same SLD refresh
+  // rationale as `wrappedActionResimulated` below: the new detail
+  // carries fresh `load_shedding_details` / `curtailment_details` /
+  // `pst_details` arrays which the SLD highlight pass needs to see.
   const wrappedManualActionAdded = useCallback(
-    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) =>
-      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect),
-    [actionsHook, setResult, wrappedForcedActionSelect]
+    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => {
+      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect);
+      diagrams.refreshSldIfAction(actionId);
+    },
+    [actionsHook, setResult, wrappedForcedActionSelect, diagrams]
+  );
+
+  // Double-click on an un-simulated pin in ActionOverviewDiagram —
+  // mirrors the Manual Selection flow in ActionFeed but without the
+  // editable MW / tap inputs (those aren't available on the overview
+  // pin). Uses the diagram-priming streaming endpoint so the
+  // subsequent action-variant render is paint-ready instantly, same
+  // as the feed add path.
+  const handleSimulateUnsimulatedAction = useCallback(
+    async (actionId: string) => {
+      if (!selectedBranch) {
+        setError('Select a contingency first.');
+        return;
+      }
+      try {
+        const response = await api.simulateAndVariantDiagramStream({
+          action_id: actionId,
+          disconnected_element: selectedBranch,
+          action_content: null,
+          lines_overloaded: result?.lines_overloaded ?? null,
+          target_mw: null,
+          target_tap: null,
+        });
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let metrics: Awaited<ReturnType<typeof api.simulateManualAction>> | null = null;
+        let streamErr: string | null = null;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            // Flush any trailing content that lacked a final \n.
+            // Backend always appends \n today, but this guard keeps
+            // the path robust if a future change emits a final
+            // event without one.
+            if (buffer.trim()) {
+              try {
+                const event = JSON.parse(buffer) as Record<string, unknown>;
+                if (event.type === 'metrics') {
+                  const { type: _t, ...rest } = event;
+                  void _t;
+                  metrics = rest as Awaited<ReturnType<typeof api.simulateManualAction>>;
+                } else if (event.type === 'diagram') {
+                  const { type: _t, ...rest } = event;
+                  void _t;
+                  diagrams.primeActionDiagram(actionId, rest as unknown as DiagramData & { svg: string }, voltageLevels.length);
+                } else if (event.type === 'error') {
+                  streamErr = (event.message as string) || 'stream error';
+                }
+              } catch { /* ignore malformed trailing bytes */ }
+            }
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop()!;
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            let event: Record<string, unknown>;
+            try { event = JSON.parse(line); } catch { continue; }
+            if (event.type === 'metrics') {
+              const { type: _t, ...rest } = event;
+              void _t;
+              metrics = rest as Awaited<ReturnType<typeof api.simulateManualAction>>;
+            } else if (event.type === 'diagram') {
+              const { type: _t, ...rest } = event;
+              void _t;
+              diagrams.primeActionDiagram(actionId, rest as unknown as DiagramData & { svg: string }, voltageLevels.length);
+            } else if (event.type === 'error') {
+              streamErr = (event.message as string) || 'stream error';
+            }
+          }
+        }
+        if (streamErr) throw new Error(streamErr);
+        if (!metrics) throw new Error('Stream ended without metrics event');
+        const detail: ActionDetail = {
+          description_unitaire: metrics.description_unitaire,
+          rho_before: metrics.rho_before,
+          rho_after: metrics.rho_after,
+          max_rho: metrics.max_rho,
+          max_rho_line: metrics.max_rho_line,
+          is_rho_reduction: metrics.is_rho_reduction,
+          is_islanded: metrics.is_islanded,
+          n_components: metrics.n_components,
+          disconnected_mw: metrics.disconnected_mw,
+          non_convergence: metrics.non_convergence,
+          lines_overloaded_after: metrics.lines_overloaded_after,
+          load_shedding_details: metrics.load_shedding_details,
+          curtailment_details: metrics.curtailment_details,
+          pst_details: metrics.pst_details,
+        };
+        wrappedManualActionAdded(actionId, detail, metrics.lines_overloaded || []);
+      } catch (e: unknown) {
+        console.error('Unsimulated pin simulation failed:', e);
+        const err = e as { response?: { data?: { detail?: string } } };
+        setError(err?.response?.data?.detail || 'Simulation failed');
+      }
+    },
+    [selectedBranch, result?.lines_overloaded, diagrams, voltageLevels.length, wrappedManualActionAdded]
   );
 
   // Re-simulation of an already-present action (edit Target MW / tap on a
   // suggested card). Does NOT move the action into the selected bucket.
+  //
+  // When the SLD overlay is open on this action, refresh it so the
+  // per-equipment load-shedding / curtailment / PST highlights (and the
+  // flow deltas baked into the backend SLD response) reflect the new
+  // simulation result instead of the pre-resimulation snapshot.
+  // Covers all three editable action families: MW edits on load-shedding
+  // and renewable-curtailment, and tap edits on PST — all three flow
+  // through `onActionResimulated` in ActionFeed.tsx, so one refresh
+  // hook-up covers them.
   const wrappedActionResimulated = useCallback(
-    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) =>
-      actionsHook.handleActionResimulated(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect),
-    [actionsHook, setResult, wrappedForcedActionSelect]
+    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => {
+      actionsHook.handleActionResimulated(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect);
+      diagrams.refreshSldIfAction(actionId);
+    },
+    [actionsHook, setResult, wrappedForcedActionSelect, diagrams]
   );
 
   const handleUpdateCombinedEstimation = useCallback(
@@ -473,6 +644,7 @@ function App() {
     setNominalVoltageMap: diagrams.setNominalVoltageMap,
     setUniqueVoltages: diagrams.setUniqueVoltages,
     fetchBaseDiagram: diagrams.fetchBaseDiagram,
+    ingestBaseDiagram: diagrams.ingestBaseDiagram,
     setVoltageRange: diagrams.setVoltageRange,
   }), [
     outputFolderPath,
@@ -552,10 +724,16 @@ function App() {
       const configRes = await api.updateConfig(buildConfigRequest());
       applyConfigResponse(configRes as Record<string, unknown>);
 
-      const [branchRes, vlRes, nomVRes] = await Promise.all([
+      // Fire the 4 post-config XHRs in parallel. The base-diagram call is
+      // the slowest (~6-7s pypowsybl NAD on large grids) and previously
+      // only started after branches resolved — wasting the ~0.8s branches
+      // gap off the critical path of the initial load.
+      // See docs/performance/history/loading-parallel.md.
+      const [branchRes, vlRes, nomVRes, diagramRaw] = await Promise.all([
         api.getBranches(),
         api.getVoltageLevels(),
         api.getNominalVoltages(),
+        api.getNetworkDiagram(),
       ]);
 
       setBranches(branchRes.branches);
@@ -570,7 +748,7 @@ function App() {
         diagrams.setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
       }
 
-      diagrams.fetchBaseDiagram(vlRes.voltage_levels.length);
+      diagrams.ingestBaseDiagram(diagramRaw, vlRes.voltage_levels.length);
 
       committedNetworkPathRef.current = networkPath;
       interactionLogger.record('config_loaded', buildConfigInteractionDetails());
@@ -610,10 +788,14 @@ function App() {
       const configRes = await api.updateConfig(buildConfigRequest());
       applyConfigResponse(configRes as Record<string, unknown>);
 
-      const [branchRes, vlRes, nomVRes] = await Promise.all([
+      // See the sibling call site in `applySettingsImmediate` for context:
+      // fire 4 XHRs in parallel so the slow base-diagram call overlaps
+      // with branches/voltage-levels/nominal-voltages.
+      const [branchRes, vlRes, nomVRes, diagramRaw] = await Promise.all([
         api.getBranches(),
         api.getVoltageLevels(),
         api.getNominalVoltages(),
+        api.getNetworkDiagram(),
       ]);
 
       setBranches(branchRes.branches);
@@ -627,7 +809,7 @@ function App() {
         diagrams.setVoltageRange([nomVRes.unique_kv[0], nomVRes.unique_kv[nomVRes.unique_kv.length - 1]]);
       }
 
-      diagrams.fetchBaseDiagram(vlRes.voltage_levels.length);
+      diagrams.ingestBaseDiagram(diagramRaw, vlRes.voltage_levels.length);
       committedNetworkPathRef.current = networkPath;
       interactionLogger.record('config_loaded', buildConfigInteractionDetails());
     } catch (err: unknown) {
@@ -693,50 +875,18 @@ function App() {
 
 
 
-  useEffect(() => {
-    if (!selectedBranch) {
-      diagrams.setN1Diagram(null);
-      if (!hasAnalysisState()) {
-        diagrams.committedBranchRef.current = '';
-      }
-      return;
-    }
-
-    if (branches.length > 0 && !branches.includes(selectedBranch)) return;
-
-    if (selectedBranch === diagrams.committedBranchRef.current && (n1Diagram || hasAnalysisState() || n1Loading || analysisLoading)) return;
-
-    if (selectedBranch !== diagrams.committedBranchRef.current && hasAnalysisState() && !diagrams.restoringSessionRef.current) {
-      setConfirmDialog({ type: 'contingency', pendingBranch: selectedBranch });
-      setSelectedBranch(diagrams.committedBranchRef.current);
-      return;
-    }
-    diagrams.restoringSessionRef.current = false;
-
-    diagrams.committedBranchRef.current = selectedBranch;
-    clearContingencyState();
-    diagrams.setN1Diagram(null);
-
-    const fetchN1 = async () => {
-      diagrams.setN1Loading(true);
-      diagrams.setActiveTab('n-1');
-      try {
-        const res = await api.getN1Diagram(selectedBranch);
-        const { svg, viewBox } = processSvg(res.svg, voltageLevels.length);
-        diagrams.setN1Diagram({ ...res, svg, originalViewBox: viewBox });
-        // Ensure auto-zoom fires after the new N-1 diagram is ready.
-        // Reset lastZoomState so the auto-zoom effect sees a "branch change"
-        // on the render that has both activeTab='n-1' and the new SVG in DOM.
-        diagrams.lastZoomState.current = { query: '', branch: '' };
-      } catch (err) {
-        console.error('Failed to fetch N-1 diagram', err);
-        setError(`Failed to fetch N-1 diagram for ${selectedBranch}`);
-      } finally {
-        diagrams.setN1Loading(false);
-      }
-    };
-    fetchN1();
-  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState, analysisLoading, n1Diagram, n1Loading, setError, diagrams]);
+  useN1Fetch({
+    selectedBranch,
+    branches,
+    voltageLevelsLength: voltageLevels.length,
+    diagrams,
+    analysisLoading,
+    hasAnalysisState,
+    clearContingencyState,
+    setSelectedBranch,
+    setConfirmDialog,
+    setError,
+  });
 
   useEffect(() => {
     const nextSet = n1Diagram?.lines_overloaded ? new Set(n1Diagram.lines_overloaded) : new Set<string>();
@@ -750,186 +900,14 @@ function App() {
 
 
 
-  const staleHighlights = useRef<Set<TabId>>(new Set());
-  const prevHighlightTabRef = useRef<TabId>(activeTab);
-
-  // Flow vs Impacts view mode is now TAB-SCOPED and WINDOW-SCOPED:
-  // main window has `actionViewMode` (from useDiagrams) while each
-  // detached tab has its own entry here. Toggling Impacts in a
-  // detached popup therefore only affects that popup's tab; the
-  // main window's mode is untouched, and vice versa. A reattach
-  // clears the detached-mode entry so the tab resumes the
-  // main-window mode from that point onward.
-  const [detachedViewModes, setDetachedViewModes] = useState<Partial<Record<TabId, 'network' | 'delta'>>>({});
-
-  // Which Flow/Impacts mode applies to a given tab right now.
-  const viewModeForTab = useCallback((tab: TabId): 'network' | 'delta' => {
-    if (detachedTabs[tab]) return detachedViewModes[tab] ?? 'network';
-    return actionViewMode;
-  }, [detachedTabs, detachedViewModes, actionViewMode]);
-
-  // Per-tab Flow/Impacts toggle routing: if the tab is currently
-  // detached, update its entry in `detachedViewModes`; otherwise
-  // update the main-window `actionViewMode`. This is how a Flow
-  // /Impacts button inside a detached popup affects ONLY the
-  // detached window.
-  const handleViewModeChangeForTab = useCallback((tab: TabId, mode: 'network' | 'delta') => {
-    interactionLogger.record('view_mode_changed', { mode, tab, scope: detachedTabs[tab] ? 'detached' : 'main' });
-    if (detachedTabs[tab]) {
-      setDetachedViewModes(prev => ({ ...prev, [tab]: mode }));
-    } else {
-      diagrams.setActionViewMode(mode);
-    }
-  }, [detachedTabs, diagrams]);
-
-  // On reattach, drop the tab's detached view-mode entry so the
-  // main window's `actionViewMode` takes over for that tab from
-  // that point onward.
-  useEffect(() => {
-    setDetachedViewModes(prev => {
-      const next: Partial<Record<TabId, 'network' | 'delta'>> = {};
-      let changed = false;
-      for (const tabId of Object.keys(prev) as TabId[]) {
-        if (detachedTabs[tabId]) {
-          next[tabId] = prev[tabId];
-        } else {
-          changed = true; // dropped
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [detachedTabs]);
-
-  const applyHighlightsForTab = useCallback((tab: TabId, mode?: 'network' | 'delta') => {
-    const effectiveMode = mode ?? viewModeForTab(tab);
-    const overloadedLines = result?.lines_overloaded || [];
-
-    // For the N-1 tab, the overloads are known as soon as the N-1
-    // diagram comes back from the backend (`n1Diagram.lines_overloaded`)
-    // — well before any action analysis has run. Falling back to that
-    // list lets the orange overload halos show up immediately on the
-    // N-1 view, matching the standalone interface and what the user
-    // expects to see right after picking a contingency. Once analysis
-    // runs and `result.lines_overloaded` becomes available, we use that.
-    // In both cases the user's selected-overload set (from the
-    // Overloads panel) further filters the list down. Extracted to a
-    // pure helper for unit testing.
-    const n1OverloadedLines = computeN1OverloadHighlights(
-      overloadedLines,
-      n1Diagram?.lines_overloaded,
-      selectedOverloads,
-    );
-
-    if (tab === 'n-1') {
-      if (diagrams.n1SvgContainerRef.current) {
-        // IMPORTANT: run highlight CLONES before applyDeltaVisuals.
-        // The clone-based highlights (`applyOverloadedHighlights`,
-        // `applyContingencyHighlight`) use cloneNode(true) on the
-        // original SVG element. If applyDeltaVisuals has already
-        // tagged the original with `nad-delta-positive/negative/grey`,
-        // the clone inherits that class — and because the `.nad-delta-*`
-        // CSS is declared LATER in App.css than `.nad-contingency-highlight`
-        // / `.nad-overloaded`, the delta rule wins the cascade and the
-        // halo becomes a thin orange/blue stroke, effectively making the
-        // highlight disappear in Impacts mode. Cloning first guarantees
-        // the halos stay on a pristine copy of the element.
-        //
-        // Overloaded lines must also be highlighted in BOTH Flows and
-        // Impacts modes — the user looks at the Impacts view to see how
-        // the action redistributes flows AND which lines are still
-        // (or newly) overloaded; suppressing the halos in delta mode
-        // hides exactly that information.
-        if (diagrams.n1MetaIndex && n1OverloadedLines.length > 0) {
-          applyOverloadedHighlights(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, n1OverloadedLines);
-        }
-        applyContingencyHighlight(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, selectedBranch);
-        applyDeltaVisuals(diagrams.n1SvgContainerRef.current, n1Diagram, diagrams.n1MetaIndex, effectiveMode === 'delta');
-      }
-    }
-    if (tab === 'action') {
-      const actionDetail = result?.actions?.[selectedActionId || ''];
-
-      if (actionDetail) {
-        // Same ordering rule as the N-1 tab: clone-based highlights
-        // first (so they capture pristine elements), delta visuals
-        // last. Overload halos render in both Flows and Impacts modes.
-        let overloadsToHighlight: string[] = [];
-
-        if (actionDetail.lines_overloaded_after && actionDetail.lines_overloaded_after.length > 0) {
-          overloadsToHighlight = actionDetail.lines_overloaded_after;
-        } else {
-          // Fallback for legacy results or actions without full enrichment
-          if (overloadedLines.length > 0 && actionDetail.rho_after) {
-            overloadedLines.forEach((name, i) => {
-              const rho = actionDetail.rho_after![i];
-              if (rho != null && rho > monitoringFactor) {
-                overloadsToHighlight.push(name);
-              }
-            });
-          }
-          if (actionDetail.max_rho != null && actionDetail.max_rho > monitoringFactor && actionDetail.max_rho_line) {
-            if (!overloadsToHighlight.includes(actionDetail.max_rho_line)) {
-              overloadsToHighlight.push(actionDetail.max_rho_line);
-            }
-          }
-        }
-
-        if (diagrams.actionSvgContainerRef.current && diagrams.actionMetaIndex) {
-          applyOverloadedHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, overloadsToHighlight);
-        }
-
-        if (diagrams.actionSvgContainerRef.current) {
-          applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, actionDetail, selectedActionId);
-          applyContingencyHighlight(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, selectedBranch);
-        }
-      }
-      else {
-        if (diagrams.actionSvgContainerRef.current) {
-          applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, null, null, null);
-        }
-      }
-
-      // Delta visuals run LAST so they decorate the originals without
-      // contaminating the highlight clones already in the background
-      // layer.
-      applyDeltaVisuals(diagrams.actionSvgContainerRef.current, actionDiagram, diagrams.actionMetaIndex, effectiveMode === 'delta');
-    }
-  }, [n1Diagram, actionDiagram, result, selectedActionId, selectedBranch, diagrams, monitoringFactor, viewModeForTab, selectedOverloads]);
-
-  useEffect(() => {
-    const isTabSwitch = prevHighlightTabRef.current !== activeTab;
-    prevHighlightTabRef.current = activeTab;
-    const otherTabs: TabId[] = ['n', 'n-1', 'action'].filter(t => t !== activeTab) as TabId[];
-    otherTabs.forEach(t => staleHighlights.current.add(t));
-
-    // Apply highlights + delta visuals to both the main window's
-    // active tab AND every currently-detached tab — because Impacts
-    // mode must keep working inside a detached popup when only the
-    // popup's view mode changes (the main window may be showing a
-    // different tab entirely).
-    const applyAll = () => {
-      applyHighlightsForTab(activeTab);
-      staleHighlights.current.delete(activeTab);
-      for (const detachedId of Object.keys(detachedTabs) as TabId[]) {
-        if (detachedId === activeTab) continue;
-        if (detachedId === 'overflow') continue;
-        applyHighlightsForTab(detachedId);
-        staleHighlights.current.delete(detachedId);
-      }
-    };
-
-    if (isTabSwitch) {
-      // Double rAF to ensure browser layout is settled before getScreenCTM()
-      const id = requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          applyAll();
-        });
-      });
-      return () => cancelAnimationFrame(id);
-    } else {
-      applyAll();
-    }
-  }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, detachedViewModes, detachedTabs, activeTab, selectedBranch, selectedOverloads, applyHighlightsForTab]);
+  const { viewModeForTab, handleViewModeChangeForTab } = useDiagramHighlights({
+    diagrams,
+    result,
+    selectedBranch,
+    selectedOverloads,
+    monitoringFactor,
+    detachedTabs,
+  });
 
   // ===== Extracted JSX callbacks (stable references for React.memo) =====
 
@@ -1027,171 +1005,78 @@ function App() {
       />
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/*
-          Sidebar layout:
-          - A COMPACT sticky strip at the top keeps only the
-            clickable fields of interest visible while scrolling
-            (selected contingency → zoom active tab; N-1 overloads →
-            jump to N-1 tab + zoom, same behavior as the old
-            "Loading Before" link on action cards).
-          - Everything else — the full Select Contingency card with
-            the search input, the Overloads panel with its warnings
-            and N/N-1 breakdown, and the ActionFeed — scrolls
-            together in a single column below, saving vertical space.
-        */}
-        <div data-testid="sidebar" style={{ width: '25%', background: '#eee', borderRight: '1px solid #ccc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {(selectedBranch || (n1Diagram?.lines_overloaded?.length ?? 0) > 0) && (
-            <div
-              data-testid="sticky-feed-summary"
-              style={{
-                flexShrink: 0,
-                padding: '6px 12px',
-                background: '#f8f9fa',
-                borderBottom: '1px solid #ccc',
-                fontSize: '11px',
-                lineHeight: 1.5,
-                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-              }}
-            >
-              {selectedBranch && (
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                  <span style={{ color: '#555', fontWeight: 600, whiteSpace: 'nowrap' }}>🎯 Contingency:</span>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleZoomOnActiveTab(selectedBranch); }}
-                    title={`Zoom to ${selectedBranch} in the current diagram`}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: 0,
-                      fontSize: '11px',
-                      color: '#1e40af',
-                      fontWeight: 600,
-                      textDecoration: 'underline dotted',
-                      wordBreak: 'break-word',
-                      textAlign: 'left',
-                    }}
-                  >
-                    🔍 {displayName(selectedBranch)}
-                  </button>
-                </div>
-              )}
-              {(n1Diagram?.lines_overloaded?.length ?? 0) > 0 && (
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                  <span style={{ color: '#b91c1c', fontWeight: 600, whiteSpace: 'nowrap' }}>⚠️ N-1:</span>
-                  <span style={{ wordBreak: 'break-word' }}>
-                    {n1Diagram!.lines_overloaded!.map((name, i) => {
-                      const rho = n1Diagram!.lines_overloaded_rho?.[i];
-                      const rhoPct = rho != null && !Number.isNaN(rho) ? `${(rho * 100).toFixed(1)}%` : null;
-                      const isSelected = selectedOverloads?.has(name) ?? true;
-                      return (
-                        <React.Fragment key={name}>
-                          {i > 0 && ', '}
-                          <button
-                            onClick={(e) => { e.stopPropagation(); wrappedAssetClick('', name, 'n-1'); }}
-                            title={`Open N-1 tab and zoom to ${name}`}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              padding: 0,
-                              fontSize: '11px',
-                              color: isSelected ? '#1e40af' : '#bdc3c7',
-                              fontWeight: isSelected ? 600 : 400,
-                              textDecoration: isSelected ? 'underline dotted' : 'none',
-                            }}
-                          >
-                            {displayName(name)}
-                          </button>
-                          {rhoPct && (
-                            <span style={{ color: isSelected ? '#374151' : '#bdc3c7', marginLeft: '2px' }}>
-                              ({rhoPct})
-                            </span>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '15px', minHeight: 0, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            {/* Target Contingency selector — full card lives in the
-                scroll area so the compact sticky strip above stays
-                minimal. */}
-            {branches.length > 0 && (
-              <div style={{ flexShrink: 0, padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
-                <input
-                  list="contingencies"
-                  value={selectedBranch}
-                  onChange={handleContingencyChange}
-                  placeholder="Search line/bus..."
-                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }}
-                />
-                <datalist id="contingencies">
-                  {contingencyOptions}
-                </datalist>
-              </div>
-            )}
-
-            <div style={{ flexShrink: 0 }}>
-              <OverloadPanel
-                nOverloads={nDiagram?.lines_overloaded || []}
-                n1Overloads={n1Diagram?.lines_overloaded || []}
-                nOverloadsRho={nDiagram?.lines_overloaded_rho}
-                n1OverloadsRho={n1Diagram?.lines_overloaded_rho}
-                onAssetClick={wrappedAssetClick as (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void}
-                showMonitoringWarning={showMonitoringWarning}
-                monitoredLinesCount={monitoredLinesCount}
-                totalLinesCount={totalLinesCount}
-                monitoringFactor={monitoringFactor}
-                preExistingOverloadThreshold={preExistingOverloadThreshold}
-                onDismissWarning={handleDismissWarning}
-                onOpenSettings={handleOpenConfigSettings}
-                selectedOverloads={selectedOverloads}
-                onToggleOverload={analysis.handleToggleOverload}
-                monitorDeselected={monitorDeselected}
-                onToggleMonitorDeselected={handleToggleMonitorDeselected}
-                displayName={displayName}
-              />
-            </div>
-            <ActionFeed
-              actions={result?.actions || {}}
-              actionScores={result?.action_scores}
-              linesOverloaded={result?.lines_overloaded || []}
-              selectedActionId={selectedActionId}
-              scrollTarget={scrollTarget}
-              selectedActionIds={selectedActionIds}
-              rejectedActionIds={rejectedActionIds}
-              manuallyAddedIds={manuallyAddedIds}
-              combinedActions={result?.combined_actions ?? null}
-              pendingAnalysisResult={pendingAnalysisResult}
-              onDisplayPrioritizedActions={wrappedDisplayPrioritized}
-              onRunAnalysis={wrappedRunAnalysis}
-              canRunAnalysis={!!selectedBranch && !analysisLoading}
-              onActionSelect={wrappedActionSelect}
-              onActionFavorite={wrappedActionFavorite}
-              onActionReject={actionsHook.handleActionReject}
-              onAssetClick={wrappedAssetClick}
-              nodesByEquipmentId={diagrams.nMetaIndex?.nodesByEquipmentId ?? null}
-              edgesByEquipmentId={diagrams.nMetaIndex?.edgesByEquipmentId ?? null}
-              disconnectedElement={selectedBranch || null}
-              onManualActionAdded={wrappedManualActionAdded}
-              onActionResimulated={wrappedActionResimulated}
-              analysisLoading={analysisLoading}
+        <AppSidebar
+          selectedBranch={selectedBranch}
+          branches={branches}
+          nameMap={nameMap}
+          n1LinesOverloaded={n1Diagram?.lines_overloaded}
+          n1LinesOverloadedRho={n1Diagram?.lines_overloaded_rho}
+          selectedOverloads={selectedOverloads}
+          contingencyOptions={contingencyOptions}
+          onContingencyChange={handleContingencyChange}
+          displayName={displayName}
+          onContingencyZoom={handleZoomOnActiveTab}
+          onOverloadClick={wrappedAssetClick as (actionId: string, assetName: string, tab: 'n' | 'n-1') => void}
+        >
+          <div style={{ flexShrink: 0 }}>
+            <OverloadPanel
+              nOverloads={nDiagram?.lines_overloaded || []}
+              n1Overloads={n1Diagram?.lines_overloaded || []}
+              nOverloadsRho={nDiagram?.lines_overloaded_rho}
+              n1OverloadsRho={n1Diagram?.lines_overloaded_rho}
+              onAssetClick={wrappedAssetClick as (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void}
+              showMonitoringWarning={showMonitoringWarning}
+              monitoredLinesCount={monitoredLinesCount}
+              totalLinesCount={totalLinesCount}
               monitoringFactor={monitoringFactor}
-              onVlDoubleClick={handleVlDoubleClick}
-              recommenderConfig={recommenderConfig}
-              actionDictFileName={actionDictFileName}
-              actionDictStats={actionDictStats}
-              onOpenSettings={handleOpenSettings}
-              onUpdateCombinedEstimation={handleUpdateCombinedEstimation}
+              preExistingOverloadThreshold={preExistingOverloadThreshold}
+              onDismissWarning={handleDismissWarning}
+              onOpenSettings={handleOpenConfigSettings}
+              selectedOverloads={selectedOverloads}
+              onToggleOverload={analysis.handleToggleOverload}
+              monitorDeselected={monitorDeselected}
+              onToggleMonitorDeselected={handleToggleMonitorDeselected}
               displayName={displayName}
             />
           </div>
-        </div>
+          <ActionFeed
+            actions={result?.actions || {}}
+            actionScores={result?.action_scores}
+            linesOverloaded={result?.lines_overloaded || []}
+            selectedActionId={selectedActionId}
+            scrollTarget={scrollTarget}
+            selectedActionIds={selectedActionIds}
+            rejectedActionIds={rejectedActionIds}
+            manuallyAddedIds={manuallyAddedIds}
+            combinedActions={result?.combined_actions ?? null}
+            pendingAnalysisResult={pendingAnalysisResult}
+            onDisplayPrioritizedActions={wrappedDisplayPrioritized}
+            onRunAnalysis={wrappedRunAnalysis}
+            canRunAnalysis={!!selectedBranch && !analysisLoading}
+            onActionSelect={wrappedActionSelect}
+            onActionFavorite={wrappedActionFavorite}
+            onActionReject={actionsHook.handleActionReject}
+            onAssetClick={wrappedAssetClick}
+            nodesByEquipmentId={diagrams.nMetaIndex?.nodesByEquipmentId ?? null}
+            edgesByEquipmentId={diagrams.nMetaIndex?.edgesByEquipmentId ?? null}
+            disconnectedElement={selectedBranch || null}
+            onManualActionAdded={wrappedManualActionAdded}
+            onActionResimulated={wrappedActionResimulated}
+            analysisLoading={analysisLoading}
+            monitoringFactor={monitoringFactor}
+            onVlDoubleClick={handleVlDoubleClick}
+            recommenderConfig={recommenderConfig}
+            actionDictFileName={actionDictFileName}
+            actionDictStats={actionDictStats}
+            onOpenSettings={handleOpenSettings}
+            onUpdateCombinedEstimation={handleUpdateCombinedEstimation}
+            displayName={displayName}
+            onActionDiagramPrimed={diagrams.primeActionDiagram}
+            voltageLevelsLength={voltageLevels.length}
+            overviewFilters={overviewFilters}
+            onOverviewFiltersChange={setOverviewFilters}
+          />
+        </AppSidebar>
         <div style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column' }}>
           <VisualizationPanel
             activeTab={activeTab}
@@ -1248,6 +1133,11 @@ function App() {
             onOverviewPzChange={handleOverviewPzChange}
             monitoringFactor={monitoringFactor}
             displayName={displayName}
+            overviewFilters={overviewFilters}
+            onOverviewFiltersChange={setOverviewFilters}
+            unsimulatedActionIds={unsimulatedActionIds}
+            unsimulatedActionInfo={unsimulatedActionInfo}
+            onSimulateUnsimulatedAction={handleSimulateUnsimulatedAction}
           />
         </div>
       </div>
@@ -1257,29 +1147,7 @@ function App() {
         onCancel={handleCancelDialog}
         onConfirm={handleConfirmDialog}
       />
-      {error && (
-        <div style={{
-          position: 'fixed', bottom: 20, right: 20,
-          background: '#e74c3c', color: 'white',
-          padding: '10px 20px', borderRadius: '4px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.2)', zIndex: 1000,
-        }}>
-          {error}
-        </div>
-      )}
-      {infoMessage && (
-        <div style={{
-          position: 'fixed', bottom: 20, left: 20,
-          background: infoMessage.startsWith('SUCCESS') ? '#27ae60' : '#3498db',
-          color: 'white',
-          padding: '12px 24px', borderRadius: '4px',
-          boxShadow: '0 4px 15px rgba(0,0,0,0.3)', zIndex: 1000,
-          fontWeight: 'bold',
-          border: '1px solid rgba(255,255,255,0.2)'
-        }}>
-          {infoMessage}
-        </div>
-      )}
+      <StatusToasts error={error} infoMessage={infoMessage} />
     </div>
   );
 }

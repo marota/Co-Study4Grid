@@ -58,7 +58,22 @@ class TestCacheSynchronization:
     @patch.object(RecommenderService, '_get_n1_variant')
     @patch.object(RecommenderService, '_get_n_variant')
     @patch.object(RecommenderService, '_get_simulation_env')
-    def test_cache_invalidation_on_contingency_switch(self, mock_get_env, mock_get_n, mock_get_n1):
+    @patch.object(RecommenderService, '_get_base_network')
+    def test_cache_invalidation_on_contingency_switch(self, mock_get_net, mock_get_env, mock_get_n, mock_get_n1):
+        # `_ensure_n1_state_ready` (invoked at the top of
+        # `simulate_manual_action`) calls `_get_base_network()` BEFORE
+        # `_get_n1_variant()`. When the base network is not mocked the
+        # fallback path `pp.network.load(config.ENV_PATH)` raises — the
+        # guard swallows the exception, but `_get_n1_variant` is never
+        # called, so the 4 `side_effect` values below shift by one and
+        # the second `simulate_manual_action("DISCO_B")` ends up getting
+        # the cached "n1_A" id back → both N and N-1 caches hit → zero
+        # `env.get_obs` calls instead of the expected 1. On CI
+        # (`pip install --no-deps expert_op4grid_recommender`) the
+        # fallback path tries a relative `data/` dir under site-packages
+        # that does not exist — exactly the scenario this mock
+        # neutralises. The companion test `test_cache_hits_on_repeated_calls`
+        # already mocks `_get_base_network`; aligning this one.
         service = RecommenderService()
         service._dict_action = {"act1": {"content": {}}}
         service._last_result = {"prioritized_actions": {}}
@@ -68,7 +83,11 @@ class TestCacheSynchronization:
         
         # Contingency A
         mock_get_n.return_value = "n_var"
-        mock_get_n1.side_effect = ["n1_A", "n1_B"]
+        # Each `simulate_manual_action` call now triggers `_get_n1_variant`
+        # twice — once via the `_ensure_n1_state_ready` guard at entry
+        # (see docs/performance/history/grid2op-shared-network.md), once inside the
+        # simulation body. Two simulate calls → four side-effect values.
+        mock_get_n1.side_effect = ["n1_A", "n1_A", "n1_B", "n1_B"]
         
         obs_n = MagicMock(name="obs_n")
         obs_n.rho = [0.5]
@@ -115,13 +134,25 @@ class TestCacheSynchronization:
         service._cached_obs_n1 = MagicMock()
         service._cached_obs_n_id = "v1"
         service._cached_obs_n1_id = "v2"
-        
+        # N-1 diagram fast-path (commit d220d61): LF status cache per
+        # N-1 variant must be cleared when loading a new study,
+        # otherwise stale convergence flags from the previous grid
+        # would leak.
+        service._lf_status_by_variant = {
+            "N_1_state_DISCO_A": {"converged": True, "lf_status": "CONVERGED"},
+            "N_1_state_DISCO_B": {"converged": False, "lf_status": "FAILED"},
+        }
+
         service.reset()
-        
+
         assert service._cached_obs_n is None
         assert service._cached_obs_n1 is None
         assert service._cached_obs_n_id is None
         assert service._cached_obs_n1_id is None
+        # The LF-status cache dict must be emptied (not replaced with
+        # None) so later `_get_n1_variant` calls on the fresh study
+        # can still use `dict.get()` / `dict[key] = ...` safely.
+        assert service._lf_status_by_variant == {}
 
     @patch.object(RecommenderService, '_get_simulation_env')
     def test_isolation_simulation_does_not_modify_cache_fields(self, mock_get_env):

@@ -7,10 +7,12 @@
 
 """JSON sanitization utility for numpy/grid2op objects."""
 
+from typing import Any
+
 import numpy as np
 
 
-def sanitize_for_json(obj):
+def sanitize_for_json(obj: Any) -> Any:
     if isinstance(obj, bool):
         return obj
     if isinstance(obj, (np.integer, int)):

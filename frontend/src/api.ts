@@ -6,7 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import axios from 'axios';
-import type { ConfigRequest, BranchResponse, DiagramData, FlowDelta, AssetDelta, AvailableAction, SessionResult } from './types';
+import type { ConfigRequest, BranchResponse, DiagramData, DiagramPatch, FlowDelta, AssetDelta, AvailableAction, SessionResult } from './types';
 
 const API_BASE_URL = 'http://127.0.0.1:8000';
 
@@ -66,20 +66,71 @@ export const api = {
         );
         return response.data;
     },
-    getNetworkDiagram: async (): Promise<DiagramData> => {
-        const response = await axios.get<DiagramData>(`${API_BASE_URL}/api/network-diagram`);
-        return response.data;
+    // NOTE: the FastAPI backend always serialises the SVG as a raw
+    // XML string, so these axios methods narrow `DiagramData.svg` to
+    // `string` at the boundary. The wider `string | SVGSVGElement`
+    // union on `DiagramData` only surfaces once the N-1 / Action tab
+    // is repopulated by the svgPatch DOM-recycling path.
+    getNetworkDiagram: async (): Promise<DiagramData & { svg: string }> => {
+        // Fetch in `format=text` mode: the server returns a small JSON
+        // header on the first line, then the raw SVG body verbatim. This
+        // avoids `JSON.parse` having to escape-scan and copy the ~25 MB
+        // SVG string, saving ~500 ms of main-thread parse time on large
+        // grids. See docs/performance/history/loading-parallel.md (#4). We use `fetch`
+        // instead of axios so the browser's native gzip decoder runs
+        // without axios trying to JSON-parse the body.
+        const res = await fetch(`${API_BASE_URL}/api/network-diagram?format=text`);
+        if (!res.ok) {
+            const detail = await res.text().catch(() => '');
+            const err = new Error(`HTTP ${res.status}: ${detail || res.statusText}`) as Error & { response?: unknown };
+            err.response = { status: res.status, data: { detail } };
+            throw err;
+        }
+        const body = await res.text();
+        const nl = body.indexOf('\n');
+        if (nl < 0) {
+            throw new Error('Invalid /api/network-diagram response: missing header/body separator');
+        }
+        const header = JSON.parse(body.slice(0, nl)) as Omit<DiagramData, 'svg'>;
+        const svg = body.slice(nl + 1);
+        return { ...header, svg } as DiagramData & { svg: string };
     },
-    getN1Diagram: async (disconnectedElement: string): Promise<DiagramData> => {
-        const response = await axios.post<DiagramData>(
+    getN1Diagram: async (disconnectedElement: string): Promise<DiagramData & { svg: string }> => {
+        const response = await axios.post<DiagramData & { svg: string }>(
             `${API_BASE_URL}/api/n1-diagram`,
             { disconnected_element: disconnectedElement }
         );
         return response.data;
     },
-    getActionVariantDiagram: async (actionId: string): Promise<DiagramData> => {
-        const response = await axios.post<DiagramData>(
+    getActionVariantDiagram: async (actionId: string): Promise<DiagramData & { svg: string }> => {
+        const response = await axios.post<DiagramData & { svg: string }>(
             `${API_BASE_URL}/api/action-variant-diagram`,
+            { action_id: actionId }
+        );
+        return response.data;
+    },
+    /**
+     * SVG-less patch payload for the N-1 state. Use to patch a clone of
+     * the N-state SVG DOM instead of fetching a fresh ~20 MB NAD. Fall
+     * back to `getN1Diagram` on any error or when the base N SVG is not
+     * yet loaded. See docs/performance/history/svg-dom-recycling.md.
+     */
+    getN1DiagramPatch: async (disconnectedElement: string): Promise<DiagramPatch> => {
+        const response = await axios.post<DiagramPatch>(
+            `${API_BASE_URL}/api/n1-diagram-patch`,
+            { disconnected_element: disconnectedElement }
+        );
+        return response.data;
+    },
+    /**
+     * SVG-less patch payload for a post-action state. Returns
+     * `{patchable: false, reason}` for topology-changing actions (switch
+     * toggles, line reconnections, VL-internal topology changes); the
+     * caller must then fall back to `getActionVariantDiagram`.
+     */
+    getActionVariantDiagramPatch: async (actionId: string): Promise<DiagramPatch> => {
+        const response = await axios.post<DiagramPatch>(
+            `${API_BASE_URL}/api/action-variant-diagram-patch`,
             { action_id: actionId }
         );
         return response.data;
@@ -183,6 +234,25 @@ export const api = {
         );
         return response.data;
     },
+    /**
+     * Re-pushes the monitored-line set and computed-pair cache captured in a saved
+     * session back into the backend so that any subsequent simulate-action call uses
+     * the SAME `lines_we_care_about` policy as the original study — instead of the
+     * backend's default (all lines, or the lines-monitoring file on disk). Called
+     * from `useSession::handleRestoreSession` right after the base-study XHRs
+     * complete, before the user can kick off a new simulation.
+     *
+     * Parity with `standalone_interface.html:3857`.
+     */
+    restoreAnalysisContext: async (params: {
+        lines_we_care_about?: string[] | null;
+        disconnected_element?: string | null;
+        lines_overloaded?: string[] | null;
+        computed_pairs?: Record<string, unknown> | null;
+    }): Promise<{ status: string; lines_we_care_about_count: number; computed_pairs_count: number }> => {
+        const response = await axios.post(`${API_BASE_URL}/api/restore-analysis-context`, params);
+        return response.data;
+    },
     runAnalysisStep1: async (disconnected_element: string): Promise<{ lines_overloaded: string[]; message: string; can_proceed: boolean }> => {
         const response = await axios.post(`${API_BASE_URL}/api/run-analysis-step1`, { disconnected_element });
         return response.data;
@@ -199,6 +269,44 @@ export const api = {
         });
         if (!response.ok) {
             throw new Error(`Analysis Resolution failed: ${response.statusText}`);
+        }
+        return response;
+    },
+    /**
+     * Combined manual-action simulation + post-action NAD generation, returned as an
+     * NDJSON stream of two events:
+     *   { type: "metrics", ... }   — simulate_manual_action result (rho_before/after, ...)
+     *   { type: "diagram", ... }   — get_action_variant_diagram result (svg, metadata, ...)
+     *
+     * Replaces the previous "simulateManualAction then getActionVariantDiagram" fallback
+     * pattern (one round-trip + earlier sidebar update instead of two sequential
+     * request/response cycles). Caller reads the stream with the same
+     * TextDecoder + split('\n') loop used for `runAnalysisStep2Stream`.
+     */
+    simulateAndVariantDiagramStream: async (params: {
+        action_id: string;
+        disconnected_element: string;
+        action_content?: Record<string, unknown> | null;
+        lines_overloaded?: string[] | null;
+        target_mw?: number | null;
+        target_tap?: number | null;
+        mode?: 'network' | 'delta';
+    }): Promise<Response> => {
+        const response = await fetch(`${API_BASE_URL}/api/simulate-and-variant-diagram`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action_id: params.action_id,
+                disconnected_element: params.disconnected_element,
+                action_content: params.action_content ?? null,
+                lines_overloaded: params.lines_overloaded ?? null,
+                target_mw: params.target_mw ?? null,
+                target_tap: params.target_tap ?? null,
+                mode: params.mode ?? 'network',
+            }),
+        });
+        if (!response.ok) {
+            throw new Error(`Simulate-and-variant-diagram failed: ${response.statusText}`);
         }
         return response;
     },

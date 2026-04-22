@@ -6,68 +6,78 @@ Co-Study4Grid is a full-stack web application for **power grid contingency analy
 
 ## Architecture
 
-**Monorepo** with two main components:
+**Monorepo** with two main components plus a standalone HTML mirror:
 
 ```
 Co-Study4Grid/
-├── .gitignore               # Excludes __pycache__/, *.pyc, *.pyo
-├── CLAUDE.md                # Project documentation for AI assistants
-├── expert_backend/          # Python FastAPI backend
-│   ├── __init__.py
-│   ├── main.py              # FastAPI app, API endpoints, CORS config
-│   ├── requirements.txt     # Core Python deps (fastapi, uvicorn)
-│   └── services/
-│       ├── __init__.py
-│       ├── network_service.py       # pypowsybl network loading & queries
-│       └── recommender_service.py   # Analysis orchestration, PDF/SVG generation
-├── frontend/                # React + TypeScript + Vite frontend
-│   ├── index.html           # HTML entry point
-│   ├── package.json         # Dependencies and scripts
-│   ├── vite.config.ts       # Vite configuration
-│   ├── eslint.config.js     # ESLint v9+ flat config
-│   ├── tsconfig.json        # Root TypeScript config
-│   ├── tsconfig.app.json    # App TypeScript config (strict mode)
-│   ├── tsconfig.node.json   # Node/config TypeScript config
+├── CLAUDE.md                  # This file — project overview + standalone parity audit
+├── expert_backend/            # Python FastAPI backend
+│   ├── CLAUDE.md              # Backend-scoped guide (singletons, mixins, lifecycle)
+│   ├── main.py                # FastAPI app: endpoints, CORS, gzip helpers, NDJSON streaming
+│   ├── requirements.txt
+│   ├── services/
+│   │   ├── network_service.py     # pypowsybl Network singleton + metadata queries
+│   │   ├── recommender_service.py # Analysis orchestrator (composes the 3 mixins below)
+│   │   ├── diagram_mixin.py       # NAD/SLD generation, layout cache, flow deltas
+│   │   ├── analysis_mixin.py      # Two-step contingency analysis + action enrichment
+│   │   ├── simulation_mixin.py    # Manual-action simulation + superposition
+│   │   └── sanitize.py            # NumPy → native-Python recursive coercion
+│   └── tests/                 # pytest suite — see tests/CLAUDE.md for the mock layer
+├── frontend/                  # React 19 + TypeScript 5.9 + Vite 7 frontend
+│   ├── CLAUDE.md              # Frontend-scoped guide (App.tsx hub, hooks, SVG levers)
+│   ├── package.json, vite.config.ts, eslint.config.js, tsconfig*.json
 │   └── src/
-│       ├── main.tsx          # React entry point (StrictMode)
-│       ├── App.tsx           # Root component: state orchestration + hook wiring only (~650 lines)
-│       ├── App.css           # App-specific styles
-│       ├── index.css         # Global styles
-│       ├── api.ts            # Axios HTTP client (base URL: localhost:8000)
-│       ├── types.ts          # TypeScript interfaces
-│       ├── hooks/
-│       │   └── useSettings.ts        # Settings state hook (SettingsState interface + all setters)
-│       ├── utils/
-│       │   ├── sessionUtils.ts       # Session snapshot building (buildSessionResult)
-│       │   ├── sessionUtils.test.ts  # Unit tests for session serialization
-│       │   ├── interactionLogger.ts  # Singleton interaction event logger (replay-ready)
-│       │   ├── interactionLogger.test.ts # Unit tests for interaction logger
-│       │   └── popoverPlacement.ts   # Pure helpers for pin-popover positioning
-│       └── components/
-│           ├── Header.tsx              # Top bar: logo, network path input, Load/Save/Reload/Settings buttons
-│           ├── Header.test.tsx         # Unit tests for Header
-│           ├── ActionFeed.tsx              # Prioritized action results display with search/filter + auto-scroll on selection
-│           ├── ActionOverviewDiagram.tsx  # N-1 NAD with pin overlay (overview of all actions)
-│           ├── ActionCardPopover.tsx      # Shared floating ActionCard wrapper (pin click preview)
-│           ├── VisualizationPanel.tsx     # SVG diagram rendering (NAD + SLD overlay)
-│           ├── OverloadPanel.tsx          # Two-step analysis: detect → select → resolve
-│           ├── CombinedActionsModal.tsx   # Superposition pair computation modal
-│           └── modals/
-│               ├── SettingsModal.tsx           # 3-tab settings dialog (paths, recommender, config)
-│               ├── SettingsModal.test.tsx      # Unit tests for SettingsModal
-│               ├── ReloadSessionModal.tsx      # Session reload list dialog
-│               ├── ReloadSessionModal.test.tsx # Unit tests for ReloadSessionModal
-│               ├── ConfirmationDialog.tsx      # Shared confirmation dialog (contingency/reload)
-│               └── ConfirmationDialog.test.tsx # Unit tests for ConfirmationDialog
-├── Overflow_Graph/          # Generated PDFs (created at runtime)
-├── overrides.txt            # Additional Python dependency version pins
-├── standalone_interface.html # Self-contained HTML version of the UI with SVG visualization
-├── test_*.py / verify_*.py  # Root-level integration test scripts
-├── reproduce_error.py       # Ad-hoc error reproduction script
-├── repro_stuck.py           # Ad-hoc stuck analysis reproduction
-├── fix_zoom.py              # Zoom/scaling fix utility
-└── inspect_metadata.py      # SVG metadata inspection utility
+│       ├── App.tsx                # State orchestration hub (~1000 lines)
+│       ├── api.ts                 # Axios HTTP client (base URL: 127.0.0.1:8000)
+│       ├── types.ts               # All TypeScript interfaces (one file)
+│       ├── hooks/                 # useSettings/useActions/useAnalysis/useDiagrams/
+│       │                          # useSession/useDetachedTabs/useTiedTabsSync/usePanZoom/
+│       │                          # useSldOverlay
+│       ├── components/            # Header, ActionFeed, ActionCard, ActionOverviewDiagram,
+│       │                          # VisualizationPanel, OverloadPanel, CombinedActionsModal,
+│       │                          # ComputedPairsTable, ExplorePairsTab, SldOverlay,
+│       │                          # DetachableTabHost, MemoizedSvgContainer, ErrorBoundary
+│       │                          # + modals/ (SettingsModal, ReloadSessionModal,
+│       │                          #            ConfirmationDialog)
+│       └── utils/                 # svgUtils, overloadHighlights, sessionUtils,
+│                                  # interactionLogger, popoverPlacement, mergeAnalysisResult
+├── standalone_interface_legacy.html  # DECOMMISSIONED 2026-04-20 — hand-maintained
+│                              # single-file mirror frozen at its last version and
+│                              # tracked here for reference only. Replaced by the
+│                              # auto-generated `frontend/dist-standalone/standalone.html`
+│                              # (`npm run build:standalone`). New UI changes land ONLY
+│                              # in `frontend/src/` — do NOT edit this file further.
+├── docs/                      # Design docs — organized into features/, performance/
+│                              # (+ history/), architecture/, proposals/, data/.
+│                              # See `docs/README.md` for the index.
+├── data/                      # Sample grids: bare_env_small_grid_test, pypsa_eur_fr400
+├── benchmarks/                # Perf scripts (bench_load_study, _bench_common)
+├── Overflow_Graph/            # Generated PDFs (created at runtime)
+├── overrides.txt              # Pinned versions for transitive Python deps
+├── scripts/                   # Integration / parity / build helpers —
+│                              # `check_standalone_parity.py`,
+│                              # `check_session_fidelity.py`,
+│                              # `check_gesture_sequence.py`,
+│                              # `check_invariants.py`, `check_code_quality.py`,
+│                              # `code_quality_report.py`, `test_pipeline.py`, …
+├── CONTRIBUTING.md            # Contributor setup, code-quality gate
+├── .editorconfig              # Cross-editor indent / EOL defaults
+├── .env.example               # Template for backend env vars (CORS, …)
+└── .gitignore                 # Excludes __pycache__/, *.pyc, *.pyo, node_modules/
 ```
+
+### Per-subtree docs
+
+| File | Scope |
+|------|-------|
+| `CLAUDE.md` (this file) | Project overview, API table, conventions, parity-audit pointer |
+| `frontend/PARITY_AUDIT.md` | Full standalone-parity audit: feature inventory, mirror-status table, Layer 1–4 conformity findings, gap-priority list, deltas. Split out of this file 2026-04-20. |
+| `expert_backend/CLAUDE.md` | Backend internals: singletons, mixin composition, state lifecycle, NDJSON streaming, gzip helpers, layout cache invariants, NAD prefetch |
+| `expert_backend/tests/CLAUDE.md` | Test conventions, the `conftest.py` mock layer for `pypowsybl` / `expert_op4grid_recommender`, frontend Vitest patterns |
+| `frontend/CLAUDE.md` | Frontend internals: hook split, data flow, state reset, SVG performance levers, detached/tied tabs, interaction logger contract |
+| `docs/README.md` | Index of design/feature/perf/architecture/proposal docs. Start here for any `docs/**` lookup. |
+| `docs/features/save-results.md` | Save / reload session contract (JSON schema, reload flow, regression-guard matrix) |
+| `docs/features/interaction-logging.md` | Replay-ready event log contract |
 
 ## Tech Stack
 
@@ -120,15 +130,21 @@ npm run preview  # Preview production build
 
 ### Running Tests
 
-Tests are integration tests that require a running backend with valid data paths:
+Backend unit tests use `pytest` and run against the in-repo mock layer
+(no live pypowsybl required):
 
 ```bash
-# Start the backend first, then:
-python test_backend.py         # Config, branches, and analysis tests
-python test_api_stream.py      # Streaming response tests
-python test_n1_api.py          # N-1 contingency diagram tests
-python test_voltage_api.py     # Voltage levels API tests
-python verify_n1_simulation.py # N-1 simulation verification
+pytest                                   # Full backend suite
+pytest expert_backend/tests/test_foo.py  # Single file
+```
+
+Ad-hoc integration scripts live in `scripts/` and require a running
+backend with real data paths:
+
+```bash
+python scripts/test_pipeline.py          # End-to-end smoke test
+python scripts/test_n1_calibration.py    # N-1 flow calibration check
+python scripts/test_grid_layout.py       # Layout loading sanity check
 ```
 
 Frontend unit tests use Vitest:
@@ -137,6 +153,23 @@ Frontend unit tests use Vitest:
 cd frontend
 npm run test         # Run Vitest test suite
 ```
+
+### Code-Quality Checks (continuous reporting)
+
+```bash
+# Generate a full JSON + Markdown report (backend + frontend metrics)
+python scripts/code_quality_report.py --output reports/code-quality.json \
+                                      --markdown reports/code-quality.md
+
+# Gate a pull request: non-zero exit on threshold violation
+python scripts/check_code_quality.py
+```
+
+Both scripts run in CI (`.github/workflows/code-quality.yml` and
+`.circleci/config.yml`). The gate guards the reductions documented in
+[`docs/architecture/code-quality-analysis.md`](docs/architecture/code-quality-analysis.md)
+(no new `print()` / bare except, module-size ceilings, no `any` /
+`@ts-ignore` in frontend source).
 
 ## API Endpoints
 
@@ -210,15 +243,27 @@ npm run test         # Run Vitest test suite
 - **Load**: `POST /api/load-session` reads `session.json` -> frontend restores all state without re-simulating actions
 - **Output folder**: `<output_folder>/costudy4grid_session_<contingency>_<timestamp>/` contains `session.json` + overflow PDF
 - **Interaction logging**: Every user interaction is logged as a timestamped, replay-ready event via `interactionLogger`. Saved as `interaction_log.json` alongside `session.json`.
-- See `docs/save-results.md` for session save/load, `docs/interaction-logging.md` for the replay contract, and `docs/action-overview-diagram.md` for the Remedial Action overview (pin overlay on N-1 network)
+- See `docs/features/save-results.md` for session save/load, `docs/features/interaction-logging.md` for the replay contract, and `docs/features/action-overview-diagram.md` for the Remedial Action overview (pin overlay on N-1 network)
 
-### SVG Visualization (standalone_interface.html)
-The standalone interface includes advanced SVG rendering for pypowsybl network-area diagrams:
-- **Dynamic text scaling**: Font sizes for node labels, edge info, and legends scale proportionally to diagram size using `sqrt(diagramSize / referenceSize)`, so text is readable when zoomed in and naturally invisible at full zoom-out
-- **Bus node scaling**: Circle radii for bus nodes and transformer windings are boosted proportionally
-- **Edge info scaling**: Flow values and arrows along lines are scaled via transform groups
-- **ViewBox zoom**: Auto-centers on selected contingency targets with adjustable padding
-- **Interactive pan/zoom**: Wheel + drag for manual exploration via `react-zoom-pan-pinch`
+### SVG Visualization
+Both the React frontend and `standalone_interface.html` render pypowsybl
+NAD/SLD payloads:
+- **Dynamic text scaling** (`utils/svgUtils.ts:boostSvgForLargeGrid` /
+  standalone `boostSvgForLargeGrid`): font sizes for node labels, edge
+  info, and legends scale proportionally to diagram size via
+  `sqrt(diagramSize / referenceSize)`, so text is readable when zoomed
+  in and naturally invisible at full zoom-out. Engaged for grids
+  ≥ 500 voltage levels.
+- **Bus / transformer scaling**: circle radii for bus nodes and
+  transformer windings are boosted proportionally.
+- **Edge-info scaling**: flow values and arrow glyphs are scaled via
+  transform groups so they remain proportional to the line on which
+  they sit.
+- **ViewBox zoom**: auto-centers on selected contingency targets with
+  adjustable padding.
+- **Pan/zoom**: React uses `react-zoom-pan-pinch` (smooth,
+  inertia-aware); standalone uses inline viewBox math (basic, no
+  inertia). See the parity audit below for the gap.
 
 ## Dependencies
 
@@ -244,12 +289,52 @@ The standalone interface includes advanced SVG rendering for pypowsybl network-a
 - The backend API base URL is hardcoded to `http://localhost:8000` in `frontend/src/api.ts`
 - CORS is configured to allow all origins (`allow_origins=["*"]`)
 - **Frontend architecture (Phase 1 refactored)**: `App.tsx` is the state orchestration hub; it must NOT contain large inline JSX blocks. Extracted presentational components live in `components/` and `components/modals/`. When adding new UI sections, create a new component file and wire it in `App.tsx`.
-- **`useSettings` hook**: Exposes a `SettingsState` object with all settings fields + setters. This is passed wholesale to `SettingsModal` to avoid excessive prop drilling. Adding a new setting means: (1) add to `useSettings.ts`, (2) add to `SettingsModal.tsx`, (3) mirror in `standalone_interface.html`.
-- **`standalone_interface.html`**: A self-contained single-file version of the full UI. It does **not** import React components — it has its own inline JSX for all UI sections. When making UI changes, **always mirror them manually** in the standalone interface.
+- **`useSettings` hook**: Exposes a `SettingsState` object with all settings fields + setters. This is passed wholesale to `SettingsModal` to avoid excessive prop drilling. Adding a new setting means: (1) add to `useSettings.ts`, (2) add to `SettingsModal.tsx`. No manual standalone mirror is required — the legacy hand-maintained file has been decommissioned and the auto-generated bundle inherits from the React source automatically.
+- **Standalone bundle (auto-generated)**: `npm run build:standalone` in `frontend/` produces `frontend/dist-standalone/standalone.html` — a single-file HTML with React + CSS inlined via `vite-plugin-singlefile`. This is the canonical distribution artifact replacing the former `standalone_interface.html`. The legacy file remains on disk as `standalone_interface_legacy.html` (untracked) for reference.
 - There is no CI/CD pipeline, Dockerfile, or containerization configured
 - Root `.gitignore` excludes `__pycache__/`, `*.pyc`, `*.pyo`; `frontend/.gitignore` handles frontend build artifacts
-- Root-level Python scripts (`test_*.py`, `reproduce_error.py`, `repro_stuck.py`, `fix_zoom.py`, `inspect_metadata.py`) are ad-hoc development/debugging utilities, not part of the main application
+- Integration helpers and parity scripts live under `scripts/`. They are NOT part of the pytest suite — invoke them directly (`python scripts/<name>.py`).
 - `overrides.txt` contains pinned versions for transitive Python dependencies that need to be forced to specific versions
 - **Frontend unit tests** use Vitest + React Testing Library. Isolated component tests live as `*.test.tsx` files next to their component. Run with `cd frontend && npm run test`. No backend mocking is needed for component tests since they only use mocked props.
 - The two-step analysis flow (step1: detect overloads, step2: resolve) is the primary user workflow; the single-step `/api/run-analysis` is a legacy alternative
-- Session save/load is documented in `docs/save-results.md`
+- Session save/load is documented in `docs/features/save-results.md`
+
+---
+
+## Standalone Interface Parity Audit
+
+The detailed audit — feature inventory, mirror-status table, Layer
+1–4 conformity findings, regression-guard matrix, gap-priority list
+and delta-vs-previous commits — lives in
+[`frontend/PARITY_AUDIT.md`](frontend/PARITY_AUDIT.md). That
+document is the working record of the parity project and is
+updated as fixes land.
+
+Quick status summary (2026-04-20):
+
+- Canonical distribution is now the auto-generated
+  `frontend/dist-standalone/standalone.html`
+  (`npm run build:standalone`). The hand-maintained
+  `standalone_interface.html` has been decommissioned and
+  renamed to `standalone_interface_legacy.html` — committed as
+  a frozen snapshot of its last version (commit `5d2b9d1` content),
+  do NOT edit further. Regenerate UI from `frontend/src/` via
+  `npm run build:standalone` instead.
+- Four parity layers run against the React source + the
+  standalone of choice:
+  - **Layer 1 — static parity** (`scripts/check_standalone_parity.py`)
+  - **Layer 2 — session-reload fidelity** (`scripts/check_session_fidelity.py`)
+  - **Layer 3a — gesture-sequence static proxy** (`scripts/check_gesture_sequence.py`)
+  - **Layer 3b — behavioural E2E** (`scripts/parity_e2e/e2e_parity.spec.ts`)
+  - **Layer 4 — user-observable invariants** (`scripts/check_invariants.py`)
+- All parity scripts accept `COSTUDY4GRID_STANDALONE_PATH` to
+  re-target any artifact; they default to the auto-gen bundle
+  and fall back to the legacy file when the auto-gen is not
+  built.
+
+See [`frontend/PARITY_AUDIT.md`](frontend/PARITY_AUDIT.md) for
+the full gap list, the session-fidelity regression record, the
+honest-gap report of what each layer catches and misses, and the
+2026-04-20 delta that documents the `/api/restore-analysis-context`
+one-way API drift (now resolved) and the auto-generated-standalone
+viability confirmation.

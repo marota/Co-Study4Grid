@@ -5,21 +5,121 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
-from fastapi import FastAPI, HTTPException, Body, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-import os
+import gzip
 import json as json_module
+import logging
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from fastapi import Body, FastAPI, HTTPException, Query, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
 from expert_backend.services.network_service import network_service
 from expert_backend.services.recommender_service import recommender_service
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
+
+
+# --- Per-endpoint JSON gzip helper ---
+#
+# Large SVG diagram payloads are ~25–28 MB of JSON-wrapped XML on big grids
+# (PyPSA-EUR France 400 kV). SVG/JSON compresses ~10× with gzip, so enabling
+# compression on these specific endpoints cuts wire time and browser parse
+# time substantially.
+#
+# We deliberately do NOT re-enable Starlette's global `GZipMiddleware` — it
+# wraps EVERY response, including the `StreamingResponse` returned by
+# `/api/run-analysis` and `/api/run-analysis-step2`, which buffers their
+# NDJSON events until a gzip flush and delays the early-PDF-event that the
+# frontend relies on to render the Overflow PDF ahead of the action results.
+# That buffering was the root cause behind the rollback in commits
+# 8c15de7 → 26bc49d. Scoping compression to individual non-streaming
+# endpoints via this helper sidesteps that completely.
+_GZIP_MIN_BYTES = 10_000  # don't bother for small payloads
+_GZIP_LEVEL = 5            # ~same ratio as level 9 on repetitive SVG, ~3× faster
+
+
+def _maybe_gzip_svg_text(diagram: dict, request: Request) -> Response:
+    """Serialize a diagram payload as a small JSON preamble + raw SVG body.
+
+    Saves ~400-500 ms of `JSON.parse` on the client for large (≥10 MB)
+    SVG strings: embedding the SVG inside JSON forces the browser to
+    escape-scan every byte of the string and allocate a second buffer
+    during parse. Here the SVG bytes are the response body verbatim —
+    only the small metadata dict (lines_overloaded, rho, flow_deltas, …)
+    is JSON-encoded on the first line.
+
+    Wire format::
+
+        {"metadata":...,"lines_overloaded":[...],"lines_overloaded_rho":[...]}\\n
+        <svg ...>...</svg>
+
+    The client reads the body as text, splits on the first `\\n`,
+    JSON.parses the first line, and treats the rest as the SVG string.
+
+    Response is still gzipped on the wire (same Content-Encoding gate
+    as `_maybe_gzip_json`).
+    """
+    diagram = dict(diagram)  # don't mutate caller
+    svg = diagram.pop("svg", "")
+    meta_line = json_module.dumps(
+        jsonable_encoder(diagram), separators=(",", ":"), ensure_ascii=False
+    )
+    body = (meta_line + "\n" + svg).encode("utf-8")
+    accept = request.headers.get("accept-encoding", "")
+    if len(body) < _GZIP_MIN_BYTES or "gzip" not in accept.lower():
+        return Response(
+            content=body,
+            media_type="text/plain; charset=utf-8",
+            headers={"Vary": "Accept-Encoding"},
+        )
+    compressed = gzip.compress(body, compresslevel=_GZIP_LEVEL)
+    return Response(
+        content=compressed,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Content-Encoding": "gzip",
+            "Vary": "Accept-Encoding",
+        },
+    )
+
+
+def _maybe_gzip_json(payload, request: Request) -> Response:
+    """Serialize `payload` to JSON and, if the client signals `Accept-Encoding: gzip`
+    AND the encoded body is large enough, return a gzip-compressed Response.
+    Otherwise return an uncompressed Response.
+
+    Applied per-endpoint on diagram/SLD/actions responses. Streaming
+    endpoints keep using FastAPI's default response flow so NDJSON events
+    continue to flush one-at-a-time to the client.
+    """
+    data = jsonable_encoder(payload)
+    body = json_module.dumps(data, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    accept = request.headers.get("accept-encoding", "")
+    if len(body) < _GZIP_MIN_BYTES or "gzip" not in accept.lower():
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={"Vary": "Accept-Encoding"},
+        )
+    compressed = gzip.compress(body, compresslevel=_GZIP_LEVEL)
+    return Response(
+        content=compressed,
+        media_type="application/json",
+        headers={
+            "Content-Encoding": "gzip",
+            "Vary": "Accept-Encoding",
+        },
+    )
 
 # --- User config file management ---
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -75,14 +175,17 @@ def _save_user_config(data: dict) -> None:
 # Ensure config file exists on startup
 _ensure_user_config()
 
+_CORS_ENV = os.environ.get("CORS_ALLOWED_ORIGINS", "*").strip()
+_CORS_ORIGINS = (
+    ["*"] if _CORS_ENV == "*" else [o.strip() for o in _CORS_ENV.split(",") if o.strip()]
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_CORS_ORIGINS,
+    allow_credentials=_CORS_ORIGINS != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# app.add_middleware(GZipMiddleware, minimum_size=10000)
 
 # Serve generated PDFs. 
 # We mount the directory where PDFs are generated.
@@ -329,13 +432,13 @@ if path:
         )
         if proc.returncode != 0:
             err = (proc.stderr or "").strip() or f"file picker exited with status {proc.returncode}"
-            print(f"Error picking path: {err}")
+            logger.warning("Error picking path: %s", err)
             return {"path": "", "error": err}
         return {"path": proc.stdout.strip()}
     except subprocess.TimeoutExpired:
         return {"path": "", "error": "File picker timed out (no selection made)."}
     except Exception as e:
-        print(f"Error picking path: {e}")
+        logger.warning("Error picking path: %s", e)
         return {"path": "", "error": str(e)}
 
 @app.post("/api/save-session")
@@ -372,9 +475,9 @@ def save_session(request: SaveSessionRequest):
                 shutil.copy2(request.pdf_path, pdf_dest)
                 pdf_copied = True
             except Exception as e:
-                print(f"Warning: Failed to copy PDF from {request.pdf_path} to {pdf_dest}: {e}")
+                logger.warning("Failed to copy PDF from %s to %s: %s", request.pdf_path, pdf_dest, e)
         else:
-            print(f"Warning: PDF path provided but file not found: {request.pdf_path}")
+            logger.warning("PDF path provided but file not found: %s", request.pdf_path)
 
     # Write interaction log if provided
     if request.interaction_log:
@@ -485,8 +588,7 @@ async def run_analysis_step1(request: AnalysisRequest):
         result = recommender_service.run_analysis_step1(request.disconnected_element)
         return result
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/run-analysis-step2")
@@ -510,27 +612,42 @@ async def run_analysis_step2(request: AnalysisStep2Request):
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 @app.get("/api/network-diagram")
-def get_network_diagram():
+def get_network_diagram(http_request: Request, format: str = Query("json")):
+    """Base-state NAD for the loaded network.
+
+    `format=text` returns the raw SVG body prefixed by a single-line
+    JSON header (see `_maybe_gzip_svg_text`), saving ~500 ms of client
+    `JSON.parse` on large grids where the SVG is 20-25 MB. The default
+    `format=json` keeps the legacy `{"svg": "...", ...}` shape so
+    external callers and standalone_interface.html keep working.
+
+    Returns a pre-fetched NAD when available (populated by
+    `RecommenderService.prefetch_base_nad_async()` during `/api/config`
+    — see docs/performance/history/nad-prefetch.md). On cache hit this endpoint skips
+    the ~5-6 s pypowsybl NAD regeneration entirely.
+    """
     try:
-        diagram = recommender_service.get_network_diagram()
-        return diagram
+        diagram = recommender_service.get_prefetched_base_nad()
+        if diagram is None:
+            diagram = recommender_service.get_network_diagram()
+        if format == "text":
+            return _maybe_gzip_svg_text(diagram, http_request)
+        return _maybe_gzip_json(diagram, http_request)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/n1-diagram")
-def get_n1_diagram(request: AnalysisRequest):
+def get_n1_diagram(request: AnalysisRequest, http_request: Request):
     try:
         diagram = recommender_service.get_n1_diagram(request.disconnected_element)
-        return diagram
+        return _maybe_gzip_json(diagram, http_request)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/action-variant-diagram")
-def get_action_variant_diagram(request: ActionVariantRequest):
+def get_action_variant_diagram(request: ActionVariantRequest, http_request: Request):
     """Generate a NAD for the network state after applying a remedial action.
 
     Requires a prior call to /api/run-analysis so the observation is available.
@@ -539,10 +656,42 @@ def get_action_variant_diagram(request: ActionVariantRequest):
         diagram = recommender_service.get_action_variant_diagram(
             request.action_id, mode=request.mode
         )
-        return diagram
+        return _maybe_gzip_json(diagram, http_request)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/n1-diagram-patch")
+def get_n1_diagram_patch(request: AnalysisRequest, http_request: Request):
+    """Return an SVG-less patch payload that the frontend applies to a
+    clone of the N-state NAD to produce the N-1 view.
+
+    Paired with the full-SVG `/api/n1-diagram` endpoint: on client-side
+    error or any unexpected condition the frontend must fall back to the
+    full endpoint. See docs/performance/history/svg-dom-recycling.md.
+    """
+    try:
+        payload = recommender_service.get_n1_diagram_patch(request.disconnected_element)
+        return _maybe_gzip_json(payload, http_request)
+    except Exception as e:
+        logger.exception("API boundary error")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/action-variant-diagram-patch")
+def get_action_variant_diagram_patch(request: ActionVariantRequest, http_request: Request):
+    """Return an SVG-less patch payload for applying a remedial action on
+    top of the already-loaded N-1 (or N) SVG DOM.
+
+    Returns `{patchable: false, reason}` for topology-changing actions
+    (switch toggles, line reconnections, VL-internal topology changes).
+    The frontend then falls back to `/api/action-variant-diagram`, which
+    yields the NAD-native rendering.
+    """
+    try:
+        payload = recommender_service.get_action_variant_diagram_patch(request.action_id)
+        return _maybe_gzip_json(payload, http_request)
+    except Exception as e:
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/element-voltage-levels")
@@ -554,7 +703,7 @@ def get_element_voltage_levels(element_id: str = Query(...)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 @app.post("/api/focused-diagram")
-def get_focused_diagram(request: FocusedDiagramRequest):
+def get_focused_diagram(request: FocusedDiagramRequest, http_request: Request):
     """Generate a NAD focused on a specific element's voltage levels.
 
     If disconnected_element is provided, generates the N-1 state.
@@ -578,12 +727,11 @@ def get_focused_diagram(request: FocusedDiagramRequest):
             )
         diagram["voltage_level_ids"] = vl_ids
         diagram["depth"] = request.depth
-        return diagram
+        return _maybe_gzip_json(diagram, http_request)
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 class ActionVariantFocusedRequest(BaseModel):
@@ -592,7 +740,7 @@ class ActionVariantFocusedRequest(BaseModel):
     depth: int = 1
 
 @app.post("/api/action-variant-focused-diagram")
-def get_action_variant_focused_diagram(request: ActionVariantFocusedRequest):
+def get_action_variant_focused_diagram(request: ActionVariantFocusedRequest, http_request: Request):
     """Generate a focused NAD for a specific VL in the post-action network state."""
     try:
         vl_ids = network_service.get_element_voltage_levels(request.element_id)
@@ -604,12 +752,11 @@ def get_action_variant_focused_diagram(request: ActionVariantFocusedRequest):
             depth=request.depth,
         )
         diagram["voltage_level_ids"] = vl_ids
-        return diagram
+        return _maybe_gzip_json(diagram, http_request)
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 class ActionVariantSldRequest(BaseModel):
@@ -617,35 +764,33 @@ class ActionVariantSldRequest(BaseModel):
     voltage_level_id: str
 
 @app.post("/api/action-variant-sld")
-def get_action_variant_sld(request: ActionVariantSldRequest):
+def get_action_variant_sld(request: ActionVariantSldRequest, http_request: Request):
     """Generate a Single Line Diagram (SLD) for a voltage level in the post-action network state."""
     try:
         diagram = recommender_service.get_action_variant_sld(
             request.action_id,
             request.voltage_level_id,
         )
-        return diagram
+        return _maybe_gzip_json(diagram, http_request)
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 class NSldRequest(BaseModel):
     voltage_level_id: str
 
 @app.post("/api/n-sld")
-def get_n_sld(request: NSldRequest):
+def get_n_sld(request: NSldRequest, http_request: Request):
     """Generate a Single Line Diagram (SLD) for a voltage level in the base network state."""
     try:
         diagram = recommender_service.get_n_sld(request.voltage_level_id)
-        return diagram
+        return _maybe_gzip_json(diagram, http_request)
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 class N1SldRequest(BaseModel):
@@ -653,27 +798,26 @@ class N1SldRequest(BaseModel):
     voltage_level_id: str
 
 @app.post("/api/n1-sld")
-def get_n1_sld(request: N1SldRequest):
+def get_n1_sld(request: N1SldRequest, http_request: Request):
     """Generate a Single Line Diagram (SLD) for a voltage level in the N-1 network state."""
     try:
         diagram = recommender_service.get_n1_sld(
             request.disconnected_element,
             request.voltage_level_id,
         )
-        return diagram
+        return _maybe_gzip_json(diagram, http_request)
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/actions")
-def get_actions():
+def get_actions(http_request: Request):
     """Return all available action IDs and descriptions from the loaded dictionary."""
     try:
         actions = recommender_service.get_all_action_ids()
-        return {"actions": actions}
+        return _maybe_gzip_json({"actions": actions}, http_request)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -690,9 +834,72 @@ def simulate_manual_action(request: ManualActionRequest):
         )
         return result
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+class SimulateAndVariantDiagramRequest(BaseModel):
+    # Simulation parameters — same as ManualActionRequest
+    action_id: str
+    disconnected_element: str
+    action_content: dict | None = None
+    lines_overloaded: list[str] | None = None
+    target_mw: float | None = None
+    target_tap: int | None = None
+    # Diagram parameter — same as ActionVariantRequest
+    mode: str = "network"  # "network" or "delta"
+
+
+@app.post("/api/simulate-and-variant-diagram")
+async def simulate_and_variant_diagram(request: SimulateAndVariantDiagramRequest):
+    """Simulate a manual action and return its post-action NAD in one streamed call.
+
+    NDJSON stream with two events (in order):
+      { "type": "metrics", ... }   — grid2op simulate_manual_action result:
+                                     rho_before / rho_after / max_rho / non_convergence / ...
+                                     emitted as soon as the simulation completes so the
+                                     sidebar action card can update before the diagram is ready.
+      { "type": "diagram", ... }   — get_action_variant_diagram result:
+                                     svg / metadata / flow_deltas / asset_deltas / lf_converged / ...
+
+    On error at either step a single { "type": "error", "message": str } event is emitted
+    and the stream closes.
+
+    This replaces the frontend's fallback "simulate then getActionVariantDiagram" pattern
+    (one round-trip instead of two) and lets the UI paint the action card's rho numbers
+    ~5 s ahead of the post-action SVG on large grids, where the NAD regeneration is the
+    expensive step.
+
+    Like /api/run-analysis-step2 this uses StreamingResponse with `application/x-ndjson`.
+    It is deliberately NOT routed through `_maybe_gzip_json` — the per-endpoint gzip
+    helper is for non-streaming responses only, and wrapping an NDJSON stream in gzip is
+    exactly what the previous `GZipMiddleware` attempt broke (see `perf-per-endpoint-gzip.md`).
+    """
+    def event_generator():
+        try:
+            # Step 1: simulate. `simulate_manual_action` stores the resulting observation
+            # in `self._last_result["prioritized_actions"][action_id]`, which is what the
+            # subsequent `get_action_variant_diagram` reads to pick the post-action variant.
+            sim_result = recommender_service.simulate_manual_action(
+                request.action_id, request.disconnected_element,
+                action_content=request.action_content,
+                lines_overloaded=request.lines_overloaded,
+                target_mw=request.target_mw,
+                target_tap=request.target_tap,
+            )
+            yield json.dumps({"type": "metrics", **sim_result}) + "\n"
+
+            # Step 2: diagram. Uses the freshly-stored observation, no redundant compute.
+            diagram = recommender_service.get_action_variant_diagram(
+                request.action_id, mode=request.mode,
+            )
+            yield json.dumps({"type": "diagram", **diagram}) + "\n"
+        except Exception as e:
+            logger.exception("API boundary error")
+    
+            yield json.dumps({"type": "error", "message": str(e)}) + "\n"
+
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 @app.post("/api/compute-superposition")
 def compute_superposition(request: ComputeSuperpositionRequest):
@@ -703,8 +910,7 @@ def compute_superposition(request: ComputeSuperpositionRequest):
         )
         return result
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 if __name__ == "__main__":

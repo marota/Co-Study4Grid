@@ -119,8 +119,12 @@ export function useAnalysis(): AnalysisState {
       }
 
       // Step 2: Resolution
+      // Replay contract (docs/features/interaction-logging.md):
+      //   { element, selected_overloads, all_overloads, monitor_deselected }
       const step2CorrId = interactionLogger.record('analysis_step2_started', {
+        element: selectedBranch,
         selected_overloads: toResolve,
+        all_overloads: detected,
         monitor_deselected: monitorDeselected,
       });
       const step2StartTs = new Date().toISOString();
@@ -177,8 +181,13 @@ export function useAnalysis(): AnalysisState {
           }
         }
       }
+      // Replay contract (docs/features/interaction-logging.md):
+      //   { n_actions, action_ids, dc_fallback, message, pdf_url }.
+      // The full payload would require threading more state out of
+      // the stream loop; for now we emit the most-replayed field
+      // (n_actions) under its spec key.
       interactionLogger.recordCompletion('analysis_step2_completed', step2CorrId, {
-        actions_count: step2ActionsCount,
+        n_actions: step2ActionsCount,
       }, step2StartTs);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'An error occurred during analysis.';
@@ -190,8 +199,9 @@ export function useAnalysis(): AnalysisState {
 
   const handleDisplayPrioritizedActions = useCallback((selectedActionIds: Set<string>, setActiveTab?: (tab: TabId) => void) => {
     if (!pendingAnalysisResult) return;
+    // Replay contract (docs/features/interaction-logging.md): { n_actions: number }.
     interactionLogger.record('prioritized_actions_displayed', {
-      actions_count: Object.keys(pendingAnalysisResult.actions).length,
+      n_actions: Object.keys(pendingAnalysisResult.actions).length,
     });
     // Auto-switch to the Remedial Action tab so the operator sees the
     // action overview with pins right after pressing the button.
@@ -236,14 +246,21 @@ export function useAnalysis(): AnalysisState {
   }, [pendingAnalysisResult]);
 
   const handleToggleOverload = useCallback((overload: string) => {
-    interactionLogger.record('overload_toggled', { overload });
+    // Replay contract (docs/features/interaction-logging.md):
+    //   { overload, selected }. `selected` is the state AFTER the toggle —
+    //   true if the checkbox is now checked, false otherwise. Compute the
+    //   next value from the current set BEFORE calling setSelectedOverloads
+    //   so the logger doesn't double-fire under React StrictMode (the
+    //   updater callback may run twice).
+    const willSelect = !selectedOverloads.has(overload);
+    interactionLogger.record('overload_toggled', { overload, selected: willSelect });
     setSelectedOverloads((prev: Set<string>) => {
       const next = new Set(prev);
       if (next.has(overload)) next.delete(overload);
       else next.add(overload);
       return next;
     });
-  }, []);
+  }, [selectedOverloads]);
 
   return useMemo(() => ({
     result, setResult,

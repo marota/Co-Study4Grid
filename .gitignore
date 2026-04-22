@@ -12,6 +12,12 @@ dist/
 # Generated outputs
 Overflow_Graph/
 
+# Code-quality reports produced by scripts/code_quality_report.py
+reports/
+
+# Environment overrides (template is tracked as .env.example)
+.env
+
 # User config (default template is tracked as config.default.json)
 config.json
 config_path.txt

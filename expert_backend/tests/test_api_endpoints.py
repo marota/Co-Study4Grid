@@ -94,6 +94,9 @@ class TestGetElementVoltageLevels:
 class TestGetNetworkDiagram:
     def test_success(self, client, mock_services):
         _, mock_rs = mock_services
+        # No NAD prefetch was queued by update_config (or the test doesn't
+        # exercise the prefetch path) — fall through to fresh compute.
+        mock_rs.get_prefetched_base_nad.return_value = None
         mock_rs.get_network_diagram.return_value = {
             "svg": "<svg>diagram</svg>",
             "metadata": '{"nodes":[],"edges":[]}',
@@ -107,10 +110,122 @@ class TestGetNetworkDiagram:
 
     def test_error_returns_400(self, client, mock_services):
         _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None
         mock_rs.get_network_diagram.side_effect = Exception("No network loaded")
 
         response = client.get("/api/network-diagram")
         assert response.status_code == 400
+
+    def test_uses_prefetched_nad_when_available(self, client, mock_services):
+        """When `prefetch_base_nad_async` has populated the cache during
+        `/api/config`, `/api/network-diagram` serves the cached NAD and
+        does NOT re-run the expensive `get_network_diagram()` pypowsybl
+        code path. This is the core of the perf #2 optimisation — see
+        docs/performance/history/nad-prefetch.md.
+        """
+        _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = {
+            "svg": "<svg>prefetched</svg>",
+            "metadata": '{"from":"prefetch"}',
+        }
+
+        response = client.get("/api/network-diagram")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["svg"] == "<svg>prefetched</svg>"
+        # The fresh compute path MUST NOT have been taken.
+        mock_rs.get_network_diagram.assert_not_called()
+
+    def test_falls_through_to_fresh_compute_on_prefetch_timeout(self, client, mock_services):
+        """If `get_prefetched_base_nad` returns None (timeout or never
+        started), the endpoint falls back to the synchronous path. Keeps
+        the endpoint usable when `update_config` was never called (e.g.
+        external callers, process restart)."""
+        _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None  # timed out / not queued
+        mock_rs.get_network_diagram.return_value = {
+            "svg": "<svg>fresh</svg>",
+            "metadata": None,
+        }
+
+        response = client.get("/api/network-diagram")
+        assert response.status_code == 200
+        assert response.json()["svg"] == "<svg>fresh</svg>"
+        mock_rs.get_network_diagram.assert_called_once()
+
+    def test_prefetched_path_supports_text_format(self, client, mock_services):
+        """format=text must work with the prefetched payload too."""
+        _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = {
+            "svg": "<svg>prefetched</svg>",
+            "metadata": None,
+            "lines_overloaded": ["L1"],
+            "lines_overloaded_rho": [1.05],
+        }
+
+        response = client.get("/api/network-diagram?format=text")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        body = response.text
+        nl = body.index("\n")
+        assert body[nl + 1:] == "<svg>prefetched</svg>"
+        mock_rs.get_network_diagram.assert_not_called()
+
+    def test_text_format_returns_header_plus_svg(self, client, mock_services):
+        """format=text returns a small JSON header on the first line,
+        then the raw SVG as the rest of the body. The SVG must NOT be
+        JSON-escaped (savings = no 25 MB JSON.parse on the client)."""
+        import json as json_module
+
+        _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None
+        mock_rs.get_network_diagram.return_value = {
+            "svg": "<svg>diagram</svg>",
+            "metadata": '{"nodes":[]}',
+            "lines_overloaded": ["L1"],
+            "lines_overloaded_rho": [1.05],
+        }
+
+        response = client.get("/api/network-diagram?format=text")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        body = response.text
+        nl = body.index("\n")
+        header = json_module.loads(body[:nl])
+        svg = body[nl + 1:]
+        assert svg == "<svg>diagram</svg>"
+        assert "svg" not in header  # must be stripped from the JSON header
+        assert header["lines_overloaded"] == ["L1"]
+        assert header["lines_overloaded_rho"] == [1.05]
+        assert header["metadata"] == '{"nodes":[]}'
+
+    def test_text_format_gzip(self, client, mock_services):
+        """Large text-format responses are gzip-compressed on the wire
+        when the client signals Accept-Encoding: gzip."""
+        import gzip as gzip_module
+
+        _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None
+        big_svg = "<svg>" + ("x" * 20_000) + "</svg>"
+        mock_rs.get_network_diagram.return_value = {
+            "svg": big_svg,
+            "metadata": None,
+        }
+
+        response = client.get(
+            "/api/network-diagram?format=text",
+            headers={"Accept-Encoding": "gzip"},
+        )
+        assert response.status_code == 200
+        # TestClient auto-decodes gzip, so check the header explicitly.
+        assert response.headers.get("content-encoding") == "gzip"
+        body = response.text  # auto-decoded
+        nl = body.index("\n")
+        assert body[nl + 1:] == big_svg
+        # Sanity: compressed body is much smaller than raw
+        raw_len = len(big_svg) + 100
+        # Re-encode to confirm compression ratio is credible
+        assert len(gzip_module.compress(body.encode("utf-8"))) < raw_len
 
 
 class TestGetN1Diagram:
@@ -134,6 +249,306 @@ class TestGetN1Diagram:
     def test_missing_element(self, client, mock_services):
         response = client.post("/api/n1-diagram", json={})
         assert response.status_code == 422
+
+
+# ------------------------------------------------------------------
+# SVG DOM recycling — patch endpoints
+# ------------------------------------------------------------------
+# /api/n1-diagram-patch and /api/action-variant-diagram-patch return the
+# same delta / overload payload as their full-NAD siblings but SKIP the
+# ~2-4 s pypowsybl NAD generation and the ~20-28 MB SVG transfer. The
+# frontend patches a clone of the already-loaded N-state SVG DOM.
+# See docs/performance/history/svg-dom-recycling.md.
+
+class TestGetN1DiagramPatch:
+    def test_returns_patchable_payload_without_svg(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_n1_diagram_patch.return_value = {
+            "patchable": True,
+            "contingency_id": "LINE_A",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "disconnected_edges": ["LINE_A"],
+            "absolute_flows": {
+                "p1": {"LINE_B": 12.3}, "p2": {"LINE_B": -12.3},
+                "q1": {"LINE_B": 4.1},  "q2": {"LINE_B": -4.1},
+                "vl1": {"LINE_B": "VL_1"}, "vl2": {"LINE_B": "VL_2"},
+            },
+            "lines_overloaded": ["LINE_C"],
+            "lines_overloaded_rho": [1.05],
+            "flow_deltas": {"LINE_B": {"delta": -1.0, "category": "negative", "flip_arrow": False}},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+            "meta": {"base_state": "N", "elapsed_ms": 120},
+        }
+
+        response = client.post(
+            "/api/n1-diagram-patch",
+            json={"disconnected_element": "LINE_A"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["patchable"] is True
+        assert data["contingency_id"] == "LINE_A"
+        assert data["disconnected_edges"] == ["LINE_A"]
+        # SVG-less payload is the whole point of this endpoint.
+        assert "svg" not in data
+        assert "metadata" not in data
+
+    def test_missing_element_returns_422(self, client, mock_services):
+        response = client.post("/api/n1-diagram-patch", json={})
+        assert response.status_code == 422
+
+    def test_service_error_returns_400(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_n1_diagram_patch.side_effect = ValueError("N state unavailable")
+
+        response = client.post(
+            "/api/n1-diagram-patch",
+            json={"disconnected_element": "LINE_A"},
+        )
+        assert response.status_code == 400
+        assert "N state unavailable" in response.json()["detail"]
+
+    def test_payload_carries_same_non_svg_fields_as_full_endpoint(self, client, mock_services):
+        """Frontend contract: every non-SVG field returned by the full
+        endpoint is also present in the patch payload. Enforces parity
+        at the HTTP boundary so the frontend branch-logic can swap
+        transparently."""
+        _, mock_rs = mock_services
+        shared_fields = {
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "lines_overloaded": ["X"],
+            "lines_overloaded_rho": [1.05],
+            "flow_deltas": {"X": {"delta": 1.0, "category": "positive", "flip_arrow": False}},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+        }
+        mock_rs.get_n1_diagram_patch.return_value = {
+            "patchable": True,
+            "contingency_id": "LINE_A",
+            "disconnected_edges": ["LINE_A"],
+            "absolute_flows": {
+                "p1": {}, "p2": {}, "q1": {}, "q2": {}, "vl1": {}, "vl2": {}
+            },
+            "meta": {"base_state": "N", "elapsed_ms": 1},
+            **shared_fields,
+        }
+
+        response = client.post(
+            "/api/n1-diagram-patch",
+            json={"disconnected_element": "LINE_A"},
+        )
+        data = response.json()
+        for k, v in shared_fields.items():
+            assert data[k] == v, f"mismatch on field {k}"
+
+
+class TestGetActionVariantDiagramPatch:
+    def test_returns_patchable_payload_for_pst_action(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.return_value = {
+            "patchable": True,
+            "action_id": "PST_42",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "non_convergence": None,
+            "disconnected_edges": [],
+            "absolute_flows": {
+                "p1": {"LINE_B": 20.0}, "p2": {"LINE_B": -20.0},
+                "q1": {"LINE_B": 5.0},  "q2": {"LINE_B": -5.0},
+                "vl1": {"LINE_B": "VL_1"}, "vl2": {"LINE_B": "VL_2"},
+            },
+            "lines_overloaded": [],
+            "lines_overloaded_rho": [],
+            "flow_deltas": {},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+            "meta": {"base_state": "N-1", "elapsed_ms": 80},
+        }
+
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "PST_42"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["patchable"] is True
+        assert data["action_id"] == "PST_42"
+        assert "svg" not in data
+        assert "metadata" not in data
+
+    def test_patchable_for_disco_action(self, client, mock_services):
+        """Line-disconnection actions flip switch breakers but don't
+        change VL bus counts; rendering is a pure dashed-class toggle
+        on the disconnected line. The backend keeps them patchable
+        and includes the line in `disconnected_edges`."""
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.return_value = {
+            "patchable": True,
+            "action_id": "disco_LINE_Y",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "non_convergence": None,
+            "disconnected_edges": ["CONTINGENCY", "LINE_Y"],
+            "absolute_flows": {
+                "p1": {}, "p2": {}, "q1": {}, "q2": {}, "vl1": {}, "vl2": {},
+            },
+            "lines_overloaded": [],
+            "lines_overloaded_rho": [],
+            "flow_deltas": {},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+            "meta": {"base_state": "N-1", "elapsed_ms": 30},
+        }
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "disco_LINE_Y"},
+        )
+        data = response.json()
+        assert data["patchable"] is True
+        assert "LINE_Y" in data["disconnected_edges"]
+
+    def test_patchable_for_line_reconnect_action(self, client, mock_services):
+        """Single-line reconnections / extra disconnections render as a
+        pure dashed/solid toggle on one edge element, so the backend
+        keeps them patchable and lets svgPatch swap the class list."""
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.return_value = {
+            "patchable": True,
+            "action_id": "RECO_LINE_Y",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "non_convergence": None,
+            "disconnected_edges": [],  # reco_* reconnects the contingency
+            "absolute_flows": {
+                "p1": {}, "p2": {}, "q1": {}, "q2": {}, "vl1": {}, "vl2": {},
+            },
+            "lines_overloaded": [],
+            "lines_overloaded_rho": [],
+            "flow_deltas": {},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+            "meta": {"base_state": "N-1", "elapsed_ms": 42},
+        }
+
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "RECO_LINE_Y"},
+        )
+        data = response.json()
+        assert data["patchable"] is True
+        assert data["disconnected_edges"] == []
+
+    def test_patchable_carries_contingency_on_disconnected_edges(self, client, mock_services):
+        """Post-action patch must mark the N-1 contingency as dashed
+        on the action tab — it is still disconnected after the action
+        unless the action explicitly reconnects it."""
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.return_value = {
+            "patchable": True,
+            "action_id": "LOAD_SHED_X",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "non_convergence": None,
+            "disconnected_edges": ["CONTINGENCY_LINE"],
+            "absolute_flows": {
+                "p1": {}, "p2": {}, "q1": {}, "q2": {}, "vl1": {}, "vl2": {},
+            },
+            "lines_overloaded": [],
+            "lines_overloaded_rho": [],
+            "flow_deltas": {},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+            "meta": {"base_state": "N-1", "elapsed_ms": 42},
+        }
+
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "LOAD_SHED_X"},
+        )
+        data = response.json()
+        assert data["patchable"] is True
+        assert data["disconnected_edges"] == ["CONTINGENCY_LINE"]
+
+    def test_patchable_with_vl_subtrees_for_node_merging(self, client, mock_services):
+        """Node-merging / node-splitting / coupling actions change bus
+        counts per VL. The backend now patches those rendering
+        changes via pypowsybl-native focused sub-diagrams instead of
+        falling back to the full NAD. The frontend splices each
+        `<g id=\"nad-vl-*\">` subtree into the cloned base."""
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.return_value = {
+            "patchable": True,
+            "action_id": "node_merging_PYMONP3",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "non_convergence": None,
+            "disconnected_edges": ["CONTINGENCY_LINE"],
+            "absolute_flows": {
+                "p1": {}, "p2": {}, "q1": {}, "q2": {}, "vl1": {}, "vl2": {},
+            },
+            "lines_overloaded": [],
+            "lines_overloaded_rho": [],
+            "flow_deltas": {},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+            "vl_subtrees": {
+                "PYMONP3": {"node_svg": "<g id=\"nad-vl-PYMONP3\"><circle r=\"100\"/></g>"},
+            },
+            "meta": {"base_state": "N-1", "elapsed_ms": 120},
+        }
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "node_merging_PYMONP3"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["patchable"] is True
+        assert "PYMONP3" in data["vl_subtrees"]
+        assert data["vl_subtrees"]["PYMONP3"]["node_svg"].startswith("<g")
+
+    def test_returns_patchable_false_when_subtree_extraction_fails(self, client, mock_services):
+        """Graceful fallback: if focused-NAD extraction fails on the
+        backend, the service returns `patchable: false, reason:
+        vl_topology_changed` so the frontend falls through to the
+        full /api/action-variant-diagram endpoint. Correctness before
+        speed."""
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.return_value = {
+            "patchable": False,
+            "action_id": "NODE_SPLIT_Z",
+            "reason": "vl_topology_changed",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "non_convergence": None,
+        }
+
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "NODE_SPLIT_Z"},
+        )
+        data = response.json()
+        assert data["patchable"] is False
+        assert data["reason"] == "vl_topology_changed"
+
+    def test_missing_action_returns_422(self, client, mock_services):
+        response = client.post("/api/action-variant-diagram-patch", json={})
+        assert response.status_code == 422
+
+    def test_unknown_action_returns_400(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.side_effect = ValueError(
+            "Action 'unknown' not found in last analysis result."
+        )
+
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "unknown"},
+        )
+        assert response.status_code == 400
+        assert "not found" in response.json()["detail"]
 
 
 class TestRunAnalysis:
@@ -681,3 +1096,273 @@ class TestSimulateManualActionWithContext:
         call_kwargs = mock_rs.simulate_manual_action.call_args
         assert call_kwargs[1].get("lines_overloaded") == ["LINE_A", "LINE_C"] or \
                (len(call_kwargs[0]) >= 4 and call_kwargs[0][3] == ["LINE_A", "LINE_C"])
+
+
+class TestSimulateAndVariantDiagramStream:
+    """Combined `POST /api/simulate-and-variant-diagram` NDJSON endpoint.
+
+    Replaces the legacy two-shot
+    `simulateManualAction -> getActionVariantDiagram` fallback path with a
+    single streamed response so the action card's rho numbers can paint
+    as soon as the grid2op simulation completes without waiting for the
+    (expensive) post-action NAD regeneration.
+
+    These tests lock in:
+      - the two-event ordering (`metrics` first, then `diagram`);
+      - the streaming content-type (`application/x-ndjson`);
+      - the no-gzip invariant on streamed responses — wrapping this endpoint
+        in `_maybe_gzip_json` or the global `GZipMiddleware` would break
+        early-event delivery, which was the root cause of the step-2 rollback
+        (see docs/performance/history/per-endpoint-gzip.md).
+    """
+
+    _SIM_RESULT = {
+        "action_id": "act_1",
+        "description_unitaire": "Open LINE_A",
+        "rho_before": [0.95, 1.02],
+        "rho_after": [0.80, 0.70],
+        "max_rho": 0.80,
+        "max_rho_line": "LINE_A",
+        "is_rho_reduction": True,
+        "non_convergence": None,
+        "lines_overloaded": ["LINE_A"],
+    }
+    _DIAG_RESULT = {
+        "svg": "<svg>post-action</svg>",
+        "metadata": "{}",
+        "action_id": "act_1",
+        "lf_converged": True,
+        "lf_status": "CONVERGED",
+        "non_convergence": None,
+    }
+
+    def test_streams_metrics_then_diagram(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.simulate_manual_action.return_value = self._SIM_RESULT
+        mock_rs.get_action_variant_diagram.return_value = self._DIAG_RESULT
+
+        response = client.post(
+            "/api/simulate-and-variant-diagram",
+            json={
+                "action_id": "act_1",
+                "disconnected_element": "LINE_B",
+            },
+        )
+        assert response.status_code == 200
+        assert response.headers.get("content-type", "").startswith(
+            "application/x-ndjson"
+        )
+        # Must NOT be gzipped — see class docstring.
+        assert response.headers.get("content-encoding") != "gzip"
+
+        lines = [ln for ln in response.text.splitlines() if ln.strip()]
+        assert len(lines) == 2
+        metrics = json.loads(lines[0])
+        diagram = json.loads(lines[1])
+        assert metrics["type"] == "metrics"
+        assert metrics["description_unitaire"] == "Open LINE_A"
+        assert metrics["rho_after"] == [0.80, 0.70]
+        assert diagram["type"] == "diagram"
+        assert diagram["svg"] == "<svg>post-action</svg>"
+        assert diagram["lf_converged"] is True
+
+    def test_ignores_accept_encoding_gzip(self, client, mock_services):
+        """Client-sent `Accept-Encoding: gzip` must not cause the stream to be
+        wrapped — the frontend reads NDJSON with TextDecoder and needs each
+        event to arrive as soon as the server yields it.
+        """
+        _, mock_rs = mock_services
+        mock_rs.simulate_manual_action.return_value = self._SIM_RESULT
+        mock_rs.get_action_variant_diagram.return_value = self._DIAG_RESULT
+
+        response = client.post(
+            "/api/simulate-and-variant-diagram",
+            json={"action_id": "act_1", "disconnected_element": "LINE_B"},
+            headers={"Accept-Encoding": "gzip"},
+        )
+        assert response.status_code == 200
+        assert response.headers.get("content-encoding") != "gzip"
+
+    def test_error_on_simulate_is_reported_and_closes_stream(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.simulate_manual_action.side_effect = ValueError("no dict loaded")
+
+        response = client.post(
+            "/api/simulate-and-variant-diagram",
+            json={"action_id": "act_1", "disconnected_element": "LINE_B"},
+        )
+        assert response.status_code == 200
+        lines = [ln for ln in response.text.splitlines() if ln.strip()]
+        assert len(lines) == 1
+        event = json.loads(lines[0])
+        assert event["type"] == "error"
+        assert "no dict loaded" in event["message"]
+        mock_rs.get_action_variant_diagram.assert_not_called()
+
+    def test_error_on_diagram_after_successful_metrics(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.simulate_manual_action.return_value = self._SIM_RESULT
+        mock_rs.get_action_variant_diagram.side_effect = ValueError("no observation")
+
+        response = client.post(
+            "/api/simulate-and-variant-diagram",
+            json={"action_id": "act_1", "disconnected_element": "LINE_B"},
+        )
+        assert response.status_code == 200
+        lines = [ln for ln in response.text.splitlines() if ln.strip()]
+        # Metrics event still arrives — the UI can at least update the sidebar.
+        assert len(lines) == 2
+        assert json.loads(lines[0])["type"] == "metrics"
+        assert json.loads(lines[1])["type"] == "error"
+
+    def test_passes_optional_params_through(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.simulate_manual_action.return_value = self._SIM_RESULT
+        mock_rs.get_action_variant_diagram.return_value = self._DIAG_RESULT
+
+        client.post(
+            "/api/simulate-and-variant-diagram",
+            json={
+                "action_id": "act_1",
+                "disconnected_element": "LINE_B",
+                "action_content": {"switches": {"sw1": True}},
+                "lines_overloaded": ["LINE_A", "LINE_C"],
+                "target_mw": 42.5,
+                "target_tap": 3,
+                "mode": "delta",
+            },
+        )
+        call = mock_rs.simulate_manual_action.call_args
+        assert call.kwargs["action_content"] == {"switches": {"sw1": True}}
+        assert call.kwargs["lines_overloaded"] == ["LINE_A", "LINE_C"]
+        assert call.kwargs["target_mw"] == 42.5
+        assert call.kwargs["target_tap"] == 3
+        diag_call = mock_rs.get_action_variant_diagram.call_args
+        assert diag_call.kwargs["mode"] == "delta"
+
+
+class TestDiagramGzipCompression:
+    """Per-endpoint gzip on the 3 large SVG + 1 actions endpoints.
+
+    We deliberately do NOT use Starlette's global `GZipMiddleware` because it
+    buffers `StreamingResponse` bodies (NDJSON on /api/run-analysis(-step2)),
+    which was the rollback cause in commits 8c15de7 -> 26bc49d. These tests
+    lock in the per-endpoint behaviour so that future refactors can't
+    silently regress back to the global middleware.
+    """
+
+    # A large-enough SVG body to cross the _GZIP_MIN_BYTES threshold.
+    _BIG_SVG = "<svg>" + ("<g><path d='M0 0 L1 1'/></g>" * 1000) + "</svg>"
+
+    def _assert_gzip(self, response):
+        assert response.status_code == 200
+        # httpx decodes Content-Encoding transparently, but exposes the header
+        # value as seen on the wire — so we can still verify it was gzipped.
+        assert response.headers.get("content-encoding") == "gzip"
+        assert "accept-encoding" in response.headers.get("vary", "").lower()
+        # Response body is still valid JSON after transparent decompression.
+        data = response.json()
+        assert "svg" in data or "actions" in data
+
+    def _assert_no_gzip(self, response):
+        assert response.status_code == 200
+        assert response.headers.get("content-encoding") != "gzip"
+        assert "accept-encoding" in response.headers.get("vary", "").lower()
+        assert response.json()
+
+    def test_network_diagram_gzip_when_accepted(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None
+        mock_rs.get_network_diagram.return_value = {
+            "svg": self._BIG_SVG,
+            "metadata": "{}",
+        }
+        response = client.get(
+            "/api/network-diagram",
+            headers={"Accept-Encoding": "gzip"},
+        )
+        self._assert_gzip(response)
+
+    def test_network_diagram_no_gzip_when_not_accepted(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None
+        mock_rs.get_network_diagram.return_value = {
+            "svg": self._BIG_SVG,
+            "metadata": "{}",
+        }
+        response = client.get(
+            "/api/network-diagram",
+            headers={"Accept-Encoding": "identity"},
+        )
+        self._assert_no_gzip(response)
+
+    def test_n1_diagram_gzip_when_accepted(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_n1_diagram.return_value = {
+            "svg": self._BIG_SVG,
+            "metadata": "{}",
+            "lf_converged": True,
+        }
+        response = client.post(
+            "/api/n1-diagram",
+            json={"disconnected_element": "LINE_A"},
+            headers={"Accept-Encoding": "gzip"},
+        )
+        self._assert_gzip(response)
+        assert response.json()["lf_converged"] is True
+
+    def test_action_variant_diagram_gzip_when_accepted(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram.return_value = {
+            "svg": self._BIG_SVG,
+            "metadata": "{}",
+        }
+        response = client.post(
+            "/api/action-variant-diagram",
+            json={"action_id": "action_1"},
+            headers={"Accept-Encoding": "gzip"},
+        )
+        self._assert_gzip(response)
+
+    def test_small_payload_below_threshold_is_not_compressed(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_prefetched_base_nad.return_value = None
+        # Tiny SVG — well below _GZIP_MIN_BYTES (10 kB).
+        mock_rs.get_network_diagram.return_value = {
+            "svg": "<svg/>",
+            "metadata": "{}",
+        }
+        response = client.get(
+            "/api/network-diagram",
+            headers={"Accept-Encoding": "gzip"},
+        )
+        assert response.status_code == 200
+        assert response.headers.get("content-encoding") != "gzip"
+        assert response.json()["svg"] == "<svg/>"
+
+    def test_streaming_analysis_is_not_affected(self, client, mock_services):
+        """/api/run-analysis-step2 MUST keep streaming NDJSON one event per line
+        (the overflow PDF event must reach the browser before the result
+        event). The per-endpoint gzip helper must not be wrapped around it.
+        """
+        _, mock_rs = mock_services
+
+        def fake_step2(*args, **kwargs):
+            yield {"type": "pdf", "pdf_path": "/tmp/graph.pdf"}
+            yield {"type": "result", "analysis_result": {"actions": []}}
+
+        mock_rs.run_analysis_step2.side_effect = fake_step2
+
+        response = client.post(
+            "/api/run-analysis-step2",
+            json={"selected_overloads": ["LINE_A"]},
+            headers={"Accept-Encoding": "gzip"},
+        )
+        assert response.status_code == 200
+        # NDJSON streaming response — never gzip-wrapped by the helper.
+        assert response.headers.get("content-encoding") != "gzip"
+        assert response.headers.get("content-type", "").startswith("application/x-ndjson")
+        lines = [ln for ln in response.text.splitlines() if ln.strip()]
+        assert len(lines) == 2
+        assert json.loads(lines[0])["type"] == "pdf"
+        assert json.loads(lines[1])["type"] == "result"

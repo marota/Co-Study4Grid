@@ -233,4 +233,352 @@ class TestGetMonitoringParametersWithContext:
         assert lines == ["L1", "L2", "L3"]
 
 
+class TestGetBaseNetworkMutualisation:
+    """`_get_base_network` must reuse `network_service.network` when available
+    to avoid re-parsing the same .xiidm file twice (~3-5 s of wasted pypowsybl
+    work on large grids). See docs/performance/history/shared-network.md."""
 
+    def test_reuses_network_service_network_when_available(self):
+        from expert_backend.services.network_service import network_service
+
+        service = RecommenderService()
+        sentinel = MagicMock(name="shared_pypowsybl_network")
+        # `_capture_initial_pst_taps` touches pypowsybl tap-changer APIs —
+        # stub it out so the test doesn't need a real pp object.
+        saved = network_service.network
+        network_service.network = sentinel
+        try:
+            with patch.object(service, "_capture_initial_pst_taps"), \
+                 patch("pypowsybl.network.load") as mock_load:
+                n = service._get_base_network()
+                # Mutualisation: no fresh pp.network.load() was issued.
+                mock_load.assert_not_called()
+                assert n is sentinel
+                # Convenience method installed.
+                assert callable(getattr(n, "get_line_ids", None))
+                # Cache populated so the next call is a no-op.
+                assert service._base_network is sentinel
+        finally:
+            network_service.network = saved
+
+    def test_falls_back_to_standalone_load_when_network_service_empty(self):
+        """Preserves direct-instantiation path for unit tests and callers
+        that bypass `/api/config` (and therefore don't populate
+        `network_service.network`)."""
+        from expert_backend.services.network_service import network_service
+
+        service = RecommenderService()
+        loaded = MagicMock(name="freshly_loaded")
+
+        saved = network_service.network
+        network_service.network = None
+        try:
+            env_path = MagicMock()
+            env_path.is_dir.return_value = False
+            env_path.exists.return_value = True
+            env_path.__str__ = lambda self: "/fake/grid.xiidm"  # type: ignore[assignment]
+
+            with patch.object(config, "ENV_PATH", env_path), \
+                 patch.object(service, "_capture_initial_pst_taps"), \
+                 patch("pypowsybl.network.load", return_value=loaded) as mock_load:
+                n = service._get_base_network()
+                mock_load.assert_called_once()
+                assert n is loaded
+        finally:
+            network_service.network = saved
+
+
+class TestPrefetchBaseNad:
+    """Tests for the base-NAD prefetch (perf #2 — see docs/performance/history/nad-prefetch.md).
+
+    The prefetch runs concurrently with `setup_environment_configs_pypowsybl`
+    inside `update_config` so the subsequent `/api/network-diagram` XHR can
+    skip the ~6 s of pypowsybl NAD regeneration entirely.
+    """
+
+    def test_initial_state_has_no_prefetch(self):
+        service = RecommenderService()
+        assert service._prefetched_base_nad is None
+        assert service._prefetched_base_nad_event is None
+        assert service.get_prefetched_base_nad() is None
+
+    def test_prefetch_populates_cache_on_success(self):
+        service = RecommenderService()
+
+        expected = {"svg": "<svg>prefetched</svg>", "metadata": None}
+        # `_get_base_network()` is called in the main thread to pre-warm
+        # the network cache; the worker then calls `get_network_diagram`
+        # on the hot cache. Patch both so we don't need pypowsybl.
+        with patch.object(service, "_get_base_network", return_value=MagicMock()), \
+             patch.object(service, "get_network_diagram", return_value=expected):
+            service.prefetch_base_nad_async()
+            # Block until the worker completes.
+            result = service.get_prefetched_base_nad(timeout=10)
+
+        assert result == expected
+        assert service._prefetched_base_nad_error is None
+
+    def test_prefetch_surfaces_worker_exception(self):
+        service = RecommenderService()
+
+        boom = RuntimeError("pypowsybl exploded")
+        with patch.object(service, "_get_base_network", return_value=MagicMock()), \
+             patch.object(service, "get_network_diagram", side_effect=boom):
+            service.prefetch_base_nad_async()
+            with pytest.raises(RuntimeError, match="pypowsybl exploded"):
+                service.get_prefetched_base_nad(timeout=10)
+
+    def test_prefetch_records_network_load_error_without_spawning_worker(self):
+        """If `_get_base_network()` fails in the main thread, no worker
+        should be started — the error is recorded directly and the event
+        is pre-set so the next `get_prefetched_base_nad()` re-raises
+        instantly."""
+        service = RecommenderService()
+
+        boom = FileNotFoundError("network file gone")
+        with patch.object(service, "_get_base_network", side_effect=boom):
+            service.prefetch_base_nad_async()
+        # Worker thread was never started.
+        assert service._prefetched_base_nad_thread is None
+        # Event is pre-set so there is no wait.
+        assert service._prefetched_base_nad_event is not None
+        assert service._prefetched_base_nad_event.is_set()
+        with pytest.raises(FileNotFoundError):
+            service.get_prefetched_base_nad(timeout=0.1)
+
+    def test_reset_drains_pending_prefetch_and_clears_state(self):
+        """A dangling worker thread that finishes after reset() would
+        otherwise write stale SVG into the next study's cache. `reset()`
+        must join the worker and then zero the fields."""
+        service = RecommenderService()
+        expected = {"svg": "<svg>first_study</svg>", "metadata": None}
+        with patch.object(service, "_get_base_network", return_value=MagicMock()), \
+             patch.object(service, "get_network_diagram", return_value=expected):
+            service.prefetch_base_nad_async()
+            # Make sure the worker ran to completion before reset.
+            service.get_prefetched_base_nad(timeout=10)
+
+        service.reset()
+        assert service._prefetched_base_nad is None
+        assert service._prefetched_base_nad_error is None
+        assert service._prefetched_base_nad_event is None
+        assert service._prefetched_base_nad_thread is None
+        assert service.get_prefetched_base_nad() is None
+
+    def test_timeout_returns_none_without_raising(self):
+        """When the caller runs out of patience, `get_prefetched_base_nad`
+        returns None (signalling 'fall through to fresh compute') rather
+        than raising, so the endpoint stays usable. The worker keeps
+        running — its eventual result will be discarded on the next reset."""
+        service = RecommenderService()
+
+        import threading
+        release = threading.Event()
+
+        def slow_get_diagram():
+            release.wait(timeout=5)
+            return {"svg": "<svg/>", "metadata": None}
+
+        try:
+            with patch.object(service, "_get_base_network", return_value=MagicMock()), \
+                 patch.object(service, "get_network_diagram", side_effect=slow_get_diagram):
+                service.prefetch_base_nad_async()
+                result = service.get_prefetched_base_nad(timeout=0.05)
+                assert result is None
+        finally:
+            # Let the worker finish so the daemon thread doesn't linger.
+            release.set()
+            if service._prefetched_base_nad_thread is not None:
+                service._prefetched_base_nad_thread.join(timeout=5)
+
+
+class TestUpdateConfigSharesNetworkWithGrid2op:
+    """`update_config` must pass the already-loaded Network to the upstream
+    `setup_environment_configs_pypowsybl(network=...)` so grid2op does not
+    re-parse the same .xiidm file. See docs/performance/history/grid2op-shared-network.md."""
+
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("expert_backend.services.network_service.network_service")
+    @patch("expert_backend.services.recommender_service.load_actions")
+    @patch("expert_backend.services.recommender_service.enrich_actions_lazy")
+    def test_update_config_injects_preloaded_network_into_upstream(
+        self, mock_enrich, mock_load, mock_ns, mock_file
+    ):
+        mock_load.return_value = {"disco_line1": {}}  # skip disco auto-gen
+        mock_ns.get_disconnectable_elements.return_value = []
+        mock_ns.get_monitored_elements.return_value = []
+
+        service = RecommenderService()
+        # Pre-populate the base network so `prefetch_base_nad_async` doesn't
+        # try the real load. The same sentinel must land in the upstream call.
+        preloaded = MagicMock(name="preloaded_network")
+        service._base_network = preloaded
+
+        settings = ConfigRequest(
+            network_path="/tmp/net.xiidm",
+            action_file_path="/tmp/actions.json",
+        )
+
+        with patch(
+            "expert_op4grid_recommender.environment_pypowsybl.setup_environment_configs_pypowsybl"
+        ) as mock_setup, patch.object(
+            service, "prefetch_base_nad_async"
+        ):
+            mock_setup.return_value = (
+                MagicMock(),  # env
+                MagicMock(),  # obs
+                "/tmp/env",   # env_path
+                "chronic",    # chronic_name
+                None,         # custom_layout
+                {},           # raw_dict
+                [],           # lines_non_reconnectable
+                [],           # lines_we_care_about
+            )
+
+            service.update_config(settings)
+
+            # Upstream helper MUST receive the pre-loaded Network to skip
+            # its own pp.network.load() — this is the whole point of the
+            # perf-grid2op-shared-network optimisation.
+            mock_setup.assert_called_once()
+            call_kwargs = mock_setup.call_args.kwargs
+            assert call_kwargs.get("network") is preloaded
+            # AND `skip_initial_obs=True` — the obs returned by upstream
+            # is discarded below (we never store it in `_cached_env_context`),
+            # so computing it wastes ~3-5 s on a large grid. Requires
+            # expert_op4grid_recommender >= 0.2.0.post3.
+            # See docs/performance/history/skip-initial-obs.md.
+            assert call_kwargs.get("skip_initial_obs") is True
+
+
+
+
+
+class TestEnsureNStateReady:
+    """Guard that runs at the entry of every analyze/suggest/simulate
+    endpoint: must drain any pending NAD prefetch AND position the shared
+    pypowsybl Network on the N variant. See docs/performance/history/grid2op-shared-network.md
+    ("variant-state guard")."""
+
+    def test_drains_prefetch_then_positions_n_variant(self):
+        service = RecommenderService()
+        fake_net = MagicMock(name="shared_network")
+        fake_net.get_variant_ids.return_value = ["N_state_cached"]
+        service._base_network = fake_net
+
+        with patch.object(service, "_drain_pending_base_nad_prefetch") as drain, \
+             patch.object(service, "_get_n_variant", return_value="N_state_cached"):
+            service._ensure_n_state_ready()
+
+            drain.assert_called_once()
+            fake_net.set_working_variant.assert_called_once_with("N_state_cached")
+
+    def test_is_noop_before_any_network_is_loaded(self):
+        """Calling the guard before /api/config has run at all must not
+        raise — callers downstream will produce their own error when
+        they actually need the network."""
+        service = RecommenderService()
+        assert service._base_network is None
+        saved_env_path = getattr(config, "ENV_PATH", None)
+        try:
+            config.ENV_PATH = None
+            service._ensure_n_state_ready()  # Must not raise.
+        finally:
+            config.ENV_PATH = saved_env_path
+
+    def test_swallows_and_logs_variant_positioning_errors(self):
+        """If `_get_n_variant` fails (e.g. LF diverged), the guard must not
+        propagate — downstream code produces a clearer error on its first
+        variant access."""
+        service = RecommenderService()
+        service._base_network = MagicMock(name="net")
+        with patch.object(service, "_drain_pending_base_nad_prefetch"), \
+             patch.object(service, "_get_n_variant", side_effect=RuntimeError("LF diverged")):
+            service._ensure_n_state_ready()  # Must not re-raise.
+
+
+class TestVariantRestorationIsSafeOnException:
+    """`_get_n_variant` and `_get_n1_variant` must restore the original
+    working variant even when the AC load flow raises. Otherwise the
+    shared Network (used by network_service and grid2op) gets stuck on
+    a `*_cached` variant and silently corrupts concurrent reads."""
+
+    def test_get_n_variant_restores_original_on_lf_failure(self):
+        service = RecommenderService()
+        fake_net = MagicMock(name="net")
+        fake_net.get_working_variant_id.return_value = "InitialState"
+        fake_net.get_variant_ids.return_value = []  # variant doesn't exist → create path
+        service._base_network = fake_net
+
+        with patch.object(service, "_run_ac_with_fallback", side_effect=RuntimeError("LF boom")):
+            with pytest.raises(RuntimeError, match="LF boom"):
+                service._get_n_variant()
+
+        # MUST have been called to restore the original variant, even
+        # though the LF raised inside the try block.
+        fake_net.set_working_variant.assert_any_call("InitialState")
+
+    def test_get_n1_variant_restores_original_on_lf_failure(self):
+        service = RecommenderService()
+        fake_net = MagicMock(name="net")
+        fake_net.get_working_variant_id.return_value = "InitialState"
+        # N variant already exists → _get_n_variant is a fast path (no LF).
+        fake_net.get_variant_ids.return_value = ["N_state_cached"]
+        service._base_network = fake_net
+
+        with patch.object(service, "_run_ac_with_fallback", side_effect=RuntimeError("LF boom")):
+            with pytest.raises(RuntimeError, match="LF boom"):
+                service._get_n1_variant("LINE_A")
+
+        fake_net.set_working_variant.assert_any_call("InitialState")
+
+
+class TestEnsureN1StateReady:
+    """`_ensure_n1_state_ready(disconnected_element)` is used by
+    `simulate_manual_action` and `compute_superposition` — they operate
+    on top of a known contingency, so the natural entry state is N-1
+    (not N). The guard drains the NAD prefetch worker, then positions
+    the shared Network on the N-1 variant for the given contingency."""
+
+    def test_drains_prefetch_then_positions_n1_variant(self):
+        service = RecommenderService()
+        fake_net = MagicMock(name="shared_network")
+        service._base_network = fake_net
+
+        with patch.object(service, "_drain_pending_base_nad_prefetch") as drain, \
+             patch.object(service, "_get_n1_variant", return_value="N_1_state_LINE_A") as n1:
+            service._ensure_n1_state_ready("LINE_A")
+
+            drain.assert_called_once()
+            n1.assert_called_once_with("LINE_A")
+            fake_net.set_working_variant.assert_called_once_with("N_1_state_LINE_A")
+
+    def test_is_noop_before_any_network_is_loaded(self):
+        service = RecommenderService()
+        assert service._base_network is None
+        saved_env_path = getattr(config, "ENV_PATH", None)
+        try:
+            config.ENV_PATH = None
+            service._ensure_n1_state_ready("LINE_A")  # Must not raise.
+        finally:
+            config.ENV_PATH = saved_env_path
+
+    def test_drain_only_when_disconnected_element_is_empty(self):
+        """If the caller has no contingency in hand (e.g. an odd fallback
+        path), drain but don't attempt to position — there's no
+        meaningful N-1 to ask for."""
+        service = RecommenderService()
+        service._base_network = MagicMock(name="net")
+        with patch.object(service, "_drain_pending_base_nad_prefetch") as drain, \
+             patch.object(service, "_get_n1_variant") as n1:
+            service._ensure_n1_state_ready("")
+
+            drain.assert_called_once()
+            n1.assert_not_called()
+
+    def test_swallows_and_logs_variant_positioning_errors(self):
+        service = RecommenderService()
+        service._base_network = MagicMock(name="net")
+        with patch.object(service, "_drain_pending_base_nad_prefetch"), \
+             patch.object(service, "_get_n1_variant", side_effect=RuntimeError("LF diverged")):
+            service._ensure_n1_state_ready("LINE_A")  # Must not re-raise.
