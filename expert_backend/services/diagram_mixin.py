@@ -49,6 +49,7 @@ from expert_backend.services.diagram.overloads import (
     get_overloaded_lines,
 )
 from expert_backend.services.diagram.sld_render import extract_sld_svg_and_metadata
+from expert_backend.services.sanitize import sanitize_for_json
 
 logger = logging.getLogger(__name__)
 
@@ -256,6 +257,577 @@ class DiagramMixin:
             diagram["asset_deltas"] = {}
 
         return diagram
+
+    # ------------------------------------------------------------------
+    # Patch-only endpoints (SVG DOM recycling)
+    # ------------------------------------------------------------------
+    #
+    # get_n1_diagram_patch and get_action_variant_diagram_patch return the
+    # same delta/overload payload as their full-NAD siblings but SKIP the
+    # `_generate_diagram(...)` call entirely. The frontend clones the
+    # already-loaded N-state SVG DOM and applies these patches in-place,
+    # saving ~2-4 s of pypowsybl NAD generation and ~20-28 MB of SVG
+    # transfer + parse per call on large grids.
+    #
+    # Topology-changing actions (switch opens, line reconnections) are
+    # flagged `patchable: false` so the frontend falls back to the full
+    # NAD endpoint — pypowsybl's concentric multi-circle VL node
+    # rendering cannot be faithfully reproduced by DOM patching.
+    #
+    # See docs/performance/history/svg-dom-recycling.md for the full
+    # rationale and benchmark results.
+
+    def _build_n1_patch_payload(self, disconnected_element: str) -> dict:
+        """Compute the N-1 patch payload without generating the NAD SVG.
+
+        Mirrors the flow-delta / overload logic in `get_n1_diagram` but
+        skips `_generate_diagram` and `_get_svg_*` entirely — returns
+        only the per-branch / per-asset data needed by the frontend to
+        patch a cloned N-state SVG.
+        """
+        import time
+
+        t_start = time.time()
+        n = self._get_base_network()
+        original_variant = n.get_working_variant_id()
+        n1_variant_id = self._get_n1_variant(disconnected_element)
+        n.set_working_variant(n1_variant_id)
+
+        try:
+            # Reuse the same LF-status cache as `get_n1_diagram`.
+            cached_status = getattr(self, '_lf_status_by_variant', {}).get(n1_variant_id)
+            if cached_status is not None:
+                converged = cached_status["converged"]
+                lf_status = cached_status["lf_status"]
+            else:
+                params = create_olf_rte_parameter()
+                results = self._run_ac_with_fallback(n, params)
+                converged = any(r.status.name == 'CONVERGED' for r in results)
+                lf_status = results[0].status.name if results else "UNKNOWN"
+
+            payload = {
+                "patchable": True,
+                "contingency_id": disconnected_element,
+                "lf_converged": converged,
+                "lf_status": lf_status,
+                "disconnected_edges": [disconnected_element] if disconnected_element else [],
+            }
+
+            # Flows + deltas (same path as get_n1_diagram lines 243-266).
+            try:
+                n1_flows = self._get_network_flows(n)
+                n1_assets = self._get_asset_flows(n)
+
+                n_base = self._get_base_network()
+                original_variant_base = n_base.get_working_variant_id()
+                n_variant_id_base = self._get_n_variant()
+                n_base.set_working_variant(n_variant_id_base)
+
+                base_flows = self._get_network_flows(n_base)
+                base_assets = self._get_asset_flows(n_base)
+
+                deltas = self._compute_deltas(n1_flows, base_flows)
+                payload["absolute_flows"] = {
+                    "p1": n1_flows["p1"],
+                    "p2": n1_flows["p2"],
+                    "q1": n1_flows["q1"],
+                    "q2": n1_flows["q2"],
+                    "vl1": n1_flows["vl1"],
+                    "vl2": n1_flows["vl2"],
+                }
+                payload["flow_deltas"] = deltas["flow_deltas"]
+                payload["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
+                payload["asset_deltas"] = self._compute_asset_deltas(n1_assets, base_assets)
+
+                n_base.set_working_variant(original_variant_base)
+            except Exception as e:
+                logger.warning(f"Warning: Failed to compute N-1 patch flow deltas: {e}")
+                payload["absolute_flows"] = {}
+                payload["flow_deltas"] = {}
+                payload["reactive_flow_deltas"] = {}
+                payload["asset_deltas"] = {}
+
+            # Overloads — same filtering as get_n1_diagram (excludes
+            # pre-existing ones unless worsened).
+            n_state_currents = getattr(self, '_n_state_currents', None)
+            names, rhos = self._get_overloaded_lines(
+                n,
+                n_state_currents=n_state_currents,
+                lines_we_care_about=self._get_lines_we_care_about(),
+                with_rho=True,
+            )
+            payload["lines_overloaded"] = names
+            payload["lines_overloaded_rho"] = rhos
+
+            payload["meta"] = {
+                "base_state": "N",
+                "elapsed_ms": int((time.time() - t_start) * 1000),
+            }
+            return sanitize_for_json(payload)
+        finally:
+            n.set_working_variant(original_variant)
+
+    def get_n1_diagram_patch(self, disconnected_element: str) -> dict:
+        """Return the N-1 patch payload (SVG-less).
+
+        The frontend uses this to patch a clone of the N-state SVG DOM
+        instead of fetching a fresh ~20 MB N-1 NAD. Falls back to
+        `get_n1_diagram` on the frontend side if anything in this
+        endpoint raises.
+        """
+        logger.info(f"[RECO] N-1 patch payload for {disconnected_element}...")
+        return self._build_n1_patch_payload(disconnected_element)
+
+    @staticmethod
+    def _compute_vl_topology_diff(action_buses_snap, n1_network):
+        """Return the list of voltage-level IDs whose bus count
+        differs between the action-variant snapshot and the
+        CURRENTLY-active N-1 variant on `n1_network`.
+
+        An empty list means the action introduces no VL-node rendering
+        change (pure line-breaker toggle or flow-only action); the
+        patch path can skip VL-subtree generation entirely.
+
+        `None` means we could not compute the diff reliably (snapshot
+        missing or pypowsybl query raised) — caller should be
+        conservative and fall back to the full NAD.
+
+        Why bus counts per VL:
+        - pypowsybl NAD renders each VL as a concentric multi-circle
+          node whose ring count equals the number of electrical buses
+          in that VL.
+        - Node-merging / node-splitting / coupling toggles flip the
+          bus count; disco_* / reco_* do not.
+
+        Same snapshot discipline as elsewhere: `action_network` and
+        `n1_network` share the underlying pypowsybl Network handle
+        (singleton), so the action side must be captured BEFORE the
+        working variant is switched to N-1.
+        """
+        if action_buses_snap is None:
+            return None
+        try:
+            n1_buses = n1_network.get_buses(attributes=['voltage_level_id'])
+            a_counts = action_buses_snap.groupby('voltage_level_id').size()
+            n_counts = n1_buses.groupby('voltage_level_id').size()
+            all_vls = set(a_counts.index) | set(n_counts.index)
+            diff: list = []
+            for vl in all_vls:
+                a = int(a_counts.get(vl, 0))
+                n = int(n_counts.get(vl, 0))
+                if a != n:
+                    diff.append(vl)
+            return diff
+        except Exception as e:
+            logger.debug(f"Bus count comparison failed: {e}")
+            return None
+
+    def _extract_vl_subtrees_with_edges(self, action_network, vl_ids):
+        """Generate focused NADs for each target VL and return:
+          - the `<g id="nad-vl-{target}">` subtree (new concentric
+            multi-circle bus layout), and
+          - the `<g id="nad-l-{line}">` / `<g id="nad-t-{trafo}">`
+            subtrees of every branch terminating at that VL (so the
+            branch's piercing geometry at the target end matches the
+            new bus count).
+
+        Output shape (per VL):
+
+            {
+              "node_svg":   "<g id=\"nad-vl-...\">...</g>",
+              "node_sub_svg_id": "nad-vl-0",                   # sub-diagram id
+              "edge_fragments": {
+                  "LINE_A": {"svg": "<g id=\"nad-l-...\">...</g>",
+                             "sub_svg_id": "nad-l-3"},
+                  ...
+              }
+            }
+
+        The sub-diagram svgIds are exported so the frontend can
+        rewrite them to the main diagram's svgIds before splicing —
+        pypowsybl emits positional svgIds (`nad-vl-0`, `nad-l-3`,
+        …) within a given diagram, so the numeric indices differ
+        between the sub-diagram and the main NAD.
+
+        Uses `depth=1` so the focused sub-diagram includes the
+        neighbor VLs and the inter-VL edges; only the TARGET VL node
+        and the edges terminating at it are returned — neighbor VL
+        nodes and neighbor-to-neighbor edges are discarded.
+
+        Failures are swallowed per-VL; caller falls back to the
+        full NAD when extraction returns fewer subtrees than
+        requested.
+
+        Precondition: `action_network` must be on its action variant.
+        """
+        from lxml import etree
+        import json
+
+        result: dict = {}
+        if not vl_ids:
+            return result
+
+        for vl_id in vl_ids:
+            try:
+                sub = self._generate_diagram(
+                    action_network,
+                    voltage_level_ids=[vl_id],
+                    depth=1,
+                )
+                svg = sub.get("svg") or ""
+                meta_raw = sub.get("metadata")
+                if not svg or not meta_raw:
+                    continue
+
+                meta = json.loads(meta_raw) if isinstance(meta_raw, str) else meta_raw
+                nodes = meta.get("nodes") or meta.get("busNodes") or []
+                edges = meta.get("edges") or []
+
+                # Target VL's sub-diagram svgId.
+                node_sub_svg_id = None
+                for n in nodes:
+                    if n.get("equipmentId") == vl_id:
+                        node_sub_svg_id = n.get("svgId")
+                        break
+                if not node_sub_svg_id:
+                    node_sub_svg_id = f"nad-vl-{vl_id}"
+
+                # Edges terminating at the target VL: match by
+                # metadata node references. pypowsybl edges carry
+                # `node1` / `node2` (sub-diagram svgIds) and
+                # `equipmentId` (the line / transformer id).
+                edge_entries: list = []
+                for e in edges:
+                    eq_id = e.get("equipmentId")
+                    e_svg_id = e.get("svgId")
+                    node1 = e.get("node1")
+                    node2 = e.get("node2")
+                    if not eq_id or not e_svg_id:
+                        continue
+                    if node1 == node_sub_svg_id or node2 == node_sub_svg_id:
+                        edge_entries.append((eq_id, e_svg_id))
+
+                parser = etree.XMLParser(recover=True, huge_tree=True)
+                root = etree.fromstring(svg.encode("utf-8"), parser=parser)
+                if root is None:
+                    continue
+
+                # Pull the VL node subtree.
+                vl_matches = root.xpath("//*[@id=$id]", id=node_sub_svg_id)
+                if not vl_matches:
+                    continue
+                node_svg_str = etree.tostring(vl_matches[0], encoding="unicode", method="xml")
+
+                # Pull every affected edge subtree.
+                edge_fragments: dict = {}
+                for eq_id, e_svg_id in edge_entries:
+                    matches = root.xpath("//*[@id=$id]", id=e_svg_id)
+                    if not matches:
+                        continue
+                    edge_fragments[eq_id] = {
+                        "svg": etree.tostring(matches[0], encoding="unicode", method="xml"),
+                        "sub_svg_id": e_svg_id,
+                    }
+
+                result[vl_id] = {
+                    "node_svg": node_svg_str,
+                    "node_sub_svg_id": node_sub_svg_id,
+                    "edge_fragments": edge_fragments,
+                }
+            except Exception as e:
+                logger.debug(f"[_extract_vl_subtrees_with_edges] vl={vl_id} failed: {e}")
+        return result
+
+    @staticmethod
+    def _get_disconnected_branches_from_snapshot(action_lines_conn_snap, action_trafos_conn_snap):
+        """Return branch IDs (lines + 2-winding transformers) that are
+        disconnected in the action variant, using pre-captured
+        connectivity snapshots.
+
+        A branch is considered disconnected when either terminal is
+        not connected (`connected1 AND connected2` is False). The set
+        includes:
+        - the original N-1 contingency (still disconnected post-action),
+        - any additional branches opened by a `disco_*` action,
+        and EXCLUDES branches that the action reconnects (those had
+        the dashed marker in N-1; `applyPatchToClone.resetPriorPatch`
+        strips it, and since they are not in this list the patch does
+        not re-apply the dashed class — they render solid again).
+        """
+        disconnected: list = []
+        for df in (action_lines_conn_snap, action_trafos_conn_snap):
+            if df is None:
+                continue
+            try:
+                if len(df.index) == 0:
+                    continue
+                c1 = df['connected1'].astype(bool).values
+                c2 = df['connected2'].astype(bool).values
+                mask = ~(c1 & c2)
+                disconnected.extend(df.index[mask].tolist())
+            except Exception as e:
+                logger.debug(f"Disconnected-branch snapshot failed: {e}")
+        return disconnected
+
+    def get_action_variant_diagram_patch(self, action_id: str) -> dict:
+        """Return the action-variant patch payload (SVG-less).
+
+        Detects topology-changing actions first and returns
+        `patchable: false` with a `reason` so the frontend falls back
+        to `/api/action-variant-diagram`. Otherwise computes the same
+        flow-delta / overload payload as `get_action_variant_diagram`
+        without the ~2-4 s NAD regeneration.
+        """
+        import time
+
+        t_start = time.time()
+
+        if not self._last_result or not self._last_result.get("prioritized_actions"):
+            raise ValueError("No analysis result available. Run analysis first.")
+
+        actions = self._last_result["prioritized_actions"]
+        if action_id not in actions:
+            raise ValueError(f"Action '{action_id}' not found in last analysis result.")
+
+        obs = actions[action_id]["observation"]
+        variant_id = obs._variant_id
+        nm = obs._network_manager
+        nm.set_working_variant(variant_id)
+        action_network = nm.network
+
+        # Convergence status up front — cheap, needed in both branches.
+        info_action = getattr(obs, '_last_info', {})
+        sim_exception = info_action.get("exception")
+        lf_converged = not bool(sim_exception)
+        non_convergence = None
+        if sim_exception:
+            if isinstance(sim_exception, list):
+                non_convergence = "; ".join([str(e) for e in sim_exception])
+            else:
+                non_convergence = str(sim_exception)
+        lf_status = non_convergence if non_convergence else "CONVERGED"
+
+        # Snapshot the ACTION-variant topology BEFORE switching to N-1.
+        # `action_network` and any `n1_network` we take from
+        # `_get_base_network()` may be the SAME pypowsybl Network object
+        # (singleton, see expert_backend/CLAUDE.md "Singletons & shared
+        # state"). Calling `set_working_variant(n1_variant_id)` on the
+        # shared handle therefore ALSO swaps the variant seen by
+        # `action_network`, and every subsequent `get_switches()` /
+        # `get_buses()` / `get_lines()` call would read N-1 data on
+        # both sides of the diff — masking every topology change and
+        # returning `patchable: True` for genuinely unpatchable actions
+        # (node-merging, coupling opens, etc.). Copy the three
+        # attribute frames now so the comparison is stable.
+        try:
+            action_switches_snap = action_network.get_switches(attributes=['open']).copy()
+        except Exception as e:
+            logger.debug(f"[get_action_variant_diagram_patch] switch snapshot failed: {e}")
+            action_switches_snap = None
+        try:
+            action_lines_conn_snap = action_network.get_lines(
+                attributes=['connected1', 'connected2']
+            ).copy()
+        except Exception as e:
+            logger.debug(f"[get_action_variant_diagram_patch] line-conn snapshot failed: {e}")
+            action_lines_conn_snap = None
+        try:
+            action_trafos_conn_snap = action_network.get_2_windings_transformers(
+                attributes=['connected1', 'connected2']
+            ).copy()
+        except Exception as e:
+            logger.debug(f"[get_action_variant_diagram_patch] trafo-conn snapshot failed: {e}")
+            action_trafos_conn_snap = None
+        try:
+            action_buses_snap = action_network.get_buses(attributes=['voltage_level_id']).copy()
+        except Exception as e:
+            logger.debug(f"[get_action_variant_diagram_patch] bus snapshot failed: {e}")
+            action_buses_snap = None
+        # Same story for flows / asset balances: capture NOW (while the
+        # action variant is still the active working variant) so the
+        # subsequent switch to N-1 doesn't poison the values.
+        # `_get_network_flows` / `_get_asset_flows` already return plain
+        # dicts, so the snapshots are variant-independent once taken.
+        try:
+            action_flows_snap = self._get_network_flows(action_network)
+        except Exception as e:
+            logger.debug(f"[get_action_variant_diagram_patch] flow snapshot failed: {e}")
+            action_flows_snap = None
+        try:
+            action_assets_snap = self._get_asset_flows(action_network)
+        except Exception as e:
+            logger.debug(f"[get_action_variant_diagram_patch] asset snapshot failed: {e}")
+            action_assets_snap = None
+
+        # Set up an N-1 variant on the base network for topology comparison
+        # AND reference flows.
+        n1_network = self._get_base_network()
+        original_variant_n1 = n1_network.get_working_variant_id()
+        n1_variant_id = self._get_n1_variant(self._last_disconnected_element)
+        n1_network.set_working_variant(n1_variant_id)
+
+        try:
+            # Step 1: compute the VL-level bus-count diff between the
+            # action variant and the currently-active N-1 variant.
+            # `None` means we could not compute it reliably (snapshot
+            # missing / pypowsybl query raised) — be conservative and
+            # fall back to the full NAD.
+            vl_diff = self._compute_vl_topology_diff(action_buses_snap, n1_network)
+            if vl_diff is None:
+                logger.info(
+                    f"[RECO] Action '{action_id}' is not patchable "
+                    f"(vl_topology_changed; could not compute bus diff); "
+                    f"frontend will fall back to full NAD."
+                )
+                return sanitize_for_json({
+                    "patchable": False,
+                    "reason": "vl_topology_changed",
+                    "action_id": action_id,
+                    "lf_converged": lf_converged,
+                    "lf_status": lf_status,
+                    "non_convergence": non_convergence,
+                })
+
+            # Step 1b: if any VL has a bus-count change, generate a
+            # focused NAD on the ACTION variant for each affected VL
+            # and extract the `<g id="nad-vl-*">` subtree. The client
+            # splices these into the cloned base diagram, avoiding the
+            # full NAD re-render. Any extraction failure triggers a
+            # graceful full-NAD fallback — correctness before speed.
+            vl_subtrees: dict = {}
+            if vl_diff:
+                try:
+                    nm.set_working_variant(variant_id)
+                    vl_subtrees = self._extract_vl_subtrees_with_edges(action_network, vl_diff)
+                    # Re-activate N-1 for the subsequent reference-flow
+                    # computation (currently served from snapshots, so
+                    # the re-activation is only needed for the
+                    # overload scan further down — which also re-pins
+                    # the action variant explicitly).
+                    n1_network.set_working_variant(n1_variant_id)
+                except Exception as e:
+                    logger.warning(
+                        f"[RECO] Action '{action_id}' VL-subtree extraction "
+                        f"failed ({e}); frontend will fall back to full NAD."
+                    )
+                    return sanitize_for_json({
+                        "patchable": False,
+                        "reason": "vl_topology_changed",
+                        "action_id": action_id,
+                        "lf_converged": lf_converged,
+                        "lf_status": lf_status,
+                        "non_convergence": non_convergence,
+                    })
+                if len(vl_subtrees) != len(vl_diff):
+                    # Partial extraction — safer to fall back than to
+                    # render a half-updated VL topology.
+                    logger.info(
+                        f"[RECO] Action '{action_id}' VL-subtree extraction "
+                        f"incomplete ({len(vl_subtrees)}/{len(vl_diff)}); "
+                        f"frontend will fall back to full NAD."
+                    )
+                    return sanitize_for_json({
+                        "patchable": False,
+                        "reason": "vl_topology_changed",
+                        "action_id": action_id,
+                        "lf_converged": lf_converged,
+                        "lf_status": lf_status,
+                        "non_convergence": non_convergence,
+                    })
+
+            # Step 2: build the patch payload (same shape as N-1 patch,
+            # but base_state is N-1 and deltas are vs N-1).
+            payload = {
+                "patchable": True,
+                "action_id": action_id,
+                "lf_converged": lf_converged,
+                "lf_status": lf_status,
+                "non_convergence": non_convergence,
+                # Every branch that is currently disconnected in the
+                # action variant (original N-1 contingency + any
+                # disco_* action + excludes any reco_* reconnections).
+                # The svgPatch will render these as dashed on the
+                # action tab, matching how the N-1 tab renders them.
+                "disconnected_edges": self._get_disconnected_branches_from_snapshot(
+                    action_lines_conn_snap, action_trafos_conn_snap,
+                ),
+                # Per-VL node subtrees to splice into the cloned base
+                # diagram when bus counts changed (node-merging /
+                # node-splitting / coupling toggles). Empty dict for
+                # actions that only toggle line breakers or flows.
+                # Each entry carries the pypowsybl-native
+                # `<g id="nad-vl-*">` subtree rendered against the
+                # same `fixed_positions` as the main NAD, so the
+                # splice is geometrically correct.
+                "vl_subtrees": vl_subtrees,
+            }
+
+            try:
+                # Use the action-variant snapshots captured before the
+                # N-1 variant switch. Reading live from `action_network`
+                # here would return N-1 data (same singleton handle).
+                action_flows = action_flows_snap or {
+                    "p1": {}, "p2": {}, "q1": {}, "q2": {}, "vl1": {}, "vl2": {},
+                }
+                action_assets = action_assets_snap or {}
+
+                # N-1 flows + assets (reference for deltas).
+                n1_flows = self._get_network_flows(n1_network)
+                n1_assets = self._get_asset_flows(n1_network)
+
+                deltas = self._compute_deltas(action_flows, n1_flows)
+                payload["absolute_flows"] = {
+                    "p1": action_flows["p1"],
+                    "p2": action_flows["p2"],
+                    "q1": action_flows["q1"],
+                    "q2": action_flows["q2"],
+                    "vl1": action_flows["vl1"],
+                    "vl2": action_flows["vl2"],
+                }
+                payload["flow_deltas"] = deltas["flow_deltas"]
+                payload["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
+                payload["asset_deltas"] = self._compute_asset_deltas(action_assets, n1_assets)
+            except Exception as e:
+                logger.warning(f"Warning: Failed to compute action patch flow deltas: {e}")
+                payload["absolute_flows"] = {}
+                payload["flow_deltas"] = {}
+                payload["reactive_flow_deltas"] = {}
+                payload["asset_deltas"] = {}
+
+            # Overloads on the action variant. Filter against N-state to
+            # exclude pre-existing ones (same convention as
+            # get_n1_diagram). Re-activate action variant for the scan
+            # since we were measuring flows on both variants.
+            try:
+                n1_network.set_working_variant(original_variant_n1)
+            except Exception as e:
+                logger.debug(f"n1 variant restore pre-overload scan failed: {e}")
+            try:
+                nm.set_working_variant(variant_id)
+                n_state_currents = getattr(self, '_n_state_currents', None)
+                names, rhos = self._get_overloaded_lines(
+                    action_network,
+                    n_state_currents=n_state_currents,
+                    lines_we_care_about=self._get_lines_we_care_about(),
+                    with_rho=True,
+                )
+                payload["lines_overloaded"] = names
+                payload["lines_overloaded_rho"] = rhos
+            except Exception as e:
+                logger.warning(f"Warning: Failed to compute action patch overloads: {e}")
+                payload["lines_overloaded"] = []
+                payload["lines_overloaded_rho"] = []
+
+            payload["meta"] = {
+                "base_state": "N-1",
+                "elapsed_ms": int((time.time() - t_start) * 1000),
+            }
+            return sanitize_for_json(payload)
+        finally:
+            try:
+                n1_network.set_working_variant(original_variant_n1)
+            except Exception as e:
+                logger.debug(f"Final n1 variant restore failed: {e}")
 
     # ------------------------------------------------------------------
     # Public SLD endpoints

@@ -251,6 +251,306 @@ class TestGetN1Diagram:
         assert response.status_code == 422
 
 
+# ------------------------------------------------------------------
+# SVG DOM recycling — patch endpoints
+# ------------------------------------------------------------------
+# /api/n1-diagram-patch and /api/action-variant-diagram-patch return the
+# same delta / overload payload as their full-NAD siblings but SKIP the
+# ~2-4 s pypowsybl NAD generation and the ~20-28 MB SVG transfer. The
+# frontend patches a clone of the already-loaded N-state SVG DOM.
+# See docs/performance/history/svg-dom-recycling.md.
+
+class TestGetN1DiagramPatch:
+    def test_returns_patchable_payload_without_svg(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_n1_diagram_patch.return_value = {
+            "patchable": True,
+            "contingency_id": "LINE_A",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "disconnected_edges": ["LINE_A"],
+            "absolute_flows": {
+                "p1": {"LINE_B": 12.3}, "p2": {"LINE_B": -12.3},
+                "q1": {"LINE_B": 4.1},  "q2": {"LINE_B": -4.1},
+                "vl1": {"LINE_B": "VL_1"}, "vl2": {"LINE_B": "VL_2"},
+            },
+            "lines_overloaded": ["LINE_C"],
+            "lines_overloaded_rho": [1.05],
+            "flow_deltas": {"LINE_B": {"delta": -1.0, "category": "negative", "flip_arrow": False}},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+            "meta": {"base_state": "N", "elapsed_ms": 120},
+        }
+
+        response = client.post(
+            "/api/n1-diagram-patch",
+            json={"disconnected_element": "LINE_A"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["patchable"] is True
+        assert data["contingency_id"] == "LINE_A"
+        assert data["disconnected_edges"] == ["LINE_A"]
+        # SVG-less payload is the whole point of this endpoint.
+        assert "svg" not in data
+        assert "metadata" not in data
+
+    def test_missing_element_returns_422(self, client, mock_services):
+        response = client.post("/api/n1-diagram-patch", json={})
+        assert response.status_code == 422
+
+    def test_service_error_returns_400(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_n1_diagram_patch.side_effect = ValueError("N state unavailable")
+
+        response = client.post(
+            "/api/n1-diagram-patch",
+            json={"disconnected_element": "LINE_A"},
+        )
+        assert response.status_code == 400
+        assert "N state unavailable" in response.json()["detail"]
+
+    def test_payload_carries_same_non_svg_fields_as_full_endpoint(self, client, mock_services):
+        """Frontend contract: every non-SVG field returned by the full
+        endpoint is also present in the patch payload. Enforces parity
+        at the HTTP boundary so the frontend branch-logic can swap
+        transparently."""
+        _, mock_rs = mock_services
+        shared_fields = {
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "lines_overloaded": ["X"],
+            "lines_overloaded_rho": [1.05],
+            "flow_deltas": {"X": {"delta": 1.0, "category": "positive", "flip_arrow": False}},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+        }
+        mock_rs.get_n1_diagram_patch.return_value = {
+            "patchable": True,
+            "contingency_id": "LINE_A",
+            "disconnected_edges": ["LINE_A"],
+            "absolute_flows": {
+                "p1": {}, "p2": {}, "q1": {}, "q2": {}, "vl1": {}, "vl2": {}
+            },
+            "meta": {"base_state": "N", "elapsed_ms": 1},
+            **shared_fields,
+        }
+
+        response = client.post(
+            "/api/n1-diagram-patch",
+            json={"disconnected_element": "LINE_A"},
+        )
+        data = response.json()
+        for k, v in shared_fields.items():
+            assert data[k] == v, f"mismatch on field {k}"
+
+
+class TestGetActionVariantDiagramPatch:
+    def test_returns_patchable_payload_for_pst_action(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.return_value = {
+            "patchable": True,
+            "action_id": "PST_42",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "non_convergence": None,
+            "disconnected_edges": [],
+            "absolute_flows": {
+                "p1": {"LINE_B": 20.0}, "p2": {"LINE_B": -20.0},
+                "q1": {"LINE_B": 5.0},  "q2": {"LINE_B": -5.0},
+                "vl1": {"LINE_B": "VL_1"}, "vl2": {"LINE_B": "VL_2"},
+            },
+            "lines_overloaded": [],
+            "lines_overloaded_rho": [],
+            "flow_deltas": {},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+            "meta": {"base_state": "N-1", "elapsed_ms": 80},
+        }
+
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "PST_42"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["patchable"] is True
+        assert data["action_id"] == "PST_42"
+        assert "svg" not in data
+        assert "metadata" not in data
+
+    def test_patchable_for_disco_action(self, client, mock_services):
+        """Line-disconnection actions flip switch breakers but don't
+        change VL bus counts; rendering is a pure dashed-class toggle
+        on the disconnected line. The backend keeps them patchable
+        and includes the line in `disconnected_edges`."""
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.return_value = {
+            "patchable": True,
+            "action_id": "disco_LINE_Y",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "non_convergence": None,
+            "disconnected_edges": ["CONTINGENCY", "LINE_Y"],
+            "absolute_flows": {
+                "p1": {}, "p2": {}, "q1": {}, "q2": {}, "vl1": {}, "vl2": {},
+            },
+            "lines_overloaded": [],
+            "lines_overloaded_rho": [],
+            "flow_deltas": {},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+            "meta": {"base_state": "N-1", "elapsed_ms": 30},
+        }
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "disco_LINE_Y"},
+        )
+        data = response.json()
+        assert data["patchable"] is True
+        assert "LINE_Y" in data["disconnected_edges"]
+
+    def test_patchable_for_line_reconnect_action(self, client, mock_services):
+        """Single-line reconnections / extra disconnections render as a
+        pure dashed/solid toggle on one edge element, so the backend
+        keeps them patchable and lets svgPatch swap the class list."""
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.return_value = {
+            "patchable": True,
+            "action_id": "RECO_LINE_Y",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "non_convergence": None,
+            "disconnected_edges": [],  # reco_* reconnects the contingency
+            "absolute_flows": {
+                "p1": {}, "p2": {}, "q1": {}, "q2": {}, "vl1": {}, "vl2": {},
+            },
+            "lines_overloaded": [],
+            "lines_overloaded_rho": [],
+            "flow_deltas": {},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+            "meta": {"base_state": "N-1", "elapsed_ms": 42},
+        }
+
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "RECO_LINE_Y"},
+        )
+        data = response.json()
+        assert data["patchable"] is True
+        assert data["disconnected_edges"] == []
+
+    def test_patchable_carries_contingency_on_disconnected_edges(self, client, mock_services):
+        """Post-action patch must mark the N-1 contingency as dashed
+        on the action tab — it is still disconnected after the action
+        unless the action explicitly reconnects it."""
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.return_value = {
+            "patchable": True,
+            "action_id": "LOAD_SHED_X",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "non_convergence": None,
+            "disconnected_edges": ["CONTINGENCY_LINE"],
+            "absolute_flows": {
+                "p1": {}, "p2": {}, "q1": {}, "q2": {}, "vl1": {}, "vl2": {},
+            },
+            "lines_overloaded": [],
+            "lines_overloaded_rho": [],
+            "flow_deltas": {},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+            "meta": {"base_state": "N-1", "elapsed_ms": 42},
+        }
+
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "LOAD_SHED_X"},
+        )
+        data = response.json()
+        assert data["patchable"] is True
+        assert data["disconnected_edges"] == ["CONTINGENCY_LINE"]
+
+    def test_patchable_with_vl_subtrees_for_node_merging(self, client, mock_services):
+        """Node-merging / node-splitting / coupling actions change bus
+        counts per VL. The backend now patches those rendering
+        changes via pypowsybl-native focused sub-diagrams instead of
+        falling back to the full NAD. The frontend splices each
+        `<g id=\"nad-vl-*\">` subtree into the cloned base."""
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.return_value = {
+            "patchable": True,
+            "action_id": "node_merging_PYMONP3",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "non_convergence": None,
+            "disconnected_edges": ["CONTINGENCY_LINE"],
+            "absolute_flows": {
+                "p1": {}, "p2": {}, "q1": {}, "q2": {}, "vl1": {}, "vl2": {},
+            },
+            "lines_overloaded": [],
+            "lines_overloaded_rho": [],
+            "flow_deltas": {},
+            "reactive_flow_deltas": {},
+            "asset_deltas": {},
+            "vl_subtrees": {
+                "PYMONP3": {"node_svg": "<g id=\"nad-vl-PYMONP3\"><circle r=\"100\"/></g>"},
+            },
+            "meta": {"base_state": "N-1", "elapsed_ms": 120},
+        }
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "node_merging_PYMONP3"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["patchable"] is True
+        assert "PYMONP3" in data["vl_subtrees"]
+        assert data["vl_subtrees"]["PYMONP3"]["node_svg"].startswith("<g")
+
+    def test_returns_patchable_false_when_subtree_extraction_fails(self, client, mock_services):
+        """Graceful fallback: if focused-NAD extraction fails on the
+        backend, the service returns `patchable: false, reason:
+        vl_topology_changed` so the frontend falls through to the
+        full /api/action-variant-diagram endpoint. Correctness before
+        speed."""
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.return_value = {
+            "patchable": False,
+            "action_id": "NODE_SPLIT_Z",
+            "reason": "vl_topology_changed",
+            "lf_converged": True,
+            "lf_status": "CONVERGED",
+            "non_convergence": None,
+        }
+
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "NODE_SPLIT_Z"},
+        )
+        data = response.json()
+        assert data["patchable"] is False
+        assert data["reason"] == "vl_topology_changed"
+
+    def test_missing_action_returns_422(self, client, mock_services):
+        response = client.post("/api/action-variant-diagram-patch", json={})
+        assert response.status_code == 422
+
+    def test_unknown_action_returns_400(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_action_variant_diagram_patch.side_effect = ValueError(
+            "Action 'unknown' not found in last analysis result."
+        )
+
+        response = client.post(
+            "/api/action-variant-diagram-patch",
+            json={"action_id": "unknown"},
+        )
+        assert response.status_code == 400
+        assert "not found" in response.json()["detail"]
+
+
 class TestRunAnalysis:
     def test_streaming_response(self, client, mock_services):
         _, mock_rs = mock_services

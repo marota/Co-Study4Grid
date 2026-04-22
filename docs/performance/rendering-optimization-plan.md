@@ -163,6 +163,92 @@ For grids with ≥500 voltage levels and viewBox ratio > 3× the reference size 
 
 **Boost cache:** Results are cached in an LRU map (max 6 entries: N + N-1 + Action × 2 view modes) keyed by `length:vlCount:first200chars` to avoid redundant DOM parse/serialize on the same SVG.
 
+## SVG DOM Recycling (`svgPatch`)
+
+**Files:** `frontend/src/utils/svgPatch.ts`, `frontend/src/hooks/useDiagrams.ts`, `frontend/src/App.tsx`, `expert_backend/services/diagram_mixin.py`, `expert_backend/main.py`
+
+### Problem
+
+Before this work, switching to the N-1 tab or selecting a different action re-fetched the FULL pypowsybl NAD SVG every time. On the `bare_env_20240828T0100Z` reference grid (~10 k branches, ~12 MB SVG) this was:
+
+- ~2–4 s of backend `get_network_area_diagram` work per click (the dominant cost),
+- ~27 MB payload on the wire,
+- ~250 ms of client-side `JSON.parse` + `DOMParser.parseFromString`,
+- full re-layout of ~200 k DOM nodes.
+
+The network topology is **byte-identical** across N, N-1, and most action variants when pypowsybl runs with `fixed_positions` — only a handful of elements actually change.
+
+### Solution
+
+Two new SVG-less endpoints ship only the per-branch delta needed to transform the N-state SVG DOM into N-1 / post-action. The frontend clones the already-mounted N-state `SVGSVGElement` and patches the clone in-place.
+
+| Endpoint | When | Payload |
+|---|---|---|
+| `POST /api/n1-diagram-patch` | N-1 tab fetch | `{disconnected_edges, absolute_flows, lines_overloaded, flow_deltas, asset_deltas, lf_*, ...}` — no SVG body |
+| `POST /api/action-variant-diagram-patch` | Action click | Same shape, plus `vl_subtrees` (per-VL node subtree + affected edges) when bus counts change |
+
+Client-side pipeline in `applyPatchToClone`:
+
+1. **Splice per-VL subtrees** — for node-merging / splitting / coupling actions, the backend ships pypowsybl-native `<g id="nad-vl-*">` fragments (focused NAD at `depth=1`, rendered against the same `fixed_positions`). The client parses each fragment, rewrites the root `id` attribute to the main-diagram svgId (pypowsybl svgIds are positional — `nad-vl-0` in a focused sub vs. `nad-vl-42` in the main NAD), and splices via `replaceWith`. Same treatment for the affected branches' edge subtrees so their piercing geometry matches the new bus count.
+2. **Mark disconnected edges dashed** — every branch whose `connected1 AND connected2` is false on the action variant gets the `.nad-disconnected` class (new CSS rule with `stroke-dasharray` + `vector-effect: non-scaling-stroke`). Covers the N-1 contingency plus any `disco_*` target; `reco_*` drops the class.
+3. **Overwrite absolute flow labels** — backend ships `absolute_flows.p1/p2/q1/q2`, client rewrites each `edgeInfo1/2` text with the target-state value (backup in `data-patched-flow` distinct from the `data-original-text` owned by `applyDeltaVisuals`).
+
+### Critical performance rule — id map
+
+The flow-label loop touches ~2 × N edges (N ≈ 11 k on the reference grid). `clonedSvg.querySelector('[id=...]')` inside that loop is O(n_dom_nodes) per call ⇒ billions of comparisons ⇒ the browser tab locks up. Build the id map **once** with a single `querySelectorAll('[id]')`, then do O(1) `Map.get` lookups:
+
+```ts
+const idMap = buildSvgIdMap(clonedSvg);  // one O(D) scan
+for (const edgeId in absolute_flows.p1) {
+    const el = idMap.get(baseMetaIndex.edgesByEquipmentId.get(edgeId)?.edgeInfo1?.svgId);
+    if (el) patchEdgeInfoText(el, formatFlowValue(...));
+}
+```
+
+**Do not** call `querySelector` in the flow-label / edge-splice / disconnected-edges loops. Same O(E·D) browser-lock trap that earlier highlight passes had (and why `getIdMap` exists).
+
+### Fresh viewBox identity per patch
+
+`usePanZoom` caches the live `<svg>` element via `svgElRef` and only refreshes that ref on `useLayoutEffect([initialViewBox])`. If the patch path passes the **same** `originalViewBox` object reference across N → patched-N-1 transitions, the layout-effect never re-runs and `svgElRef` keeps pointing at the previous (now-detached) clone. Pan/zoom then writes `viewBox` on a detached element — no visible change, main thread saturates — "page not responding".
+
+**Fix:** shallow-copy `originalViewBox` on every patch so each transition produces a fresh object reference. See `App.tsx` fetchN1 and `useDiagrams.ts` handleActionSelect.
+
+### Blank-flash elimination + stale-response guard
+
+Two large-grid-only hazards:
+
+- **Blank flash.** Calling `setActionDiagram(null)` synchronously on action click, followed by `await api.getActionVariantDiagramPatch(...)`, broke React's automatic batching. The null commit fired on its own → `innerHTML = ''` → container blank for the ~200–500 ms the patch needed. **Fix:** keep the previous cloned DOM mounted through the patch window; only null the diagram on explicit deselect (`actionId === null`).
+- **Stale patch response.** Rapid A → B clicks with A's patch still in flight used to let A's late response `setActionDiagram(A)` after B's had already rendered, reverting the user's selection. **Fix:** `latestActionSelectRef` tracks the latest click; every await rechecks it on resume and drops a mismatch silently. Same guard around the full-NAD fallback.
+
+### Fallback matrix
+
+| Situation | Path |
+|---|---|
+| Normal N-1 selection with N diagram loaded | **patch** (`/api/n1-diagram-patch`) |
+| N-1 selection during session reload | full (`/api/n1-diagram`) — preserves save/load contract |
+| N-1 selection before N SVG is mounted | full fallback |
+| PST / redispatch / load-shedding / curtailment | **patch** |
+| Line disconnect / reconnect (`disco_*` / `reco_*`) | **patch** (toggles the `nad-disconnected` class) |
+| Node merging / splitting / coupling | **patch with VL-subtree splice** (pypowsybl-native focused NAD per affected VL) |
+| VL-subtree extraction partial / raises | full fallback (`patchable: false, reason: "vl_topology_changed"`) |
+| Patch endpoint throws | full fallback |
+
+### Combined-action line targets
+
+`getActionTargetLines` used to evaluate `isCouplingAction` on the **full** combined action ID/description. For `disco_X+coupling_Y` the presence of "coupling" in the string suppressed every line-target extraction — the disco line lost its pink halo AND its clickable action-card badge. Fixed by splitting on `+` and evaluating the coupling flag **per sub-part**; topology-based bus/line extraction also limited to non-combined actions (combined topologies merge bus changes from multiple sub-actions and can't be cleanly attributed).
+
+### Measured savings
+
+On `bare_env_20240828T0100Z`, contingency `ARGIAL71CANTE`, warm-median of 3:
+
+| Endpoint | Cold | Warm | Payload |
+|---|---|---|---|
+| `/api/n1-diagram` (full)         | 3.01 s | 2.39 s | 27.1 MB |
+| `/api/n1-diagram-patch` (new)    | 0.49 s | 0.50 s |  5.5 MB |
+| **Δ** | **−83.8 %** | **−79.1 %** | **20.3 % of full** |
+
+Raw numbers in `profiling_patch_results.json`, benchmark driver in `benchmarks/bench_n1_diagram_patch.py`. Historical detail in `docs/performance/history/svg-dom-recycling.md`.
+
 ## Regression Test Coverage
 
 **File:** `frontend/src/utils/cssRegression.test.ts`
@@ -200,3 +286,9 @@ Tests verify:
 | Keep all SVG containers mounted (visibility toggle) | Conditionally render/destroy SVG containers on tab switch |
 | Short-circuit voltage filter when range covers all | Iterate all elements even when no filtering needed |
 | Run `cssRegression.test.ts` after CSS changes | Skip tests after modifying App.css or standalone CSS |
+| Build an id map once per `applyPatchToClone` call | Call `querySelector('[id=...]')` inside flow-label / edge-splice loops |
+| Shallow-copy `originalViewBox` on every patch so `usePanZoom` refreshes its cached `svgElRef` | Share the same viewBox object reference across N → patched-N-1 swaps |
+| Rewrite spliced `<g id="nad-vl-*">` root ids to the main-diagram svgId | Trust the focused sub-diagram's positional svgIds as-is |
+| Keep the previous cloned DOM mounted through the patch-fetch window | `setActionDiagram(null)` synchronously on click before an `await` |
+| Drop late patch responses via `latestActionSelectRef` | Let a stale response overwrite the current action selection |
+| Evaluate `isCouplingAction` per `+`-split part on combined actions | Evaluate it on the full combined action ID (suppresses line-target extraction) |

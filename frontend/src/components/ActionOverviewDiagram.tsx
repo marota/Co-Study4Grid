@@ -200,13 +200,13 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     // see that both the injection effect and the initialViewBox memo
     // depend on the same primitive, not on the full `n1Diagram`
     // object identity.
-    const svgString = n1Diagram?.svg ?? null;
+    const svgSource = n1Diagram?.svg ?? null;
     // `svgReady` is derived, not stateful: svg injection happens
     // synchronously in the layout effect below (which is declared
     // BEFORE usePanZoom so its layout effect runs first, i.e. the
     // DOM is already populated by the time usePanZoom caches its
-    // svgElRef). Once the string is in hand the svg IS in the DOM.
-    const svgReady = svgString != null;
+    // svgElRef). Once the source is in hand the svg IS in the DOM.
+    const svgReady = svgSource != null;
 
     // Pre-parse the SVG string into an SVGSVGElement so the layout
     // effect below can inject it with `replaceChildren()` — zero
@@ -215,13 +215,24 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     // here as well (moving children into a `<g>` with reduced
     // opacity) so the DOM mutation happens on the detached element
     // before it enters the live document — no forced layout.
+    //
+    // When `svgSource` is already a pre-parsed SVGSVGElement — the
+    // case when the N-1 tab was populated via the svgPatch
+    // DOM-recycling path (see docs/performance/history/svg-dom-recycling.md)
+    // — skip the string round-trip entirely and clone the element.
     /* eslint-disable react-hooks/purity -- performance.now() is side-effect-free in practice (timing only) */
     const preparedSvg = useMemo<SVGSVGElement | null>(() => {
-        if (!svgString) return null;
+        if (!svgSource) return null;
         const start = performance.now();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(svgString, 'image/svg+xml');
-        const svg = doc.documentElement as unknown as SVGSVGElement;
+        let svg: SVGSVGElement;
+        if (typeof svgSource === 'string') {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(svgSource, 'image/svg+xml');
+            svg = doc.documentElement as unknown as SVGSVGElement;
+        } else {
+            // Clone so we don't detach the element from the N-1 tab.
+            svg = svgSource.cloneNode(true) as SVGSVGElement;
+        }
         if (!svg || svg.nodeName !== 'svg') return null;
 
         // Style the root so it fills the container; viewBox is the
@@ -280,7 +291,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
         svg.classList.add('nad-overview-dimmed');
         console.log(`[SVG] Action overview pre-parse took ${(performance.now() - start).toFixed(2)}ms`);
         return svg;
-    }, [svgString]);
+    }, [svgSource]);
     /* eslint-enable react-hooks/purity */
 
     // Three-pass pin build so combined-action constituents are kept
@@ -407,13 +418,15 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     // user still sees the full network the moment the tab opens.
     const initialViewBox = useMemo<ViewBox | null>(() => {
         if (fitRect) return fitRect;
-        if (!svgString) return null;
-        const match = svgString.match(/viewBox=["']([^"']+)["']/);
-        if (!match) return null;
-        const parts = match[1].split(/\s+|,/).map(parseFloat);
+        if (!svgSource) return null;
+        const vbAttr = typeof svgSource === 'string'
+            ? (svgSource.match(/viewBox=["']([^"']+)["']/)?.[1] ?? null)
+            : svgSource.getAttribute('viewBox');
+        if (!vbAttr) return null;
+        const parts = vbAttr.split(/\s+|,/).map(parseFloat);
         if (parts.length !== 4 || parts.some(p => !Number.isFinite(p))) return null;
         return { x: parts[0], y: parts[1], w: parts[2], h: parts[3] };
-    }, [fitRect, svgString]);
+    }, [fitRect, svgSource]);
 
     // Inject the pre-parsed SVGSVGElement into the container using
     // `replaceChildren()` — zero extra parse, matching the

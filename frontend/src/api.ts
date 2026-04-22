@@ -6,7 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import axios from 'axios';
-import type { ConfigRequest, BranchResponse, DiagramData, FlowDelta, AssetDelta, AvailableAction, SessionResult } from './types';
+import type { ConfigRequest, BranchResponse, DiagramData, DiagramPatch, FlowDelta, AssetDelta, AvailableAction, SessionResult } from './types';
 
 const API_BASE_URL = 'http://127.0.0.1:8000';
 
@@ -66,7 +66,12 @@ export const api = {
         );
         return response.data;
     },
-    getNetworkDiagram: async (): Promise<DiagramData> => {
+    // NOTE: the FastAPI backend always serialises the SVG as a raw
+    // XML string, so these axios methods narrow `DiagramData.svg` to
+    // `string` at the boundary. The wider `string | SVGSVGElement`
+    // union on `DiagramData` only surfaces once the N-1 / Action tab
+    // is repopulated by the svgPatch DOM-recycling path.
+    getNetworkDiagram: async (): Promise<DiagramData & { svg: string }> => {
         // Fetch in `format=text` mode: the server returns a small JSON
         // header on the first line, then the raw SVG body verbatim. This
         // avoids `JSON.parse` having to escape-scan and copy the ~25 MB
@@ -88,18 +93,44 @@ export const api = {
         }
         const header = JSON.parse(body.slice(0, nl)) as Omit<DiagramData, 'svg'>;
         const svg = body.slice(nl + 1);
-        return { ...header, svg } as DiagramData;
+        return { ...header, svg } as DiagramData & { svg: string };
     },
-    getN1Diagram: async (disconnectedElement: string): Promise<DiagramData> => {
-        const response = await axios.post<DiagramData>(
+    getN1Diagram: async (disconnectedElement: string): Promise<DiagramData & { svg: string }> => {
+        const response = await axios.post<DiagramData & { svg: string }>(
             `${API_BASE_URL}/api/n1-diagram`,
             { disconnected_element: disconnectedElement }
         );
         return response.data;
     },
-    getActionVariantDiagram: async (actionId: string): Promise<DiagramData> => {
-        const response = await axios.post<DiagramData>(
+    getActionVariantDiagram: async (actionId: string): Promise<DiagramData & { svg: string }> => {
+        const response = await axios.post<DiagramData & { svg: string }>(
             `${API_BASE_URL}/api/action-variant-diagram`,
+            { action_id: actionId }
+        );
+        return response.data;
+    },
+    /**
+     * SVG-less patch payload for the N-1 state. Use to patch a clone of
+     * the N-state SVG DOM instead of fetching a fresh ~20 MB NAD. Fall
+     * back to `getN1Diagram` on any error or when the base N SVG is not
+     * yet loaded. See docs/performance/history/svg-dom-recycling.md.
+     */
+    getN1DiagramPatch: async (disconnectedElement: string): Promise<DiagramPatch> => {
+        const response = await axios.post<DiagramPatch>(
+            `${API_BASE_URL}/api/n1-diagram-patch`,
+            { disconnected_element: disconnectedElement }
+        );
+        return response.data;
+    },
+    /**
+     * SVG-less patch payload for a post-action state. Returns
+     * `{patchable: false, reason}` for topology-changing actions (switch
+     * toggles, line reconnections, VL-internal topology changes); the
+     * caller must then fall back to `getActionVariantDiagram`.
+     */
+    getActionVariantDiagramPatch: async (actionId: string): Promise<DiagramPatch> => {
+        const response = await axios.post<DiagramPatch>(
+            `${API_BASE_URL}/api/action-variant-diagram-patch`,
             { action_id: actionId }
         );
         return response.data;

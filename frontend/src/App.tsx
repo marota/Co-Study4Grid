@@ -17,6 +17,7 @@ import ConfirmationDialog from './components/modals/ConfirmationDialog';
 import type { ConfirmDialogState } from './components/modals/ConfirmationDialog';
 import { api } from './api';
 import { applyOverloadedHighlights, applyDeltaVisuals, applyActionTargetHighlights, applyContingencyHighlight, processSvg } from './utils/svgUtils';
+import { cloneBaseSvg, applyPatchToClone } from './utils/svgPatch';
 import { computeN1OverloadHighlights } from './utils/overloadHighlights';
 import type { ActionDetail, ActionOverviewFilters, DiagramData, TabId, RecommenderDisplayConfig, UnsimulatedActionScoreInfo } from './types';
 import { useSettings } from './hooks/useSettings';
@@ -455,7 +456,7 @@ function App() {
                 } else if (event.type === 'diagram') {
                   const { type: _t, ...rest } = event;
                   void _t;
-                  diagrams.primeActionDiagram(actionId, rest as unknown as DiagramData, voltageLevels.length);
+                  diagrams.primeActionDiagram(actionId, rest as unknown as DiagramData & { svg: string }, voltageLevels.length);
                 } else if (event.type === 'error') {
                   streamErr = (event.message as string) || 'stream error';
                 }
@@ -477,7 +478,7 @@ function App() {
             } else if (event.type === 'diagram') {
               const { type: _t, ...rest } = event;
               void _t;
-              diagrams.primeActionDiagram(actionId, rest as unknown as DiagramData, voltageLevels.length);
+              diagrams.primeActionDiagram(actionId, rest as unknown as DiagramData & { svg: string }, voltageLevels.length);
             } else if (event.type === 'error') {
               streamErr = (event.message as string) || 'stream error';
             }
@@ -930,6 +931,48 @@ function App() {
       if (!isRestoring) {
         diagrams.setActiveTab('n-1');
       }
+
+      // Fast path — svgPatch DOM-recycling. Clone the N-state SVG and
+      // mutate only what changed (the dashed contingency line, flow
+      // labels, overload halos) instead of fetching a fresh ~20 MB
+      // NAD. Falls back to the full /api/n1-diagram endpoint on any
+      // error or when the base N DOM is not yet mounted. Session
+      // reload always uses the full-fetch path to preserve the
+      // reload contract. See docs/performance/history/svg-dom-recycling.md.
+      const baseSvgEl = diagrams.nSvgContainerRef.current?.querySelector('svg') as SVGSVGElement | null;
+      const baseMeta = diagrams.nMetaIndex;
+      const canPatch = !!baseSvgEl && !!baseMeta && !isRestoring;
+      if (canPatch) {
+        console.log('[svgPatch] N-1 patch PATH — calling /api/n1-diagram-patch', selectedBranch);
+        try {
+          const patch = await api.getN1DiagramPatch(selectedBranch);
+          if (patch.patchable) {
+            console.log('[svgPatch] N-1 patch applied (patchable=true)', selectedBranch);
+            const cloned = cloneBaseSvg(baseSvgEl!);
+            applyPatchToClone(cloned, baseMeta!, patch);
+            diagrams.setN1Diagram({
+              svg: cloned,
+              metadata: nDiagram?.metadata ?? null,
+              originalViewBox: nDiagram?.originalViewBox ? { ...nDiagram.originalViewBox } : null,
+              lines_overloaded: patch.lines_overloaded,
+              lines_overloaded_rho: patch.lines_overloaded_rho,
+              flow_deltas: patch.flow_deltas,
+              reactive_flow_deltas: patch.reactive_flow_deltas,
+              asset_deltas: patch.asset_deltas,
+              lf_converged: patch.lf_converged,
+              lf_status: patch.lf_status,
+            });
+            diagrams.lastZoomState.current = { query: '', branch: '' };
+            diagrams.setN1Loading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn('[svgPatch] N-1 patch threw — falling back to full fetch', e);
+        }
+      } else {
+        console.log('[svgPatch] N-1 patch SKIPPED — no base N SVG/meta yet. baseSvgEl:', !!baseSvgEl, 'baseMeta:', !!baseMeta, 'restoring:', isRestoring);
+      }
+
       try {
         const res = await api.getN1Diagram(selectedBranch);
         const { svg, viewBox } = processSvg(res.svg, voltageLevels.length);
@@ -946,7 +989,7 @@ function App() {
       }
     };
     fetchN1();
-  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState, analysisLoading, n1Diagram, n1Loading, setError, diagrams]);
+  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState, analysisLoading, n1Diagram, n1Loading, setError, diagrams, nDiagram]);
 
   useEffect(() => {
     const nextSet = n1Diagram?.lines_overloaded ? new Set(n1Diagram.lines_overloaded) : new Set<string>();

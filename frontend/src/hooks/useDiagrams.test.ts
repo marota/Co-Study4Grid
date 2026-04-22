@@ -27,7 +27,9 @@ vi.mock('../api', () => ({
     api: {
         getNetworkDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
         getN1Diagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
+        getN1DiagramPatch: vi.fn().mockResolvedValue({ patchable: false, reason: 'no_base' }),
         getActionVariantDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
+        getActionVariantDiagramPatch: vi.fn().mockResolvedValue({ patchable: false, reason: 'no_base' }),
         simulateManualAction: vi.fn().mockResolvedValue({}),
         simulateAndVariantDiagramStream: vi.fn().mockResolvedValue({
             body: { getReader: () => ({ read: async () => ({ done: true, value: undefined }) }) },
@@ -262,6 +264,161 @@ describe('useDiagrams — interaction logging', () => {
             expect(log.some(e => e.type === 'action_deselected')).toBe(true);
             // No fetch is issued on the toggle-off path.
             expect(api.getActionVariantDiagram).not.toHaveBeenCalled();
+        });
+    });
+
+    // No-blank-flash during the patch-fetch window. Before this guard
+    // `handleActionSelect` called `setActionDiagram(null)` immediately
+    // on click, which on large grids showed the action-tab container
+    // blank for the ~200-500 ms the patch took to arrive. Now the
+    // previous action's diagram stays mounted until the new clone is
+    // ready, and is replaced atomically.
+    describe('action-patch loading window', () => {
+        it('does NOT clear actionDiagram between click and patch response', async () => {
+            const { api } = await import('../api');
+            const { result } = renderHook(() => useDiagrams([], [], ''));
+
+            // Seed a previous action diagram so we can detect if it
+            // gets cleared during the subsequent click.
+            act(() => {
+                result.current.setActionDiagram({
+                    svg: '<svg>prev</svg>',
+                    metadata: null,
+                    action_id: 'act_prev',
+                } as unknown as Parameters<typeof result.current.setActionDiagram>[0]);
+                result.current.setSelectedActionId('act_prev');
+            });
+            expect(result.current.actionDiagram).not.toBeNull();
+
+            // Never-resolving patch & full-fetch mocks — the handler
+            // stays pending through the observable window. `Once`
+            // variants so the defaults are restored for subsequent
+            // tests in the file (otherwise every later test hangs).
+            vi.mocked(api.getActionVariantDiagramPatch).mockReturnValueOnce(
+                new Promise(() => {}) as unknown as Promise<import('../types').DiagramPatch>,
+            );
+            vi.mocked(api.getActionVariantDiagram).mockReturnValueOnce(
+                new Promise(() => {}) as unknown as Promise<
+                    Awaited<ReturnType<typeof api.getActionVariantDiagram>>
+                >,
+            );
+
+            act(() => {
+                void result.current.handleActionSelect('act_next', null, '', 0, vi.fn(), vi.fn());
+            });
+
+            // Critical assertion: the previous diagram is still visible
+            // while the new one is being fetched — no blank flash.
+            expect(result.current.actionDiagram).not.toBeNull();
+            expect(result.current.selectedActionId).toBe('act_next');
+        });
+
+        it('clears actionDiagram only on explicit deselect (actionId === null)', async () => {
+            const { result } = renderHook(() => useDiagrams([], [], ''));
+
+            act(() => {
+                result.current.setActionDiagram({
+                    svg: '<svg>x</svg>',
+                    metadata: null,
+                    action_id: 'act_keep',
+                } as unknown as Parameters<typeof result.current.setActionDiagram>[0]);
+                result.current.setSelectedActionId('act_keep');
+            });
+            expect(result.current.actionDiagram).not.toBeNull();
+
+            await act(async () => {
+                await result.current.handleActionSelect(null, null, '', 0, vi.fn(), vi.fn());
+            });
+
+            expect(result.current.actionDiagram).toBeNull();
+            expect(result.current.selectedActionId).toBeNull();
+        });
+    });
+
+    // Stale-response guard. Clicking action A → then action B before
+    // A's patch arrives: A's late response must drop itself so the
+    // user sees B, not A-after-B. Prevents visible flicker /
+    // reverted-selection when users rapidly cycle through actions.
+    describe('action-patch stale-response guard', () => {
+        it('drops a late patch response for an action that is no longer selected', async () => {
+            const { api } = await import('../api');
+            const { result } = renderHook(() => useDiagrams([], [], ''));
+
+            // Two manually-resolvable promises so we control the
+            // relative timing of the two in-flight patch responses.
+            type PatchP = Promise<import('../types').DiagramPatch>;
+            let resolveA: (v: import('../types').DiagramPatch) => void = () => {};
+            let resolveB: (v: import('../types').DiagramPatch) => void = () => {};
+            const patchA: PatchP = new Promise(res => { resolveA = res; });
+            const patchB: PatchP = new Promise(res => { resolveB = res; });
+            vi.mocked(api.getActionVariantDiagramPatch)
+                .mockReturnValueOnce(patchA)
+                .mockReturnValueOnce(patchB);
+            // Never-resolving full-fetch so a `patchable:false` branch
+            // cannot finish on its own during the test. Stack two
+            // `Once` variants (one per click) so the default is
+            // restored for subsequent tests.
+            vi.mocked(api.getActionVariantDiagram)
+                .mockReturnValueOnce(new Promise(() => {}) as unknown as Promise<
+                    Awaited<ReturnType<typeof api.getActionVariantDiagram>>
+                >)
+                .mockReturnValueOnce(new Promise(() => {}) as unknown as Promise<
+                    Awaited<ReturnType<typeof api.getActionVariantDiagram>>
+                >);
+
+            // Click A, then B before A resolves.
+            act(() => {
+                void result.current.handleActionSelect('A', null, '', 0, vi.fn(), vi.fn());
+            });
+            act(() => {
+                void result.current.handleActionSelect('B', null, '', 0, vi.fn(), vi.fn());
+            });
+            expect(result.current.selectedActionId).toBe('B');
+
+            // B responds first (user's current selection) — OK to apply
+            // (the jsdom container has no base SVG so the patch path
+            // falls through to the full-fetch, but the guard is
+            // exercised regardless).
+            await act(async () => {
+                resolveB({ patchable: false, reason: 'no_base' } as import('../types').DiagramPatch);
+            });
+
+            // Now A responds late. The guard must prevent it from
+            // overwriting state that belongs to B.
+            await act(async () => {
+                resolveA({ patchable: false, reason: 'no_base' } as import('../types').DiagramPatch);
+            });
+
+            // Selection must still be B; no revert to A.
+            expect(result.current.selectedActionId).toBe('B');
+        });
+    });
+
+        // SVG DOM-recycling patch path. The frontend tries
+    // `getActionVariantDiagramPatch` first; on `patchable:false` or
+    // throw, it falls back to the full-SVG `getActionVariantDiagram`.
+    // These tests run in jsdom with no mounted N or N-1 SVG DOM, so
+    // `baseSvgEl = n1SvgContainerRef.current?.querySelector('svg')`
+    // is null and the patch branch is skipped entirely — the full
+    // fetch is what every assertion below checks.
+    //
+    // See docs/performance/history/svg-dom-recycling.md.
+    describe('action-variant patch path — falls back to full fetch when no base SVG DOM is mounted', () => {
+        it('skips the patch branch entirely when the N-1 / N SVG containers are empty', async () => {
+            const { api } = await import('../api');
+            const { result } = renderHook(() => useDiagrams([], [], ''));
+
+            vi.mocked(api.getActionVariantDiagram).mockClear();
+            vi.mocked(api.getActionVariantDiagramPatch).mockClear();
+
+            await act(async () => {
+                await result.current.handleActionSelect('act_42', null, '', 0, vi.fn(), vi.fn());
+            });
+
+            // No base SVG DOM in jsdom → patch endpoint never called.
+            expect(api.getActionVariantDiagramPatch).not.toHaveBeenCalled();
+            // Fallback full-fetch IS called.
+            expect(api.getActionVariantDiagram).toHaveBeenCalledWith('act_42');
         });
     });
 

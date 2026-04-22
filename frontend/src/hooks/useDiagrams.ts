@@ -13,6 +13,7 @@ import {
   getIdMap, invalidateIdMapCache,
 } from '../utils/svgUtils';
 import { processSvg } from '../utils/svgUtils';
+import { cloneBaseSvg, applyPatchToClone } from '../utils/svgPatch';
 import type { DiagramData, ViewBox, MetadataIndex, TabId, VlOverlay, SldTab, AnalysisResult, ActionDetail } from '../types';
 import { interactionLogger } from '../utils/interactionLogger';
 import { useSldOverlay } from './useSldOverlay';
@@ -132,7 +133,7 @@ export interface DiagramsState {
    * parallel with `branches`/`voltage-levels`/`nominal-voltages` to
    * shave the serial-dependency gap off the initial load.
    */
-  ingestBaseDiagram: (raw: DiagramData, vlCount: number) => void;
+  ingestBaseDiagram: (raw: DiagramData & { svg: string }, vlCount: number) => void;
   handleActionSelect: (
     actionId: string | null,
     result: AnalysisResult | null,
@@ -167,7 +168,7 @@ export interface DiagramsState {
   // streamed simulate-and-variant-diagram endpoint. A subsequent click
   // on the same action card is served from cache (no XHR, no pypowsybl).
   // Cache is automatically cleared when `selectedBranch` changes.
-  primeActionDiagram: (actionId: string, diagram: DiagramData, voltageLevelsLength: number) => void;
+  primeActionDiagram: (actionId: string, diagram: DiagramData & { svg: string }, voltageLevelsLength: number) => void;
 
   /**
    * Re-fetch the SLD overlay if it is currently open on the given
@@ -292,9 +293,19 @@ export function useDiagrams(
     actionDiagramCacheRef.current.clear();
   }, [selectedBranch]);
 
+  // Tracks the last actionId the user clicked. Written synchronously
+  // at the top of `handleActionSelect`, read after each async await
+  // inside the selector: if the id diverged, the handler drops the
+  // in-flight response so a late-arriving patch can't override a
+  // more recent user click (the "blank flash" symptom on large
+  // grids — `setActionDiagram(stale)` would repaint the action tab
+  // with the previous selection for a moment, or, worse, overwrite
+  // the current one with an older version).
+  const latestActionSelectRef = useRef<string | null>(null);
+
   // Exposed to ActionFeed via App.tsx props: processes the raw NDJSON
   // diagram event's SVG and stores it for later click-to-view.
-  const primeActionDiagram = useCallback((actionId: string, raw: DiagramData, voltageLevelsLength: number) => {
+  const primeActionDiagram = useCallback((actionId: string, raw: DiagramData & { svg: string }, voltageLevelsLength: number) => {
     try {
       const { svg, viewBox } = processSvg(raw.svg, voltageLevelsLength);
       actionDiagramCacheRef.current.set(actionId, { ...raw, svg, originalViewBox: viewBox });
@@ -350,7 +361,7 @@ export function useDiagrams(
   // branches/voltage-levels/nominal-voltages (serveur NAD ~6.6s dwarfs the
   // other three calls — parallelising shaves the ~0.8s branches gap off
   // the critical path of the initial load).
-  const ingestBaseDiagram = useCallback((raw: DiagramData, vlCount: number) => {
+  const ingestBaseDiagram = useCallback((raw: DiagramData & { svg: string }, vlCount: number) => {
     const { svg, viewBox } = processSvg(raw.svg, vlCount || 0);
     if (viewBox) setOriginalViewBox(viewBox);
     setNDiagram({ ...raw, svg, originalViewBox: viewBox });
@@ -409,9 +420,18 @@ export function useDiagrams(
       interactionLogger.record('action_selected', { action_id: actionId });
     }
     setSelectedActionId(actionId);
-    setActionDiagram(null);
-    if (actionId === null) return;
+    // Do NOT clear actionDiagram synchronously here — the patch path
+    // is fast enough that nulling the diagram just to repopulate
+    // ~200-500 ms later causes a visible "blank flash" on large
+    // grids. Leave the previous action's SVG in place; the new
+    // cloned+patched DOM atomically replaces it when setActionDiagram
+    // is called with the fresh payload below.
+    if (actionId === null) {
+      setActionDiagram(null);
+      return;
+    }
 
+    latestActionSelectRef.current = actionId;
     setActionDiagramLoading(true);
     // Switching the main window's activeTab to 'action' would blank the
     // current N or N-1 view and replace it with the "Detached" placeholder.
@@ -427,12 +447,73 @@ export function useDiagrams(
     // endpoint). If so, paint it instantly — no XHR, no extra pypowsybl.
     const cached = actionDiagramCacheRef.current.get(actionId);
     if (cached) {
+      console.log('[svgPatch] action cache HIT — no network call', actionId);
       setActionDiagram(cached);
       setActionDiagramLoading(false);
       return;
     }
+    // Fast path — svgPatch DOM-recycling for actions. Clone the
+    // already-loaded N-1 SVG (fall back to N if N-1 is not loaded)
+    // and mutate only the flow labels for the action state. The
+    // backend flags topology-changing actions with `patchable: false`,
+    // in which case we fall back to the full /api/action-variant-diagram
+    // endpoint. See docs/performance/history/svg-dom-recycling.md.
+    const baseSvgEl =
+      (n1SvgContainerRef.current?.querySelector('svg') as SVGSVGElement | null) ??
+      (nSvgContainerRef.current?.querySelector('svg') as SVGSVGElement | null);
+    const baseMeta = n1MetaIndex ?? nMetaIndex;
+    const baseMetadataRaw = n1Diagram?.metadata ?? nDiagram?.metadata ?? null;
+    const baseViewBoxRaw = n1Diagram?.originalViewBox ?? nDiagram?.originalViewBox ?? null;
+    // Fresh object reference per patch — usePanZoom re-caches
+    // svgElRef via useLayoutEffect([initialViewBox]).
+    const baseViewBox = baseViewBoxRaw ? { ...baseViewBoxRaw } : null;
+    if (baseSvgEl && baseMeta && !restoringSessionRef.current) {
+      console.log('[svgPatch] action patch PATH — calling /api/action-variant-diagram-patch', actionId);
+      try {
+        const patch = await api.getActionVariantDiagramPatch(actionId);
+        if (patch.patchable) {
+          // Stale-response guard: if the user clicked a newer action
+          // while this patch was in flight, drop the response without
+          // touching state — the newer click is already running.
+          if (latestActionSelectRef.current !== actionId) {
+            console.log('[svgPatch] action patch response dropped (stale)', actionId);
+            return;
+          }
+          console.log('[svgPatch] action patch applied (patchable=true)', actionId);
+          const cloned = cloneBaseSvg(baseSvgEl);
+          applyPatchToClone(cloned, baseMeta, patch);
+          setActionDiagram({
+            svg: cloned,
+            metadata: baseMetadataRaw,
+            originalViewBox: baseViewBox,
+            action_id: actionId,
+            lines_overloaded: patch.lines_overloaded,
+            lines_overloaded_rho: patch.lines_overloaded_rho,
+            flow_deltas: patch.flow_deltas,
+            reactive_flow_deltas: patch.reactive_flow_deltas,
+            asset_deltas: patch.asset_deltas,
+            lf_converged: patch.lf_converged,
+            lf_status: patch.lf_status,
+          });
+          setActionDiagramLoading(false);
+          return;
+        } else {
+          console.log('[svgPatch] action patch REJECTED — falling back to full NAD', actionId, 'reason:', patch.reason);
+        }
+      } catch (e) {
+        console.warn('[svgPatch] action patch threw — falling back', actionId, e);
+      }
+    } else {
+      console.log('[svgPatch] action patch SKIPPED — no base SVG/meta in DOM yet. baseSvgEl:', !!baseSvgEl, 'baseMeta:', !!baseMeta, 'restoring:', restoringSessionRef.current);
+    }
+
     try {
       const res = await api.getActionVariantDiagram(actionId);
+      // Stale-response guard: see the patch-path comment above.
+      if (latestActionSelectRef.current !== actionId) {
+        console.log('[svgPatch] full-NAD response dropped (stale)', actionId);
+        return;
+      }
       const { svg, viewBox } = processSvg(res.svg, voltageLevelsLength);
       setActionDiagram({ ...res, svg, originalViewBox: viewBox });
     } catch {
@@ -522,7 +603,7 @@ export function useDiagrams(
                   };
                 });
               } else if (event.type === 'diagram') {
-                const diag = event as unknown as DiagramData;
+                const diag = event as unknown as DiagramData & { svg: string };
                 const { svg, viewBox } = processSvg(diag.svg, voltageLevelsLength);
                 setActionDiagram({ ...diag, svg, originalViewBox: viewBox });
               } else if (event.type === 'error') {
@@ -543,7 +624,7 @@ export function useDiagrams(
     } finally {
       setActionDiagramLoading(false);
     }
-  }, [selectedActionId, actionPZ.viewBox, n1PZ.viewBox, nPZ.viewBox]);
+  }, [selectedActionId, actionPZ.viewBox, n1PZ.viewBox, nPZ.viewBox, nDiagram, n1Diagram, nMetaIndex, n1MetaIndex]);
 
   // Helper used by per-tab inspect overlays: records which tab
   // should be zoomed on the auto-zoom effect's next tick, then

@@ -339,6 +339,82 @@ describe('getActionTargetLines', () => {
         expect(result).toHaveLength(2);
     });
 
+    it('extracts the line target of a combined disco+coupling action', () => {
+        // Regression: the combined ID contains "coupling" via the
+        // second sub-action, which used to trip the global
+        // `isCouplingAction` check and suppress ALL line-target
+        // extraction — the disco line lost its pink halo AND its
+        // action-card badge. After the fix, the coupling flag is
+        // evaluated per `+`-split part so the disco sub-action's
+        // line target is still returned.
+        const detail: ActionDetail = {
+            description_unitaire: "Ouverture de la ligne 'BEON L31P.SAO' + Ouverture COUCHP6_COUCH6COUPL DJ_OC dans le poste COUCHP6",
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+            // Combined topology: merged bus changes from disco + coupling.
+            action_topology: {
+                lines_ex_bus: { 'BEON L31P.SAO': -1 },
+                lines_or_bus: { 'BEON L31P.SAO': -1 },
+                gens_bus: {},
+                loads_bus: {},
+            },
+        };
+        const result = getActionTargetLines(
+            detail,
+            'disco_BEON L31P.SAO+f344b395-9908-43c2-bca0-75c5f298465e_COUCHP6_coupling',
+            makeEdgeMap('BEON L31P.SAO'),
+        );
+        expect(result).toContain('BEON L31P.SAO');
+    });
+
+    it('returns no line targets for combined coupling+coupling actions', () => {
+        // Both sub-actions are VL-level — all targets flow through
+        // getActionTargetVoltageLevels instead. This stays empty.
+        const detail: ActionDetail = {
+            description_unitaire: 'Ouverture COUCHP6 + Ouverture C.REGP6',
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+        };
+        const result = getActionTargetLines(
+            detail,
+            '466f2c03-90ce-401e-a458-fa177ad45abc_C.REGP6_coupling+f344b395-9908-43c2-bca0-75c5f298465e_COUCHP6_coupling',
+            makeEdgeMap('LINE_A'),
+        );
+        expect(result).toEqual([]);
+    });
+
+    it('extracts PST targets in a combined PST+coupling action', () => {
+        // pst_tap is always explicit in the topology, regardless of
+        // whether the combined action also contains a coupling.
+        const detail: ActionDetail = {
+            description_unitaire: 'PST tap + coupling',
+            rho_before: null,
+            rho_after: null,
+            max_rho: null,
+            max_rho_line: '',
+            is_rho_reduction: false,
+            action_topology: {
+                lines_ex_bus: {},
+                lines_or_bus: {},
+                gens_bus: {},
+                loads_bus: {},
+                pst_tap: { PST_LINE_1: 5 },
+            },
+        };
+        const result = getActionTargetLines(
+            detail,
+            'pst_PST_LINE_1+uuid_VL_X_coupling',
+            makeEdgeMap('PST_LINE_1'),
+        );
+        expect(result).toContain('PST_LINE_1');
+    });
+
     it('extracts lines from pst_tap in topology', () => {
         const detail: ActionDetail = {
             description_unitaire: 'Change PST tap',
