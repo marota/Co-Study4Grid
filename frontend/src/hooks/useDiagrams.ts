@@ -293,6 +293,16 @@ export function useDiagrams(
     actionDiagramCacheRef.current.clear();
   }, [selectedBranch]);
 
+  // Tracks the last actionId the user clicked. Written synchronously
+  // at the top of `handleActionSelect`, read after each async await
+  // inside the selector: if the id diverged, the handler drops the
+  // in-flight response so a late-arriving patch can't override a
+  // more recent user click (the "blank flash" symptom on large
+  // grids — `setActionDiagram(stale)` would repaint the action tab
+  // with the previous selection for a moment, or, worse, overwrite
+  // the current one with an older version).
+  const latestActionSelectRef = useRef<string | null>(null);
+
   // Exposed to ActionFeed via App.tsx props: processes the raw NDJSON
   // diagram event's SVG and stores it for later click-to-view.
   const primeActionDiagram = useCallback((actionId: string, raw: DiagramData & { svg: string }, voltageLevelsLength: number) => {
@@ -410,9 +420,18 @@ export function useDiagrams(
       interactionLogger.record('action_selected', { action_id: actionId });
     }
     setSelectedActionId(actionId);
-    setActionDiagram(null);
-    if (actionId === null) return;
+    // Do NOT clear actionDiagram synchronously here — the patch path
+    // is fast enough that nulling the diagram just to repopulate
+    // ~200-500 ms later causes a visible "blank flash" on large
+    // grids. Leave the previous action's SVG in place; the new
+    // cloned+patched DOM atomically replaces it when setActionDiagram
+    // is called with the fresh payload below.
+    if (actionId === null) {
+      setActionDiagram(null);
+      return;
+    }
 
+    latestActionSelectRef.current = actionId;
     setActionDiagramLoading(true);
     // Switching the main window's activeTab to 'action' would blank the
     // current N or N-1 view and replace it with the "Detached" placeholder.
@@ -453,6 +472,13 @@ export function useDiagrams(
       try {
         const patch = await api.getActionVariantDiagramPatch(actionId);
         if (patch.patchable) {
+          // Stale-response guard: if the user clicked a newer action
+          // while this patch was in flight, drop the response without
+          // touching state — the newer click is already running.
+          if (latestActionSelectRef.current !== actionId) {
+            console.log('[svgPatch] action patch response dropped (stale)', actionId);
+            return;
+          }
           console.log('[svgPatch] action patch applied (patchable=true)', actionId);
           const cloned = cloneBaseSvg(baseSvgEl);
           applyPatchToClone(cloned, baseMeta, patch);
@@ -483,6 +509,11 @@ export function useDiagrams(
 
     try {
       const res = await api.getActionVariantDiagram(actionId);
+      // Stale-response guard: see the patch-path comment above.
+      if (latestActionSelectRef.current !== actionId) {
+        console.log('[svgPatch] full-NAD response dropped (stale)', actionId);
+        return;
+      }
       const { svg, viewBox } = processSvg(res.svg, voltageLevelsLength);
       setActionDiagram({ ...res, svg, originalViewBox: viewBox });
     } catch {
