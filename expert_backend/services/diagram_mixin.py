@@ -887,14 +887,29 @@ class DiagramMixin:
         }
         self._attach_convergence_from_obs(result, obs)
 
-        # Capture the switch-state diff BEFORE attempting flow deltas —
-        # if flow extraction fails on a mock/malformed network, we still
-        # want `changed_switches` populated on the response.
+        # Capture the switch-state diff and action-variant flow snapshots
+        # BEFORE touching the base network's working variant — the base
+        # network mutualises the same underlying pypowsybl.Network as
+        # `nm.network` (see `_get_base_network` / the grid2op-shared-
+        # network doc), so switching its variant to N-1 below also
+        # flips `network`'s view. Reading `action_flows` after that
+        # switch would yield N-1 flows on both sides and render every
+        # delta as 0.0 — the exact symptom the operator reported when
+        # the Remedial Action SLD Impacts showed `Δ 0.0` with no
+        # colouring on every cell.
         try:
             action_switches_df = network.get_switches()
         except Exception as e:
             logger.debug("Suppressed exception: %s", e)
             action_switches_df = None
+
+        try:
+            action_flows = get_network_flows(network)
+            action_assets = get_asset_flows(network)
+        except Exception as e:
+            logger.warning("Warning: Failed to capture action-variant flows: %s", e)
+            action_flows = None
+            action_assets = None
 
         n1_network = self._get_base_network()
         original_variant_n1 = n1_network.get_working_variant_id()
@@ -906,8 +921,8 @@ class DiagramMixin:
             result["changed_switches"] = {}
 
         try:
-            action_flows = get_network_flows(network)
-            action_assets = get_asset_flows(network)
+            if action_flows is None or action_assets is None:
+                raise RuntimeError("action-variant flow snapshot missing")
             n1_flows = self._get_n1_flows(self._last_disconnected_element)
             n1_assets = get_asset_flows(n1_network)
 
