@@ -839,5 +839,65 @@ describe('SldOverlay', () => {
             expect(label.getAttribute('data-original-text')).toBe(originalAttr);
             expect(label.getAttribute('data-original-text')).toBe('100');
         });
+
+        // Regression: dragging the substation glyph in the SLD with the
+        // mouse fires a stream of `setOverlayTransform` updates, each
+        // re-rendering the component. The user reported a visible
+        // impact↔flow blink during the drag that stabilised on impact
+        // only when the mouse was released. Root cause: the delta
+        // painter was a `useEffect`, which runs AFTER the browser
+        // paints — so each rapid re-render produced a single-frame
+        // flash of the un-painted (Flows) state between commit and
+        // effect-flush. Promoting it to `useLayoutEffect` runs the
+        // painter synchronously between commit and paint, so the
+        // browser only ever sees the post-paint impact state. This
+        // test locks in the architectural choice by source-level
+        // inspection (jsdom can't reproduce the real paint cycle, but
+        // a future refactor flipping it back to `useEffect` would
+        // also re-introduce the blink).
+        it('delta painter uses useLayoutEffect, not useEffect (no blink between commit and paint)', () => {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const fs = require('fs');
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const path = require('path');
+            const src = fs.readFileSync(
+                path.resolve(__dirname, 'SldOverlay.tsx'),
+                'utf-8',
+            ) as string;
+            const sigDeclIdx = src.indexOf('const appliedDeltaSigRef');
+            expect(sigDeclIdx).toBeGreaterThan(-1);
+            // The `useLayoutEffect(...)` invocation MUST sit on the
+            // line immediately after the sig-ref declaration — that's
+            // the delta painter. If anyone flips it back to
+            // `useEffect`, the rapid pan re-renders will once again
+            // expose the un-painted Flows state for a single frame
+            // between React's commit and the post-paint effect flush.
+            const after = src.slice(sigDeclIdx, sigDeclIdx + 400);
+            expect(after).toMatch(/useLayoutEffect\s*\(/);
+            expect(after).not.toMatch(/^\s*useEffect\s*\(/m);
+        });
+
+        it('delta classes survive a sequence of pan-driven rerenders without ever vanishing', () => {
+            // Behavioural complement to the source-inspection test
+            // above. Even if a future refactor changed the effect
+            // implementation, the delta DOM state must NEVER be
+            // momentarily absent between successive renders. Mirrors
+            // what happens when the operator drags the SLD: a stream
+            // of `setOverlayTransform` updates → many cheap re-renders.
+            const overlay = buildDeltaOverlay();
+            const { container, rerender } = render(
+                <SldOverlay {...defaultProps} vlOverlay={overlay} actionViewMode="delta" />,
+            );
+            const queryDelta = () => container.querySelector('.sld-delta-positive');
+            expect(queryDelta()).toBeTruthy();
+            // Re-render 8× in quick succession (any pan gesture fires
+            // dozens of these per second).
+            for (let i = 0; i < 8; i += 1) {
+                rerender(<SldOverlay {...defaultProps} vlOverlay={overlay} actionViewMode="delta" />);
+                // Probe immediately after each commit — the delta
+                // class MUST still be there, never transiently null.
+                expect(queryDelta()).toBeTruthy();
+            }
+        });
     });
 });

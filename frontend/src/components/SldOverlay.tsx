@@ -50,18 +50,17 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
     // The cell ancestor (sld-extern-cell) wraps BOTH the feeder symbol AND the connecting
     // wire (sld-wire), so we must apply the delta class one level up to color the full branch.
     //
-    // The hook intentionally runs on EVERY render and self-gates via a
-    // signature + a DOM-presence probe. Same rationale as the highlight
-    // layoutEffect below: a pan/zoom update fires `setOverlayTransform`
-    // which re-renders SldOverlay. React may reconcile the
-    // `dangerouslySetInnerHTML` div and replace its children, wiping
-    // out every delta class and `data-original-text` we painted on the
-    // SVG. A deps-based useEffect would miss that wipe (none of its
-    // deps changed) and leave the overlay stuck on Flows rendering
-    // until a tab switch. By running every render, we detect the wipe
-    // via `deltaDomPresent` and re-apply.
+    // Runs as a useLayoutEffect — synchronously after every commit but
+    // BEFORE the browser paints. Same scheduling as the highlight
+    // layoutEffect immediately below it. A plain `useEffect` runs
+    // AFTER paint, which during continuous panning produces a visible
+    // single-frame flash of the un-painted (Flows) state between the
+    // commit and the effect — perceived as the impact/flow blink the
+    // operator reported. Self-gates via signature + DOM-presence
+    // probe so identical re-renders short-circuit instead of
+    // re-painting every cell on every pan frame.
     const appliedDeltaSigRef = useRef<string>('');
-    useEffect(() => {
+    useLayoutEffect(() => {
         const container = overlayBodyRef.current;
         if (!container) return;
 
