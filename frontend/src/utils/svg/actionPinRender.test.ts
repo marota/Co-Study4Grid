@@ -1,0 +1,98 @@
+// Copyright (c) 2025-2026, RTE (https://www.rte-france.com)
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+
+import { describe, expect, it } from 'vitest';
+import {
+    computePinScale,
+    crossPath,
+    readPinBaseRadius,
+    starPath,
+} from './actionPinRender';
+
+describe('computePinScale', () => {
+    it('keeps scale = 1 when baseR already exceeds both floors', () => {
+        const { effectiveR, scale } = computePinScale(50, 10, 500);
+        // minSvgR = 22/10 = 2.2, viewBoxMinR = 500/50 = 10 → baseR 50 wins.
+        expect(effectiveR).toBe(50);
+        expect(scale).toBe(1);
+    });
+
+    it('grows the pin when the screen floor dominates (low zoom)', () => {
+        // pxPerSvgUnit = 0.5 → minSvgR = 22 / 0.5 = 44, baseR = 30.
+        const { effectiveR, scale } = computePinScale(30, 0.5, 500);
+        expect(effectiveR).toBe(44);
+        expect(scale).toBeCloseTo(44 / 30, 5);
+    });
+
+    it('grows the pin when the viewBox-fraction floor dominates', () => {
+        // viewBox extent 5000 → viewBoxMinR = 100.
+        const { effectiveR, scale } = computePinScale(30, 10, 5000);
+        expect(effectiveR).toBe(100);
+        expect(scale).toBeCloseTo(100 / 30, 5);
+    });
+
+    it('handles zero viewBox gracefully (returns baseR)', () => {
+        const { effectiveR, scale } = computePinScale(30, 10, 0);
+        // minSvgR = 22/10 = 2.2, viewBoxMinR = 0 → baseR 30 wins.
+        expect(effectiveR).toBe(30);
+        expect(scale).toBe(1);
+    });
+});
+
+describe('readPinBaseRadius', () => {
+    const makeSvg = (html: string): SVGSVGElement => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(
+            `<svg xmlns="http://www.w3.org/2000/svg">${html}</svg>`,
+            'image/svg+xml',
+        );
+        return doc.documentElement as unknown as SVGSVGElement;
+    };
+
+    it('reads r from the first .nad-vl-nodes circle when present', () => {
+        const svg = makeSvg(
+            '<g class="nad-vl-nodes"><circle r="42"/></g><circle r="99"/>',
+        );
+        expect(readPinBaseRadius(svg)).toBe(42);
+    });
+
+    it('falls back to any circle[r] when no .nad-vl-nodes group', () => {
+        const svg = makeSvg('<circle r="17"/>');
+        expect(readPinBaseRadius(svg)).toBe(17);
+    });
+
+    it('falls back to 30 for SVGs without circles', () => {
+        const svg = makeSvg('<rect width="10" height="10"/>');
+        expect(readPinBaseRadius(svg)).toBe(30);
+    });
+
+    it('falls back to 30 when the first circle has a bogus radius', () => {
+        const svg = makeSvg('<circle r="NaN"/>');
+        expect(readPinBaseRadius(svg)).toBe(30);
+    });
+});
+
+describe('starPath', () => {
+    it('produces a closed SVG path with 10 vertices', () => {
+        const d = starPath(0, 0, 10);
+        expect(d.startsWith('M ')).toBe(true);
+        expect(d.endsWith(' Z')).toBe(true);
+        const lCount = d.split(' L ').length - 1;
+        // 10 vertices → 1 M + 9 L-separators.
+        expect(lCount).toBe(9);
+    });
+});
+
+describe('crossPath', () => {
+    it('produces a closed 12-vertex path centred at the given coordinates', () => {
+        const d = crossPath(0, 0, 10);
+        expect(d.startsWith('M ')).toBe(true);
+        expect(d.endsWith('Z')).toBe(true);
+        // Count `L ` tokens — cross has 11 Ls after the initial M (12 vertices).
+        const lCount = d.split(' L ').length - 1;
+        expect(lCount).toBe(11);
+    });
+});

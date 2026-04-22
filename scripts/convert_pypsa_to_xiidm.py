@@ -133,7 +133,7 @@ if os.path.exists(OSM_NAMES_FILE):
 
     log.info(f"  Loaded {len(bus_display_names)} bus names, {len(line_display_names)} line names")
 else:
-    log.warning(f"  osm_names.json not found — using raw IDs. Run fetch_osm_names.py first.")
+    log.warning("  osm_names.json not found — using raw IDs. Run fetch_osm_names.py first.")
 
 
 def _bus_name(bus_id: str) -> str:
@@ -668,7 +668,7 @@ if _lf_ok:
 
     _loadings.sort()
     _pct_below_50 = sum(1 for x in _loadings if x <= 50.0) / len(_loadings) * 100
-    log.info(f"  N-state loading distribution:")
+    log.info("  N-state loading distribution:")
     log.info(f"    min={_loadings[0]:.1f}%, median={_loadings[len(_loadings)//2]:.1f}%, "
              f"max={_loadings[-1]:.1f}%")
     log.info(f"    {_pct_below_50:.0f}% of lines at ≤50% loading")

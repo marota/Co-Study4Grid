@@ -307,7 +307,14 @@ class NetworkService:
         if loads is None or loads.empty:
             return {}
 
-        result = {}
+        result: dict[str, str] = {}
+        for lid in load_ids:
+            if lid in loads.index:
+                row = loads.loc[lid]
+                if 'voltage_level_id' in row.index:
+                    result[lid] = row['voltage_level_id']
+        return result
+
     def get_generator_voltage_level(self, gen_id: str) -> str | None:
         """Return the voltage level ID that a given generator belongs to."""
         if not self.network:

@@ -5,22 +5,26 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
-from fastapi import FastAPI, HTTPException, Body, Query, Request
-from fastapi.encoders import jsonable_encoder
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import Response
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 import gzip
-import os
 import json as json_module
+import logging
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from fastapi import Body, FastAPI, HTTPException, Query, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
 from expert_backend.services.network_service import network_service
 from expert_backend.services.recommender_service import recommender_service
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -171,14 +175,17 @@ def _save_user_config(data: dict) -> None:
 # Ensure config file exists on startup
 _ensure_user_config()
 
+_CORS_ENV = os.environ.get("CORS_ALLOWED_ORIGINS", "*").strip()
+_CORS_ORIGINS = (
+    ["*"] if _CORS_ENV == "*" else [o.strip() for o in _CORS_ENV.split(",") if o.strip()]
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_CORS_ORIGINS,
+    allow_credentials=_CORS_ORIGINS != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# app.add_middleware(GZipMiddleware, minimum_size=10000)
 
 # Serve generated PDFs. 
 # We mount the directory where PDFs are generated.
@@ -425,13 +432,13 @@ if path:
         )
         if proc.returncode != 0:
             err = (proc.stderr or "").strip() or f"file picker exited with status {proc.returncode}"
-            print(f"Error picking path: {err}")
+            logger.warning("Error picking path: %s", err)
             return {"path": "", "error": err}
         return {"path": proc.stdout.strip()}
     except subprocess.TimeoutExpired:
         return {"path": "", "error": "File picker timed out (no selection made)."}
     except Exception as e:
-        print(f"Error picking path: {e}")
+        logger.warning("Error picking path: %s", e)
         return {"path": "", "error": str(e)}
 
 @app.post("/api/save-session")
@@ -468,9 +475,9 @@ def save_session(request: SaveSessionRequest):
                 shutil.copy2(request.pdf_path, pdf_dest)
                 pdf_copied = True
             except Exception as e:
-                print(f"Warning: Failed to copy PDF from {request.pdf_path} to {pdf_dest}: {e}")
+                logger.warning("Failed to copy PDF from %s to %s: %s", request.pdf_path, pdf_dest, e)
         else:
-            print(f"Warning: PDF path provided but file not found: {request.pdf_path}")
+            logger.warning("PDF path provided but file not found: %s", request.pdf_path)
 
     # Write interaction log if provided
     if request.interaction_log:
@@ -581,8 +588,7 @@ async def run_analysis_step1(request: AnalysisRequest):
         result = recommender_service.run_analysis_step1(request.disconnected_element)
         return result
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/run-analysis-step2")
@@ -628,8 +634,7 @@ def get_network_diagram(http_request: Request, format: str = Query("json")):
             return _maybe_gzip_svg_text(diagram, http_request)
         return _maybe_gzip_json(diagram, http_request)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/n1-diagram")
@@ -638,8 +643,7 @@ def get_n1_diagram(request: AnalysisRequest, http_request: Request):
         diagram = recommender_service.get_n1_diagram(request.disconnected_element)
         return _maybe_gzip_json(diagram, http_request)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/action-variant-diagram")
@@ -654,8 +658,7 @@ def get_action_variant_diagram(request: ActionVariantRequest, http_request: Requ
         )
         return _maybe_gzip_json(diagram, http_request)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/element-voltage-levels")
@@ -695,8 +698,7 @@ def get_focused_diagram(request: FocusedDiagramRequest, http_request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 class ActionVariantFocusedRequest(BaseModel):
@@ -721,8 +723,7 @@ def get_action_variant_focused_diagram(request: ActionVariantFocusedRequest, htt
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 class ActionVariantSldRequest(BaseModel):
@@ -741,8 +742,7 @@ def get_action_variant_sld(request: ActionVariantSldRequest, http_request: Reque
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 class NSldRequest(BaseModel):
@@ -757,8 +757,7 @@ def get_n_sld(request: NSldRequest, http_request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 class N1SldRequest(BaseModel):
@@ -777,8 +776,7 @@ def get_n1_sld(request: N1SldRequest, http_request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/actions")
@@ -803,8 +801,7 @@ def simulate_manual_action(request: ManualActionRequest):
         )
         return result
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -865,8 +862,8 @@ async def simulate_and_variant_diagram(request: SimulateAndVariantDiagramRequest
             )
             yield json.dumps({"type": "diagram", **diagram}) + "\n"
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logger.exception("API boundary error")
+    
             yield json.dumps({"type": "error", "message": str(e)}) + "\n"
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
@@ -880,8 +877,7 @@ def compute_superposition(request: ComputeSuperpositionRequest):
         )
         return result
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
 if __name__ == "__main__":

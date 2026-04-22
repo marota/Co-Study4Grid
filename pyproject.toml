@@ -39,8 +39,51 @@ test = [
     "pytest",
     "httpx",
 ]
+quality = [
+    "ruff>=0.6",
+    "radon>=6.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["expert_backend*"]
 exclude = ["frontend*", "tests*", "venv*"]
+
+# --- Code-quality tooling ---------------------------------------------------
+# Ruff is scoped to a light, non-stylistic ruleset: we catch real bugs
+# (undefined names, unused imports, common bug patterns) and leave formatting
+# choices alone until the team adopts a formatter.
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [
+    "scripts/parity_e2e",
+    # Ad-hoc data-prep scripts that rely on top-level `exec()` chaining —
+    # ruff cannot resolve names introduced by the exec'd child script.
+    "scripts/add_limits_and_overloads.py",
+    "scripts/add_detailed_topology.py",
+    "Overflow_Graph",
+    "frontend",
+    "standalone_interface_legacy.html",
+]
+
+[tool.ruff.lint]
+# Start strict-but-narrow: only real bugs gate CI today. Broader
+# ruleset (`B`, `W`, `UP`) is available via
+# `ruff check --select E9,F,B,W,UP` for local clean-up work.
+select = [
+    "E9",   # syntax errors
+    "F",    # pyflakes (undefined names, unused imports, etc.)
+]
+ignore = [
+    "E501",   # line length is tracked as a metric, not a blocker
+    "F401",   # test / scripts modules have legitimate `import X # noqa` fixtures
+    "F841",   # debug/inspection scripts intentionally keep unused locals
+]
+
+[tool.ruff.lint.per-file-ignores]
+"expert_backend/tests/*" = ["F811"]  # pytest fixture redefinitions
+"scripts/*" = []
+
+

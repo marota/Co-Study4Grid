@@ -466,7 +466,7 @@ class TestLayoutIntegration:
         y_span = max(ys) - min(ys)
 
         # Print layout statistics (visible when test runs with -v)
-        print(f"\nLayout Statistics for pypsa_eur_fr400:")
+        print("\nLayout Statistics for pypsa_eur_fr400:")
         print(f"  Total VLs: {len(layout_data)}")
         print(f"  X range: [{min(xs):.0f}, {max(xs):.0f}] (span: {x_span:.0f})")
         print(f"  Y range: [{min(ys):.0f}, {max(ys):.0f}] (span: {y_span:.0f})")
