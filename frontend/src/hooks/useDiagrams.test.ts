@@ -27,7 +27,9 @@ vi.mock('../api', () => ({
     api: {
         getNetworkDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
         getN1Diagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
+        getN1DiagramPatch: vi.fn().mockResolvedValue({ patchable: false, reason: 'no_base' }),
         getActionVariantDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
+        getActionVariantDiagramPatch: vi.fn().mockResolvedValue({ patchable: false, reason: 'no_base' }),
         simulateManualAction: vi.fn().mockResolvedValue({}),
         simulateAndVariantDiagramStream: vi.fn().mockResolvedValue({
             body: { getReader: () => ({ read: async () => ({ done: true, value: undefined }) }) },
@@ -262,6 +264,34 @@ describe('useDiagrams — interaction logging', () => {
             expect(log.some(e => e.type === 'action_deselected')).toBe(true);
             // No fetch is issued on the toggle-off path.
             expect(api.getActionVariantDiagram).not.toHaveBeenCalled();
+        });
+    });
+
+    // SVG DOM-recycling patch path. The frontend tries
+    // `getActionVariantDiagramPatch` first; on `patchable:false` or
+    // throw, it falls back to the full-SVG `getActionVariantDiagram`.
+    // These tests run in jsdom with no mounted N or N-1 SVG DOM, so
+    // `baseSvgEl = n1SvgContainerRef.current?.querySelector('svg')`
+    // is null and the patch branch is skipped entirely — the full
+    // fetch is what every assertion below checks.
+    //
+    // See docs/performance/history/svg-dom-recycling.md.
+    describe('action-variant patch path — falls back to full fetch when no base SVG DOM is mounted', () => {
+        it('skips the patch branch entirely when the N-1 / N SVG containers are empty', async () => {
+            const { api } = await import('../api');
+            const { result } = renderHook(() => useDiagrams([], [], ''));
+
+            vi.mocked(api.getActionVariantDiagram).mockClear();
+            vi.mocked(api.getActionVariantDiagramPatch).mockClear();
+
+            await act(async () => {
+                await result.current.handleActionSelect('act_42', null, '', 0, vi.fn(), vi.fn());
+            });
+
+            // No base SVG DOM in jsdom → patch endpoint never called.
+            expect(api.getActionVariantDiagramPatch).not.toHaveBeenCalled();
+            // Fallback full-fetch IS called.
+            expect(api.getActionVariantDiagram).toHaveBeenCalledWith('act_42');
         });
     });
 

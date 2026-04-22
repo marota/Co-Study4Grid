@@ -83,7 +83,7 @@ export interface RestoreContext {
   setUniqueVoltages: (v: number[]) => void;
   setVoltageRange: (v: [number, number]) => void;
   fetchBaseDiagram: (vlCount: number) => void;
-  ingestBaseDiagram: (raw: DiagramData, vlCount: number) => void;
+  ingestBaseDiagram: (raw: DiagramData & { svg: string }, vlCount: number) => void;
   setMonitorDeselected: (v: boolean) => void;
   setSelectedOverloads: (v: Set<string>) => void;
   setResult: Dispatch<SetStateAction<AnalysisResult | null>>;

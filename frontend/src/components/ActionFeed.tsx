@@ -65,7 +65,7 @@ interface ActionFeedProps {
      * single-shot call is used, preserving backward compat for tests and
      * call sites that do not wire the cache through.
      */
-    onActionDiagramPrimed?: (actionId: string, diagram: DiagramData, voltageLevelsLength: number) => void;
+    onActionDiagramPrimed?: (actionId: string, diagram: DiagramData & { svg: string }, voltageLevelsLength: number) => void;
     /** Current voltage-levels count, forwarded to the primer callback's
      * `processSvg` pass. Unused when onActionDiagramPrimed is absent. */
     voltageLevelsLength?: number;
@@ -203,7 +203,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     // eslint-disable-next-line @typescript-eslint/no-unused-vars
                     const { type: _t, ...rest } = event;
                     // `canPrimeDiagram` is verified before this helper is called.
-                    onActionDiagramPrimed!(actionId, rest as unknown as DiagramData, voltageLevelsLength!);
+                    onActionDiagramPrimed!(actionId, rest as unknown as DiagramData & { svg: string }, voltageLevelsLength!);
                 } else if (event.type === 'error') {
                     streamErr = (event.message as string) || 'stream error';
                 }

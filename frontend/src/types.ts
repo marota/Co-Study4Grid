@@ -130,7 +130,17 @@ export interface BranchResponse {
 export type NameMap = Record<string, string>;
 
 export interface DiagramData {
-    svg: string;
+    /**
+     * SVG payload. Usually a raw XML string from pypowsybl; when the
+     * N-1 or Action tab is populated via the svgPatch DOM-recycling
+     * path (see docs/performance/history/svg-dom-recycling.md) it is a
+     * pre-parsed SVGSVGElement that MemoizedSvgContainer moves into
+     * the target container via `replaceChildren` — no additional
+     * parse. Consumers that need the raw XML (e.g.
+     * ActionOverviewDiagram) must branch and clone the element when
+     * given an SVGSVGElement.
+     */
+    svg: string | SVGSVGElement;
     metadata: unknown;
     lf_converged?: boolean;
     lf_status?: string;
@@ -203,6 +213,73 @@ export interface MetadataIndex {
     nodesBySvgId: Map<string, NodeMeta>;
     edgesByEquipmentId: Map<string, EdgeMeta>;
     edgesByNode: Map<string, EdgeMeta[]>;
+}
+
+/**
+ * Payload returned by `/api/n1-diagram-patch` and
+ * `/api/action-variant-diagram-patch`. Carries only the incremental
+ * information needed to transform a clone of the N-state SVG DOM into
+ * the target state (N-1 or post-action) — NO SVG body. See
+ * `docs/performance/history/svg-dom-recycling.md`.
+ */
+export interface DiagramPatch {
+    patchable: boolean;
+    reason?: string;
+    contingency_id?: string;
+    action_id?: string;
+    lf_converged: boolean;
+    lf_status: string;
+    non_convergence?: string | null;
+    /** Equipment IDs of edges that should render dashed (disconnected). */
+    disconnected_edges?: string[];
+    /** Absolute flow values to overwrite the base-state edge-info labels. */
+    absolute_flows?: {
+        p1: Record<string, number>;
+        p2: Record<string, number>;
+        q1: Record<string, number>;
+        q2: Record<string, number>;
+        vl1: Record<string, string>;
+        vl2: Record<string, string>;
+    };
+    lines_overloaded?: string[];
+    lines_overloaded_rho?: number[];
+    flow_deltas?: Record<string, FlowDelta>;
+    reactive_flow_deltas?: Record<string, FlowDelta>;
+    asset_deltas?: Record<string, AssetDelta>;
+    /**
+     * Per-voltage-level node subtrees to splice into the cloned base
+     * diagram. Populated only for actions that change bus count at
+     * one or more VLs (node merging / splitting / coupling).
+     *
+     * For each affected VL:
+     *  - `node_svg` — `<g id="nad-vl-{subSvgId}">...</g>` fragment
+     *    rendered by pypowsybl against the same `fixed_positions` as
+     *    the main NAD, so the splice lands geometrically identical
+     *    to a native full NAD.
+     *  - `node_sub_svg_id` — the svgId pypowsybl assigned to this VL
+     *    in the focused sub-diagram (typically `nad-vl-0`). Differs
+     *    from the main diagram's svgId (positional, e.g. `nad-vl-42`);
+     *    the client must REWRITE the spliced element's `id` attribute
+     *    to the main svgId from `baseMetaIndex.nodesByEquipmentId`
+     *    so the halo / delta lookups keep working.
+     *  - `edge_fragments` — one `<g id="nad-l-{subSvgId}">` (or
+     *    `nad-t-*`) subtree per branch terminating at this VL, so
+     *    the branch's piercing geometry (which internal bus it
+     *    connects to) matches the new bus count. Each entry also
+     *    carries `sub_svg_id` for the same client-side rewrite.
+     *
+     * Omitted for actions with no VL topology change. See
+     * docs/performance/history/svg-dom-recycling.md.
+     */
+    vl_subtrees?: Record<string, {
+        node_svg: string;
+        node_sub_svg_id: string;
+        edge_fragments?: Record<string, { svg: string; sub_svg_id: string }>;
+    }>;
+    meta?: {
+        base_state?: 'N' | 'N-1';
+        elapsed_ms?: number;
+    };
 }
 
 export type TabId = 'n' | 'n-1' | 'action' | 'overflow';

@@ -1,0 +1,33 @@
+{
+  "network_path": "/home/marotant/dev/Expert_op4grid_recommender/data/bare_env_20240828T0100Z",
+  "contingency": "ARGIAL71CANTE",
+  "full": {
+    "cold_ms": 3008.2770920007533,
+    "warm_ms_median": 2393.037159999949,
+    "warm_ms_all": [
+      2393.037159999949,
+      2475.180585000089,
+      2311.0365040001852
+    ],
+    "payload_bytes": 27058593,
+    "svg_mb": 12.850154
+  },
+  "patch": {
+    "cold_ms": 488.07754999961617,
+    "warm_ms_median": 497.44295699929353,
+    "warm_ms_all": [
+      502.4455249995299,
+      493.5283309996521,
+      497.44295699929353
+    ],
+    "payload_bytes": 5490265,
+    "patchable": true
+  },
+  "savings": {
+    "cold_ms": 2520.199542001137,
+    "cold_pct": 83.77551219276133,
+    "warm_ms": 1895.5942030006554,
+    "warm_pct": 79.21290294550612,
+    "payload_ratio_pct": 20.290282646994985
+  }
+}

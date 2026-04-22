@@ -661,6 +661,39 @@ def get_action_variant_diagram(request: ActionVariantRequest, http_request: Requ
         logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/api/n1-diagram-patch")
+def get_n1_diagram_patch(request: AnalysisRequest, http_request: Request):
+    """Return an SVG-less patch payload that the frontend applies to a
+    clone of the N-state NAD to produce the N-1 view.
+
+    Paired with the full-SVG `/api/n1-diagram` endpoint: on client-side
+    error or any unexpected condition the frontend must fall back to the
+    full endpoint. See docs/performance/history/svg-dom-recycling.md.
+    """
+    try:
+        payload = recommender_service.get_n1_diagram_patch(request.disconnected_element)
+        return _maybe_gzip_json(payload, http_request)
+    except Exception as e:
+        logger.exception("API boundary error")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/action-variant-diagram-patch")
+def get_action_variant_diagram_patch(request: ActionVariantRequest, http_request: Request):
+    """Return an SVG-less patch payload for applying a remedial action on
+    top of the already-loaded N-1 (or N) SVG DOM.
+
+    Returns `{patchable: false, reason}` for topology-changing actions
+    (switch toggles, line reconnections, VL-internal topology changes).
+    The frontend then falls back to `/api/action-variant-diagram`, which
+    yields the NAD-native rendering.
+    """
+    try:
+        payload = recommender_service.get_action_variant_diagram_patch(request.action_id)
+        return _maybe_gzip_json(payload, http_request)
+    except Exception as e:
+        logger.exception("API boundary error")
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.get("/api/element-voltage-levels")
 def get_element_voltage_levels(element_id: str = Query(...)):
     """Resolve an equipment ID to its voltage level IDs."""
