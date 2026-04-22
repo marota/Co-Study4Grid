@@ -130,12 +130,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onApply }) => {
                   type="text"
                   value={configFilePath}
                   onChange={e => setConfigFilePath(e.target.value)}
-                  onBlur={e => changeConfigFilePath(e.target.value).catch(() => { })}
+                  onBlur={e => changeConfigFilePath(e.target.value).catch(err => console.error('Failed to change config file path', err))}
                   placeholder="e.g. /home/user/my_costudy4grid_config.json"
                   style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
                 />
                 <button
-                  onClick={() => pickSettingsPath('file', (p) => changeConfigFilePath(p).catch(() => { }))}
+                  onClick={() => pickSettingsPath('file', (p) => changeConfigFilePath(p).catch(err => console.error('Failed to change config file path', err)))}
                   style={{ padding: '8px', background: '#7f8c8d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}
                 >📄</button>
               </div>

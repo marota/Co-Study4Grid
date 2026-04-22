@@ -41,8 +41,39 @@ jobs:
             cd frontend
             npm run lint
 
+  code-quality:
+    docker:
+      - image: cimg/python:3.10
+    steps:
+      - checkout
+      - run:
+          name: Install quality tooling
+          command: |
+            python -m pip install --upgrade pip
+            pip install ".[quality]"
+            pip install pytest
+      - run:
+          name: Ruff (lightweight lint)
+          command: ruff check expert_backend scripts
+      - run:
+          name: Code-quality gate
+          command: python scripts/check_code_quality.py
+      - run:
+          name: Reporter unit tests
+          command: pytest scripts/test_code_quality_report.py -q
+      - run:
+          name: Generate report artifacts
+          command: |
+            python scripts/code_quality_report.py \
+              --output reports/code-quality.json \
+              --markdown reports/code-quality.md
+      - store_artifacts:
+          path: reports
+          destination: code-quality
+
 workflows:
   test-workflow:
     jobs:
       - test-backend
       - test-frontend
+      - code-quality

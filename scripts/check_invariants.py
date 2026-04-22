@@ -143,7 +143,7 @@ INVARIANTS: list[Invariant] = [
             "commit 56643a8)."
         ),
         react={
-            "file_hint": "frontend/src/utils/svgUtils.ts",
+            "file_hint": "frontend/src/utils/svg/actionPinData.ts",
             # React's computeActionSeverity must reference monitoringFactor + the -0.05 band.
             "pattern": r"computeActionSeverity[\s\S]*?monitoringFactor\s*-\s*0\.05",
         },
@@ -171,7 +171,7 @@ INVARIANTS: list[Invariant] = [
             # pairs live in `combined_actions`, simulated ones move to
             # `actions` after simulation.  `buildCombinedActionPins`
             # iterates only `actions`.  Check that storage split.
-            "file_hint": "frontend/src/utils/svgUtils.ts",
+            "file_hint": "frontend/src/utils/svg/actionPinData.ts",
             "pattern": r"buildCombinedActionPins[\s\S]*?Object\.entries\(actions\)",
         },
         standalone={
@@ -193,7 +193,7 @@ INVARIANTS: list[Invariant] = [
             "happens not to be in the N-1 metadata (commit 5030b6c)."
         ),
         react={
-            "file_hint": "frontend/src/utils/svgUtils.ts",
+            "file_hint": "frontend/src/utils/svg/actionPinData.ts",
             # In resolveActionAnchor: getActionTargetLines appears
             # before max_rho_line.
             "pattern": r"resolveActionAnchor[\s\S]*?getActionTargetLines[\s\S]*?max_rho_line",
@@ -389,7 +389,7 @@ def check_invariant(inv: Invariant) -> dict:
             "pattern_hit": pattern_hit,
             "must_not_hit": must_not_hit,
             "reason": None if side_ok else (
-                f"regex not found in any candidate path" if (pattern and pattern_hit is None)
+                "regex not found in any candidate path" if (pattern and pattern_hit is None)
                 else f"forbidden pattern found at {must_not_hit}" if must_not_hit
                 else "unknown"
             ),

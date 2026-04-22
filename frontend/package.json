@@ -10,12 +10,12 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "quality:report": "node --input-type=module -e \"import('child_process').then(({ spawn }) => spawn('python', ['../scripts/code_quality_report.py', '--summary'], { stdio: 'inherit' }))\"",
+    "quality:check": "node --input-type=module -e \"import('child_process').then(({ spawn }) => spawn('python', ['../scripts/check_code_quality.py'], { stdio: 'inherit' }))\""
   },
   "dependencies": {
     "axios": "^1.13.5",
-    "framer-motion": "^12.34.0",
-    "lucide-react": "^0.563.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-select": "^5.10.2",

@@ -54,10 +54,16 @@ Co-Study4Grid/
 ├── benchmarks/                # Perf scripts (bench_load_study, _bench_common)
 ├── Overflow_Graph/            # Generated PDFs (created at runtime)
 ├── overrides.txt              # Pinned versions for transitive Python deps
-├── test_*.py / verify_*.py    # Root-level integration scripts (NOT part of pytest)
-├── reproduce_error.py / repro_stuck.py / fix_zoom.py / inspect_metadata.py
-│                              # Ad-hoc dev/debug utilities
-└── .gitignore                 # Excludes __pycache__/, *.pyc, *.pyo
+├── scripts/                   # Integration / parity / build helpers —
+│                              # `check_standalone_parity.py`,
+│                              # `check_session_fidelity.py`,
+│                              # `check_gesture_sequence.py`,
+│                              # `check_invariants.py`, `check_code_quality.py`,
+│                              # `code_quality_report.py`, `test_pipeline.py`, …
+├── CONTRIBUTING.md            # Contributor setup, code-quality gate
+├── .editorconfig              # Cross-editor indent / EOL defaults
+├── .env.example               # Template for backend env vars (CORS, …)
+└── .gitignore                 # Excludes __pycache__/, *.pyc, *.pyo, node_modules/
 ```
 
 ### Per-subtree docs
@@ -124,15 +130,21 @@ npm run preview  # Preview production build
 
 ### Running Tests
 
-Tests are integration tests that require a running backend with valid data paths:
+Backend unit tests use `pytest` and run against the in-repo mock layer
+(no live pypowsybl required):
 
 ```bash
-# Start the backend first, then:
-python test_backend.py         # Config, branches, and analysis tests
-python test_api_stream.py      # Streaming response tests
-python test_n1_api.py          # N-1 contingency diagram tests
-python test_voltage_api.py     # Voltage levels API tests
-python verify_n1_simulation.py # N-1 simulation verification
+pytest                                   # Full backend suite
+pytest expert_backend/tests/test_foo.py  # Single file
+```
+
+Ad-hoc integration scripts live in `scripts/` and require a running
+backend with real data paths:
+
+```bash
+python scripts/test_pipeline.py          # End-to-end smoke test
+python scripts/test_n1_calibration.py    # N-1 flow calibration check
+python scripts/test_grid_layout.py       # Layout loading sanity check
 ```
 
 Frontend unit tests use Vitest:
@@ -141,6 +153,23 @@ Frontend unit tests use Vitest:
 cd frontend
 npm run test         # Run Vitest test suite
 ```
+
+### Code-Quality Checks (continuous reporting)
+
+```bash
+# Generate a full JSON + Markdown report (backend + frontend metrics)
+python scripts/code_quality_report.py --output reports/code-quality.json \
+                                      --markdown reports/code-quality.md
+
+# Gate a pull request: non-zero exit on threshold violation
+python scripts/check_code_quality.py
+```
+
+Both scripts run in CI (`.github/workflows/code-quality.yml` and
+`.circleci/config.yml`). The gate guards the reductions documented in
+[`docs/architecture/code-quality-analysis.md`](docs/architecture/code-quality-analysis.md)
+(no new `print()` / bare except, module-size ceilings, no `any` /
+`@ts-ignore` in frontend source).
 
 ## API Endpoints
 
@@ -264,7 +293,7 @@ NAD/SLD payloads:
 - **Standalone bundle (auto-generated)**: `npm run build:standalone` in `frontend/` produces `frontend/dist-standalone/standalone.html` — a single-file HTML with React + CSS inlined via `vite-plugin-singlefile`. This is the canonical distribution artifact replacing the former `standalone_interface.html`. The legacy file remains on disk as `standalone_interface_legacy.html` (untracked) for reference.
 - There is no CI/CD pipeline, Dockerfile, or containerization configured
 - Root `.gitignore` excludes `__pycache__/`, `*.pyc`, `*.pyo`; `frontend/.gitignore` handles frontend build artifacts
-- Root-level Python scripts (`test_*.py`, `reproduce_error.py`, `repro_stuck.py`, `fix_zoom.py`, `inspect_metadata.py`) are ad-hoc development/debugging utilities, not part of the main application
+- Integration helpers and parity scripts live under `scripts/`. They are NOT part of the pytest suite — invoke them directly (`python scripts/<name>.py`).
 - `overrides.txt` contains pinned versions for transitive Python dependencies that need to be forced to specific versions
 - **Frontend unit tests** use Vitest + React Testing Library. Isolated component tests live as `*.test.tsx` files next to their component. Run with `cd frontend && npm run test`. No backend mocking is needed for component tests since they only use mocked props.
 - The two-step analysis flow (step1: detect overloads, step2: resolve) is the primary user workflow; the single-step `/api/run-analysis` is a legacy alternative
