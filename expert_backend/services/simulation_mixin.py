@@ -337,7 +337,7 @@ class SimulationMixin:
     def _create_dynamic_actions_if_needed(
         self, action_ids, recent_actions, obs_n1, nm, target_mw
     ):
-        """Auto-create heuristic actions for curtail_ / load_shedding_ / pst_tap_ prefixes."""
+        """Auto-create heuristic actions for curtail_ / load_shedding_ / pst_tap_ / reco_ prefixes."""
         for aid in action_ids:
             if aid in self._dict_action or aid in recent_actions:
                 continue
@@ -347,6 +347,8 @@ class SimulationMixin:
                 self._create_dynamic_load_shedding(aid, target_mw, obs_n1)
             elif aid.startswith("pst_tap_") or aid.startswith("pst_"):
                 self._create_dynamic_pst(aid, nm)
+            elif aid.startswith("reco_"):
+                self._create_dynamic_reconnection(aid)
 
     def _create_dynamic_curtailment(self, aid, target_mw, obs_n1):
         gen_name = aid[len("curtail_"):]
@@ -417,6 +419,19 @@ class SimulationMixin:
         entry["description_unitaire"] = f"Variation PST {pst_id}"
         self._dict_action[aid] = entry
         logger.info("[simulate_manual_action] Created dynamic PST action '%s'", aid)
+
+    def _create_dynamic_reconnection(self, aid):
+        line_name = aid[len("reco_"):]
+        # Reconnect both ends of the line to bus 1.
+        topo = {
+            "lines_or_bus": {line_name: 1},
+            "lines_ex_bus": {line_name: 1},
+        }
+        entry = self._build_action_entry_from_topology(aid, topo)
+        entry["description"] = f"Line reconnection: '{line_name}'"
+        entry["description_unitaire"] = f"Reconnexion '{line_name}'"
+        self._dict_action[aid] = entry
+        logger.info("[simulate_manual_action] Created dynamic reconnection action '%s'", aid)
 
     def _promote_recent_actions_to_dict(self, action_ids, recent_actions):
         """Promote heuristic actions found on `_last_result.prioritized_actions`

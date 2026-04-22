@@ -116,7 +116,6 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     onActionDiagramPrimed,
     voltageLevelsLength,
     overviewFilters,
-    onOverviewFiltersChange,
 }) => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
