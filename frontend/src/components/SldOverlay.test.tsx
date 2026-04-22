@@ -710,4 +710,134 @@ describe('SldOverlay', () => {
             expect(container.querySelectorAll('.sld-highlight-clone.sld-highlight-action').length).toBe(1);
         });
     });
+
+    // Regression: the delta-flow painter used to run only when a dep
+    // in its useEffect's dep list changed. But React reconciles the
+    // `dangerouslySetInnerHTML` wrapper during pan/zoom updates
+    // (overlayTransform state changes) — re-injecting the SVG and
+    // wiping every `sld-delta-*` class and `data-original-text`
+    // attribute the painter had planted. None of the deps changed,
+    // so the effect didn't re-run — the overlay stayed stuck on the
+    // Flows rendering until a tab switch forced a re-fetch. The
+    // fix converts the painter into a self-gating every-render pass
+    // with a signature + DOM-presence probe (mirrors the highlight
+    // layoutEffect immediately below it).
+    describe('Impacts delta persistence across pan/re-render (regression)', () => {
+        const buildDeltaOverlay = (): VlOverlay => ({
+            vlName: 'VL_400',
+            actionId: 'act-1',
+            // Minimal SLD fixture: one extern-cell containing a
+            // feeder group + an active-power label. Enough for the
+            // painter to find the cell, tag it with
+            // `sld-delta-positive`, and rewrite the numeric label.
+            svg:
+                '<svg xmlns="http://www.w3.org/2000/svg">'
+                + '<g class="sld-extern-cell">'
+                + '<g id="feeder-lineA"></g>'
+                + '<g class="sld-active-power"><text class="sld-label">100</text></g>'
+                + '</g>'
+                + '</svg>',
+            sldMetadata: JSON.stringify({
+                feederInfos: [{ id: 'feeder-lineA', equipmentId: 'LINE_A' }],
+            }),
+            loading: false,
+            error: null,
+            tab: 'action' as SldTab,
+            flow_deltas: {
+                LINE_A: { delta: 5.5, category: 'positive', flip_arrow: false },
+            },
+        });
+
+        it('paints delta classes + delta text on initial render (actionViewMode=delta)', () => {
+            const overlay = buildDeltaOverlay();
+            const { container } = render(
+                <SldOverlay {...defaultProps} vlOverlay={overlay} actionViewMode="delta" />,
+            );
+            expect(container.querySelector('.sld-extern-cell.sld-delta-positive')).toBeTruthy();
+            const label = container.querySelector('.sld-active-power .sld-label');
+            expect(label).toBeTruthy();
+            expect(label!.textContent).toMatch(/Δ/); // delta symbol "Δ"
+            expect(label!.getAttribute('data-original-text')).toBe('100');
+            expect(label!.classList.contains('sld-delta-text-positive')).toBe(true);
+        });
+
+        it('re-paints delta state after a pan reconciliation wipes it from the DOM', () => {
+            const overlay = buildDeltaOverlay();
+            const { container, rerender } = render(
+                <SldOverlay {...defaultProps} vlOverlay={overlay} actionViewMode="delta" />,
+            );
+            // Guard: initial paint landed.
+            expect(container.querySelector('.sld-delta-positive')).toBeTruthy();
+
+            // Simulate React's reconciliation of the
+            // `dangerouslySetInnerHTML` wrapper during pan — every
+            // delta class & data-original-text gets dropped.
+            container.querySelectorAll('.sld-delta-positive, .sld-delta-text-positive').forEach(el => {
+                el.classList.remove('sld-delta-positive', 'sld-delta-text-positive');
+            });
+            container.querySelectorAll('[data-original-text]').forEach(el => {
+                el.removeAttribute('data-original-text');
+            });
+            // Also restore the label text so the sig-gate can detect
+            // the wipe via the DOM-presence probe.
+            const lbl = container.querySelector('.sld-active-power .sld-label')!;
+            lbl.textContent = '100';
+
+            expect(container.querySelector('.sld-delta-positive')).toBeNull();
+
+            // A pan-triggered rerender (transform state in SldOverlay
+            // changes, props stay identical). The self-gating effect
+            // must detect the wipe and repaint.
+            rerender(
+                <SldOverlay {...defaultProps} vlOverlay={overlay} actionViewMode="delta" />,
+            );
+
+            expect(container.querySelector('.sld-extern-cell.sld-delta-positive')).toBeTruthy();
+            const labelAfter = container.querySelector('.sld-active-power .sld-label')!;
+            expect(labelAfter.textContent).toMatch(/Δ/);
+            expect(labelAfter.getAttribute('data-original-text')).toBe('100');
+            expect(labelAfter.classList.contains('sld-delta-text-positive')).toBe(true);
+        });
+
+        it('clears delta state when toggling back to Flows (actionViewMode=network)', () => {
+            const overlay = buildDeltaOverlay();
+            const { container, rerender } = render(
+                <SldOverlay {...defaultProps} vlOverlay={overlay} actionViewMode="delta" />,
+            );
+            expect(container.querySelector('.sld-delta-positive')).toBeTruthy();
+
+            rerender(
+                <SldOverlay {...defaultProps} vlOverlay={overlay} actionViewMode="network" />,
+            );
+            // Flows mode — no delta paint should remain on the cell.
+            expect(container.querySelector('.sld-delta-positive')).toBeNull();
+            // Original numeric label restored.
+            const label = container.querySelector('.sld-active-power .sld-label')!;
+            expect(label.textContent).toBe('100');
+            expect(label.getAttribute('data-original-text')).toBeNull();
+        });
+
+        it('is idempotent across consecutive rerenders with identical props (no sig thrash)', () => {
+            const overlay = buildDeltaOverlay();
+            const { container, rerender } = render(
+                <SldOverlay {...defaultProps} vlOverlay={overlay} actionViewMode="delta" />,
+            );
+            const originalAttr = container.querySelector('.sld-active-power .sld-label')!.getAttribute('data-original-text');
+            // Consecutive re-renders must not stack up "Δ Δ Δ" prefixes
+            // on the label — the painter's reset step runs before
+            // every repaint, so the text stays "Δ +5.5" whatever the
+            // render count is.
+            rerender(<SldOverlay {...defaultProps} vlOverlay={overlay} actionViewMode="delta" />);
+            rerender(<SldOverlay {...defaultProps} vlOverlay={overlay} actionViewMode="delta" />);
+            rerender(<SldOverlay {...defaultProps} vlOverlay={overlay} actionViewMode="delta" />);
+            const label = container.querySelector('.sld-active-power .sld-label')!;
+            // Exactly one Δ prefix — no accumulation.
+            const deltaCount = (label.textContent ?? '').split('Δ').length - 1;
+            expect(deltaCount).toBe(1);
+            // data-original-text preserved (not re-captured from the
+            // already-Δ-prefixed label, which would corrupt it).
+            expect(label.getAttribute('data-original-text')).toBe(originalAttr);
+            expect(label.getAttribute('data-original-text')).toBe('100');
+        });
+    });
 });

@@ -105,6 +105,82 @@ describe('ActionFeed', () => {
         expect(screen.getByPlaceholderText(/Search action by ID/)).toBeInTheDocument();
     });
 
+    describe('"Make a first guess" gating after Analyze & Suggest', () => {
+        // Product rule: once the user has triggered Analyze & Suggest
+        // (or it's currently running, or its result is pending
+        // display), the pre-analysis "Make a first guess" shortcut is
+        // suppressed. It should reappear only after a state reset
+        // (contingency change, study reload) clears actionScores /
+        // pendingAnalysisResult / actions.
+
+        it('hides the button while analysis is in progress', () => {
+            render(<ActionFeed {...defaultProps} analysisLoading={true} />);
+            expect(screen.queryByTestId('make-first-guess-button')).not.toBeInTheDocument();
+        });
+
+        it('hides the button while a pending analysis result is awaiting display', () => {
+            const pending = {
+                actions: {},
+                lines_overloaded: [],
+                action_scores: {},
+            } as unknown as AnalysisResult;
+            render(<ActionFeed {...defaultProps} pendingAnalysisResult={pending} />);
+            expect(screen.queryByTestId('make-first-guess-button')).not.toBeInTheDocument();
+        });
+
+        it('hides the button when action scores are present (analysis completed)', () => {
+            const actionScores = {
+                line_disconnection: { scores: { 'disco_A': 1.0 }, params: {} },
+            };
+            render(<ActionFeed {...defaultProps} actionScores={actionScores} />);
+            expect(screen.queryByTestId('make-first-guess-button')).not.toBeInTheDocument();
+        });
+
+        it('hides the button when the actions dict is non-empty (at least one simulated action)', () => {
+            const actions = {
+                manually_added: {
+                    description_unitaire: 'Manual',
+                    action_topology: emptyTopo,
+                    is_manual: true,
+                } as unknown as ActionDetail,
+            };
+            render(<ActionFeed {...defaultProps} actions={actions} />);
+            expect(screen.queryByTestId('make-first-guess-button')).not.toBeInTheDocument();
+        });
+
+        it('still shows the button when actionScores is an empty object (analysis never ran)', () => {
+            // The defaultProps already use `actionScores: {}` which is
+            // the initial "analysis has not produced anything yet"
+            // state — a truthy but empty object. The button must still
+            // appear.
+            render(<ActionFeed {...defaultProps} actionScores={{}} />);
+            expect(screen.getByTestId('make-first-guess-button')).toBeInTheDocument();
+        });
+
+        it('re-appears after a simulated reset (all analysis-related state cleared)', () => {
+            const { rerender } = render(
+                <ActionFeed
+                    {...defaultProps}
+                    actionScores={{ line_disconnection: { scores: { 'disco_A': 1.0 }, params: {} } }}
+                />,
+            );
+            expect(screen.queryByTestId('make-first-guess-button')).not.toBeInTheDocument();
+
+            // Simulate state reset: parent clears result/actionScores
+            // (emulating resetAllState on contingency/study change).
+            rerender(
+                <ActionFeed
+                    {...defaultProps}
+                    actionScores={{}}
+                    pendingAnalysisResult={null}
+                    analysisLoading={false}
+                    actions={{}}
+                />,
+            );
+            expect(screen.getByTestId('make-first-guess-button')).toBeInTheDocument();
+        });
+    });
+
     it('keeps a manually added action in Selected and shows the overlap warning when it is ALSO suggested by the analysis', () => {
         // Regression: a user "first guess" that coincides with a
         // recommender suggestion used to silently vanish from the

@@ -312,4 +312,108 @@ describe('ActionSearchDropdown', () => {
             expect(input.value).toBe('');
         });
     });
+
+    // Regression: once "Analyze & Suggest" has produced action scores,
+    // applying a type filter may filter the score list down to zero.
+    // Previously the dropdown silently fell back to the full network
+    // action list, which misled the operator into thinking the
+    // analysis recommended any of those actions. A yellow warning
+    // banner must now tell them that no scored action matched the
+    // selected type. The banner is suppressed when the analysis
+    // hasn't been run (actionScores undefined) or when the 'all'
+    // filter is active, to avoid false positives.
+    describe('no-relevant-action warning (after analyze & suggest)', () => {
+        it('shows the warning when actionScores are non-empty but the type filter hides them all', () => {
+            const actionScores = {
+                pst_tap_change: {
+                    scores: { 'pst-A': 5 },
+                    params: {},
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    // Type filter is RECO but the only scored action is a PST.
+                    actionTypeFilter="reco"
+                    scoredActionsList={[]}
+                    actionScores={actionScores}
+                />,
+            );
+            const banner = screen.getByTestId('no-relevant-action-warning');
+            expect(banner).toBeInTheDocument();
+            expect(banner.textContent).toMatch(/no relevant action detected/i);
+        });
+
+        it('does NOT show the warning when actionScores is undefined (analysis not yet run)', () => {
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    actionTypeFilter="reco"
+                    scoredActionsList={[]}
+                    actionScores={undefined}
+                />,
+            );
+            expect(screen.queryByTestId('no-relevant-action-warning')).not.toBeInTheDocument();
+        });
+
+        it('does NOT show the warning when actionScores is empty (analysis ran but produced nothing)', () => {
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    actionTypeFilter="reco"
+                    scoredActionsList={[]}
+                    actionScores={{}}
+                />,
+            );
+            expect(screen.queryByTestId('no-relevant-action-warning')).not.toBeInTheDocument();
+        });
+
+        it('does NOT show the warning under the `all` filter (user is not filtering by type)', () => {
+            const actionScores = {
+                pst_tap_change: { scores: { 'pst-A': 5 }, params: {} },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    actionTypeFilter="all"
+                    scoredActionsList={[]}
+                    actionScores={actionScores}
+                />,
+            );
+            expect(screen.queryByTestId('no-relevant-action-warning')).not.toBeInTheDocument();
+        });
+
+        it('does NOT show the warning when there is at least one scored action after filtering', () => {
+            const actionScores = {
+                pst_tap_change: { scores: { 'pst-A': 5 }, params: {} },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    actionTypeFilter="pst"
+                    scoredActionsList={[
+                        { type: 'pst_tap_change', actionId: 'pst-A', score: 5, mwStart: null },
+                    ]}
+                    actionScores={actionScores}
+                />,
+            );
+            expect(screen.queryByTestId('no-relevant-action-warning')).not.toBeInTheDocument();
+        });
+
+        it('does NOT show the warning while the user is typing in the search box', () => {
+            const actionScores = {
+                pst_tap_change: { scores: { 'pst-A': 5 }, params: {} },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    searchQuery="foo"
+                    actionTypeFilter="reco"
+                    scoredActionsList={[]}
+                    actionScores={actionScores}
+                />,
+            );
+            expect(screen.queryByTestId('no-relevant-action-warning')).not.toBeInTheDocument();
+        });
+    });
 });

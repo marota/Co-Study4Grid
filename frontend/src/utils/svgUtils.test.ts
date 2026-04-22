@@ -1247,6 +1247,96 @@ describe('Highlight Layering', () => {
             expect(deltaIdx).toBeGreaterThan(Math.max(overloadIdx, contingencyIdx, actionTargetIdx));
         });
     });
+
+    // REGRESSION (Remedial Action tab post–action-variant-diagram-patch):
+    // The three NAD halo primitives append clones to
+    // `#nad-background-layer` in call-order; the last-appended clone
+    // draws on top (SVG paints in document order). The product
+    // spec is "action halo > overload halo > contingency halo"
+    // (bottom-to-top), so the call order must be contingency →
+    // overload → action. Before the fix, useDiagramHighlights invoked
+    // them as overload → action → contingency on the Remedial Action
+    // tab, which put the yellow contingency halo on top of the pink
+    // action halo — reversed.
+    describe('Halo layering order (contingency below overload below action)', () => {
+        const buildNAD = () => {
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <svg>
+                    <g id="svg-cont" data-role="contingency"></g>
+                    <g id="svg-ovl" data-role="overload"></g>
+                    <g id="svg-act" data-role="action"></g>
+                </svg>
+            `;
+            return container;
+        };
+
+        const metaIndex = {
+            edgesByEquipmentId: new Map([
+                ['CONT_LINE', { equipmentId: 'CONT_LINE', svgId: 'svg-cont' } as EdgeMeta],
+                ['OVL_LINE', { equipmentId: 'OVL_LINE', svgId: 'svg-ovl' } as EdgeMeta],
+                ['ACT_LINE', { equipmentId: 'ACT_LINE', svgId: 'svg-act' } as EdgeMeta],
+            ]),
+            nodesByEquipmentId: new Map(),
+            nodesBySvgId: new Map(),
+            edgesByNode: new Map(),
+        } as MetadataIndex;
+
+        it('Remedial Action tab call-order (contingency → overload → action) stacks halos bottom → top', () => {
+            const container = buildNAD();
+            const actionDetail = {
+                description_unitaire: "Ouvrir 'ACT_LINE'",
+                action_topology: { lines_ex_bus: { ACT_LINE: -1 } },
+            } as unknown as ActionDetail;
+
+            // Exact order of useDiagramHighlights.applyHighlightsForTab('action'):
+            applyContingencyHighlight(container, metaIndex, 'CONT_LINE');
+            applyOverloadedHighlights(container, metaIndex, ['OVL_LINE']);
+            applyActionTargetHighlights(container, metaIndex, actionDetail, 'act-1');
+
+            const bgLayer = container.querySelector('#nad-background-layer');
+            expect(bgLayer).not.toBeNull();
+            const children = Array.from(bgLayer!.children) as Element[];
+            // First appended is drawn at the bottom; last appended is on top.
+            const classes = children.map(c => {
+                if (c.classList.contains('nad-contingency-highlight')) return 'contingency';
+                if (c.classList.contains('nad-overloaded')) return 'overload';
+                if (c.classList.contains('nad-action-target')) return 'action';
+                return 'other';
+            });
+            const contingencyIdx = classes.indexOf('contingency');
+            const overloadIdx = classes.indexOf('overload');
+            const actionIdx = classes.indexOf('action');
+            expect(contingencyIdx).toBeGreaterThanOrEqual(0);
+            expect(overloadIdx).toBeGreaterThanOrEqual(0);
+            expect(actionIdx).toBeGreaterThanOrEqual(0);
+            // Bottom → top: contingency, then overload, then action.
+            expect(contingencyIdx).toBeLessThan(overloadIdx);
+            expect(overloadIdx).toBeLessThan(actionIdx);
+        });
+
+        it('N-1 tab call-order (contingency → overload) stacks contingency below overload', () => {
+            const container = buildNAD();
+
+            // Exact order of useDiagramHighlights.applyHighlightsForTab('n-1'):
+            applyContingencyHighlight(container, metaIndex, 'CONT_LINE');
+            applyOverloadedHighlights(container, metaIndex, ['OVL_LINE']);
+
+            const bgLayer = container.querySelector('#nad-background-layer');
+            expect(bgLayer).not.toBeNull();
+            const children = Array.from(bgLayer!.children) as Element[];
+            const contingencyIdx = children.findIndex(c =>
+                c.classList.contains('nad-contingency-highlight'),
+            );
+            const overloadIdx = children.findIndex(c =>
+                c.classList.contains('nad-overloaded'),
+            );
+            expect(contingencyIdx).toBeGreaterThanOrEqual(0);
+            expect(overloadIdx).toBeGreaterThanOrEqual(0);
+            // Bottom → top: contingency, then overload.
+            expect(contingencyIdx).toBeLessThan(overloadIdx);
+        });
+    });
 });
 
 // ============================================================

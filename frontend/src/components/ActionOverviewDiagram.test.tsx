@@ -971,6 +971,64 @@ describe('ActionOverviewDiagram', () => {
             expect(onFiltersChange.mock.calls[0][0].threshold).toBeCloseTo(1.0);
         });
 
+        it('threshold input is a compact integer-% number widget rendering the current fraction as a %', () => {
+            // Regression: the widget replaced the old range slider.
+            // It must be `type="number"`, must bound to 0–300 % with
+            // step=1, and must surface the fractional threshold
+            // multiplied by 100 as its value.
+            const { getByTestId, queryByTestId } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
+                />,
+            );
+            const input = getByTestId('filter-threshold-input') as HTMLInputElement;
+            expect(input.type).toBe('number');
+            expect(input.min).toBe('0');
+            expect(input.max).toBe('300');
+            expect(input.step).toBe('1');
+            expect(input.value).toBe('150');
+            // The old slider must NOT be present anymore.
+            expect(queryByTestId('filter-threshold')?.querySelector('input[type="range"]')).toBeFalsy();
+        });
+
+        it('threshold input clamps values outside 0–300 %', () => {
+            const onFiltersChange = vi.fn();
+            const { getByTestId } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
+                    onFiltersChange={onFiltersChange}
+                />,
+            );
+            const input = getByTestId('filter-threshold-input') as HTMLInputElement;
+            fireEvent.change(input, { target: { value: '999' } });
+            expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ threshold: 3.0 }));
+            fireEvent.change(input, { target: { value: '-50' } });
+            expect(onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ threshold: 0 }));
+        });
+
+        it('header lays out filters on a single horizontal row (nowrap)', () => {
+            // Regression: the compacted banner must not wrap onto a
+            // second line. We check the computed flex-wrap value of
+            // the header container plus the presence of every filter
+            // control as a direct child of that row.
+            const { getByTestId } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
+                />,
+            );
+            const header = getByTestId('action-overview-header');
+            expect(header.style.flexWrap).toBe('nowrap');
+            // The severity toggles, threshold, unsimulated checkbox,
+            // and action-type chips all sit as children/descendants of
+            // the single row — no nested wrapping <div> is introduced.
+            expect(header.querySelector('[data-testid="filter-category-green"]')).toBeTruthy();
+            expect(header.querySelector('[data-testid="filter-threshold-input"]')).toBeTruthy();
+            expect(header.querySelector('[data-testid="filter-show-unsimulated"]')).toBeTruthy();
+        });
+
         it('disabling the red category hides red-severity pins from the overview', () => {
             // defaultProps has one red pin (coupling_VL_FAR max_rho=1.1) and
             // one green pin (disco_LINE_A max_rho=0.5).
