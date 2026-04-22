@@ -106,7 +106,16 @@ export const isCouplingAction = (actionId: string | null, description?: string):
 };
 
 /**
- * Determine which lines an action acts upon (for line disconnection/reconnection actions).
+ * Determine which lines an action acts upon (for line disconnection /
+ * reconnection / PST actions).
+ *
+ * IMPORTANT for combined actions (e.g. `disco_X+coupling_Y`): the
+ * coupling flag must be evaluated PER `+`-split part, not on the
+ * full combined ID. Otherwise the presence of "coupling" in the
+ * combined string incorrectly suppresses line-target extraction for
+ * the non-coupling sub-action (the disco line loses its pink halo
+ * and its action-card badge). Combined disco+coupling regression
+ * fixed on the svgPatch rollout (2026-04-24).
  */
 export const getActionTargetLines = (
     actionDetail: ActionDetail | null,
@@ -114,15 +123,23 @@ export const getActionTargetLines = (
     edgesByEquipmentId: Map<string, EdgeMeta>,
 ): string[] => {
     const targets = new Set<string>();
-
-    // 1. From topology
     const topo = actionDetail?.action_topology;
+    const parts = actionId ? actionId.split('+') : [];
+    const isCombined = parts.length > 1;
+
+    // PST tap lines are explicit in the topology and unambiguous even
+    // in combined actions — always include them.
     if (topo) {
-        const isCoupling = isCouplingAction(actionId, actionDetail?.description_unitaire);
-
-        // Pst taps are always included
         Object.keys(topo.pst_tap || {}).forEach(l => targets.add(l));
+    }
 
+    // Topology-based bus/line extraction — only for PURE (non-combined)
+    // actions. A combined action merges bus changes from multiple
+    // sub-actions into one topology blob, so we can't cleanly attribute
+    // them to specific lines. Combined-action line targets are picked up
+    // by the per-part action-ID parser below instead.
+    if (topo && !isCombined) {
+        const isCoupling = isCouplingAction(actionId, actionDetail?.description_unitaire);
         if (!isCoupling) {
             const lineKeys = new Set([
                 ...Object.keys(topo.lines_ex_bus || {}),
@@ -150,37 +167,40 @@ export const getActionTargetLines = (
         }
     }
 
-    // 2. From action ID (handles combined IDs)
-    const isCoupling = isCouplingAction(actionId, actionDetail?.description_unitaire);
-    if (actionId && !isCoupling) {
-        actionId.split('+').forEach(part => {
-            // Strip any suffix added by discovery (e.g. _inc1, _dec2)
-            const cleanPart = part.replace(/_(inc|dec)\d+$/, '');
+    // From action ID — per-part, applying the coupling test PER PART
+    // so combined disco+coupling actions correctly extract the disco
+    // line even though the combined string contains "coupling".
+    parts.forEach(part => {
+        // Coupling / node-merging / node-splitting sub-parts target
+        // voltage levels, not lines — their highlights come from
+        // `getActionTargetVoltageLevels`.
+        if (isCouplingAction(part)) return;
 
-            if (edgesByEquipmentId.has(cleanPart)) {
-                targets.add(cleanPart);
+        const cleanPart = part.replace(/_(inc|dec)\d+$/, '');
+
+        if (edgesByEquipmentId.has(cleanPart)) {
+            targets.add(cleanPart);
+            return;
+        }
+        if (edgesByEquipmentId.has(part)) {
+            targets.add(part);
+            return;
+        }
+
+        const subParts = cleanPart.split('_');
+        for (let i = 1; i < subParts.length; i++) {
+            const candidate = subParts.slice(i).join('_');
+            if (edgesByEquipmentId.has(candidate)) {
+                targets.add(candidate);
                 return;
             }
-            if (edgesByEquipmentId.has(part)) {
-                targets.add(part);
-                return;
-            }
-
-            const subParts = cleanPart.split('_');
-            for (let i = 1; i < subParts.length; i++) {
-                const candidate = subParts.slice(i).join('_');
-                if (edgesByEquipmentId.has(candidate)) {
-                    targets.add(candidate);
-                    return;
-                }
-            }
-            // Fallback: last segment
-            const last = subParts[subParts.length - 1];
-            if (edgesByEquipmentId.has(last)) {
-                targets.add(last);
-            }
-        });
-    }
+        }
+        // Fallback: last segment
+        const last = subParts[subParts.length - 1];
+        if (edgesByEquipmentId.has(last)) {
+            targets.add(last);
+        }
+    });
 
     return [...targets];
 };
