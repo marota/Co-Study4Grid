@@ -13030,6 +13030,26 @@ const computeActionSeverity = (details, monitoringFactor) => {
   if (details.max_rho > monitoringFactor - 0.05) return "orange";
   return "green";
 };
+const actionPassesOverviewFilter = (details, monitoringFactor, categoryEnabled, threshold) => {
+  const severity = computeActionSeverity(details, monitoringFactor);
+  if (!categoryEnabled[severity]) return false;
+  if (details.max_rho != null && details.max_rho > threshold) return false;
+  return true;
+};
+const formatPinLabel = (details) => {
+  if (details.max_rho != null) return `${(details.max_rho * 100).toFixed(0)}%`;
+  if (details.non_convergence) return "DIV";
+  if (details.is_islanded) return "ISL";
+  return "—";
+};
+const formatPinTitle = (idLabel, details) => {
+  const parts = [
+    idLabel,
+    details.description_unitaire,
+    details.max_rho != null ? `max loading ${(details.max_rho * 100).toFixed(1)}%${details.max_rho_line ? ` on ${details.max_rho_line}` : ""}` : details.non_convergence ? "load-flow divergent" : details.is_islanded ? "islanding" : ""
+  ];
+  return parts.filter(Boolean).join(" — ");
+};
 const resolveActionAnchor = (actionId, details, metaIndex) => {
   const { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId } = metaIndex;
   const lookupNode = (nodeRef) => {
@@ -13081,21 +13101,7 @@ const resolveActionAnchor = (actionId, details, metaIndex) => {
   }
   return null;
 };
-const buildActionOverviewPins = (actions, metaIndex, monitoringFactor, filterIds) => {
-  const pins = [];
-  for (const [actionId, details] of Object.entries(actions)) {
-    if (actionId.includes("+")) continue;
-    const anchor = resolveActionAnchor(actionId, details, metaIndex);
-    if (!anchor) continue;
-    const severity = computeActionSeverity(details, monitoringFactor);
-    const label = details.max_rho != null ? `${(details.max_rho * 100).toFixed(0)}%` : details.non_convergence ? "DIV" : details.is_islanded ? "ISL" : "—";
-    const title = [
-      actionId,
-      details.description_unitaire,
-      details.max_rho != null ? `max loading ${(details.max_rho * 100).toFixed(1)}%${details.max_rho_line ? ` on ${details.max_rho_line}` : ""}` : details.non_convergence ? "load-flow divergent" : details.is_islanded ? "islanding" : ""
-    ].filter(Boolean).join(" — ");
-    pins.push({ id: actionId, x: anchor.x, y: anchor.y, severity, label, title });
-  }
+const fanOutColocatedPins = (pins, offsetRadius = 30 * 1.2) => {
   const bucketKey = (p) => `${Math.round(p.x * 100)}:${Math.round(p.y * 100)}`;
   const groups = /* @__PURE__ */ new Map();
   pins.forEach((p, i) => {
@@ -13106,18 +13112,87 @@ const buildActionOverviewPins = (actions, metaIndex, monitoringFactor, filterIds
   });
   for (const indices of groups.values()) {
     if (indices.length < 2) continue;
-    const offsetR = 30 * 1.2;
     const angleStep = 2 * Math.PI / indices.length;
     indices.forEach((idx, i) => {
       const angle = -Math.PI / 2 + i * angleStep;
       pins[idx] = {
         ...pins[idx],
-        x: pins[idx].x + offsetR * Math.cos(angle),
-        y: pins[idx].y + offsetR * Math.sin(angle)
+        x: pins[idx].x + offsetRadius * Math.cos(angle),
+        y: pins[idx].y + offsetRadius * Math.sin(angle)
       };
     });
   }
+};
+const buildActionOverviewPins = (actions, metaIndex, monitoringFactor, filterIds, overviewFilter) => {
+  const pins = [];
+  for (const [actionId, details] of Object.entries(actions)) {
+    if (actionId.includes("+")) continue;
+    const anchor = resolveActionAnchor(actionId, details, metaIndex);
+    if (!anchor) continue;
+    const severity = computeActionSeverity(details, monitoringFactor);
+    const label = formatPinLabel(details);
+    const title = formatPinTitle(actionId, details);
+    pins.push({ id: actionId, x: anchor.x, y: anchor.y, severity, label, title });
+  }
+  fanOutColocatedPins(pins);
   return pins;
+};
+const buildUnsimulatedPinTitle = (id, info) => {
+  if (!info) {
+    return `${id} — not yet simulated (double-click to run)`;
+  }
+  const lines = [
+    `${id} — not yet simulated (double-click to run)`,
+    `Type: ${info.type}`,
+    `Score: ${info.score.toFixed(2)} — rank ${info.rankInType} of ${info.countInType} (max ${info.maxScoreInType.toFixed(2)})`
+  ];
+  if (info.mwStart != null) {
+    lines.push(`MW start: ${info.mwStart.toFixed(1)} MW`);
+  }
+  if (info.tapStart) {
+    const ts = info.tapStart;
+    const range = ts.low_tap != null && ts.high_tap != null ? ` (range ${ts.low_tap} … ${ts.high_tap})` : "";
+    lines.push(`Tap start: ${ts.tap}${range}`);
+  }
+  return lines.join("\n");
+};
+const buildUnsimulatedActionPins = (scoredActionIds, simulatedIds, metaIndex, scoreInfo) => {
+  const pins = [];
+  const seen2 = /* @__PURE__ */ new Set();
+  const stub = {
+    description_unitaire: "",
+    max_rho_line: ""
+  };
+  for (const rawId of scoredActionIds) {
+    const id = rawId.trim();
+    if (!id || seen2.has(id)) continue;
+    seen2.add(id);
+    if (simulatedIds.has(id)) continue;
+    const anchor = resolveActionAnchor(id, stub, metaIndex);
+    if (!anchor) continue;
+    pins.push({
+      id,
+      x: anchor.x,
+      y: anchor.y,
+      severity: "grey",
+      label: "?",
+      title: buildUnsimulatedPinTitle(id, scoreInfo?.[id]),
+      unsimulated: true
+    });
+  }
+  fanOutColocatedPins(pins);
+  return pins;
+};
+const curveMidpoint = (p1, p2, offsetFraction = 0.3) => {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ctrlX = (p1.x + p2.x) / 2 + -dy / dist * dist * offsetFraction;
+  const ctrlY = (p1.y + p2.y) / 2 + dx / dist * dist * offsetFraction;
+  const t = 0.5;
+  const midX = (1 - t) * (1 - t) * p1.x + 2 * t * (1 - t) * ctrlX + t * t * p2.x;
+  const midY = (1 - t) * (1 - t) * p1.y + 2 * t * (1 - t) * ctrlY + t * t * p2.y;
+  return { ctrlX, ctrlY, midX, midY };
 };
 const buildCombinedActionPins = (actions, unitaryPins, monitoringFactor) => {
   if (!actions) return [];
@@ -13139,22 +13214,10 @@ const buildCombinedActionPins = (actions, unitaryPins, monitoringFactor) => {
       console.warn(`[buildCombinedActionPins] skipping "${actionId}": pin1(${id1})=${!!pin1}, pin2(${id2})=${!!pin2}`);
       continue;
     }
-    const dx = pin2.x - pin1.x;
-    const dy = pin2.y - pin1.y;
-    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    const offsetFraction = 0.3;
-    const ctrlX = (pin1.x + pin2.x) / 2 + -dy / dist * dist * offsetFraction;
-    const ctrlY = (pin1.y + pin2.y) / 2 + dx / dist * dist * offsetFraction;
-    const t = 0.5;
-    const midX = (1 - t) * (1 - t) * pin1.x + 2 * t * (1 - t) * ctrlX + t * t * pin2.x;
-    const midY = (1 - t) * (1 - t) * pin1.y + 2 * t * (1 - t) * ctrlY + t * t * pin2.y;
+    const { midX, midY } = curveMidpoint(pin1, pin2);
     const severity = computeActionSeverity(detail, monitoringFactor);
-    const label = detail.max_rho != null ? `${(detail.max_rho * 100).toFixed(0)}%` : detail.non_convergence ? "DIV" : detail.is_islanded ? "ISL" : "—";
-    const title = [
-      `${id1} + ${id2}`,
-      detail.description_unitaire,
-      detail.max_rho != null ? `max loading ${(detail.max_rho * 100).toFixed(1)}%${detail.max_rho_line ? ` on ${detail.max_rho_line}` : ""}` : detail.non_convergence ? "load-flow divergent" : detail.is_islanded ? "islanding" : ""
-    ].filter(Boolean).join(" — ");
+    const label = formatPinLabel(detail);
+    const title = formatPinTitle(`${id1} + ${id2}`, detail);
     result.push({
       pairId: actionId,
       action1Id: id1,
@@ -13179,8 +13242,8 @@ const applyActionOverviewHighlights = (container, metaIndex, contingency, overlo
   const haveContingency = !!contingency;
   const haveOverloads = overloadedLines.length > 0;
   if (!haveContingency && !haveOverloads) return;
-  const SVG_NS = "http://www.w3.org/2000/svg";
-  const layer = document.createElementNS(SVG_NS, "g");
+  const SVG_NS2 = "http://www.w3.org/2000/svg";
+  const layer = document.createElementNS(SVG_NS2, "g");
   layer.setAttribute("class", "nad-overview-highlight-layer");
   if (svg.firstChild) {
     svg.insertBefore(layer, svg.firstChild);
@@ -13241,6 +13304,12 @@ const readPinBaseRadius = (svg) => {
 const PIN_MIN_SCREEN_RADIUS_PX = 22;
 const PIN_VIEWBOX_FRACTION = 50;
 const pinBaseRadiusCache = /* @__PURE__ */ new WeakMap();
+const computePinScale = (baseR, pxPerSvgUnit, viewBoxMax) => {
+  const minSvgR = PIN_MIN_SCREEN_RADIUS_PX / pxPerSvgUnit;
+  const viewBoxMinR = viewBoxMax / PIN_VIEWBOX_FRACTION;
+  const effectiveR = Math.max(baseR, minSvgR, viewBoxMinR);
+  return { effectiveR, scale: effectiveR / baseR };
+};
 const rescaleActionOverviewPins = (container) => {
   if (!container) return;
   const svg = container.querySelector("svg");
@@ -13249,6 +13318,7 @@ const rescaleActionOverviewPins = (container) => {
   if (!layer) return;
   performance.mark("aod:rescalePins:start");
   let pxPerSvgUnit = 1;
+  let viewBoxMax = 0;
   const vbAttr = svg.getAttribute("viewBox");
   if (vbAttr) {
     const parts = vbAttr.split(/[\s,]+/).map(Number);
@@ -13260,6 +13330,7 @@ const rescaleActionOverviewPins = (container) => {
         const ctm = svg.getScreenCTM?.();
         if (ctm) pxPerSvgUnit = ctm.a;
       }
+      viewBoxMax = Math.max(parts[2], parts[3]);
     }
   }
   let baseR = pinBaseRadiusCache.get(svg);
@@ -13267,17 +13338,7 @@ const rescaleActionOverviewPins = (container) => {
     baseR = readPinBaseRadius(svg);
     pinBaseRadiusCache.set(svg, baseR);
   }
-  const minSvgR = PIN_MIN_SCREEN_RADIUS_PX / pxPerSvgUnit;
-  let viewBoxMinR = 0;
-  if (vbAttr) {
-    const parts = vbAttr.split(/[\s,]+/).map(Number);
-    if (parts.length === 4) {
-      const extent = Math.max(parts[2], parts[3]);
-      viewBoxMinR = extent / PIN_VIEWBOX_FRACTION;
-    }
-  }
-  const effectiveR = Math.max(baseR, minSvgR, viewBoxMinR);
-  const scale = effectiveR / baseR;
+  const { scale } = computePinScale(baseR, pxPerSvgUnit, viewBoxMax);
   layer.querySelectorAll(".nad-action-overview-pin-body").forEach((body) => {
     body.setAttribute("transform", `scale(${scale})`);
   });
@@ -13314,13 +13375,209 @@ const crossPath = (cx, cy, halfW) => {
     "Z"
   ].join(" ");
 };
+const SVG_NS = "http://www.w3.org/2000/svg";
+const attachPinClickListeners = (g, pinId, clickCb, dblClickCb) => {
+  let clickTimer = null;
+  g.addEventListener("mousedown", (evt) => {
+    evt.stopPropagation();
+  });
+  g.addEventListener("click", (evt) => {
+    evt.stopPropagation();
+    if (clickTimer !== null) return;
+    const rect = evt.currentTarget.getBoundingClientRect();
+    const screenPos = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    clickTimer = setTimeout(() => {
+      clickTimer = null;
+      clickCb(pinId, screenPos);
+    }, PIN_SINGLE_CLICK_DELAY_MS);
+  });
+  g.addEventListener("dblclick", (evt) => {
+    evt.stopPropagation();
+    if (clickTimer !== null) {
+      clearTimeout(clickTimer);
+      clickTimer = null;
+    }
+    if (dblClickCb) dblClickCb(pinId);
+  });
+};
+const buildPinGlyph = (body, R, labelFont, fill, label, titleText, strokeColor, strokeWidth) => {
+  const tail = R * 0.9;
+  const title = document.createElementNS(SVG_NS, "title");
+  title.textContent = titleText;
+  body.appendChild(title);
+  const path = document.createElementNS(SVG_NS, "path");
+  const d = `M ${-R} ${-R - tail} A ${R} ${R} 0 1 1 ${R} ${-R - tail} L 0 0 Z`;
+  path.setAttribute("d", d);
+  path.setAttribute("fill", fill);
+  if (strokeColor) {
+    path.setAttribute("stroke", strokeColor);
+    path.setAttribute("stroke-width", String(strokeWidth ?? R * 0.12));
+  } else {
+    path.setAttribute("stroke", "none");
+  }
+  body.appendChild(path);
+  const inner = document.createElementNS(SVG_NS, "circle");
+  inner.setAttribute("cx", "0");
+  inner.setAttribute("cy", String(-R - tail));
+  inner.setAttribute("r", String(R * 0.72));
+  inner.setAttribute("fill", "#ffffff");
+  inner.setAttribute("fill-opacity", "0.92");
+  inner.setAttribute("pointer-events", "none");
+  body.appendChild(inner);
+  const text = document.createElementNS(SVG_NS, "text");
+  text.setAttribute("x", "0");
+  text.setAttribute("y", String(-R - tail));
+  text.setAttribute("text-anchor", "middle");
+  text.setAttribute("dominant-baseline", "central");
+  text.setAttribute("font-size", String(labelFont));
+  text.setAttribute("font-weight", "800");
+  text.setAttribute("font-family", "system-ui, -apple-system, Arial, sans-serif");
+  text.setAttribute("fill", "#1f2937");
+  text.setAttribute("pointer-events", "none");
+  text.textContent = label;
+  body.appendChild(text);
+};
+const resolvePinFill = (severity, isSelected, isRejected, isDimmedByFilter = false) => {
+  if (isSelected) return { fill: severityFillHighlighted[severity], stroke: "#eab308" };
+  if (isRejected || isDimmedByFilter) return { fill: severityFillDimmed[severity] };
+  return { fill: severityFill[severity] };
+};
+const renderCombinedPin = (frag, cp, r, labelFont, edgeStrokeW, selectedIds, rejectedIds, onPinClick, onPinDoubleClick) => {
+  const dx = cp.p2.x - cp.p1.x;
+  const dy = cp.p2.y - cp.p1.y;
+  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+  const offsetFraction = 0.3;
+  const ctrlX = (cp.p1.x + cp.p2.x) / 2 + -dy / dist * dist * offsetFraction;
+  const ctrlY = (cp.p1.y + cp.p2.y) / 2 + dx / dist * dist * offsetFraction;
+  const curvePath = document.createElementNS(SVG_NS, "path");
+  curvePath.setAttribute(
+    "d",
+    `M ${cp.p1.x} ${cp.p1.y} Q ${ctrlX} ${ctrlY} ${cp.p2.x} ${cp.p2.y}`
+  );
+  curvePath.setAttribute("class", "nad-combined-action-curve");
+  curvePath.setAttribute("fill", "none");
+  curvePath.setAttribute("stroke", severityFill[cp.severity]);
+  curvePath.setAttribute("stroke-width", String(edgeStrokeW));
+  curvePath.setAttribute("stroke-dasharray", `${edgeStrokeW * 2.5} ${edgeStrokeW * 1.5}`);
+  curvePath.setAttribute("stroke-linecap", "round");
+  curvePath.setAttribute("pointer-events", "none");
+  frag.appendChild(curvePath);
+  const g = document.createElementNS(SVG_NS, "g");
+  g.setAttribute("class", "nad-action-overview-pin nad-combined-action-pin");
+  g.setAttribute("transform", `translate(${cp.x} ${cp.y})`);
+  g.setAttribute("data-action-id", cp.pairId);
+  g.style.cursor = "pointer";
+  const body = document.createElementNS(SVG_NS, "g");
+  body.setAttribute("class", "nad-action-overview-pin-body");
+  body.setAttribute("transform", "scale(1)");
+  g.appendChild(body);
+  const { fill, stroke } = resolvePinFill(cp.severity, selectedIds?.has(cp.pairId) ?? false, rejectedIds?.has(cp.pairId) ?? false);
+  buildPinGlyph(body, r, labelFont, fill, cp.label, cp.title, stroke, stroke ? r * 0.12 : void 0);
+  const tail = r * 0.9;
+  const badgeCy = -r - tail - r * 0.95;
+  const badge = document.createElementNS(SVG_NS, "circle");
+  badge.setAttribute("cx", "0");
+  badge.setAttribute("cy", String(badgeCy));
+  badge.setAttribute("r", String(r * 0.35));
+  badge.setAttribute("fill", severityFill[cp.severity]);
+  badge.setAttribute("stroke", "white");
+  badge.setAttribute("stroke-width", String(r * 0.06));
+  badge.setAttribute("pointer-events", "none");
+  body.appendChild(badge);
+  const plusText = document.createElementNS(SVG_NS, "text");
+  plusText.setAttribute("x", "0");
+  plusText.setAttribute("y", String(badgeCy));
+  plusText.setAttribute("text-anchor", "middle");
+  plusText.setAttribute("dominant-baseline", "central");
+  plusText.setAttribute("font-size", String(r * 0.5));
+  plusText.setAttribute("font-weight", "900");
+  plusText.setAttribute("font-family", "system-ui, -apple-system, Arial, sans-serif");
+  plusText.setAttribute("fill", "white");
+  plusText.setAttribute("pointer-events", "none");
+  plusText.textContent = "+";
+  body.appendChild(plusText);
+  attachPinClickListeners(g, cp.pairId, onPinClick, onPinDoubleClick);
+  frag.appendChild(g);
+};
+const renderUnitaryPin = (frag, pin, r, labelFont, selectedIds, rejectedIds, onPinClick, onPinDoubleClick) => {
+  const isSelected = selectedIds?.has(pin.id) ?? false;
+  const isRejected = rejectedIds?.has(pin.id) ?? false;
+  const g = document.createElementNS(SVG_NS, "g");
+  g.setAttribute("class", "nad-action-overview-pin");
+  g.setAttribute("transform", `translate(${pin.x} ${pin.y})`);
+  g.setAttribute("data-action-id", pin.id);
+  if (pin.dimmedByFilter) g.setAttribute("data-dimmed-by-filter", "true");
+  g.style.cursor = "pointer";
+  const body = document.createElementNS(SVG_NS, "g");
+  body.setAttribute("class", "nad-action-overview-pin-body");
+  body.setAttribute("transform", "scale(1)");
+  g.appendChild(body);
+  const { fill, stroke } = resolvePinFill(pin.severity, isSelected, isRejected, !!pin.dimmedByFilter);
+  const strokeWidth = isSelected ? r * 0.12 : void 0;
+  const R = r;
+  const tail = R * 0.9;
+  buildPinGlyph(body, R, labelFont, fill, pin.label, pin.title, stroke, strokeWidth);
+  const symbolCy = -R - tail - R * 0.95;
+  if (isSelected) {
+    const starEl = document.createElementNS(SVG_NS, "path");
+    starEl.setAttribute("d", starPath(0, symbolCy, R * 0.45));
+    starEl.setAttribute("fill", "#eab308");
+    starEl.setAttribute("stroke", "#a16207");
+    starEl.setAttribute("stroke-width", String(R * 0.05));
+    starEl.setAttribute("pointer-events", "none");
+    body.appendChild(starEl);
+  } else if (isRejected) {
+    const crossEl = document.createElementNS(SVG_NS, "path");
+    crossEl.setAttribute("d", crossPath(0, symbolCy, R * 0.35));
+    crossEl.setAttribute("fill", "#ef4444");
+    crossEl.setAttribute("stroke", "#b91c1c");
+    crossEl.setAttribute("stroke-width", String(R * 0.05));
+    crossEl.setAttribute("pointer-events", "none");
+    body.appendChild(crossEl);
+  }
+  if (isRejected) {
+    g.setAttribute("opacity", "0.55");
+  } else if (pin.dimmedByFilter) {
+    g.setAttribute("opacity", "0.4");
+  }
+  attachPinClickListeners(g, pin.id, onPinClick, onPinDoubleClick);
+  frag.appendChild(g);
+};
+const renderUnsimulatedPin = (frag, pin, r, labelFont, onPinClick, onUnsimulatedPinDoubleClick, onPinDoubleClick) => {
+  const g = document.createElementNS(SVG_NS, "g");
+  g.setAttribute("class", "nad-action-overview-pin nad-action-overview-pin-unsimulated");
+  g.setAttribute("transform", `translate(${pin.x} ${pin.y})`);
+  g.setAttribute("data-action-id", pin.id);
+  g.setAttribute("data-unsimulated", "true");
+  g.setAttribute("opacity", "0.5");
+  g.style.cursor = "pointer";
+  const body = document.createElementNS(SVG_NS, "g");
+  body.setAttribute("class", "nad-action-overview-pin-body");
+  body.setAttribute("transform", "scale(1)");
+  g.appendChild(body);
+  const fill = severityFillDimmed[pin.severity];
+  buildPinGlyph(body, r, labelFont, fill, pin.label, pin.title, "#6b7280", r * 0.08);
+  const pinPath = body.querySelector("path");
+  if (pinPath) {
+    pinPath.setAttribute("stroke-dasharray", `${r * 0.35} ${r * 0.2}`);
+  }
+  attachPinClickListeners(
+    g,
+    pin.id,
+    onPinClick,
+    onUnsimulatedPinDoubleClick ?? onPinDoubleClick
+  );
+  frag.appendChild(g);
+};
 const applyActionOverviewPins = (container, pins, onPinClick, onPinDoubleClick, opts) => {
   if (!container) return;
   const svg = container.querySelector("svg");
   if (!svg) return;
   svg.querySelectorAll(".nad-action-overview-pins").forEach((el) => el.remove());
   const combinedPins = opts?.combinedPins ?? [];
-  if (pins.length === 0 && combinedPins.length === 0) return;
+  const unsimulatedPins = opts?.unsimulatedPins ?? [];
+  const onUnsimulatedPinDoubleClick = opts?.onUnsimulatedPinDoubleClick;
+  if (pins.length === 0 && combinedPins.length === 0 && unsimulatedPins.length === 0) return;
   const selectedIds = opts?.selectedActionIds;
   const rejectedIds = opts?.rejectedActionIds;
   const r = readPinBaseRadius(svg);
@@ -13335,188 +13592,18 @@ const applyActionOverviewPins = (container, pins, onPinClick, onPinDoubleClick, 
       if (Number.isFinite(n) && n > 0) edgeStrokeW = n;
     }
   }
-  const SVG_NS = "http://www.w3.org/2000/svg";
   const layer = document.createElementNS(SVG_NS, "g");
   layer.setAttribute("class", "nad-action-overview-pins");
   const frag = document.createDocumentFragment();
-  const attachClickListeners = (g, pinId, clickCb, dblClickCb) => {
-    let clickTimer = null;
-    g.addEventListener("mousedown", (evt) => {
-      evt.stopPropagation();
-    });
-    g.addEventListener("click", (evt) => {
-      evt.stopPropagation();
-      if (clickTimer !== null) return;
-      const rect = evt.currentTarget.getBoundingClientRect();
-      const screenPos = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-      clickTimer = setTimeout(() => {
-        clickTimer = null;
-        clickCb(pinId, screenPos);
-      }, PIN_SINGLE_CLICK_DELAY_MS);
-    });
-    g.addEventListener("dblclick", (evt) => {
-      evt.stopPropagation();
-      if (clickTimer !== null) {
-        clearTimeout(clickTimer);
-        clickTimer = null;
-      }
-      if (dblClickCb) dblClickCb(pinId);
-    });
-  };
-  const buildPinGlyph = (body, R, fill, label, titleText, strokeColor, strokeWidth) => {
-    const tail = R * 0.9;
-    const title = document.createElementNS(SVG_NS, "title");
-    title.textContent = titleText;
-    body.appendChild(title);
-    const path = document.createElementNS(SVG_NS, "path");
-    const d = `M ${-R} ${-R - tail} A ${R} ${R} 0 1 1 ${R} ${-R - tail} L 0 0 Z`;
-    path.setAttribute("d", d);
-    path.setAttribute("fill", fill);
-    if (strokeColor) {
-      path.setAttribute("stroke", strokeColor);
-      path.setAttribute("stroke-width", String(strokeWidth ?? R * 0.12));
-    } else {
-      path.setAttribute("stroke", "none");
-    }
-    body.appendChild(path);
-    const inner = document.createElementNS(SVG_NS, "circle");
-    inner.setAttribute("cx", "0");
-    inner.setAttribute("cy", String(-R - tail));
-    inner.setAttribute("r", String(R * 0.72));
-    inner.setAttribute("fill", "#ffffff");
-    inner.setAttribute("fill-opacity", "0.92");
-    inner.setAttribute("pointer-events", "none");
-    body.appendChild(inner);
-    const text = document.createElementNS(SVG_NS, "text");
-    text.setAttribute("x", "0");
-    text.setAttribute("y", String(-R - tail));
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute("dominant-baseline", "central");
-    text.setAttribute("font-size", String(labelFont));
-    text.setAttribute("font-weight", "800");
-    text.setAttribute("font-family", "system-ui, -apple-system, Arial, sans-serif");
-    text.setAttribute("fill", "#1f2937");
-    text.setAttribute("pointer-events", "none");
-    text.textContent = label;
-    body.appendChild(text);
-  };
-  combinedPins.forEach((cp) => {
-    const dx = cp.p2.x - cp.p1.x;
-    const dy = cp.p2.y - cp.p1.y;
-    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    const offsetFraction = 0.3;
-    const ctrlX = (cp.p1.x + cp.p2.x) / 2 + -dy / dist * dist * offsetFraction;
-    const ctrlY = (cp.p1.y + cp.p2.y) / 2 + dx / dist * dist * offsetFraction;
-    const curvePath = document.createElementNS(SVG_NS, "path");
-    curvePath.setAttribute(
-      "d",
-      `M ${cp.p1.x} ${cp.p1.y} Q ${ctrlX} ${ctrlY} ${cp.p2.x} ${cp.p2.y}`
-    );
-    curvePath.setAttribute("class", "nad-combined-action-curve");
-    curvePath.setAttribute("fill", "none");
-    curvePath.setAttribute("stroke", severityFill[cp.severity]);
-    curvePath.setAttribute("stroke-width", String(edgeStrokeW));
-    curvePath.setAttribute("stroke-dasharray", `${edgeStrokeW * 2.5} ${edgeStrokeW * 1.5}`);
-    curvePath.setAttribute("stroke-linecap", "round");
-    curvePath.setAttribute("pointer-events", "none");
-    frag.appendChild(curvePath);
-    const g = document.createElementNS(SVG_NS, "g");
-    g.setAttribute("class", "nad-action-overview-pin nad-combined-action-pin");
-    g.setAttribute("transform", `translate(${cp.x} ${cp.y})`);
-    g.setAttribute("data-action-id", cp.pairId);
-    g.style.cursor = "pointer";
-    const body = document.createElementNS(SVG_NS, "g");
-    body.setAttribute("class", "nad-action-overview-pin-body");
-    body.setAttribute("transform", "scale(1)");
-    g.appendChild(body);
-    let fill;
-    let stroke;
-    if (selectedIds?.has(cp.pairId)) {
-      fill = severityFillHighlighted[cp.severity];
-      stroke = "#eab308";
-    } else if (rejectedIds?.has(cp.pairId)) {
-      fill = severityFillDimmed[cp.severity];
-    } else {
-      fill = severityFill[cp.severity];
-    }
-    buildPinGlyph(body, r, fill, cp.label, cp.title, stroke, stroke ? r * 0.12 : void 0);
-    const tail = r * 0.9;
-    const badgeCy = -r - tail - r * 0.95;
-    const badge = document.createElementNS(SVG_NS, "circle");
-    badge.setAttribute("cx", "0");
-    badge.setAttribute("cy", String(badgeCy));
-    badge.setAttribute("r", String(r * 0.35));
-    badge.setAttribute("fill", severityFill[cp.severity]);
-    badge.setAttribute("stroke", "white");
-    badge.setAttribute("stroke-width", String(r * 0.06));
-    badge.setAttribute("pointer-events", "none");
-    body.appendChild(badge);
-    const plusText = document.createElementNS(SVG_NS, "text");
-    plusText.setAttribute("x", "0");
-    plusText.setAttribute("y", String(badgeCy));
-    plusText.setAttribute("text-anchor", "middle");
-    plusText.setAttribute("dominant-baseline", "central");
-    plusText.setAttribute("font-size", String(r * 0.5));
-    plusText.setAttribute("font-weight", "900");
-    plusText.setAttribute("font-family", "system-ui, -apple-system, Arial, sans-serif");
-    plusText.setAttribute("fill", "white");
-    plusText.setAttribute("pointer-events", "none");
-    plusText.textContent = "+";
-    body.appendChild(plusText);
-    attachClickListeners(g, cp.pairId, onPinClick, onPinDoubleClick);
-    frag.appendChild(g);
-  });
-  pins.forEach((pin) => {
-    const isSelected = selectedIds?.has(pin.id) ?? false;
-    const isRejected = rejectedIds?.has(pin.id) ?? false;
-    const g = document.createElementNS(SVG_NS, "g");
-    g.setAttribute("class", "nad-action-overview-pin");
-    g.setAttribute("transform", `translate(${pin.x} ${pin.y})`);
-    g.setAttribute("data-action-id", pin.id);
-    g.style.cursor = "pointer";
-    const body = document.createElementNS(SVG_NS, "g");
-    body.setAttribute("class", "nad-action-overview-pin-body");
-    body.setAttribute("transform", "scale(1)");
-    g.appendChild(body);
-    let fill;
-    let strokeColor;
-    let strokeWidth;
-    if (isSelected) {
-      fill = severityFillHighlighted[pin.severity];
-      strokeColor = "#eab308";
-      strokeWidth = r * 0.12;
-    } else if (isRejected) {
-      fill = severityFillDimmed[pin.severity];
-    } else {
-      fill = severityFill[pin.severity];
-    }
-    const R = r;
-    const tail = R * 0.9;
-    buildPinGlyph(body, R, fill, pin.label, pin.title, strokeColor, strokeWidth);
-    const symbolCy = -R - tail - R * 0.95;
-    if (isSelected) {
-      const starEl = document.createElementNS(SVG_NS, "path");
-      starEl.setAttribute("d", starPath(0, symbolCy, R * 0.45));
-      starEl.setAttribute("fill", "#eab308");
-      starEl.setAttribute("stroke", "#a16207");
-      starEl.setAttribute("stroke-width", String(R * 0.05));
-      starEl.setAttribute("pointer-events", "none");
-      body.appendChild(starEl);
-    } else if (isRejected) {
-      const crossEl = document.createElementNS(SVG_NS, "path");
-      crossEl.setAttribute("d", crossPath(0, symbolCy, R * 0.35));
-      crossEl.setAttribute("fill", "#ef4444");
-      crossEl.setAttribute("stroke", "#b91c1c");
-      crossEl.setAttribute("stroke-width", String(R * 0.05));
-      crossEl.setAttribute("pointer-events", "none");
-      body.appendChild(crossEl);
-    }
-    if (isRejected) {
-      g.setAttribute("opacity", "0.55");
-    }
-    attachClickListeners(g, pin.id, onPinClick, onPinDoubleClick);
-    frag.appendChild(g);
-  });
+  combinedPins.forEach(
+    (cp) => renderCombinedPin(frag, cp, r, labelFont, edgeStrokeW, selectedIds, rejectedIds, onPinClick, onPinDoubleClick)
+  );
+  pins.forEach(
+    (pin) => renderUnitaryPin(frag, pin, r, labelFont, selectedIds, rejectedIds, onPinClick, onPinDoubleClick)
+  );
+  unsimulatedPins.forEach(
+    (pin) => renderUnsimulatedPin(frag, pin, r, labelFont, onPinClick, onUnsimulatedPinDoubleClick, onPinDoubleClick)
+  );
   layer.appendChild(frag);
   svg.appendChild(layer);
   rescaleActionOverviewPins(container);
@@ -13546,6 +13633,29 @@ const pushEquipmentPoints = (metaIndex, equipmentId, xs, ys) => {
     ys.push(node.y);
   }
 };
+const rectFromBounds = (xs, ys, minSpan, padRatio) => {
+  let minX = Math.min(...xs);
+  let maxX = Math.max(...xs);
+  let minY = Math.min(...ys);
+  let maxY = Math.max(...ys);
+  let w = maxX - minX;
+  let h = maxY - minY;
+  if (w < minSpan) {
+    const cx = (minX + maxX) / 2;
+    minX = cx - minSpan / 2;
+    maxX = cx + minSpan / 2;
+    w = minSpan;
+  }
+  if (h < minSpan) {
+    const cy = (minY + maxY) / 2;
+    minY = cy - minSpan / 2;
+    maxY = cy + minSpan / 2;
+    h = minSpan;
+  }
+  const padX = w * padRatio;
+  const padY = h * padRatio;
+  return { x: minX - padX, y: minY - padY, w: w + 2 * padX, h: h + 2 * padY };
+};
 const computeActionOverviewFitRect = (metaIndex, contingency, overloads, pins, padRatio = 0.05) => {
   if (!metaIndex) return null;
   const xs = [];
@@ -13559,28 +13669,7 @@ const computeActionOverviewFitRect = (metaIndex, contingency, overloads, pins, p
     }
   });
   if (xs.length === 0) return null;
-  let minX = Math.min(...xs);
-  let maxX = Math.max(...xs);
-  let minY = Math.min(...ys);
-  let maxY = Math.max(...ys);
-  let w = maxX - minX;
-  let h = maxY - minY;
-  const MIN_SPAN = 200;
-  if (w < MIN_SPAN) {
-    const cx = (minX + maxX) / 2;
-    minX = cx - MIN_SPAN / 2;
-    maxX = cx + MIN_SPAN / 2;
-    w = MIN_SPAN;
-  }
-  if (h < MIN_SPAN) {
-    const cy = (minY + maxY) / 2;
-    minY = cy - MIN_SPAN / 2;
-    maxY = cy + MIN_SPAN / 2;
-    h = MIN_SPAN;
-  }
-  const padX = w * padRatio;
-  const padY = h * padRatio;
-  return { x: minX - padX, y: minY - padY, w: w + 2 * padX, h: h + 2 * padY };
+  return rectFromBounds(xs, ys, 200, padRatio);
 };
 const computeEquipmentFitRect = (metaIndex, equipmentId, padRatio = 0.35) => {
   if (!metaIndex || !equipmentId) return null;
@@ -13588,28 +13677,7 @@ const computeEquipmentFitRect = (metaIndex, equipmentId, padRatio = 0.35) => {
   const ys = [];
   pushEquipmentPoints(metaIndex, equipmentId, xs, ys);
   if (xs.length === 0) return null;
-  let minX = Math.min(...xs);
-  let maxX = Math.max(...xs);
-  let minY = Math.min(...ys);
-  let maxY = Math.max(...ys);
-  let w = maxX - minX;
-  let h = maxY - minY;
-  const MIN_SPAN = 150;
-  if (w < MIN_SPAN) {
-    const cx = (minX + maxX) / 2;
-    minX = cx - MIN_SPAN / 2;
-    maxX = cx + MIN_SPAN / 2;
-    w = MIN_SPAN;
-  }
-  if (h < MIN_SPAN) {
-    const cy = (minY + maxY) / 2;
-    minY = cy - MIN_SPAN / 2;
-    maxY = cy + MIN_SPAN / 2;
-    h = MIN_SPAN;
-  }
-  const padX = w * padRatio;
-  const padY = h * padRatio;
-  return { x: minX - padX, y: minY - padY, w: w + 2 * padX, h: h + 2 * padY };
+  return rectFromBounds(xs, ys, 150, padRatio);
 };
 const SldOverlay = ({
   vlOverlay,
@@ -14246,6 +14314,82 @@ const DetachableTabHost = ({
     realTarget && reactDomExports.createPortal(children, realTarget)
   ] });
 };
+const ACTION_TYPE_FILTER_TOKENS = [
+  "all",
+  "disco",
+  "reco",
+  "ls",
+  "rc",
+  "open",
+  "close",
+  "pst"
+];
+const classifyActionType = (actionId, description, scoreType) => {
+  const t = (scoreType ?? "").toLowerCase();
+  const aid = actionId.toLowerCase();
+  const desc = (description ?? "").toLowerCase();
+  const isCouplingSignal = t.includes("coupling") || t.includes("node_merging") || t.includes("node_splitting") || aid.includes("coupling") || aid.includes("busbar") || aid.includes("noeud") || aid.includes("node_merging") || aid.includes("node_splitting") || desc.includes("coupl") || desc.includes("busbar") || /du poste\s+['"]/.test(desc);
+  const opensViaSignal = t.includes("open_coupling") || aid.includes("open_coupling") || aid.includes("node_splitting") || t.includes("node_splitting") || desc.includes("ouverture");
+  const closesViaSignal = t.includes("close_coupling") || aid.includes("close_coupling") || aid.includes("node_merging") || t.includes("node_merging") || desc.includes("fermeture");
+  const isOpenCoupling = isCouplingSignal && opensViaSignal;
+  const isCloseCoupling = isCouplingSignal && closesViaSignal;
+  const isDisco = !isCouplingSignal && (t.includes("disco") || t.includes("open_line") || t.includes("open_load") || desc.includes("ouverture"));
+  const isReco = !isCouplingSignal && (t.includes("reco") || t.includes("close_line") || t.includes("close_load") || desc.includes("fermeture"));
+  const isPstAction = (aid.includes("pst") || desc.includes("pst") || t.includes("pst")) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
+  const isLoadShedding = (aid.includes("load_shedding") || desc.includes("load shedding") || t.includes("load_shedding")) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction;
+  const isRenewableCurtailment = (t.includes("renewable_curtailment") || t.includes("open_gen")) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction && !isLoadShedding;
+  if (isDisco) return "disco";
+  if (isReco) return "reco";
+  if (isOpenCoupling) return "open";
+  if (isCloseCoupling) return "close";
+  if (isPstAction) return "pst";
+  if (isLoadShedding) return "ls";
+  if (isRenewableCurtailment) return "rc";
+  return "unknown";
+};
+const matchesActionTypeFilter = (filter2, actionId, description, scoreType) => {
+  if (filter2 === "all") return true;
+  return classifyActionType(actionId, description, scoreType) === filter2;
+};
+const ActionTypeFilterChips = ({
+  value,
+  onChange,
+  tokens = ACTION_TYPE_FILTER_TOKENS,
+  testIdPrefix = "action-type-filter",
+  style
+}) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+  "div",
+  {
+    "data-testid": testIdPrefix,
+    style: { display: "flex", gap: "6px", flexWrap: "wrap", ...style },
+    children: tokens.map((t) => {
+      const active = value === t;
+      return /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          type: "button",
+          "data-testid": `${testIdPrefix}-${t}`,
+          "aria-pressed": active,
+          onClick: () => onChange(t),
+          style: {
+            padding: "4px 12px",
+            borderRadius: "15px",
+            border: "1px solid",
+            borderColor: active ? "#007bff" : "#ddd",
+            background: active ? "#007bff" : "white",
+            color: active ? "white" : "#666",
+            fontSize: "11px",
+            cursor: "pointer",
+            fontWeight: active ? "bold" : "normal",
+            transition: "all 0.2s"
+          },
+          children: t.toUpperCase()
+        },
+        t
+      );
+    })
+  }
+);
 const computeZoomTier = (current, original) => {
   const ratio = current.w / original.w;
   if (ratio > 0.5) return "overview";
@@ -14626,7 +14770,7 @@ const ActionCard = ({
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [
             /* @__PURE__ */ jsxRuntimeExports.jsxs("h4", { style: {
               margin: 0,
-              fontSize: "14px",
+              fontSize: "12px",
               color: isViewing ? "#0056b3" : void 0,
               flex: 1,
               minWidth: 0,
@@ -14643,7 +14787,7 @@ const ActionCard = ({
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", margin: "4px 0 5px" }, children: [
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: "13px", margin: 0 }, children: details.description_unitaire }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: "12px", margin: 0 }, children: details.description_unitaire }),
               details.load_shedding_details && details.load_shedding_details.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: (e) => e.stopPropagation(), onMouseDown: (e) => e.stopPropagation(), style: { fontSize: "12px", background: "#fef3c7", color: "#92400e", padding: "6px 10px", marginTop: "5px", borderRadius: "4px", border: "1px solid #fcd34d", fontWeight: 500 }, children: details.load_shedding_details.map((ls, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", marginTop: i > 0 ? "4px" : 0 }, children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
                   "Shedding on ",
@@ -15032,6 +15176,12 @@ const scaleViewBox = (vb, factor) => ({
   w: vb.w * factor,
   h: vb.h * factor
 });
+const DEFAULT_FILTERS = {
+  categories: { green: true, orange: true, red: true, grey: true },
+  threshold: 1.5,
+  showUnsimulated: false,
+  actionType: "all"
+};
 const ActionOverviewDiagram = ({
   n1Diagram,
   n1MetaIndex,
@@ -15051,8 +15201,21 @@ const ActionOverviewDiagram = ({
   isTied,
   onToggleTie,
   isDetached,
-  displayName
+  displayName,
+  filters,
+  onFiltersChange,
+  unsimulatedActionIds,
+  unsimulatedActionInfo,
+  onSimulateUnsimulatedAction
 }) => {
+  const activeFilters = reactExports.useMemo(() => {
+    if (!filters) return DEFAULT_FILTERS;
+    return {
+      ...DEFAULT_FILTERS,
+      ...filters,
+      actionType: filters.actionType ?? DEFAULT_FILTERS.actionType
+    };
+  }, [filters]);
   const containerRef = reactExports.useRef(null);
   const svgString = n1Diagram?.svg ?? null;
   const svgReady = svgString != null;
@@ -15070,12 +15233,12 @@ const ActionOverviewDiagram = ({
       svg.style.width = "100%";
       svg.style.height = "100%";
     }
-    const SVG_NS = "http://www.w3.org/2000/svg";
+    const SVG_NS2 = "http://www.w3.org/2000/svg";
     const vb = svg.getAttribute("viewBox");
     if (vb) {
       const parts = vb.split(/[\s,]+/).map(Number);
       if (parts.length === 4) {
-        const dimRect = document.createElementNS(SVG_NS, "rect");
+        const dimRect = document.createElementNS(SVG_NS2, "rect");
         dimRect.setAttribute("class", "nad-overview-dim-rect");
         const margin = Math.max(parts[2], parts[3]) * 0.1;
         dimRect.setAttribute("x", String(parts[0] - margin));
@@ -15092,23 +15255,86 @@ const ActionOverviewDiagram = ({
     console.log(`[SVG] Action overview pre-parse took ${(performance.now() - start).toFixed(2)}ms`);
     return svg;
   }, [svgString]);
+  const passesAll = reactExports.useCallback((id, det) => {
+    if (!actionPassesOverviewFilter(
+      det,
+      monitoringFactor,
+      activeFilters.categories,
+      activeFilters.threshold
+    )) return false;
+    return matchesActionTypeFilter(activeFilters.actionType, id, det.description_unitaire, null);
+  }, [monitoringFactor, activeFilters.categories, activeFilters.threshold, activeFilters.actionType]);
   const pins = reactExports.useMemo(() => {
     if (!n1MetaIndex || !actions) return [];
     performance.mark("aod:buildPins:start");
-    const result = buildActionOverviewPins(actions, n1MetaIndex, monitoringFactor);
+    const allUnitary = buildActionOverviewPins(actions, n1MetaIndex, monitoringFactor);
+    const allCombined = buildCombinedActionPins(actions, allUnitary, monitoringFactor);
+    const combinedPassesTypeFilter = (cp) => {
+      if (activeFilters.actionType === "all") return true;
+      const d1 = actions[cp.action1Id];
+      const d2 = actions[cp.action2Id];
+      return (d1 ? matchesActionTypeFilter(activeFilters.actionType, cp.action1Id, d1.description_unitaire, null) : false) || (d2 ? matchesActionTypeFilter(activeFilters.actionType, cp.action2Id, d2.description_unitaire, null) : false);
+    };
+    const protectedIds = /* @__PURE__ */ new Set();
+    for (const cp of allCombined) {
+      const det = actions[cp.pairId];
+      if (!det) continue;
+      if (actionPassesOverviewFilter(
+        det,
+        monitoringFactor,
+        activeFilters.categories,
+        activeFilters.threshold
+      ) && combinedPassesTypeFilter(cp)) {
+        protectedIds.add(cp.action1Id);
+        protectedIds.add(cp.action2Id);
+      }
+    }
+    const result = [];
+    for (const p of allUnitary) {
+      const det = actions[p.id];
+      const passes = det ? passesAll(p.id, det) : true;
+      if (passes) {
+        result.push(p);
+      } else if (protectedIds.has(p.id)) {
+        result.push({ ...p, dimmedByFilter: true });
+      }
+    }
     performance.mark("aod:buildPins:end");
     perfMeasure("aod:buildPins", "aod:buildPins:start", "aod:buildPins:end");
     return result;
-  }, [n1MetaIndex, actions, monitoringFactor]);
+  }, [n1MetaIndex, actions, monitoringFactor, activeFilters.categories, activeFilters.threshold, activeFilters.actionType, passesAll]);
   const combinedPins = reactExports.useMemo(() => {
     if (!actions || pins.length === 0) return [];
-    return buildCombinedActionPins(actions, pins, monitoringFactor);
-  }, [actions, pins, monitoringFactor]);
+    return buildCombinedActionPins(actions, pins, monitoringFactor).filter((cp) => {
+      const det = actions[cp.pairId];
+      if (!det) return true;
+      if (!actionPassesOverviewFilter(
+        det,
+        monitoringFactor,
+        activeFilters.categories,
+        activeFilters.threshold
+      )) return false;
+      if (activeFilters.actionType === "all") return true;
+      const d1 = actions[cp.action1Id];
+      const d2 = actions[cp.action2Id];
+      return (d1 ? matchesActionTypeFilter(activeFilters.actionType, cp.action1Id, d1.description_unitaire, null) : false) || (d2 ? matchesActionTypeFilter(activeFilters.actionType, cp.action2Id, d2.description_unitaire, null) : false);
+    });
+  }, [actions, pins, monitoringFactor, activeFilters.categories, activeFilters.threshold, activeFilters.actionType]);
+  const unsimulatedPins = reactExports.useMemo(() => {
+    if (!activeFilters.showUnsimulated) return [];
+    if (!n1MetaIndex || !unsimulatedActionIds || unsimulatedActionIds.length === 0) return [];
+    const simulatedIds = new Set(Object.keys(actions ?? {}));
+    const filteredIds = activeFilters.actionType === "all" ? unsimulatedActionIds : unsimulatedActionIds.filter((id) => {
+      const scoreType = unsimulatedActionInfo?.[id]?.type ?? null;
+      return matchesActionTypeFilter(activeFilters.actionType, id, null, scoreType);
+    });
+    return buildUnsimulatedActionPins(filteredIds, simulatedIds, n1MetaIndex, unsimulatedActionInfo);
+  }, [activeFilters.showUnsimulated, activeFilters.actionType, n1MetaIndex, unsimulatedActionIds, actions, unsimulatedActionInfo]);
   const fitRect = reactExports.useMemo(() => {
     if (!n1MetaIndex) return null;
-    const allPinPositions = [...pins, ...combinedPins];
+    const allPinPositions = [...pins, ...combinedPins, ...unsimulatedPins];
     return computeActionOverviewFitRect(n1MetaIndex, contingency, overloadedLines, allPinPositions);
-  }, [n1MetaIndex, contingency, overloadedLines, pins, combinedPins]);
+  }, [n1MetaIndex, contingency, overloadedLines, pins, combinedPins, unsimulatedPins]);
   const initialViewBox = reactExports.useMemo(() => {
     if (fitRect) return fitRect;
     if (!svgString) return null;
@@ -15136,16 +15362,20 @@ const ActionOverviewDiagram = ({
   }, [pz, onPzChange]);
   const lastFocusedRef = reactExports.useRef(null);
   const [popoverPin, setPopoverPin] = reactExports.useState(null);
+  const [popoverViewport, setPopoverViewport] = reactExports.useState(null);
   const handlePinClick = reactExports.useCallback((actionId, screenPos) => {
     interactionLogger.record("overview_pin_clicked", { action_id: actionId });
     performance.mark("aod:pinClick:start");
-    const placement = decidePopoverPlacement(screenPos.x, screenPos.y);
+    const ownerWin = containerRef.current?.ownerDocument?.defaultView ?? null;
+    const viewport = ownerWin ? { width: ownerWin.innerWidth, height: ownerWin.innerHeight } : void 0;
+    const placement = decidePopoverPlacement(screenPos.x, screenPos.y, viewport);
     setPopoverPin({
       id: actionId,
       screenX: screenPos.x,
       screenY: screenPos.y,
       ...placement
     });
+    setPopoverViewport(viewport ?? null);
     onPinPreview?.(actionId);
     requestAnimationFrame(() => {
       performance.mark("aod:pinClick:end");
@@ -15157,6 +15387,15 @@ const ActionOverviewDiagram = ({
     setPopoverPin(null);
     onActionSelect(actionId);
   }, [onActionSelect]);
+  const handleUnsimulatedPinDoubleClick = reactExports.useCallback((actionId) => {
+    interactionLogger.record("overview_unsimulated_pin_simulated", { action_id: actionId });
+    setPopoverPin(null);
+    if (onSimulateUnsimulatedAction) {
+      onSimulateUnsimulatedAction(actionId);
+    } else {
+      onActionSelect(actionId);
+    }
+  }, [onSimulateUnsimulatedAction, onActionSelect]);
   reactExports.useEffect(() => {
     if (!svgReady) return;
     const container = containerRef.current;
@@ -15174,11 +15413,13 @@ const ActionOverviewDiagram = ({
     applyActionOverviewPins(container, pins, handlePinClick, handlePinDoubleClick, {
       selectedActionIds,
       rejectedActionIds,
-      combinedPins
+      combinedPins,
+      unsimulatedPins,
+      onUnsimulatedPinDoubleClick: handleUnsimulatedPinDoubleClick
     });
     performance.mark("aod:applyPins:end");
     perfMeasure("aod:applyPins", "aod:applyPins:start", "aod:applyPins:end");
-  }, [pins, handlePinClick, handlePinDoubleClick, svgReady, preparedSvg, selectedActionIds, rejectedActionIds, combinedPins]);
+  }, [pins, handlePinClick, handlePinDoubleClick, svgReady, preparedSvg, selectedActionIds, rejectedActionIds, combinedPins, unsimulatedPins, handleUnsimulatedPinDoubleClick]);
   reactExports.useEffect(() => {
     if (!svgReady || !visible) return;
     const container = containerRef.current;
@@ -15262,6 +15503,7 @@ const ActionOverviewDiagram = ({
   const closePopover = reactExports.useCallback((reason) => {
     interactionLogger.record("overview_popover_closed", { reason });
     setPopoverPin(null);
+    setPopoverViewport(null);
   }, []);
   const popoverRef = reactExports.useRef(null);
   reactExports.useEffect(() => {
@@ -15282,6 +15524,51 @@ const ActionOverviewDiagram = ({
       document.removeEventListener("keydown", onKey);
     };
   }, [popoverPin, closePopover]);
+  const pushFilters = reactExports.useCallback((next) => {
+    onFiltersChange?.(next);
+  }, [onFiltersChange]);
+  const toggleCategory = reactExports.useCallback((cat) => {
+    const nextCats = { ...activeFilters.categories, [cat]: !activeFilters.categories[cat] };
+    interactionLogger.record("overview_filter_changed", {
+      kind: "category",
+      category: cat,
+      enabled: nextCats[cat]
+    });
+    pushFilters({ ...activeFilters, categories: nextCats });
+  }, [activeFilters, pushFilters]);
+  const setAllCategories = reactExports.useCallback((enabled) => {
+    const nextCats = {
+      green: enabled,
+      orange: enabled,
+      red: enabled,
+      grey: enabled
+    };
+    interactionLogger.record("overview_filter_changed", {
+      kind: "categories_bulk",
+      enabled
+    });
+    pushFilters({ ...activeFilters, categories: nextCats });
+  }, [activeFilters, pushFilters]);
+  const setThreshold = reactExports.useCallback((threshold) => {
+    interactionLogger.record("overview_filter_changed", {
+      kind: "threshold",
+      threshold
+    });
+    pushFilters({ ...activeFilters, threshold });
+  }, [activeFilters, pushFilters]);
+  const toggleUnsimulated = reactExports.useCallback(() => {
+    const next = !activeFilters.showUnsimulated;
+    interactionLogger.record("overview_unsimulated_toggled", { enabled: next });
+    pushFilters({ ...activeFilters, showUnsimulated: next });
+  }, [activeFilters, pushFilters]);
+  const setActionType = reactExports.useCallback((token) => {
+    if (token === activeFilters.actionType) return;
+    interactionLogger.record("overview_filter_changed", {
+      kind: "action_type",
+      action_type: token
+    });
+    pushFilters({ ...activeFilters, actionType: token });
+  }, [activeFilters, pushFilters]);
   const popoverDetails = popoverPin && actions ? actions[popoverPin.id] : null;
   const popoverIndex = reactExports.useMemo(() => {
     if (!popoverPin || !actions) return 0;
@@ -15309,33 +15596,163 @@ const ActionOverviewDiagram = ({
         /* @__PURE__ */ jsxRuntimeExports.jsxs(
           "div",
           {
+            "data-testid": "action-overview-header",
             style: {
               flexShrink: 0,
-              padding: "8px 14px",
+              padding: "6px 14px",
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between",
+              flexWrap: "wrap",
               gap: "10px",
+              rowGap: "6px",
               fontSize: "12px",
               background: "#f8fafc",
               borderBottom: "1px solid #e2e8f0",
               color: "#334155"
             },
             children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontWeight: 700 }, children: [
-                "📍 Remedial actions overview",
-                hasAnyAction && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { marginLeft: 8, fontWeight: 400, color: "#64748b" }, children: [
-                  pins.length,
-                  " pin",
-                  pins.length === 1 ? "" : "s",
-                  " on the N-1 network"
-                ] })
-              ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "10px", alignItems: "center" }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx(Legend, { color: "#28a745", label: "Solves overload" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(Legend, { color: "#f0ad4e", label: "Low margin" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(Legend, { color: "#dc3545", label: "Still overloaded" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(Legend, { color: "#9ca3af", label: "Divergent / islanded" })
+              hasAnyAction && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "span",
+                {
+                  "data-testid": "overview-pin-counter",
+                  title: `${pins.length} pin${pins.length === 1 ? "" : "s"} on the N-1 network${unsimulatedPins.length > 0 ? ` (+ ${unsimulatedPins.length} un-simulated)` : ""}`,
+                  style: { display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 600, color: "#1f2937" },
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { "aria-hidden": true, children: "📍" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontVariantNumeric: "tabular-nums" }, children: [
+                      pins.length,
+                      unsimulatedPins.length > 0 ? ` (+${unsimulatedPins.length})` : ""
+                    ] })
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  CategoryToggle,
+                  {
+                    testId: "filter-category-green",
+                    color: "#28a745",
+                    label: "Solves overload",
+                    enabled: activeFilters.categories.green,
+                    onToggle: () => toggleCategory("green")
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  CategoryToggle,
+                  {
+                    testId: "filter-category-orange",
+                    color: "#f0ad4e",
+                    label: "Low margin",
+                    enabled: activeFilters.categories.orange,
+                    onToggle: () => toggleCategory("orange")
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  CategoryToggle,
+                  {
+                    testId: "filter-category-red",
+                    color: "#dc3545",
+                    label: "Still overloaded",
+                    enabled: activeFilters.categories.red,
+                    onToggle: () => toggleCategory("red")
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  CategoryToggle,
+                  {
+                    testId: "filter-category-grey",
+                    color: "#9ca3af",
+                    label: "Divergent / islanded",
+                    enabled: activeFilters.categories.grey,
+                    onToggle: () => toggleCategory("grey")
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    "data-testid": "filter-select-all",
+                    type: "button",
+                    onClick: () => setAllCategories(true),
+                    title: "Enable all categories",
+                    style: filterChipButtonStyle,
+                    children: "All"
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    "data-testid": "filter-select-none",
+                    type: "button",
+                    onClick: () => setAllCategories(false),
+                    title: "Disable all categories",
+                    style: filterChipButtonStyle,
+                    children: "None"
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                  "label",
+                  {
+                    "data-testid": "filter-threshold",
+                    style: { display: "inline-flex", alignItems: "center", gap: 6 },
+                    title: "Hide actions whose max loading rate exceeds this threshold",
+                    children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#475569" }, children: "Max loading" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "input",
+                        {
+                          type: "range",
+                          min: 0.5,
+                          max: 3,
+                          step: 0.05,
+                          value: activeFilters.threshold,
+                          onChange: (e) => setThreshold(parseFloat(e.target.value)),
+                          style: { width: 110 }
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { minWidth: 38, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#1f2937", fontWeight: 600 }, children: `${Math.round(activeFilters.threshold * 100)}%` })
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                  "label",
+                  {
+                    "data-testid": "filter-show-unsimulated",
+                    style: { display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer" },
+                    title: "Show scored-but-not-yet-simulated actions as dimmed pins. Double-click a dimmed pin to run its simulation.",
+                    children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "input",
+                        {
+                          type: "checkbox",
+                          checked: activeFilters.showUnsimulated,
+                          onChange: toggleUnsimulated
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#475569" }, children: "Show unsimulated" })
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "span",
+                  {
+                    "aria-hidden": true,
+                    style: {
+                      display: "inline-block",
+                      width: 1,
+                      height: 18,
+                      background: "#cbd5e1",
+                      margin: "0 2px"
+                    }
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  ActionTypeFilterChips,
+                  {
+                    testIdPrefix: "overview-action-type-filter",
+                    value: activeFilters.actionType,
+                    onChange: setActionType
+                  }
+                )
               ] })
             ]
           }
@@ -15555,7 +15972,7 @@ const ActionOverviewDiagram = ({
             details: popoverDetails,
             index: popoverIndex,
             style: {
-              ...computePopoverStyle(popoverPin),
+              ...computePopoverStyle(popoverPin, popoverViewport ?? void 0),
               width: POPOVER_WIDTH,
               maxHeight: POPOVER_MAX_HEIGHT,
               overflowY: "auto"
@@ -15587,22 +16004,56 @@ const controlButtonStyle = {
   fontWeight: 600,
   boxShadow: "0 2px 5px rgba(0,0,0,0.15)"
 };
-const Legend = ({ color, label }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 4 }, children: [
-  /* @__PURE__ */ jsxRuntimeExports.jsx(
-    "span",
-    {
-      "aria-hidden": true,
-      style: {
-        display: "inline-block",
-        width: 10,
-        height: 10,
-        borderRadius: "50%",
-        background: color
-      }
-    }
-  ),
-  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#475569" }, children: label })
-] });
+const filterChipButtonStyle = {
+  background: "white",
+  color: "#334155",
+  border: "1px solid #cbd5e1",
+  borderRadius: 4,
+  padding: "3px 8px",
+  cursor: "pointer",
+  fontSize: 12,
+  fontWeight: 600
+};
+const CategoryToggle = ({ color, label, enabled, onToggle, testId }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+  "button",
+  {
+    type: "button",
+    onClick: onToggle,
+    "data-testid": testId,
+    "aria-pressed": enabled,
+    title: enabled ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`,
+    style: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 4,
+      cursor: "pointer",
+      background: enabled ? "white" : "#eef2f7",
+      border: `1px solid ${enabled ? color : "#cbd5e1"}`,
+      borderRadius: 12,
+      padding: "2px 8px",
+      fontSize: 12,
+      color: enabled ? "#1f2937" : "#94a3b8",
+      opacity: enabled ? 1 : 0.65
+    },
+    children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "span",
+        {
+          "aria-hidden": true,
+          style: {
+            display: "inline-block",
+            width: 10,
+            height: 10,
+            borderRadius: "50%",
+            background: color,
+            opacity: enabled ? 1 : 0.5
+          }
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: label })
+    ]
+  }
+);
 const ActionOverviewDiagram$1 = React.memo(ActionOverviewDiagram);
 const InspectSearchField = ({ tabId, inspectQuery, onChangeQuery, filteredInspectables }) => {
   const [focused, setFocused] = reactExports.useState(false);
@@ -15744,7 +16195,12 @@ const VisualizationPanel = ({
   onPinPreview,
   onOverviewPzChange,
   monitoringFactor,
-  displayName
+  displayName,
+  overviewFilters,
+  onOverviewFiltersChange,
+  unsimulatedActionIds,
+  unsimulatedActionInfo,
+  onSimulateUnsimulatedAction
 }) => {
   const detachTabCb = onDetachTab ?? (() => {
   });
@@ -16534,7 +16990,12 @@ const VisualizationPanel = ({
                 isTied: isTabTiedFn("action"),
                 onToggleTie: () => toggleTabTieCb("action"),
                 isDetached: !!detachedTabs["action"],
-                displayName
+                displayName,
+                filters: overviewFilters,
+                onFiltersChange: onOverviewFiltersChange,
+                unsimulatedActionIds,
+                unsimulatedActionInfo,
+                onSimulateUnsimulatedAction
               }
             ),
             actionDiagramLoading && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", background: "rgba(255,255,255,0.85)", zIndex: 20 }, children: "Generating Action Variant Diagram..." }),
@@ -19508,39 +19969,19 @@ const ExplorePairsTab = ({
         }, style: { cursor: "pointer", fontSize: "14px", lineHeight: "10px" }, children: "×" })
       ] }, id)) })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { marginBottom: "12px", display: "flex", gap: "6px", flexWrap: "wrap" }, children: ["all", "disco", "reco", "ls", "rc", "open", "close", "pst"].map((f) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-      "button",
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      ActionTypeFilterChips,
       {
-        onClick: () => setExploreFilter(f),
-        style: {
-          padding: "4px 12px",
-          borderRadius: "15px",
-          border: "1px solid",
-          borderColor: exploreFilter === f ? "#007bff" : "#ddd",
-          background: exploreFilter === f ? "#007bff" : "white",
-          color: exploreFilter === f ? "white" : "#666",
-          fontSize: "11px",
-          cursor: "pointer",
-          fontWeight: exploreFilter === f ? "bold" : "normal",
-          transition: "all 0.2s"
-        },
-        children: f.toUpperCase()
-      },
-      f
-    )) }),
+        testIdPrefix: "explore-pairs-filter",
+        value: exploreFilter,
+        onChange: setExploreFilter,
+        style: { marginBottom: "12px" }
+      }
+    ),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, maxHeight: "350px", overflowY: "auto", border: "1px solid #eee", borderRadius: "4px", marginBottom: "15px" }, children: (() => {
-      const filteredList = scoredActionsList.filter((item) => {
-        if (exploreFilter === "all") return true;
-        const t = item.type.toLowerCase();
-        if (exploreFilter === "disco") return t.includes("disco") || t.includes("line_disconnection") || t.includes("open_line");
-        if (exploreFilter === "reco") return t.includes("reco") || t.includes("line_reconnection") || t.includes("close_line");
-        if (exploreFilter === "open") return t.includes("open_coupling");
-        if (exploreFilter === "close") return t.includes("close_coupling");
-        if (exploreFilter === "pst") return t.includes("pst");
-        if (exploreFilter === "ls") return t.includes("load_shedding") || t.includes("ls");
-        if (exploreFilter === "rc") return t.includes("renewable_curtailment") || t.includes("rc") || t.includes("open_gen");
-        return t.includes(exploreFilter);
-      });
+      const filteredList = scoredActionsList.filter(
+        (item) => matchesActionTypeFilter(exploreFilter, item.actionId, null, item.type)
+      );
       const types = Array.from(new Set(filteredList.map((item) => item.type)));
       if (filteredList.length === 0) {
         return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { textAlign: "center", color: "#888", fontStyle: "italic", padding: "40px 20px" }, children: "No scored actions available for this filter." });
@@ -20494,7 +20935,8 @@ const ActionFeed = ({
   onUpdateCombinedEstimation,
   displayName = (id) => id,
   onActionDiagramPrimed,
-  voltageLevelsLength
+  voltageLevelsLength,
+  overviewFilters
 }) => {
   const [searchOpen, setSearchOpen] = reactExports.useState(false);
   const [searchQuery, setSearchQuery] = reactExports.useState("");
@@ -20590,24 +21032,11 @@ const ActionFeed = ({
     const q = searchQuery.toLowerCase();
     const alreadyShown = new Set(Object.keys(actions));
     return availableActions.filter((a) => !alreadyShown.has(a.id)).filter((a) => {
-      const t = (a.type || "unknown").toLowerCase();
-      const actionId = a.id.toLowerCase();
-      const actionDesc = (a.description || "").toLowerCase();
-      const isDisco = t.includes("disco") || t.includes("open_line") || t.includes("open_load") || actionDesc.includes("ouverture");
-      const isReco = t.includes("reco") || t.includes("close_line") || t.includes("close_load") || actionDesc.includes("fermeture");
-      const isOpenCoupling = t.includes("open_coupling");
-      const isCloseCoupling = t.includes("close_coupling");
-      const isPstAction = (actionId.includes("pst") || actionDesc.includes("pst") || t.includes("pst")) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
-      const isLoadShedding = (actionId.includes("load_shedding") || actionDesc.includes("load shedding") || t.includes("load_shedding")) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction;
-      const isRenewableCurtailment = (t.includes("renewable_curtailment") || t.includes("open_gen")) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction && !isLoadShedding;
-      if (isDisco) return typeFilters.disco;
-      if (isReco) return typeFilters.reco;
-      if (isOpenCoupling) return typeFilters.open;
-      if (isCloseCoupling) return typeFilters.close;
-      if (isPstAction) return typeFilters.pst;
-      if (isLoadShedding) return typeFilters.ls;
-      if (isRenewableCurtailment) return typeFilters.rc;
-      return typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
+      const bucket = classifyActionType(a.id, a.description || null, a.type || null);
+      if (bucket === "unknown") {
+        return typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
+      }
+      return typeFilters[bucket];
     }).filter((a) => a.id.toLowerCase().includes(q) || (a.description || "").toLowerCase().includes(q)).slice(0, 20);
   }, [searchQuery, availableActions, actions, typeFilters]);
   const scoredActionsList = reactExports.useMemo(() => {
@@ -20633,25 +21062,12 @@ const ActionFeed = ({
       const scores = data?.scores || {};
       for (const [actionId, score] of Object.entries(scores)) {
         const actionDetail = actions[actionId];
-        const actionDesc = (actionDetail?.description_unitaire || "").toLowerCase();
-        const aid = actionId.toLowerCase();
-        const t = type.toLowerCase();
-        const isDisco = t.includes("disco") || t.includes("open_line") || t.includes("open_load") || actionDesc.includes("ouverture");
-        const isReco = t.includes("reco") || t.includes("close_line") || t.includes("close_load") || actionDesc.includes("fermeture");
-        const isOpenCoupling = t.includes("open_coupling");
-        const isCloseCoupling = t.includes("close_coupling");
-        const isPstAction = (aid.includes("pst") || actionDesc.includes("pst") || t.includes("pst")) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling;
-        const isLoadShedding = (aid.includes("load_shedding") || actionDesc.includes("load shedding") || t.includes("load_shedding")) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction;
-        const isRenewableCurtailment = (t.includes("renewable_curtailment") || t.includes("open_gen")) && !isDisco && !isReco && !isOpenCoupling && !isCloseCoupling && !isPstAction && !isLoadShedding;
-        let shouldShow = false;
-        if (isDisco) shouldShow = typeFilters.disco;
-        else if (isReco) shouldShow = typeFilters.reco;
-        else if (isOpenCoupling) shouldShow = typeFilters.open;
-        else if (isCloseCoupling) shouldShow = typeFilters.close;
-        else if (isPstAction) shouldShow = typeFilters.pst;
-        else if (isLoadShedding) shouldShow = typeFilters.ls;
-        else if (isRenewableCurtailment) shouldShow = typeFilters.rc;
-        else shouldShow = typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst && typeFilters.ls && typeFilters.rc;
+        const bucket = classifyActionType(
+          actionId,
+          actionDetail?.description_unitaire || null,
+          type
+        );
+        const shouldShow = bucket === "unknown" ? typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst && typeFilters.ls && typeFilters.rc : typeFilters[bucket];
         if (!shouldShow) continue;
         const mwStartMap = data?.mw_start;
         const mwStart = mwStartMap?.[actionId] ?? null;
@@ -20864,16 +21280,41 @@ const ActionFeed = ({
   const sortedActionEntries = reactExports.useMemo(() => {
     return Object.entries(actions).filter(([id, details]) => {
       const isCombined = id.includes("+");
-      if (!isCombined) return true;
-      if (details.is_estimated) return false;
-      return details.rho_after && details.rho_after.length > 0;
+      if (isCombined) {
+        if (details.is_estimated) return false;
+        if (!details.rho_after || details.rho_after.length === 0) return false;
+      }
+      if (overviewFilters && !actionPassesOverviewFilter(
+        details,
+        monitoringFactor,
+        overviewFilters.categories,
+        overviewFilters.threshold
+      )) return false;
+      const typeFilter = overviewFilters?.actionType ?? "all";
+      if (typeFilter !== "all") {
+        if (id.includes("+")) {
+          const [id1, id2] = id.split("+");
+          const d1 = actions[id1];
+          const d2 = actions[id2];
+          const ok = d1 && matchesActionTypeFilter(typeFilter, id1, d1.description_unitaire, null) || d2 && matchesActionTypeFilter(typeFilter, id2, d2.description_unitaire, null);
+          if (!ok) return false;
+        } else if (!matchesActionTypeFilter(
+          typeFilter,
+          id,
+          details.description_unitaire,
+          null
+        )) {
+          return false;
+        }
+      }
+      return true;
     }).sort(([, a], [, b]) => {
       const aIslanded = !!a.is_islanded;
       const bIslanded = !!b.is_islanded;
       if (aIslanded !== bIslanded) return aIslanded ? 1 : -1;
       return (a.max_rho ?? 999) - (b.max_rho ?? 999);
     });
-  }, [actions]);
+  }, [actions, overviewFilters, monitoringFactor]);
   const analysisActionIds = reactExports.useMemo(() => {
     const ids = /* @__PURE__ */ new Set();
     if (!actionScores) return ids;
@@ -21859,8 +22300,7 @@ const SettingsModal = ({ settings, onApply }) => {
                   type: "text",
                   value: configFilePath,
                   onChange: (e) => setConfigFilePath(e.target.value),
-                  onBlur: (e) => changeConfigFilePath(e.target.value).catch(() => {
-                  }),
+                  onBlur: (e) => changeConfigFilePath(e.target.value).catch((err) => console.error("Failed to change config file path", err)),
                   placeholder: "e.g. /home/user/my_costudy4grid_config.json",
                   style: { flex: 1, padding: "8px", border: "1px solid #ccc", borderRadius: "4px" }
                 }
@@ -21868,8 +22308,7 @@ const SettingsModal = ({ settings, onApply }) => {
               /* @__PURE__ */ jsxRuntimeExports.jsx(
                 "button",
                 {
-                  onClick: () => pickSettingsPath("file", (p) => changeConfigFilePath(p).catch(() => {
-                  })),
+                  onClick: () => pickSettingsPath("file", (p) => changeConfigFilePath(p).catch((err) => console.error("Failed to change config file path", err))),
                   style: { padding: "8px", background: "#7f8c8d", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", flexShrink: 0 },
                   children: "📄"
                 }
@@ -24413,6 +24852,45 @@ function App() {
     scrollSeqRef.current += 1;
     setScrollTarget({ id: actionId, seq: scrollSeqRef.current });
   }, []);
+  const [overviewFilters, setOverviewFilters] = reactExports.useState({
+    categories: { green: true, orange: true, red: true, grey: true },
+    threshold: 1.5,
+    showUnsimulated: false,
+    actionType: "all"
+  });
+  const { unsimulatedActionIds, unsimulatedActionInfo } = reactExports.useMemo(() => {
+    const scores = analysis.result?.action_scores;
+    if (!scores) return { unsimulatedActionIds: [], unsimulatedActionInfo: {} };
+    const simulated = new Set(Object.keys(analysis.result?.actions ?? {}));
+    const ids = [];
+    const info = {};
+    const seen2 = /* @__PURE__ */ new Set();
+    for (const [type, rawData] of Object.entries(scores)) {
+      const data = rawData;
+      const per = data.scores ?? {};
+      const mwStartMap = data.mw_start ?? {};
+      const tapStartMap = data.tap_start ?? {};
+      const rankedEntries = Object.entries(per).sort(([, a], [, b]) => b - a);
+      const maxScoreInType = rankedEntries.length > 0 ? rankedEntries[0][1] : 0;
+      const countInType = rankedEntries.length;
+      for (let i = 0; i < rankedEntries.length; i++) {
+        const [id, score] = rankedEntries[i];
+        if (simulated.has(id) || seen2.has(id)) continue;
+        seen2.add(id);
+        ids.push(id);
+        info[id] = {
+          type,
+          score,
+          mwStart: mwStartMap[id] ?? null,
+          tapStart: tapStartMap[id] ?? null,
+          rankInType: i + 1,
+          countInType,
+          maxScoreInType
+        };
+      }
+    }
+    return { unsimulatedActionIds: ids, unsimulatedActionInfo: info };
+  }, [analysis.result?.action_scores, analysis.result?.actions]);
   const contingencyOptions = reactExports.useMemo(() => {
     const q = selectedBranch.toUpperCase();
     const opts = [];
@@ -24555,6 +25033,99 @@ function App() {
       diagrams.refreshSldIfAction(actionId);
     },
     [actionsHook, setResult, wrappedForcedActionSelect, diagrams]
+  );
+  const handleSimulateUnsimulatedAction = reactExports.useCallback(
+    async (actionId) => {
+      if (!selectedBranch) {
+        setError("Select a contingency first.");
+        return;
+      }
+      try {
+        const response = await api.simulateAndVariantDiagramStream({
+          action_id: actionId,
+          disconnected_element: selectedBranch,
+          action_content: null,
+          lines_overloaded: result?.lines_overloaded ?? null,
+          target_mw: null,
+          target_tap: null
+        });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let metrics = null;
+        let streamErr = null;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            if (buffer.trim()) {
+              try {
+                const event = JSON.parse(buffer);
+                if (event.type === "metrics") {
+                  const { type: _t, ...rest } = event;
+                  void _t;
+                  metrics = rest;
+                } else if (event.type === "diagram") {
+                  const { type: _t, ...rest } = event;
+                  void _t;
+                  diagrams.primeActionDiagram(actionId, rest, voltageLevels.length);
+                } else if (event.type === "error") {
+                  streamErr = event.message || "stream error";
+                }
+              } catch {
+              }
+            }
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            let event;
+            try {
+              event = JSON.parse(line);
+            } catch {
+              continue;
+            }
+            if (event.type === "metrics") {
+              const { type: _t, ...rest } = event;
+              void _t;
+              metrics = rest;
+            } else if (event.type === "diagram") {
+              const { type: _t, ...rest } = event;
+              void _t;
+              diagrams.primeActionDiagram(actionId, rest, voltageLevels.length);
+            } else if (event.type === "error") {
+              streamErr = event.message || "stream error";
+            }
+          }
+        }
+        if (streamErr) throw new Error(streamErr);
+        if (!metrics) throw new Error("Stream ended without metrics event");
+        const detail = {
+          description_unitaire: metrics.description_unitaire,
+          rho_before: metrics.rho_before,
+          rho_after: metrics.rho_after,
+          max_rho: metrics.max_rho,
+          max_rho_line: metrics.max_rho_line,
+          is_rho_reduction: metrics.is_rho_reduction,
+          is_islanded: metrics.is_islanded,
+          n_components: metrics.n_components,
+          disconnected_mw: metrics.disconnected_mw,
+          non_convergence: metrics.non_convergence,
+          lines_overloaded_after: metrics.lines_overloaded_after,
+          load_shedding_details: metrics.load_shedding_details,
+          curtailment_details: metrics.curtailment_details,
+          pst_details: metrics.pst_details
+        };
+        wrappedManualActionAdded(actionId, detail, metrics.lines_overloaded || []);
+      } catch (e) {
+        console.error("Unsimulated pin simulation failed:", e);
+        const err = e;
+        setError(err?.response?.data?.detail || "Simulation failed");
+      }
+    },
+    [selectedBranch, result?.lines_overloaded, diagrams, voltageLevels.length, wrappedManualActionAdded]
   );
   const wrappedActionResimulated = reactExports.useCallback(
     (actionId, detail, linesOverloaded) => {
@@ -25290,7 +25861,8 @@ function App() {
               onUpdateCombinedEstimation: handleUpdateCombinedEstimation,
               displayName,
               onActionDiagramPrimed: diagrams.primeActionDiagram,
-              voltageLevelsLength: voltageLevels.length
+              voltageLevelsLength: voltageLevels.length,
+              overviewFilters
             }
           )
         ] })
@@ -25351,7 +25923,12 @@ function App() {
           onPinPreview: handlePinPreview,
           onOverviewPzChange: handleOverviewPzChange,
           monitoringFactor,
-          displayName
+          displayName,
+          overviewFilters,
+          onOverviewFiltersChange: setOverviewFilters,
+          unsimulatedActionIds,
+          unsimulatedActionInfo,
+          onSimulateUnsimulatedAction: handleSimulateUnsimulatedAction
         }
       ) })
     ] }),

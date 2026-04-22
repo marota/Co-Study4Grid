@@ -49,14 +49,34 @@ FRONTEND_SRC = REPO_ROOT / "frontend" / "src"
 # auto-generated single-file bundle. Callers that want to audit a
 # different artifact can set `COSTUDY4GRID_STANDALONE_PATH` to any
 # path — the legacy file is still readable on disk if present.
-_DEFAULT_STANDALONE = REPO_ROOT / "frontend" / "dist-standalone" / "standalone.html"
+#
+# Resolution order when `COSTUDY4GRID_STANDALONE_PATH` is unset:
+#   1. `frontend/dist-standalone/standalone.html` — fresh local build
+#      (gitignored; only present after `npm run build:standalone`).
+#   2. `frontend/dist-standalone/standalone_v*.html` — the latest
+#      committed versioned snapshot (lexicographically greatest).
+#      CI checks out this file since step 1's output is gitignored.
+#   3. `standalone_interface_legacy.html` — frozen last version of
+#      the hand-maintained mirror, kept as a last-resort reference.
+_DIST_STANDALONE_DIR = REPO_ROOT / "frontend" / "dist-standalone"
+_DEFAULT_STANDALONE = _DIST_STANDALONE_DIR / "standalone.html"
 _LEGACY_STANDALONE = REPO_ROOT / "standalone_interface_legacy.html"
-STANDALONE = Path(
-    os.environ.get(
-        "COSTUDY4GRID_STANDALONE_PATH",
-        str(_DEFAULT_STANDALONE if _DEFAULT_STANDALONE.exists() else _LEGACY_STANDALONE),
-    )
-)
+
+
+def _resolve_standalone_path() -> Path:
+    override = os.environ.get("COSTUDY4GRID_STANDALONE_PATH")
+    if override:
+        return Path(override)
+    if _DEFAULT_STANDALONE.exists():
+        return _DEFAULT_STANDALONE
+    if _DIST_STANDALONE_DIR.is_dir():
+        versioned = sorted(_DIST_STANDALONE_DIR.glob("standalone_v*.html"))
+        if versioned:
+            return versioned[-1]
+    return _LEGACY_STANDALONE
+
+
+STANDALONE = _resolve_standalone_path()
 TYPES_TS = FRONTEND_SRC / "types.ts"
 API_TS = FRONTEND_SRC / "api.ts"
 USE_SETTINGS_TS = FRONTEND_SRC / "hooks" / "useSettings.ts"
@@ -180,11 +200,13 @@ SPEC_DETAILS: dict[str, dict] = {
     "session_reloaded":         _spec_row({"session_name"}),
 }
 
-# Event types whose frontend details argument is a bare identifier or
-# a function call — the regex cannot see inside them. The SA side is
-# still checked against the spec; the FE side is reported as
-# "deferred" rather than a false-positive mismatch.
-_FE_DEFERRED_TYPES = frozenset({"config_loaded", "settings_applied"})
+# Event types whose details argument is a bare identifier or a
+# function call — the regex cannot see inside them. The auto-generated
+# standalone bundle now shares the React source's call pattern (both
+# emit `buildConfigInteractionDetails()`), so deferred treatment must
+# apply symmetrically: a bare-call details argument is a false-positive
+# mismatch on either side.
+_DEFERRED_TYPES = frozenset({"config_loaded", "settings_applied"})
 
 
 # ---------------------------------------------------------------------
@@ -610,7 +632,7 @@ def run_checks() -> dict:
         known = required | optional
 
         # Frontend side.
-        if t in fe_event_types and t not in _FE_DEFERRED_TYPES:
+        if t in fe_event_types and t not in _DEFERRED_TYPES:
             fe = fe_keys.get(t, set())
             # Empty object literal is a valid emission — only flag a
             # missing-required gap when the event actually carries a
@@ -629,7 +651,7 @@ def run_checks() -> dict:
                 })
 
         # Standalone side.
-        if t in sa_event_types:
+        if t in sa_event_types and t not in _DEFERRED_TYPES:
             sa = sa_keys.get(t, set())
             sa_missing = sorted(required - sa) if (sa or required) else []
             sa_extras = sorted(sa - known)
