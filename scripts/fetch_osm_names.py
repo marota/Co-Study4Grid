@@ -2,9 +2,9 @@
 fetch_osm_names.py
 ==================
 Batch-fetches real names (RTE codes, human-readable names) for all OSM objects
-referenced by the French 400 kV PyPSA-EUR network from the Overpass API.
+referenced by the French PyPSA-EUR network from the Overpass API.
 
-Produces:  data/pypsa_eur_fr400/osm_names.json
+Produces:  data/pypsa_eur_fr{voltage}/osm_names.json
 
 Structure:
   {
@@ -23,10 +23,13 @@ The script caches results in osm_names.json. Re-running it will skip already-fet
 unless --force is passed.
 
 Usage:
-    cd /home/marotant/dev/AntiGravity/ExpertAssist
-    venv_expert_assist_py310/bin/python scripts/fetch_osm_names.py [--force]
+    python scripts/fetch_osm_names.py                          # default: 400 kV
+    python scripts/fetch_osm_names.py --voltages 225,400       # 225 + 400 kV
+    python scripts/fetch_osm_names.py --voltages 225,400 --output-dir data/pypsa_eur_fr225_400
+    python scripts/fetch_osm_names.py --force                  # re-fetch all
 """
 
+import argparse
 import os
 import re
 import sys
@@ -40,18 +43,57 @@ import pandas as pd
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
 
+# ─── Parse command-line arguments ────────────────────────────────────────────
+parser = argparse.ArgumentParser(description="Fetch OSM names for PyPSA-EUR network")
+parser.add_argument(
+    "--voltages",
+    type=str,
+    default="400",
+    help="Target voltage levels (comma-separated, e.g., '225,400'). Default: 400",
+)
+parser.add_argument(
+    "--output-dir",
+    type=str,
+    default=None,
+    help="Output directory (default: data/pypsa_eur_fr{voltage})",
+)
+parser.add_argument(
+    "--force",
+    action="store_true",
+    help="Re-fetch all names, ignoring cache",
+)
+parser.add_argument(
+    "--cache-from",
+    type=str,
+    default=None,
+    help="Seed cache from another osm_names.json (e.g., data/pypsa_eur_fr400/osm_names.json)",
+)
+
+# Support legacy --force without argparse
+args, _unknown = parser.parse_known_args()
+if "--force" in _unknown:
+    args.force = True
+
 # ─── Configuration ────────────────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.join(SCRIPT_DIR, "..")
 DATA_DIR = os.path.join(BASE_DIR, "data", "pypsa_eur_osm")
-OUT_DIR = os.path.join(BASE_DIR, "data", "pypsa_eur_fr400")
+
+TARGET_VOLTAGES = [float(v.strip()) for v in args.voltages.split(",")]
+TARGET_COUNTRY = "FR"
+
+if args.output_dir:
+    OUT_DIR = args.output_dir if os.path.isabs(args.output_dir) else os.path.join(BASE_DIR, args.output_dir)
+else:
+    v_str = "_".join(str(int(v)) for v in TARGET_VOLTAGES)
+    OUT_DIR = os.path.join(BASE_DIR, "data", f"pypsa_eur_fr{v_str}")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 OUTPUT_FILE = os.path.join(OUT_DIR, "osm_names.json")
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
-TARGET_COUNTRY = "FR"
-TARGET_VOLTAGES = [380, 400]
+log.info(f"Target voltages: {TARGET_VOLTAGES} kV")
+log.info(f"Output directory: {OUT_DIR}")
 
 # Overpass API rate limiting
 BATCH_SIZE = 30  # IDs per query (conservative to avoid timeouts)
@@ -195,14 +237,24 @@ def _parse_line_osm_id(line_index: str) -> tuple:
 
 
 def main():
-    force = "--force" in sys.argv
+    force = args.force
 
     # Load existing cache
     existing = {}
+
+    # Seed from another osm_names.json (e.g., reuse fr400 cache for fr225_400)
+    if args.cache_from and os.path.exists(args.cache_from):
+        with open(args.cache_from, encoding="utf-8") as f:
+            seed = json.load(f)
+        for section in ["substations", "circuits"]:
+            for key, val in seed.get(section, {}).items():
+                existing[key] = val
+        log.info(f"Seeded {len(existing)} entries from {args.cache_from}")
+
     if os.path.exists(OUTPUT_FILE) and not force:
-        with open(OUTPUT_FILE) as f:
+        with open(OUTPUT_FILE, encoding="utf-8") as f:
             cache = json.load(f)
-        # Flatten for lookup
+        # Flatten for lookup (overwrites seed entries if present)
         for section in ["substations", "circuits"]:
             for key, val in cache.get(section, {}).items():
                 existing[key] = val
