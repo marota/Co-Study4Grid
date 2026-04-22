@@ -6,32 +6,43 @@ The Remedial Action tab now hosts an **action-overview diagram** when no action 
 
 Pins visually reflect the operator's triage decisions: **selected** (starred) actions are highlighted with a gold star above the pin, while **rejected** actions are dimmed with a red cross. **Simulated combined actions** (two unitary actions applied together) appear as a dedicated pin at the midpoint of a curved dashed connection linking the two constituent pins.
 
+A consolidated **single-row header** above the diagram exposes a compact pin counter plus every filter control inline: severity category toggles (Solves overload / Low margin / Still overloaded / Divergent-or-islanded), a `All` / `None` bulk-toggle pair, a **max-loading threshold slider**, a **Show unsimulated** checkbox, and a single-select **action-type chip row** (`ALL / DISCO / RECO / LS / RC / OPEN / CLOSE / PST`). All four controls feed a single `ActionOverviewFilters` state owned by `App.tsx` and are shared with the sidebar `ActionFeed`, so a card hidden in the feed is also hidden on the overview and vice-versa. See [Filtering](#filtering) below.
+
+When **Show unsimulated** is enabled, scored-but-not-yet-simulated actions (those present in `result.action_scores` but absent from the simulated `actions` dict) are rendered as dimmed, dashed **un-simulated pins**. Hovering one reveals a score-metadata tooltip (type, score, rank-in-type, MW/tap start); double-clicking it kicks off the same manual-simulation code path the Manual Selection dropdown uses. See [Un-simulated action pin](#un-simulated-action-pin) below.
+
 When any action card IS selected (either via the sidebar feed or by double-clicking a pin), the overview folds away and the existing action-variant diagram + highlights take over. The operator can return to the overview by clicking the deselect chip in the tab label ("Remedial Action: **\<action-id\> ✕**").
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│  Tab bar                                                 │
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Tab bar                                                                   │
 │  [Network (N)]  [Contingency (N-1)]  [Remedial action: overview]  [Overflow] │
-├──────────────────────────────────────────────────────────┤
-│                                                          │
-│   Background: N-1 NAD (dimmed)                           │
-│                                                          │
-│         ┌──────┐                                         │
-│      ★  │ 73%  │   ← green pin, selected (gold star)    │
-│         └──┬───┘                                         │
-│            │ points at line mid-point                     │
-│         ┌──────┐                                         │
-│      ✕  │ 99%  │   ← red pin, rejected (cross, dimmed)  │
-│         └──┬───┘                                         │
-│            │                                             │
-│        ╭───────────╮                                     │
-│     pin A ╌╌╌ + ╌╌╌ pin B   ← combined pin on curve     │
-│        ╰───────────╯                                     │
-│                                                          │
-│   Zoom: +  Fit  -                                        │
-│   🔍 Focus asset...                                      │
-│                                                          │
-└──────────────────────────────────────────────────────────┘
+├────────────────────────────────────────────────────────────────────────────┤
+│ 📍 7 (+3)  ● Solves ● Low margin ● Still ● Div  [All][None]               │
+│   Max loading ▬▬●▬▬ 150%  ☑ Show unsimulated  │  ALL DISCO RECO LS RC ... │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│   Background: N-1 NAD (dimmed)                                             │
+│                                                                            │
+│         ┌──────┐                                                           │
+│      ★  │ 73%  │   ← green pin, selected (gold star)                      │
+│         └──┬───┘                                                           │
+│            │ points at line mid-point                                       │
+│         ┌──────┐                                                           │
+│      ✕  │ 99%  │   ← red pin, rejected (cross, dimmed)                    │
+│         └──┬───┘                                                           │
+│            │                                                               │
+│         ┌╌╌╌╌╌╌┐                                                           │
+│         │  ?   │    ← un-simulated pin (dashed, grey, opacity 0.5)        │
+│         └╌╌┬╌╌╌┘                                                           │
+│            │                                                               │
+│        ╭───────────╮                                                       │
+│     pin A ╌╌╌ + ╌╌╌ pin B   ← combined pin on curve                       │
+│        ╰───────────╯                                                       │
+│                                                                            │
+│   Zoom: +  Fit  -                                                          │
+│   🔍 Focus asset...                                                        │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -45,9 +56,9 @@ The SVG layers are ordered as follows (back to front):
 | 1. `.nad-overview-highlight-layer` | Clone of contingency + overloaded edges | 1.0 | Matches N-1 tab halos (yellow contingency, orange overloads) |
 | 2. Original NAD content | All voltage-level nodes, edges, labels | 1.0 | The actual network diagram |
 | 3. `.nad-overview-dim-rect` | White `<rect>` covering the entire viewBox | 0.65 | Dims the network + highlight halos so pins pop |
-| 4. `.nad-action-overview-pins` | Teardrop pins + combined-action curves | 1.0 | Unitary pins, status symbols, combined curves + midpoint pins |
+| 4. `.nad-action-overview-pins` | Teardrop pins + combined curves + un-simulated layer | 1.0 | Unitary pins, status symbols, combined curves + midpoint pins, dashed un-simulated previews |
 
-Highlights are placed **behind** the NAD content (same background-layer pattern as the N-1 tab) so the halo peeks out around the line strokes. The dim rect sits on top of both, and pins ride above everything. Combined-action curves also sit in the pin layer (above the dim rect) so they render vivid.
+Highlights are placed **behind** the NAD content (same background-layer pattern as the N-1 tab) so the halo peeks out around the line strokes. The dim rect sits on top of both, and pins ride above everything. Combined-action curves and un-simulated `.nad-action-overview-pin-unsimulated` glyphs also sit in the pin layer (above the dim rect) so they render vivid even against the dimmed NAD.
 
 ### Why a `<rect>` instead of `<g opacity>` or CSS opacity?
 
@@ -79,6 +90,53 @@ Each unitary pin is an SVG `<g>` with the following structure:
   </g>
 </g>
 ```
+
+### Un-simulated action pin
+
+Scored-but-not-yet-simulated actions — those present in `result.action_scores` but absent from the simulated `actions` dict — are rendered in a dedicated dimmed layer when the **Show unsimulated** filter toggle is enabled:
+
+```
+<g class="nad-action-overview-pin nad-action-overview-pin-unsimulated"
+   transform="translate(x y)" data-action-id="..." data-unsimulated="true"
+   opacity="0.5">
+  <g class="nad-action-overview-pin-body" transform="scale(k)">
+    <title>
+      LINE_A — not yet simulated (double-click to run)
+      Type: line_disconnection
+      Score: 0.82 — rank 3 of 12 (max 0.95)
+      MW start: 24.5 MW            ← only for LS / curtailment
+      Tap start: 0 (range -8 … 8)  ← only for PST
+    </title>
+    <path d="..." fill="#c8cdd2" stroke="#6b7280" stroke-width="..."
+          stroke-dasharray="..." />  ← dashed stroke distinguishes from simulated
+    <circle ... fill="#fff" />       ← inner disc
+    <text>?</text>                    ← placeholder label (no rho_after yet)
+  </g>
+</g>
+```
+
+Resolution: anchors go through `resolveActionAnchor` with a minimal `ActionDetail` stub, which falls back on edge/VL lookups keyed on the id alone — the same resolution the score table uses for line / coupling / PST actions. Items that cannot be resolved are silently skipped.
+
+Behaviour:
+- The pin body uses the **grey** severity palette (no `rho_after` is available).
+- A **dashed stroke pattern** visually distinguishes them from solid-outline simulated pins.
+- The whole group renders at `opacity: 0.5` so the eye immediately reads them as "not yet evaluated".
+- Ids already present in the simulated `actions` dict are **skipped** so a given action never produces both a simulated and an un-simulated pin.
+- A **single click** opens the standard `ActionCardPopover` preview (minimal since no card details exist yet).
+- A **double click** invokes `onUnsimulatedPinDoubleClick` → `onSimulateUnsimulatedAction(actionId)` in `App.tsx` → same code path as Manual Selection in the ActionFeed dropdown. After the simulation completes the pin is re-coloured with its real severity (regression-guarded by `ActionOverviewDiagram.test.tsx`).
+
+The score-info tooltip (`type`, `score`, `rankInType`, `countInType`, `maxScoreInType`, optional `mwStart` / `tapStart`) is wired by `App.tsx`, which flattens `result.action_scores` per type bucket, ranks within each bucket, and forwards the `UnsimulatedActionScoreInfo` map through `VisualizationPanel` → `ActionOverviewDiagram` → `buildUnsimulatedActionPins`. When no score info is available the tooltip falls back to `"<id> — not yet simulated (double-click to run)"`.
+
+### Filter-dimmed constituent pin
+
+When a combined action passes the category/threshold/action-type filter but one of its constituent unitary actions does not, the constituent pin is kept visible but **dimmed** so the combined pin's curve still has a visible endpoint to anchor on. It carries:
+
+- `data-dimmed-by-filter="true"` attribute on the pin `<g>`,
+- the **dimmed-severity fill** (`severityFillDimmed[severity]`, same palette as rejected pins),
+- `opacity: 0.4` on the outer group (compared to 0.55 for rejected pins),
+- no status symbol (neither star nor cross).
+
+This "context-not-first-class-action" read is intentional: the operator sees the whole combined pair at a glance without being misled into thinking the constituents individually passed the filter.
 
 ### Combined action pin
 
@@ -157,6 +215,76 @@ The combined pin position is the midpoint of a quadratic Bezier curve whose cont
 
 ---
 
+## Filtering
+
+Filtering state is captured in a single `ActionOverviewFilters` object owned by `App.tsx` and piped through `VisualizationPanel` into both `ActionOverviewDiagram` and `ActionFeed`. A card hidden in the feed is also hidden on the overview, and vice-versa.
+
+```ts
+interface ActionOverviewFilters {
+    categories: Record<'green' | 'orange' | 'red' | 'grey', boolean>;
+    threshold: number;            // ratio, e.g. 1.5 = 150 %
+    showUnsimulated: boolean;
+    actionType: 'all' | 'disco' | 'reco' | 'ls' | 'rc' | 'open' | 'close' | 'pst';
+}
+```
+
+Default values: all four categories enabled, threshold `1.5`, `showUnsimulated: false`, `actionType: 'all'`.
+
+### Severity categories
+
+Four toggles map 1:1 to the teardrop colour buckets:
+
+| Chip | Colour | Meaning | Condition |
+|---|---|---|---|
+| Solves overload | green | `max_rho ≤ monitoringFactor - 0.05` | |
+| Low margin | orange | `monitoringFactor - 0.05 < max_rho ≤ monitoringFactor` | |
+| Still overloaded | red | `max_rho > monitoringFactor` | |
+| Divergent / islanded | grey | `non_convergence || is_islanded \|\| max_rho == null` | |
+
+Disabling a chip hides every pin in that bucket AND every sidebar card in that bucket. `All` and `None` bulk-apply to all four.
+
+### Threshold slider
+
+Range `0.5` → `3.0` step `0.05`, displayed as a percentage. Any action whose `max_rho` is strictly greater than the threshold is hidden. Actions with `max_rho == null` (divergent / islanded — all in the grey bucket) **bypass** the threshold so non-numeric outcomes remain visible whenever the grey category is enabled.
+
+### Action-type chip row
+
+Single-select chip row (`ALL / DISCO / RECO / LS / RC / OPEN / CLOSE / PST`) rendered by the shared `<ActionTypeFilterChips>` component. Behind the chip is the pure classifier `classifyActionType(actionId, description, scoreType)` in `utils/actionTypes.ts`, consulted by three UI surfaces (overview, feed, explore-pairs) to guarantee they never drift:
+
+- The classifier's **coupling detector** (`isCouplingSignal`) checks id/type/description for `coupling`, `busbar`, `noeud`, `node_merging`, `node_splitting`, and the French `"du poste '<X>'"` marker.
+- The earlier `"poste" + "ouverture"` rule was replaced in PR #105 after it mis-classified line-opening actions with descriptions like `"... DJ_OC dans le poste POSTE"`. The new signal, `/du poste\s+['"]/`, correctly targets the coupling phrasing only.
+- A dedicated regression fixes a related issue where `"Ouverture … dans le poste"` was being routed to `open` instead of `disco`; the action-type commit `f356c2e` pins the expected bucket in `actionTypes.test.ts`.
+- OPEN/CLOSE land in their buckets only when the coupling signal is also present — otherwise `ouverture` / `fermeture` descriptors route to DISCO / RECO.
+
+For **combined-action pins**, the chip filter is satisfied if **either** constituent matches the active token (combined pairs are inherently multi-type, so requiring both would surprise the operator).
+
+### Protected constituent pins
+
+The pin-building memo runs in **three passes** so combined-action constituents are kept visible even when they individually fail the filter:
+
+1. Build every unitary pin **unfiltered** (`buildActionOverviewPins` without the `overviewFilter` arg).
+2. Build combined pins from the unfiltered set, then drop those that fail the category/threshold/action-type filter themselves.
+3. Compute the `protectedIds` set = all unitary ids referenced by any surviving combined pin.
+4. Re-filter the unitary pins: passing pins go through as-is; `protectedIds` entries that fail come through with `dimmedByFilter: true`; everything else is dropped.
+
+This keeps the visual grammar intact: every combined-pair curve has two visible endpoints, and the operator sees the filter narrowing the view to "what matters under the current criteria" without breaking the topology of the combined pins that matter.
+
+### Shared predicate
+
+`actionPassesOverviewFilter(details, monitoringFactor, categoryEnabled, threshold)` (exported from `utils/svgUtils.ts`) is the single predicate used by:
+
+- `buildActionOverviewPins` (optional `overviewFilter` param, new in PR #105)
+- `ActionOverviewDiagram.tsx` (the three-pass pin build above)
+- `ActionFeed.tsx` (sidebar card filtering)
+
+The action-type check (`matchesActionTypeFilter`) is applied on top of this shared predicate at each call site. This lock-step is the reason a card and a pin can never disagree about visibility.
+
+### Interaction logging
+
+Each filter adjustment emits an `overview_filter_changed` event with the `kind` (`category` / `categories_bulk` / `threshold` / `action_type`) plus kind-specific payload. Toggling unsimulated fires `overview_unsimulated_toggled`, and simulating an un-simulated pin via double-click fires `overview_unsimulated_pin_simulated`. See `docs/features/interaction-logging.md` for the replay contract.
+
+---
+
 ## Interactions
 
 ### Auto-zoom on open
@@ -166,10 +294,11 @@ When the overview becomes visible, it computes a **fit rectangle** that encloses
 - all overloaded-line edge endpoints,
 - every unitary pin position,
 - every combined pin position,
+- every **un-simulated pin position** (only contributes when `showUnsimulated` is on),
 
 padded by 5% on each side. This rectangle is set as the initial `viewBox` via `usePanZoom` so the operator always opens on a meaningful frame.
 
-The fit rectangle is recomputed when `(n1MetaIndex, contingency, overloadedLines, pins, combinedPins)` changes, and re-asserted when the overview re-appears after a round-trip through the action drill-down view (tracked via `wasVisibleRef`).
+The fit rectangle is recomputed when `(n1MetaIndex, contingency, overloadedLines, pins, combinedPins, unsimulatedPins)` changes, and re-asserted when the overview re-appears after a round-trip through the action drill-down view (tracked via `wasVisibleRef`).
 
 ### Pan, zoom, and inspect
 
@@ -200,6 +329,10 @@ A double-click (detected via the browser's click + dblclick sequence; the 250ms 
 
 When the action-variant diagram is showing, the tab label reads **"Remedial Action: \<chip\>"** where `<chip>` is a pink clickable badge around the action id with a ✕ circle. Clicking the chip calls `onActionSelect(null)` and the overview re-opens with its last fit rectangle.
 
+### Double-click on an un-simulated pin → manual simulation
+
+Un-simulated pins (dashed, grey, dimmed) intercept the double-click gesture via `onUnsimulatedPinDoubleClick` before it reaches the standard `onPinDoubleClick` path. The callback fires `onSimulateUnsimulatedAction(actionId)` in the parent, which runs the exact same code path as the Manual Selection dropdown in the ActionFeed. The logger records `overview_unsimulated_pin_simulated`. Once the simulation completes, the action appears in the `actions` dict and the pin swaps out of the dimmed un-simulated layer into the standard severity palette on the next render — regression-guarded by `ActionOverviewDiagram.test.tsx` (pin re-colour after double-click → completion).
+
 ---
 
 ## Card sharing
@@ -214,28 +347,34 @@ All text in the `ActionCard` uses a uniform **12px** font size for the title, de
 
 | File | Responsibility |
 |---|---|
-| `components/ActionOverviewDiagram.tsx` | Main component: SVG injection, dim rect, highlights, pins, combined pins, pan/zoom, popover state |
+| `components/ActionOverviewDiagram.tsx` | Main component: SVG injection, dim rect, highlights, pins, combined pins, un-simulated pins, filter header, pan/zoom, popover state |
+| `components/ActionTypeFilterChips.tsx` | Shared single-select chip row (`ALL / DISCO / RECO / LS / RC / OPEN / CLOSE / PST`) used by overview, feed, and explore-pairs |
 | `components/ActionCard.tsx` | Shared action card rendered in sidebar feed and pin-click popover (uniform 12px text) |
 | `components/ActionCardPopover.tsx` | Shared floating ActionCard wrapper (chrome + no-op stubs) |
-| `utils/svgUtils.ts` | Helpers: `buildActionOverviewPins`, `buildCombinedActionPins`, `applyActionOverviewPins`, `applyActionOverviewHighlights`, `rescaleActionOverviewPins`, `computeActionOverviewFitRect`, `computeEquipmentFitRect` |
+| `utils/svgUtils.ts` | Barrel re-exporting helpers from `utils/svg/*`: `buildActionOverviewPins`, `buildUnsimulatedActionPins`, `buildCombinedActionPins`, `actionPassesOverviewFilter`, `applyActionOverviewPins`, `applyActionOverviewHighlights`, `rescaleActionOverviewPins`, `computeActionOverviewFitRect`, `computeEquipmentFitRect` |
+| `utils/svg/actionPinData.ts` | Pure data: severity palette, anchor resolution, unitary + un-simulated pin builders, overview filter predicate |
+| `utils/svg/actionPinRender.ts` | DOM-mutating render layer: unitary / combined / un-simulated pin glyphs, rescaler, click listeners |
+| `utils/actionTypes.ts` | Shared classifier: `classifyActionType`, `matchesActionTypeFilter`, `ACTION_TYPE_FILTER_TOKENS` |
 | `utils/popoverPlacement.ts` | Pure helpers: `decidePopoverPlacement`, `computePopoverStyle` |
-| `components/VisualizationPanel.tsx` | Mounts overview in the action tab's `DetachableTabHost`; renders the deselect chip in the tab label |
-| `App.tsx` | Wires `n1MetaIndex`, `onActionSelect`, `onActionFavorite`, `onActionReject`, `selectedActionIds`, `rejectedActionIds`, `monitoringFactor` through to `VisualizationPanel` |
-| `components/ActionFeed.tsx` | `scrollIntoView` effect on `selectedActionId` change |
-| `App.css` | `.nad-overview-dimmed`, `.nad-action-overview-pin`, `.nad-action-overview-container` styles |
+| `components/VisualizationPanel.tsx` | Mounts overview in the action tab's `DetachableTabHost`; forwards `overviewFilters`, `unsimulatedActionIds`, `unsimulatedActionInfo`, `onSimulateUnsimulatedAction`; renders the deselect chip in the tab label |
+| `App.tsx` | Owns the `ActionOverviewFilters` state; computes `unsimulatedActionIds` + `unsimulatedActionInfo` from `result.action_scores` (type bucketing + rank within type); wires `n1MetaIndex`, `onActionSelect`, `onActionFavorite`, `onActionReject`, `selectedActionIds`, `rejectedActionIds`, `monitoringFactor`, and all of the above through to `VisualizationPanel` |
+| `components/ActionFeed.tsx` | `scrollIntoView` effect on `selectedActionId` change; applies the shared `actionPassesOverviewFilter` + `matchesActionTypeFilter` so sidebar cards mirror overview visibility |
+| `App.css` | `.nad-overview-dimmed`, `.nad-action-overview-pin`, `.nad-action-overview-pin-unsimulated`, `.nad-action-overview-container` styles |
 
 ---
 
 ## Test coverage
 
-| Test file | Cases | Covers |
-|---|---|---|
-| `utils/svgUtils.test.ts` | `buildActionOverviewPins` (8 + 6), `buildCombinedActionPins` (7), `applyActionOverviewPins` (12 + 14), `applyActionOverviewHighlights` (10), `rescaleActionOverviewPins` (6 + 1), `computeActionOverviewFitRect` (5), `computeEquipmentFitRect` (4) | Pin resolution, severity, label, palette, idempotence, click semantics, mousedown stopPropagation, no-outline, dark label text, **combined pair exclusion from unitary pins**, **load shedding / curtailment VL anchoring**, **overlapping pin fan-out**, **combined pin building (Bezier midpoint, severity, label, p1/p2, skip on missing constituent)**, **selected pin highlighting (gold star, highlighted fill, gold stroke)**, **rejected pin dimming (red cross, dimmed fill, 0.55 opacity)**, **neutral pin unmodified**, **combined pin rendering (curved path, edge stroke-width, "+" badge, severity fill)**, **curve not rescaled on zoom**, highlight cloning + background-layer ordering, pin rescale + rAF throttle + viewBox-fraction floor, fit-rect geometry |
-| `components/ActionOverviewDiagram.test.tsx` | 40 | SVG injection, dim rect, pins + palette, no-outline, anchor positions, double-click → onActionSelect, auto-fit, legend, pin count, visibility toggle, empty states, zoom +/−/Fit, inspect asset-focus + sticking regression, popover open/close/Escape/card-body-activate/placement, highlights ordering + refresh, pin rescale + rAF throttle |
-| `components/ActionCardPopover.test.tsx` | 8 | Shared ActionCard rendering, extraDataAttributes forwarding, custom testId, close ✕, stopPropagation, card-body activation, no-op stubs |
-| `utils/popoverPlacement.test.ts` | 16 | Vertical + horizontal placement rules, top/bottom/left anchoring, viewport clamping, end-to-end corner cases |
-| `components/VisualizationPanel.test.tsx` | 4 | Deselect chip render, click calls onActionSelect(null), Enter/Space keyboard, no chip when no action selected |
-| `components/ActionFeed.test.tsx` | 3 | scrollIntoView called on selection, not called when null, re-scrolls on change |
+| Test file | Covers |
+|---|---|
+| `utils/svgUtils.test.ts` (barrel) + `utils/svg/actionPinData.test.ts` + `utils/svg/actionPinRender.test.ts` | Pin resolution, severity, label, palette, idempotence, click semantics, mousedown stopPropagation, no-outline, dark label text, **combined pair exclusion from unitary pins**, **load shedding / curtailment VL anchoring**, **overlapping pin fan-out**, **combined pin building (Bezier midpoint, severity, label, p1/p2, skip on missing constituent)**, **selected pin highlighting (gold star, highlighted fill, gold stroke)**, **rejected pin dimming (red cross, dimmed fill, 0.55 opacity)**, **neutral pin unmodified**, **combined pin rendering (curved path, edge stroke-width, "+" badge, severity fill)**, **curve not rescaled on zoom**, **`actionPassesOverviewFilter` category/threshold/null-max-rho edge cases**, **`buildUnsimulatedActionPins` resolution, dedup, tooltip variants (generic / score-enriched / MW-start / PST-tap-range / missing-id fallback)**, **overview filter pass-through on `buildActionOverviewPins` (`overviewFilter` param)**, highlight cloning + background-layer ordering, pin rescale + rAF throttle + viewBox-fraction floor, fit-rect geometry |
+| `components/ActionOverviewDiagram.test.tsx` | SVG injection, dim rect, pins + palette, no-outline, anchor positions, double-click → onActionSelect, auto-fit, legend, pin count, visibility toggle, empty states, zoom +/−/Fit, inspect asset-focus + sticking regression, popover open/close/Escape/card-body-activate/placement (incl. viewport-clamping from PR #105's `d277597`), highlights ordering + refresh, pin rescale + rAF throttle, **filter header render (categories / All-None / threshold / unsimulated / action-type chips)**, **filter state propagation to pins (category hide / threshold cap / action-type chip)**, **protected constituent pins kept visible with `dimmedByFilter`**, **un-simulated pin rendering (dashed stroke, 0.5 opacity, `?` label)**, **un-simulated pin double-click → `onSimulateUnsimulatedAction`**, **un-simulated pin tooltip enrichment from score metadata**, **un-simulated pin re-colour after simulation completes** (commit `086e23e`) |
+| `components/ActionTypeFilterChips.test.tsx` | Chip rendering, active state `aria-pressed`, click → `onChange`, custom token list override, test-id prefix forwarding |
+| `utils/actionTypes.test.ts` | Classifier routing: `disco` / `reco` / `ls` / `rc` / `open` / `close` / `pst` / `unknown`; regression for `"Ouverture … dans le poste"` → `disco` (commit `f356c2e`); regression for description `"du poste 'X'"` → coupling bucket (commit `d479516`); `matchesActionTypeFilter` identity + `all` pass-through |
+| `components/ActionCardPopover.test.tsx` | Shared ActionCard rendering, extraDataAttributes forwarding, custom testId, close ✕, stopPropagation, card-body activation, no-op stubs |
+| `utils/popoverPlacement.test.ts` | Vertical + horizontal placement rules, top/bottom/left anchoring, viewport clamping, end-to-end corner cases |
+| `components/VisualizationPanel.test.tsx` | Deselect chip render, click calls onActionSelect(null), Enter/Space keyboard, no chip when no action selected |
+| `components/ActionFeed.test.tsx` | `scrollIntoView` on selection change; **shared-filter predicate pass-through**: cards hidden when category disabled / threshold exceeded / action-type chip mismatches, in lock-step with the overview |
 
 ---
 
@@ -249,3 +388,5 @@ All text in the `ActionCard` uses a uniform **12px** font size for the title, de
 | Pin rescale during wheel-zoom | `MutationObserver` + `requestAnimationFrame` throttle — at most one `getScreenCTM`-equivalent per frame. The rescaler now reads `viewBox` + `clientWidth` directly (pure math) instead of calling `getScreenCTM()` to avoid forced layouts entirely |
 | Combined curve stroke width | Read once from the SVG edge paths at pin-apply time; no dynamic rescaling during zoom (curves scale naturally with the viewBox like all other SVG content) |
 | ID-map lookups | `getIdMap` uses a `WeakMap` cache keyed on the container element, invalidated only when the SVG content changes |
+| Filter re-compute on every slider tick | The three-pass pin build is memoised with fine-grained dependency keys (`categories`, `threshold`, `actionType`) so unrelated state updates (e.g. a pan gesture) don't rerun the combined-pin + protected-id computation |
+| Un-simulated pin render ordering | The un-simulated layer is drawn AFTER combined + unitary pins in the same `DocumentFragment`, so a single DOM append still covers all three — no per-pin reflow |
