@@ -642,8 +642,8 @@ class TestActionVariantSldDeltaFreshness:
             f"action_flows AFTER the N-1 variant switch."
         )
         assert sld_delta != 0, (
-            f"Delta is 0 on both endpoints — flow snapshots were likely "
-            f"read from the same variant twice."
+            "Delta is 0 on both endpoints — flow snapshots were likely "
+            "read from the same variant twice."
         )
 
     def test_falls_back_to_empty_deltas_when_action_snapshot_fails(self):
