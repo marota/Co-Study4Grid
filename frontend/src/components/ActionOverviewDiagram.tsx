@@ -7,7 +7,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ActionDetail, ActionOverviewFilters, ActionSeverityCategory, ActionTypeFilterToken, DiagramData, MetadataIndex, UnsimulatedActionScoreInfo, ViewBox } from '../types';
-import { matchesActionTypeFilter } from '../utils/actionTypes';
+import { DEFAULT_ACTION_OVERVIEW_FILTERS, matchesActionTypeFilter } from '../utils/actionTypes';
 import ActionTypeFilterChips from './ActionTypeFilterChips';
 import {
     actionPassesOverviewFilter,
@@ -150,13 +150,6 @@ const scaleViewBox = (vb: ViewBox, factor: number): ViewBox => ({
     h: vb.h * factor,
 });
 
-const DEFAULT_FILTERS: ActionOverviewFilters = {
-    categories: { green: true, orange: true, red: true, grey: true },
-    threshold: 1.5,
-    showUnsimulated: false,
-    actionType: 'all',
-};
-
 const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     n1Diagram,
     n1MetaIndex,
@@ -183,16 +176,16 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
     unsimulatedActionInfo,
     onSimulateUnsimulatedAction,
 }) => {
-    // Normalize against DEFAULT_FILTERS so legacy call sites that
+    // Normalize against DEFAULT_ACTION_OVERVIEW_FILTERS so legacy call sites that
     // predate a given field (e.g. `actionType`) don't crash the
     // matcher with `undefined`. Later shipped-filters win over the
     // defaults for the fields they set.
     const activeFilters = useMemo<ActionOverviewFilters>(() => {
-        if (!filters) return DEFAULT_FILTERS;
+        if (!filters) return DEFAULT_ACTION_OVERVIEW_FILTERS;
         return {
-            ...DEFAULT_FILTERS,
+            ...DEFAULT_ACTION_OVERVIEW_FILTERS,
             ...filters,
-            actionType: filters.actionType ?? DEFAULT_FILTERS.actionType,
+            actionType: filters.actionType ?? DEFAULT_ACTION_OVERVIEW_FILTERS.actionType,
         };
     }, [filters]);
     const containerRef = useRef<HTMLDivElement | null>(null);

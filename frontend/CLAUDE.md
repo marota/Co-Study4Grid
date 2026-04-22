@@ -28,7 +28,7 @@ frontend/
 ├── public/
 └── src/
     ├── main.tsx              # React entry (StrictMode)
-    ├── App.tsx               # State orchestration hub (~1000 lines)
+    ├── App.tsx               # State orchestration hub (~1150 lines)
     ├── App.*.test.tsx        # App-level integration tests by domain
     ├── App.css / index.css   # Global + app styles
     ├── api.ts                # Axios HTTP client (single object literal)
@@ -36,22 +36,33 @@ frontend/
     ├── types.ts              # All TypeScript interfaces (one file)
     ├── test/setup.ts         # Vitest global setup (jest-dom matchers)
     ├── hooks/                # Custom hooks owning a slice of state
-    │   ├── useSettings.ts        # All settings + setters → SettingsState
-    │   ├── useActions.ts         # Action selection / favorite / reject
-    │   ├── useAnalysis.ts        # Two-step analysis flow (step1/step2)
-    │   ├── useDiagrams.ts        # NAD fetching + tab management
-    │   ├── usePanZoom.ts         # ViewBox state, zoom-to-element
-    │   ├── useSldOverlay.ts      # Single-Line-Diagram overlay
-    │   ├── useSession.ts         # Session save / restore
-    │   ├── useDetachedTabs.ts    # Detached visualization windows
-    │   └── useTiedTabsSync.ts    # Mirror viewBox between detached + main
+    │   ├── useSettings.ts          # All settings + setters → SettingsState
+    │   ├── useActions.ts           # Action selection / favorite / reject
+    │   ├── useAnalysis.ts          # Two-step analysis flow (step1/step2)
+    │   ├── useDiagrams.ts          # NAD fetching + tab management
+    │   ├── usePanZoom.ts           # ViewBox state, zoom-to-element
+    │   ├── useSldOverlay.ts        # Single-Line-Diagram overlay
+    │   ├── useSession.ts           # Session save / restore
+    │   ├── useDetachedTabs.ts      # Detached visualization windows
+    │   ├── useTiedTabsSync.ts      # Mirror viewBox between detached + main
+    │   ├── useN1Fetch.ts           # N-1 diagram fetch (svgPatch fast-path
+    │   │                           # + full /api/n1-diagram fallback)
+    │   └── useDiagramHighlights.ts # Per-tab SVG highlight pipeline
+    │                               # (overload halos, contingency highlight,
+    │                               # action targets, delta visuals) + the
+    │                               # per-tab Flow/Impacts view-mode state
     ├── components/           # Presentational components (no API calls)
     │   ├── Header.tsx, ActionFeed.tsx, OverloadPanel.tsx,
     │   ├── VisualizationPanel.tsx, ActionCard.tsx, ActionCardPopover.tsx,
     │   ├── ActionOverviewDiagram.tsx, ActionSearchDropdown.tsx,
     │   ├── CombinedActionsModal.tsx, ComputedPairsTable.tsx,
     │   ├── DetachableTabHost.tsx, ErrorBoundary.tsx, ExplorePairsTab.tsx,
-    │   ├── MemoizedSvgContainer.tsx, SldOverlay.tsx
+    │   ├── MemoizedSvgContainer.tsx, SldOverlay.tsx,
+    │   ├── AppSidebar.tsx          # Sidebar layout shell (summary +
+    │   │                           # contingency selector + children)
+    │   ├── SidebarSummary.tsx      # Sticky top strip — contingency
+    │   │                           # zoom shortcut + N-1 overload jumps
+    │   ├── StatusToasts.tsx        # Fixed-position error/info banners
     │   └── modals/
     │       ├── SettingsModal.tsx          # 3-tab settings dialog
     │       ├── ReloadSessionModal.tsx     # Session reload list
@@ -70,12 +81,13 @@ frontend/
 
 `App.tsx` is the **state orchestration hub** — it instantiates the
 custom hooks (`useSettings`, `useActions`, `useAnalysis`,
-`useDiagrams`, `useSession`, `useDetachedTabs`, `useTiedTabsSync`),
-wires them together, and routes state into presentational components.
-It MUST NOT contain large inline JSX blocks — when adding UI sections,
-create a new component under `components/` or `components/modals/`
-and pass props down. Hooks own state by domain (e.g. `useActions`
-owns `selectedActionIds` / `manuallyAddedIds` / `rejectedActionIds`)
+`useDiagrams`, `useSession`, `useDetachedTabs`, `useTiedTabsSync`,
+`useN1Fetch`, `useDiagramHighlights`), wires them together, and
+routes state into presentational components. It MUST NOT contain
+large inline JSX blocks — when adding UI sections, create a new
+component under `components/` or `components/modals/` and pass
+props down. Hooks own state by domain (e.g. `useActions` owns
+`selectedActionIds` / `manuallyAddedIds` / `rejectedActionIds`)
 and expose typed setters + handlers. Cross-hook logic
 (`handleApplySettings`, `resetAllState`, `wrappedRunAnalysis`) lives
 in `App.tsx` because it needs multiple hook instances at once.
@@ -320,6 +332,72 @@ with a fallback to the legacy file when the auto-gen is not built.
    touches an interaction gesture, a settings field, an API
    endpoint, or a session-JSON field — those are the four
    contract surfaces each layer guards.
+
+## App.tsx refactor history
+
+Running record of the App.tsx size-reduction effort. `App.tsx` was
+1575 lines after PR #108 (svg-dom-recycling); the list below tracks
+what has been extracted and what remains deferred.
+
+### Landed (2026-04-22)
+
+| Extraction | Target | Lines out of App.tsx |
+|---|---|---|
+| Sticky contingency/N-1 summary strip | `components/SidebarSummary.tsx` | ~90 |
+| Sidebar layout shell (summary + contingency selector + children slot) | `components/AppSidebar.tsx` | ~160 |
+| Error / info floating toasts | `components/StatusToasts.tsx` | ~25 |
+| N-1 diagram fetch effect (svgPatch fast-path + `/api/n1-diagram` fallback + contingency-change confirm routing) | `hooks/useN1Fetch.ts` | ~120 |
+| `applyHighlightsForTab` + driving effect + per-tab `detachedViewModes` state + `viewModeForTab` / `handleViewModeChangeForTab` | `hooks/useDiagramHighlights.ts` | ~155 |
+
+Net: **1575 → ~1150 lines**. App.tsx remains the state orchestration
+hub (wires hooks together, routes cross-hook handlers) — the
+extractions removed only pure presentational JSX and two
+self-contained effect pipelines.
+
+### Deferred
+
+These were scoped and rejected for the same PR. Land them as
+follow-ups when the boundary stabilises — each is a bigger
+architectural bet than Option 1+2 was.
+
+- **Option 3 — orchestrator hooks for settings & session.** Absorb
+  `confirmDialog`, `applySettingsImmediate`, `handleLoadConfig`,
+  `handleApplySettingsClick`, `handleLoadStudyClick`,
+  `requestNetworkPathChange`, `handleConfirmDialog` into a
+  `useSettingsOrchestration` hook (~220 lines); move `saveParams`,
+  `wrappedSaveResults`, `restoreContext`, `wrappedRestoreSession` into
+  a `useSaveLoadSession` hook (~80 lines); move
+  `clearContingencyState` / `resetForAnalysisRun` / `resetAllState`
+  into a `useStateReset` hook (~95 lines). **Saves** another ~400
+  lines. **Tradeoff:** each new hook has 8–12 cross-hook dependencies
+  (`settings`, `diagrams`, `analysis`, `actionsHook`, `session`), so
+  orchestration logic moves but doesn't disappear — watch for the
+  parameter-threading cost crossing the readability break-even.
+- **Option 4 — AppContext provider.** Convert `App.tsx` into a thin
+  `<AppProvider>{…sidebar + panel…}</AppProvider>` shell; children
+  consume context directly instead of receiving 20+ props. **Saves**
+  the prop-drilling in `<VisualizationPanel>` / `<ActionFeed>` /
+  `<Header>`. **Tradeoff:** re-render surface area grows (any
+  provider-state change re-renders every consumer unless selectors
+  are added); explicitly flagged as "context only when prop-drilling
+  becomes unbearable" in the Code-style section. Not recommended as
+  the next step.
+- **`handleSimulateUnsimulatedAction` NDJSON parser (~90 lines).**
+  The inlined stream-consumer duplicates the parse loop from
+  `useAnalysis`. Candidate for extraction into a shared
+  `utils/ndjsonStream.ts` helper once a third caller exists.
+
+### One-off ESLint exception
+
+`useDiagramHighlights.ts` has one `eslint-disable-next-line
+react-hooks/set-state-in-effect` on the reattach-prune effect.
+The pre-extraction code in `App.tsx` was not flagged by the same
+rule (position-sensitive analyser heuristic), but the behavior —
+"re-detach after reattach restarts from the main-window mode rather
+than resuming the previous detached mode" — must be preserved
+byte-for-byte. The guarded `setDetachedViewModes` call sits behind
+a `hasStale` short-circuit, so we accept the suppression rather
+than change observable UX to placate the rule.
 
 No manual mirror in any separate HTML file. The React source is
 the single source of truth.

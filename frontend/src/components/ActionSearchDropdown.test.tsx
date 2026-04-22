@@ -18,8 +18,8 @@ describe('ActionSearchDropdown', () => {
         searchInputRef: createRef<HTMLInputElement>(),
         searchQuery: '',
         onSearchQueryChange: vi.fn(),
-        typeFilters: { disco: true, reco: true, open: true, close: true, pst: true, ls: true, rc: true },
-        onTypeFilterChange: vi.fn(),
+        actionTypeFilter: 'all' as const,
+        onActionTypeFilterChange: vi.fn(),
         error: null as string | null,
         loadingActions: false,
         scoredActionsList: [] as { type: string; actionId: string; score: number; mwStart: number | null }[],
@@ -44,22 +44,30 @@ describe('ActionSearchDropdown', () => {
         expect(screen.getByPlaceholderText('Search action by ID or description...')).toBeInTheDocument();
     });
 
-    it('renders all type filter checkboxes', () => {
+    it('renders all action type filter chips', () => {
         render(<ActionSearchDropdown {...defaultProps} />);
-        expect(screen.getByText('Disconnections')).toBeInTheDocument();
-        expect(screen.getByText('Reconnections')).toBeInTheDocument();
-        expect(screen.getByText('Load Shedding')).toBeInTheDocument();
-        expect(screen.getByText('Renewable Curtailment')).toBeInTheDocument();
-        expect(screen.getByText('PST')).toBeInTheDocument();
-        expect(screen.getByText('Open coupling')).toBeInTheDocument();
-        expect(screen.getByText('Close coupling')).toBeInTheDocument();
+        expect(screen.getByTestId('search-dropdown-filter-all')).toBeInTheDocument();
+        expect(screen.getByTestId('search-dropdown-filter-disco')).toBeInTheDocument();
+        expect(screen.getByTestId('search-dropdown-filter-reco')).toBeInTheDocument();
+        expect(screen.getByTestId('search-dropdown-filter-ls')).toBeInTheDocument();
+        expect(screen.getByTestId('search-dropdown-filter-rc')).toBeInTheDocument();
+        expect(screen.getByTestId('search-dropdown-filter-pst')).toBeInTheDocument();
+        expect(screen.getByTestId('search-dropdown-filter-open')).toBeInTheDocument();
+        expect(screen.getByTestId('search-dropdown-filter-close')).toBeInTheDocument();
     });
 
-    it('calls onTypeFilterChange when a filter checkbox is toggled', () => {
-        const onTypeFilterChange = vi.fn();
-        render(<ActionSearchDropdown {...defaultProps} onTypeFilterChange={onTypeFilterChange} />);
-        fireEvent.click(screen.getByText('PST'));
-        expect(onTypeFilterChange).toHaveBeenCalledWith('pst');
+    it('calls onActionTypeFilterChange when a filter chip is clicked', () => {
+        const onActionTypeFilterChange = vi.fn();
+        render(<ActionSearchDropdown {...defaultProps} onActionTypeFilterChange={onActionTypeFilterChange} />);
+        fireEvent.click(screen.getByTestId('search-dropdown-filter-pst'));
+        expect(onActionTypeFilterChange).toHaveBeenCalledWith('pst');
+    });
+
+    it('marks the active chip with aria-pressed="true"', () => {
+        render(<ActionSearchDropdown {...defaultProps} actionTypeFilter="disco" />);
+        expect(screen.getByTestId('search-dropdown-filter-disco').getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByTestId('search-dropdown-filter-all').getAttribute('aria-pressed')).toBe('false');
+        expect(screen.getByTestId('search-dropdown-filter-pst').getAttribute('aria-pressed')).toBe('false');
     });
 
     it('calls onSearchQueryChange when input changes', () => {
@@ -209,6 +217,7 @@ describe('ActionSearchDropdown', () => {
         // prioritized action card) must be reflected in the score table row
         // input, so the two UIs stay synchronized.
         it('mirrors cardEditMw value in the score-table input', () => {
+            const onCardEditMwChange = vi.fn();
             const scoredActionsList = [
                 { type: 'load_shedding', actionId: 'load_shedding_L1', score: 1.0, mwStart: 6.4 },
             ];
@@ -235,6 +244,7 @@ describe('ActionSearchDropdown', () => {
                     actionScores={actionScores}
                     actions={actions}
                     cardEditMw={{ load_shedding_L1: '4.2' }}
+                    onCardEditMwChange={onCardEditMwChange}
                 />,
             );
             const input = screen.getByTestId('target-mw-load_shedding_L1') as HTMLInputElement;

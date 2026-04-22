@@ -65,7 +65,7 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
     onSimulateSingle,
     displayName = (id: string) => id,
 }) => {
-    const [exploreFilter, setExploreFilter] = useState<ActionTypeFilterToken>('all');
+    const [actionTypeFilter, setActionTypeFilter] = useState<ActionTypeFilterToken>('all');
 
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -95,18 +95,19 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
 
             {/* Filter Buttons — reuses the shared chip row so
                 styling stays in sync with the action-overview filter. */}
-            <ActionTypeFilterChips
-                testIdPrefix="explore-pairs-filter"
-                value={exploreFilter}
-                onChange={setExploreFilter}
-                style={{ marginBottom: '12px' }}
-            />
+            <div style={{ marginBottom: '12px' }}>
+                <ActionTypeFilterChips
+                    testIdPrefix="explore-pairs-filter"
+                    value={actionTypeFilter}
+                    onChange={setActionTypeFilter}
+                />
+            </div>
 
             {/* Grouped Table */}
             <div style={{ flex: 1, maxHeight: '350px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '4px', marginBottom: '15px' }}>
                 {(() => {
                     const filteredList = scoredActionsList.filter(item =>
-                        matchesActionTypeFilter(exploreFilter, item.actionId, null, item.type),
+                        matchesActionTypeFilter(actionTypeFilter, item.actionId, null, item.type),
                     );
 
                     const types = Array.from(new Set(filteredList.map(item => item.type)));

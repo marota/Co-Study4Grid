@@ -10,6 +10,7 @@ import {
     classifyActionType,
     matchesActionTypeFilter,
     ACTION_TYPE_FILTER_TOKENS,
+    DEFAULT_ACTION_OVERVIEW_FILTERS,
 } from './actionTypes';
 
 describe('classifyActionType', () => {
@@ -150,5 +151,22 @@ describe('matchesActionTypeFilter', () => {
 describe('ACTION_TYPE_FILTER_TOKENS', () => {
     it('lists all eight chip tokens in display order', () => {
         expect(ACTION_TYPE_FILTER_TOKENS).toEqual(['all', 'disco', 'reco', 'ls', 'rc', 'open', 'close', 'pst']);
+    });
+});
+
+describe('DEFAULT_ACTION_OVERVIEW_FILTERS', () => {
+    it('defaults actionType to "all"', () => {
+        expect(DEFAULT_ACTION_OVERVIEW_FILTERS.actionType).toBe('all');
+    });
+
+    it('enables every severity category by default', () => {
+        expect(DEFAULT_ACTION_OVERVIEW_FILTERS.categories).toEqual({
+            green: true, orange: true, red: true, grey: true,
+        });
+    });
+
+    it('sets threshold to 1.5 and hides un-simulated pins by default', () => {
+        expect(DEFAULT_ACTION_OVERVIEW_FILTERS.threshold).toBe(1.5);
+        expect(DEFAULT_ACTION_OVERVIEW_FILTERS.showUnsimulated).toBe(false);
     });
 });

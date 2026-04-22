@@ -6,7 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig, DiagramData, ActionOverviewFilters } from '../types';
+import type { ActionDetail, ActionTypeFilterToken, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig, DiagramData, ActionOverviewFilters } from '../types';
 import { actionPassesOverviewFilter } from '../utils/svgUtils';
 import { classifyActionType, matchesActionTypeFilter } from '../utils/actionTypes';
 import { api } from '../api';
@@ -77,6 +77,8 @@ interface ActionFeedProps {
      * sees the same set of actions on the overview and in the feed.
      */
     overviewFilters?: ActionOverviewFilters;
+    /** Update the shared filter state (owned by App.tsx). */
+    onOverviewFiltersChange?: (next: ActionOverviewFilters) => void;
 }
 
 const ActionFeed: React.FC<ActionFeedProps> = ({
@@ -114,6 +116,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     onActionDiagramPrimed,
     voltageLevelsLength,
     overviewFilters,
+    onOverviewFiltersChange,
 }) => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -122,7 +125,6 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     const [loadingActions, setLoadingActions] = useState(false);
     const [simulating, setSimulating] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [typeFilters, setTypeFilters] = useState({ disco: true, reco: true, open: true, close: true, pst: true, ls: true, rc: true });
     const searchInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [tooltip, setTooltip] = useState<{ content: React.ReactNode; x: number; y: number } | null>(null);
@@ -235,76 +237,40 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         setTimeout(() => searchInputRef.current?.focus(), 50);
     };
 
-    // Filter actions for dropdown. Delegates bucket classification
-    // to the shared `classifyActionType` so the manual-selection
-    // search row and the overview chip row share a single source of
-    // truth (including the line-vs-coupling distinction).
+    // Local filter for the manual-selection dropdown and scored table.
+    // Independent from overviewFilters.actionType which drives the
+    // overview diagram and the action cards list.
+    const [dropdownTypeFilter, setDropdownTypeFilter] = useState<ActionTypeFilterToken>('all');
+
     const filteredActions = useMemo(() => {
         const q = searchQuery.toLowerCase();
         const alreadyShown = new Set(Object.keys(actions));
         return availableActions
             .filter(a => !alreadyShown.has(a.id))
             .filter(a => {
-                const bucket = classifyActionType(a.id, a.description || null, a.type || null);
-                if (bucket === 'unknown') {
-                    // Unknown buckets fall back to "show only when
-                    // every filter is on" — same behaviour as before.
-                    return typeFilters.disco && typeFilters.reco
-                        && typeFilters.open && typeFilters.close
-                        && typeFilters.pst;
-                }
-                return typeFilters[bucket];
+                if (dropdownTypeFilter === 'all') return true;
+                return matchesActionTypeFilter(dropdownTypeFilter, a.id, a.description || null, a.type || null);
             })
             .filter(a => a.id.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q))
             .slice(0, 20);
-    }, [searchQuery, availableActions, actions, typeFilters]);
+    }, [searchQuery, availableActions, actions, dropdownTypeFilter]);
 
     // Format scored actions
     const scoredActionsList = useMemo(() => {
         if (!actionScores) return [];
         const list: { type: string; actionId: string; score: number; mwStart: number | null }[] = [];
         for (const [type, data] of Object.entries(actionScores)) {
-            // Apply filtering logic consistent with the search dropdown
-            const isDiscoType = type === 'line_disconnection';
-            const isRecoType = type === 'line_reconnection';
-            const isOpenType = type === 'open_coupling';
-            const isCloseType = type === 'close_coupling';
-            const isPstType = type === 'pst_tap_change' || type.includes('pst');
-
-            if (isDiscoType && !typeFilters.disco) continue;
-            if (isRecoType && !typeFilters.reco) continue;
-            if (isOpenType && !typeFilters.open) continue;
-            if (isCloseType && !typeFilters.close) continue;
-            if (isPstType && !typeFilters.pst) continue;
-            if ((type === 'load_shedding' || type.includes('load_shedding')) && !typeFilters.ls) continue;
-            if ((type === 'renewable_curtailment' || type.includes('renewable_curtailment')) && !typeFilters.rc) continue;
-
-            // If it's a known type but its filter is off, it's already skipped.
-            // If it's an unknown type, we show it only if ALL filters are active.
-            const isKnownType = isDiscoType || isRecoType || isOpenType || isCloseType || isPstType || type === 'load_shedding' || type.includes('load_shedding') || type === 'renewable_curtailment' || type.includes('renewable_curtailment');
-            if (!isKnownType && !(typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst && typeFilters.ls && typeFilters.rc)) {
-                continue;
-            }
-
             const scores = data?.scores || {};
             for (const [actionId, score] of Object.entries(scores)) {
-                const actionDetail = actions[actionId];
-                // Same shared classifier as the search dropdown so
-                // the two views agree on bucket membership (e.g. a
-                // line-opening DJ_OC whose description has
-                // "dans le poste" is DISCO, not OPEN).
-                const bucket = classifyActionType(
-                    actionId,
-                    actionDetail?.description_unitaire || null,
-                    type,
-                );
-                const shouldShow = bucket === 'unknown'
-                    ? (typeFilters.disco && typeFilters.reco
-                        && typeFilters.open && typeFilters.close
-                        && typeFilters.pst && typeFilters.ls && typeFilters.rc)
-                    : typeFilters[bucket];
-                if (!shouldShow) continue;
-
+                if (dropdownTypeFilter !== 'all') {
+                    const actionDetail = actions[actionId];
+                    const bucket = classifyActionType(
+                        actionId,
+                        actionDetail?.description_unitaire || null,
+                        type,
+                    );
+                    if (bucket === 'unknown' || bucket !== dropdownTypeFilter) continue;
+                }
                 const mwStartMap = (data as { mw_start?: Record<string, number | null> })?.mw_start;
                 const mwStart = mwStartMap?.[actionId] ?? null;
                 list.push({ type, actionId, score: Number(score), mwStart: mwStart != null ? Number(mwStart) : null });
@@ -318,7 +284,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             }
             return b.score - a.score;
         });
-    }, [actionScores, typeFilters, actions]);
+    }, [actionScores, dropdownTypeFilter, actions]);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -770,8 +736,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         searchInputRef={searchInputRef}
                         searchQuery={searchQuery}
                         onSearchQueryChange={setSearchQuery}
-                        typeFilters={typeFilters}
-                        onTypeFilterChange={(key) => setTypeFilters(prev => ({ ...prev, [key]: !prev[key] }))}
+                        actionTypeFilter={dropdownTypeFilter}
+                        onActionTypeFilterChange={setDropdownTypeFilter}
                         error={error}
                         loadingActions={loadingActions}
                         scoredActionsList={scoredActionsList}

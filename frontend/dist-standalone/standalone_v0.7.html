@@ -12707,10 +12707,14 @@ const isCouplingAction = (actionId, description) => {
 const getActionTargetLines = (actionDetail, actionId, edgesByEquipmentId) => {
   const targets = /* @__PURE__ */ new Set();
   const topo = actionDetail?.action_topology;
+  const parts = actionId ? actionId.split("+") : [];
+  const isCombined = parts.length > 1;
   if (topo) {
-    const isCoupling2 = isCouplingAction(actionId, actionDetail?.description_unitaire);
     Object.keys(topo.pst_tap || {}).forEach((l) => targets.add(l));
-    if (!isCoupling2) {
+  }
+  if (topo && !isCombined) {
+    const isCoupling = isCouplingAction(actionId, actionDetail?.description_unitaire);
+    if (!isCoupling) {
       const lineKeys = /* @__PURE__ */ new Set([
         ...Object.keys(topo.lines_ex_bus || {}),
         ...Object.keys(topo.lines_or_bus || {})
@@ -12734,32 +12738,30 @@ const getActionTargetLines = (actionDetail, actionId, edgesByEquipmentId) => {
       }
     }
   }
-  const isCoupling = isCouplingAction(actionId, actionDetail?.description_unitaire);
-  if (actionId && !isCoupling) {
-    actionId.split("+").forEach((part) => {
-      const cleanPart = part.replace(/_(inc|dec)\d+$/, "");
-      if (edgesByEquipmentId.has(cleanPart)) {
-        targets.add(cleanPart);
+  parts.forEach((part) => {
+    if (isCouplingAction(part)) return;
+    const cleanPart = part.replace(/_(inc|dec)\d+$/, "");
+    if (edgesByEquipmentId.has(cleanPart)) {
+      targets.add(cleanPart);
+      return;
+    }
+    if (edgesByEquipmentId.has(part)) {
+      targets.add(part);
+      return;
+    }
+    const subParts = cleanPart.split("_");
+    for (let i = 1; i < subParts.length; i++) {
+      const candidate = subParts.slice(i).join("_");
+      if (edgesByEquipmentId.has(candidate)) {
+        targets.add(candidate);
         return;
       }
-      if (edgesByEquipmentId.has(part)) {
-        targets.add(part);
-        return;
-      }
-      const subParts = cleanPart.split("_");
-      for (let i = 1; i < subParts.length; i++) {
-        const candidate = subParts.slice(i).join("_");
-        if (edgesByEquipmentId.has(candidate)) {
-          targets.add(candidate);
-          return;
-        }
-      }
-      const last = subParts[subParts.length - 1];
-      if (edgesByEquipmentId.has(last)) {
-        targets.add(last);
-      }
-    });
-  }
+    }
+    const last = subParts[subParts.length - 1];
+    if (edgesByEquipmentId.has(last)) {
+      targets.add(last);
+    }
+  });
   return [...targets];
 };
 const getActionTargetVoltageLevels = (actionDetail, actionId, nodesByEquipmentId) => {
@@ -15217,14 +15219,19 @@ const ActionOverviewDiagram = ({
     };
   }, [filters]);
   const containerRef = reactExports.useRef(null);
-  const svgString = n1Diagram?.svg ?? null;
-  const svgReady = svgString != null;
+  const svgSource = n1Diagram?.svg ?? null;
+  const svgReady = svgSource != null;
   const preparedSvg = reactExports.useMemo(() => {
-    if (!svgString) return null;
+    if (!svgSource) return null;
     const start = performance.now();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svgString, "image/svg+xml");
-    const svg = doc.documentElement;
+    let svg;
+    if (typeof svgSource === "string") {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgSource, "image/svg+xml");
+      svg = doc.documentElement;
+    } else {
+      svg = svgSource.cloneNode(true);
+    }
     if (!svg || svg.nodeName !== "svg") return null;
     svg.setAttribute("width", "100%");
     svg.setAttribute("height", "100%");
@@ -15254,7 +15261,7 @@ const ActionOverviewDiagram = ({
     svg.classList.add("nad-overview-dimmed");
     console.log(`[SVG] Action overview pre-parse took ${(performance.now() - start).toFixed(2)}ms`);
     return svg;
-  }, [svgString]);
+  }, [svgSource]);
   const passesAll = reactExports.useCallback((id, det) => {
     if (!actionPassesOverviewFilter(
       det,
@@ -15337,13 +15344,13 @@ const ActionOverviewDiagram = ({
   }, [n1MetaIndex, contingency, overloadedLines, pins, combinedPins, unsimulatedPins]);
   const initialViewBox = reactExports.useMemo(() => {
     if (fitRect) return fitRect;
-    if (!svgString) return null;
-    const match = svgString.match(/viewBox=["']([^"']+)["']/);
-    if (!match) return null;
-    const parts = match[1].split(/\s+|,/).map(parseFloat);
+    if (!svgSource) return null;
+    const vbAttr = typeof svgSource === "string" ? svgSource.match(/viewBox=["']([^"']+)["']/)?.[1] ?? null : svgSource.getAttribute("viewBox");
+    if (!vbAttr) return null;
+    const parts = vbAttr.split(/\s+|,/).map(parseFloat);
     if (parts.length !== 4 || parts.some((p) => !Number.isFinite(p))) return null;
     return { x: parts[0], y: parts[1], w: parts[2], h: parts[3] };
-  }, [fitRect, svgString]);
+  }, [fitRect, svgSource]);
   reactExports.useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -19682,6 +19689,11 @@ const api = {
     );
     return response.data;
   },
+  // NOTE: the FastAPI backend always serialises the SVG as a raw
+  // XML string, so these axios methods narrow `DiagramData.svg` to
+  // `string` at the boundary. The wider `string | SVGSVGElement`
+  // union on `DiagramData` only surfaces once the N-1 / Action tab
+  // is repopulated by the svgPatch DOM-recycling path.
   getNetworkDiagram: async () => {
     const res = await fetch(`${API_BASE_URL}/api/network-diagram?format=text`);
     if (!res.ok) {
@@ -19709,6 +19721,32 @@ const api = {
   getActionVariantDiagram: async (actionId) => {
     const response = await axios.post(
       `${API_BASE_URL}/api/action-variant-diagram`,
+      { action_id: actionId }
+    );
+    return response.data;
+  },
+  /**
+   * SVG-less patch payload for the N-1 state. Use to patch a clone of
+   * the N-state SVG DOM instead of fetching a fresh ~20 MB NAD. Fall
+   * back to `getN1Diagram` on any error or when the base N SVG is not
+   * yet loaded. See docs/performance/history/svg-dom-recycling.md.
+   */
+  getN1DiagramPatch: async (disconnectedElement) => {
+    const response = await axios.post(
+      `${API_BASE_URL}/api/n1-diagram-patch`,
+      { disconnected_element: disconnectedElement }
+    );
+    return response.data;
+  },
+  /**
+   * SVG-less patch payload for a post-action state. Returns
+   * `{patchable: false, reason}` for topology-changing actions (switch
+   * toggles, line reconnections, VL-internal topology changes); the
+   * caller must then fall back to `getActionVariantDiagram`.
+   */
+  getActionVariantDiagramPatch: async (actionId) => {
+    const response = await axios.post(
+      `${API_BASE_URL}/api/action-variant-diagram-patch`,
       { action_id: actionId }
     );
     return response.data;
@@ -22642,6 +22680,143 @@ const ConfirmationDialog = ({
     }
   ) });
 };
+const cloneBaseSvg = (baseSvg) => {
+  return baseSvg.cloneNode(true);
+};
+const resetPriorPatch = (container) => {
+  container.querySelectorAll("[data-patched-flow]").forEach((el) => {
+    const original = el.getAttribute("data-patched-flow");
+    if (original !== null) {
+      el.textContent = original;
+    }
+    el.removeAttribute("data-patched-flow");
+  });
+  container.querySelectorAll(".nad-disconnected").forEach((el) => {
+    el.classList.remove("nad-disconnected");
+  });
+};
+const formatFlowValue = (value) => {
+  if (!Number.isFinite(value)) return "0";
+  return Math.round(value).toString();
+};
+const patchEdgeInfoText = (infoEl, label) => {
+  infoEl.querySelectorAll("foreignObject, text").forEach((t) => {
+    if (!t.hasAttribute("data-patched-flow")) {
+      t.setAttribute("data-patched-flow", t.textContent ?? "");
+    }
+    t.textContent = label;
+  });
+};
+const parseSvgFragment = (fragment) => {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(
+      `<svg xmlns="http://www.w3.org/2000/svg">${fragment}</svg>`,
+      "image/svg+xml"
+    );
+    const first = doc.documentElement.firstElementChild;
+    return first ?? null;
+  } catch {
+    return null;
+  }
+};
+const spliceAndRewriteId = (clonedSvg, oldEl, fragment, targetSvgId, idMap) => {
+  const newEl = parseSvgFragment(fragment);
+  if (!newEl) return null;
+  try {
+    const imported = clonedSvg.ownerDocument.importNode(newEl, true);
+    imported.setAttribute("id", targetSvgId);
+    oldEl.replaceWith(imported);
+    idMap.set(targetSvgId, imported);
+    return imported;
+  } catch (e) {
+    console.warn("[svgPatch] splice failed for", targetSvgId, e);
+    return null;
+  }
+};
+const spliceVlSubtrees = (clonedSvg, baseMetaIndex, vlSubtrees, idMap) => {
+  for (const [vlId, entry] of Object.entries(vlSubtrees)) {
+    const nodeMeta = baseMetaIndex.nodesByEquipmentId.get(vlId);
+    const targetSvgId = nodeMeta?.svgId ?? `nad-vl-${vlId}`;
+    const oldNodeEl = idMap.get(targetSvgId);
+    if (!oldNodeEl) {
+      console.warn("[svgPatch] VL subtree splice — no live node for", vlId, targetSvgId);
+      continue;
+    }
+    const spliced = spliceAndRewriteId(
+      clonedSvg,
+      oldNodeEl,
+      entry.node_svg,
+      targetSvgId,
+      idMap
+    );
+    if (!spliced) {
+      console.warn("[svgPatch] VL subtree splice — fragment parse failed for", vlId);
+      continue;
+    }
+    const edgeFragments = entry.edge_fragments;
+    if (!edgeFragments) continue;
+    for (const [edgeEqId, edgeEntry] of Object.entries(edgeFragments)) {
+      const edgeMeta = baseMetaIndex.edgesByEquipmentId.get(edgeEqId);
+      if (!edgeMeta || !edgeMeta.svgId) continue;
+      const oldEdgeEl = idMap.get(edgeMeta.svgId);
+      if (!oldEdgeEl) continue;
+      spliceAndRewriteId(
+        clonedSvg,
+        oldEdgeEl,
+        edgeEntry.svg,
+        edgeMeta.svgId,
+        idMap
+      );
+    }
+  }
+};
+const buildSvgIdMap = (svg) => {
+  const map = /* @__PURE__ */ new Map();
+  svg.querySelectorAll("[id]").forEach((el) => map.set(el.id, el));
+  return map;
+};
+const applyPatchToClone = (clonedSvg, baseMetaIndex, patch) => {
+  if (!patch.patchable) {
+    return { svgElement: clonedSvg, metaIndex: baseMetaIndex };
+  }
+  resetPriorPatch(clonedSvg);
+  const { edgesByEquipmentId } = baseMetaIndex;
+  const idMap = buildSvgIdMap(clonedSvg);
+  if (patch.vl_subtrees && Object.keys(patch.vl_subtrees).length > 0) {
+    spliceVlSubtrees(clonedSvg, baseMetaIndex, patch.vl_subtrees, idMap);
+  }
+  const disconnected = patch.disconnected_edges ?? [];
+  for (const equipmentId of disconnected) {
+    const edge = edgesByEquipmentId.get(equipmentId);
+    if (!edge || !edge.svgId) continue;
+    const el = idMap.get(edge.svgId);
+    if (el) el.classList.add("nad-disconnected");
+  }
+  const absFlows = patch.absolute_flows;
+  if (absFlows && absFlows.p1) {
+    const p1 = absFlows.p1;
+    const p2 = absFlows.p2 ?? {};
+    for (const edgeId in p1) {
+      const edge = edgesByEquipmentId.get(edgeId);
+      if (!edge) continue;
+      const info1Id = edge.edgeInfo1?.svgId;
+      if (info1Id) {
+        const infoEl = idMap.get(info1Id);
+        if (infoEl) patchEdgeInfoText(infoEl, formatFlowValue(p1[edgeId]));
+      }
+      const info2Id = edge.edgeInfo2?.svgId;
+      const p2Val = p2[edgeId];
+      if (info2Id && p2Val !== void 0) {
+        const infoEl = idMap.get(info2Id);
+        if (infoEl) patchEdgeInfoText(infoEl, formatFlowValue(p2Val));
+      }
+    }
+  }
+  const parent = clonedSvg.parentElement;
+  if (parent) invalidateIdMapCache(parent);
+  return { svgElement: clonedSvg, metaIndex: baseMetaIndex };
+};
 function computeN1OverloadHighlights(analysisOverloads, n1DiagramOverloads, selectedOverloads) {
   const source = analysisOverloads && analysisOverloads.length > 0 ? analysisOverloads : n1DiagramOverloads || [];
   if (selectedOverloads.size === 0) return [...source];
@@ -23500,6 +23675,7 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
   reactExports.useEffect(() => {
     actionDiagramCacheRef.current.clear();
   }, [selectedBranch]);
+  const latestActionSelectRef = reactExports.useRef(null);
   const primeActionDiagram = reactExports.useCallback((actionId, raw, voltageLevelsLength) => {
     try {
       const { svg, viewBox } = processSvg(raw.svg, voltageLevelsLength);
@@ -23555,20 +23731,69 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
       interactionLogger.record("action_selected", { action_id: actionId });
     }
     setSelectedActionId(actionId);
-    setActionDiagram(null);
-    if (actionId === null) return;
+    if (actionId === null) {
+      setActionDiagram(null);
+      return;
+    }
+    latestActionSelectRef.current = actionId;
     setActionDiagramLoading(true);
     if (!isActionDetached) {
       setActiveTab("action");
     }
     const cached = actionDiagramCacheRef.current.get(actionId);
     if (cached) {
+      console.log("[svgPatch] action cache HIT — no network call", actionId);
       setActionDiagram(cached);
       setActionDiagramLoading(false);
       return;
     }
+    const baseSvgEl = n1SvgContainerRef.current?.querySelector("svg") ?? nSvgContainerRef.current?.querySelector("svg");
+    const baseMeta = n1MetaIndex ?? nMetaIndex;
+    const baseMetadataRaw = n1Diagram?.metadata ?? nDiagram?.metadata ?? null;
+    const baseViewBoxRaw = n1Diagram?.originalViewBox ?? nDiagram?.originalViewBox ?? null;
+    const baseViewBox = baseViewBoxRaw ? { ...baseViewBoxRaw } : null;
+    if (baseSvgEl && baseMeta && !restoringSessionRef.current) {
+      console.log("[svgPatch] action patch PATH — calling /api/action-variant-diagram-patch", actionId);
+      try {
+        const patch = await api.getActionVariantDiagramPatch(actionId);
+        if (patch.patchable) {
+          if (latestActionSelectRef.current !== actionId) {
+            console.log("[svgPatch] action patch response dropped (stale)", actionId);
+            return;
+          }
+          console.log("[svgPatch] action patch applied (patchable=true)", actionId);
+          const cloned = cloneBaseSvg(baseSvgEl);
+          applyPatchToClone(cloned, baseMeta, patch);
+          setActionDiagram({
+            svg: cloned,
+            metadata: baseMetadataRaw,
+            originalViewBox: baseViewBox,
+            action_id: actionId,
+            lines_overloaded: patch.lines_overloaded,
+            lines_overloaded_rho: patch.lines_overloaded_rho,
+            flow_deltas: patch.flow_deltas,
+            reactive_flow_deltas: patch.reactive_flow_deltas,
+            asset_deltas: patch.asset_deltas,
+            lf_converged: patch.lf_converged,
+            lf_status: patch.lf_status
+          });
+          setActionDiagramLoading(false);
+          return;
+        } else {
+          console.log("[svgPatch] action patch REJECTED — falling back to full NAD", actionId, "reason:", patch.reason);
+        }
+      } catch (e) {
+        console.warn("[svgPatch] action patch threw — falling back", actionId, e);
+      }
+    } else {
+      console.log("[svgPatch] action patch SKIPPED — no base SVG/meta in DOM yet. baseSvgEl:", !!baseSvgEl, "baseMeta:", !!baseMeta, "restoring:", restoringSessionRef.current);
+    }
     try {
       const res = await api.getActionVariantDiagram(actionId);
+      if (latestActionSelectRef.current !== actionId) {
+        console.log("[svgPatch] full-NAD response dropped (stale)", actionId);
+        return;
+      }
       const { svg, viewBox } = processSvg(res.svg, voltageLevelsLength);
       setActionDiagram({ ...res, svg, originalViewBox: viewBox });
     } catch {
@@ -23660,7 +23885,7 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
     } finally {
       setActionDiagramLoading(false);
     }
-  }, [selectedActionId, actionPZ.viewBox, n1PZ.viewBox, nPZ.viewBox]);
+  }, [selectedActionId, actionPZ.viewBox, n1PZ.viewBox, nPZ.viewBox, nDiagram, n1Diagram, nMetaIndex, n1MetaIndex]);
   const setInspectQueryForTab = reactExports.useCallback((targetTab, query) => {
     inspectFocusTabRef.current = targetTab;
     setInspectQuery(query);
@@ -25500,6 +25725,39 @@ function App() {
       if (!isRestoring) {
         diagrams.setActiveTab("n-1");
       }
+      const baseSvgEl = diagrams.nSvgContainerRef.current?.querySelector("svg");
+      const baseMeta = diagrams.nMetaIndex;
+      const canPatch = !!baseSvgEl && !!baseMeta && !isRestoring;
+      if (canPatch) {
+        console.log("[svgPatch] N-1 patch PATH — calling /api/n1-diagram-patch", selectedBranch);
+        try {
+          const patch = await api.getN1DiagramPatch(selectedBranch);
+          if (patch.patchable) {
+            console.log("[svgPatch] N-1 patch applied (patchable=true)", selectedBranch);
+            const cloned = cloneBaseSvg(baseSvgEl);
+            applyPatchToClone(cloned, baseMeta, patch);
+            diagrams.setN1Diagram({
+              svg: cloned,
+              metadata: nDiagram?.metadata ?? null,
+              originalViewBox: nDiagram?.originalViewBox ? { ...nDiagram.originalViewBox } : null,
+              lines_overloaded: patch.lines_overloaded,
+              lines_overloaded_rho: patch.lines_overloaded_rho,
+              flow_deltas: patch.flow_deltas,
+              reactive_flow_deltas: patch.reactive_flow_deltas,
+              asset_deltas: patch.asset_deltas,
+              lf_converged: patch.lf_converged,
+              lf_status: patch.lf_status
+            });
+            diagrams.lastZoomState.current = { query: "", branch: "" };
+            diagrams.setN1Loading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn("[svgPatch] N-1 patch threw — falling back to full fetch", e);
+        }
+      } else {
+        console.log("[svgPatch] N-1 patch SKIPPED — no base N SVG/meta yet. baseSvgEl:", !!baseSvgEl, "baseMeta:", !!baseMeta, "restoring:", isRestoring);
+      }
       try {
         const res = await api.getN1Diagram(selectedBranch);
         const { svg, viewBox } = processSvg(res.svg, voltageLevels.length);
@@ -25513,7 +25771,7 @@ function App() {
       }
     };
     fetchN1();
-  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState, analysisLoading, n1Diagram, n1Loading, setError, diagrams]);
+  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState, analysisLoading, n1Diagram, n1Loading, setError, diagrams, nDiagram]);
   reactExports.useEffect(() => {
     const nextSet = n1Diagram?.lines_overloaded ? new Set(n1Diagram.lines_overloaded) : /* @__PURE__ */ new Set();
     const currentSet = analysis.selectedOverloads;
@@ -26292,6 +26550,30 @@ circle.nad-highlight {
 .nad-overloaded text,
 .nad-overloaded foreignObject {
     display: none !important;
+}
+
+/*
+ * Disconnected branch marker used by the svgPatch DOM-recycling path
+ * (see docs/performance/history/svg-dom-recycling.md). Applied to
+ * edges whose equipment ID is listed in the patch payload's
+ * `disconnected_edges` — the contingency line on the N-1 tab, plus
+ * any action-induced extras. Mirrors pypowsybl's native
+ * disconnected-branch look so a patched N-1 reads the same as a
+ * full-fetch N-1. `vector-effect: non-scaling-stroke` keeps the
+ * dash length stable at zoom-out on large grids (same rationale as
+ * the guard in docs/performance/rendering-optimization-plan.md).
+ */
+.nad-disconnected,
+.nad-disconnected > g,
+.nad-disconnected path,
+.nad-disconnected line,
+.nad-disconnected polyline,
+.nad-disconnected > g path,
+.nad-disconnected > g line,
+.nad-disconnected > g polyline {
+    stroke-dasharray: 20 10 !important;
+    stroke-opacity: 1 !important;
+    vector-effect: non-scaling-stroke !important;
 }
 
 /* Remedial action targets: purple-pink */

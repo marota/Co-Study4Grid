@@ -31,6 +31,9 @@ vi.mock('../utils/svgUtils', () => ({
     applyActionTargetHighlights: vi.fn(),
     applyContingencyHighlight: vi.fn(),
     isCouplingAction: vi.fn(() => false),
+    // Always passing the severity/threshold gate isolates the
+    // action-type filter tests from the category/threshold filter.
+    actionPassesOverviewFilter: vi.fn(() => true),
 }));
 
 import ActionFeed from './ActionFeed';
@@ -390,115 +393,91 @@ describe('ActionFeed', () => {
         expect(goodIndex).toBeLessThan(badIndex);
     });
 
-    it('filters PST actions based on the PST checkbox', async () => {
+    it('shows only PST actions in dropdown after clicking the PST chip', async () => {
         const pstAction = { id: 'pst_tap_up', description: 'PST action', type: 'pst_tap_change' };
         const regularAction = { id: 'line_reco_1', description: 'Regular action', type: 'line_reconnection' };
 
-        // Mock API to return both actions
         vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstAction, regularAction]);
 
         render(<ActionFeed {...defaultProps} />);
-
-        // Open search
         fireEvent.click(screen.getByText('+ Manual Selection'));
+        const pstChip = await screen.findByTestId('search-dropdown-filter-pst');
+        fireEvent.click(pstChip);
 
-        // Both should be visible initially (PST filter is true by default)
+        // PST action visible, reco action hidden
         expect(await screen.findByText('pst_tap_up')).toBeInTheDocument();
-        expect(screen.getByText('line_reco_1')).toBeInTheDocument();
-
-        // Find and click the PST checkbox to uncheck it
-        const pstCheckbox = screen.getByLabelText('PST');
-        fireEvent.click(pstCheckbox);
-
-        // PST action should be hidden, regular action should remain
-        expect(screen.queryByText('pst_tap_up')).not.toBeInTheDocument();
-        expect(screen.getByText('line_reco_1')).toBeInTheDocument();
-
-        // Check it again
-        fireEvent.click(pstCheckbox);
-        expect(await screen.findByText('pst_tap_up')).toBeInTheDocument();
+        expect(screen.queryByText('line_reco_1')).not.toBeInTheDocument();
     });
 
-    it('hides PST actions matching search query when PST filter is unchecked', async () => {
+    it('shows all actions in dropdown when ALL chip is active (default)', async () => {
+        const pstAction = { id: 'pst_tap_up', description: 'PST action', type: 'pst_tap_change' };
+        const regularAction = { id: 'line_reco_1', description: 'Regular action', type: 'line_reconnection' };
+
+        vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstAction, regularAction]);
+
+        render(<ActionFeed {...defaultProps} />);
+        fireEvent.click(screen.getByText('+ Manual Selection'));
+
+        expect(await screen.findByText('pst_tap_up')).toBeInTheDocument();
+        expect(screen.getByText('line_reco_1')).toBeInTheDocument();
+    });
+
+    it('hides PST actions in search results after setting filter to RECO', async () => {
         const pstAction = { id: 'pst_tap_up', description: 'PST action' };
 
         vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstAction]);
 
         render(<ActionFeed {...defaultProps} />);
-
-        // Open search
         fireEvent.click(screen.getByText('+ Manual Selection'));
 
-        // Uncheck PST filter
-        const pstCheckbox = screen.getByLabelText('PST');
-        fireEvent.click(pstCheckbox);
+        // Set filter to RECO
+        const recoChip = await screen.findByTestId('search-dropdown-filter-reco');
+        fireEvent.click(recoChip);
 
         // Type "pst" in search
         const searchInput = screen.getByPlaceholderText(/Search action/);
         fireEvent.change(searchInput, { target: { value: 'pst' } });
 
-        // Wait for loading to finish if it hasn't already
         await waitFor(() => {
             expect(screen.queryByText('Loading actions...')).not.toBeInTheDocument();
         });
 
-        // PST action should NOT be visible even if it matches search query
+        // PST action NOT visible because filter is 'reco'
         expect(screen.queryByText('pst_tap_up')).not.toBeInTheDocument();
-        expect(screen.getByText('No other matching actions')).toBeInTheDocument();
-        
-        // Manual simulation option should be visible
+        // Manual simulation option still visible
         expect(screen.getByText(/Simulate manual ID:/)).toBeInTheDocument();
-        expect(screen.getByText('pst')).toBeInTheDocument();
     });
 
-    it('shows ONLY PST actions when only PST filter is checked', async () => {
+    it('shows only PST actions in dropdown after clicking PST chip (excludes disco and unknown)', async () => {
         const pstAction = { id: 'pst_1', description: 'PST action' };
-        const discoAction = { id: 'abc', description: 'Ouverture de ligne' }; // Should be recognized as disco
+        const discoAction = { id: 'abc', description: 'Ouverture de ligne' };
         const unknownAction = { id: 'xyz', description: 'Some unknown action' };
 
         vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstAction, discoAction, unknownAction]);
 
         render(<ActionFeed {...defaultProps} />);
-
-        // Open search
         fireEvent.click(screen.getByText('+ Manual Selection'));
+        const pstChip = await screen.findByTestId('search-dropdown-filter-pst');
+        fireEvent.click(pstChip);
 
-        // Uncheck everything except PST
-        fireEvent.click(screen.getByLabelText('Disconnections'));
-        fireEvent.click(screen.getByLabelText('Reconnections'));
-        fireEvent.click(screen.getByLabelText('Open coupling'));
-        fireEvent.click(screen.getByLabelText('Close coupling'));
-
-        // PST should be visible
         expect(await screen.findByText('pst_1')).toBeInTheDocument();
-
-        // Disco and Unknown should NOT be visible
         expect(screen.queryByText('abc')).not.toBeInTheDocument();
         expect(screen.queryByText('xyz')).not.toBeInTheDocument();
     });
-    
-    it('shows Load shedding actions when Load shedding filter is checked', async () => {
+
+    it('shows only LS actions in dropdown after clicking LS chip', async () => {
         const lsAction = { id: 'load_shedding_LOAD1', description: 'Load shedding LOAD1' };
         const regularAction = { id: 'line_reco_1', description: 'Reconnexion' };
 
         vi.mocked(api.getAvailableActions).mockResolvedValueOnce([lsAction, regularAction]);
 
         render(<ActionFeed {...defaultProps} />);
-
-        // Open search
         fireEvent.click(screen.getByText('+ Manual Selection'));
+        const lsChip = await screen.findByTestId('search-dropdown-filter-ls');
+        fireEvent.click(lsChip);
 
-        // Both visible initially
         expect(await screen.findByText('load_shedding_LOAD1')).toBeInTheDocument();
-        expect(screen.getByText('line_reco_1')).toBeInTheDocument();
-
-        // Uncheck Load shedding filter
-        const lsCheckbox = screen.getByLabelText('Load Shedding');
-        fireEvent.click(lsCheckbox);
-
-        // Load shedding should be hidden
-        expect(screen.queryByText('load_shedding_LOAD1')).not.toBeInTheDocument();
-        expect(screen.getByText('line_reco_1')).toBeInTheDocument();
+        expect(screen.queryByText('line_reco_1')).not.toBeInTheDocument();
     });
 
     it('triggers manual simulation when "Simulate manual ID" is clicked', async () => {
@@ -531,29 +510,22 @@ describe('ActionFeed', () => {
         );
     });
 
-    it('hides disconnections on PST branches when Disconnections filter is off but PST is on', async () => {
+    it('hides actions that classify as disco even when their score type is pst, when filter is "pst"', async () => {
+        // classifyActionType puts this action in 'disco' because the description
+        // starts with "Ouverture" — it should NOT appear under the PST chip filter.
         const pstDiscoAction = {
             id: 'disco_pst_branch',
             description: 'Ouverture de la branche PST',
-            type: 'pst_tap_change' // Simulating backend tagging it as PST
+            type: 'pst_tap_change',
         };
 
         vi.mocked(api.getAvailableActions).mockResolvedValueOnce([pstDiscoAction]);
 
         render(<ActionFeed {...defaultProps} />);
-
-        // Open search
         fireEvent.click(screen.getByText('+ Manual Selection'));
+        const pstChip = await screen.findByTestId('search-dropdown-filter-pst');
+        fireEvent.click(pstChip);
 
-        // Ensure Disconnections is unchecked, PST is checked
-        const discoCheckbox = screen.getByLabelText('Disconnections') as HTMLInputElement;
-        if (discoCheckbox.checked) fireEvent.click(discoCheckbox);
-
-        const pstCheckbox = screen.getByLabelText('PST') as HTMLInputElement;
-        if (!pstCheckbox.checked) fireEvent.click(pstCheckbox);
-
-        // PST branch disco should NOT be visible because it's a disconnection
-        // even if it has "pst" in id/type
         await waitFor(() => {
             expect(screen.queryByText('Loading actions...')).not.toBeInTheDocument();
         });
@@ -2657,6 +2629,117 @@ describe('ActionFeed', () => {
                 expect(api.simulateManualAction).toHaveBeenCalledTimes(1);
             });
             expect(api.simulateAndVariantDiagramStream).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('action-type filter — overview cards (overviewFilters.actionType)', () => {
+        const makeFilter = (actionType: 'all' | 'disco' | 'reco' | 'ls' | 'rc' | 'open' | 'close' | 'pst') => ({
+            categories: { green: true, orange: true, red: true, grey: true },
+            threshold: 1.5,
+            showUnsimulated: false,
+            actionType,
+        });
+
+        const actionsMix: Record<string, ActionDetail> = {
+            disco_LINE_A: {
+                description_unitaire: 'Ouverture de la ligne LINE_A',
+                rho_before: [1.1],
+                rho_after: [0.9],
+                max_rho: 0.9,
+                max_rho_line: 'LINE_A',
+                is_rho_reduction: true,
+                action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} },
+            },
+            reco_LINE_B: {
+                description_unitaire: 'Fermeture de la ligne LINE_B',
+                rho_before: [1.2],
+                rho_after: [0.95],
+                max_rho: 0.95,
+                max_rho_line: 'LINE_B',
+                is_rho_reduction: true,
+                action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} },
+            },
+        };
+
+        it('hides cards of the other bucket in the Selected list when overviewFilters.actionType is "disco"', () => {
+            render(<ActionFeed
+                {...defaultProps}
+                actions={actionsMix}
+                selectedActionIds={new Set(['disco_LINE_A', 'reco_LINE_B'])}
+                overviewFilters={makeFilter('disco')}
+            />);
+            expect(screen.getByTestId('action-card-disco_LINE_A')).toBeInTheDocument();
+            expect(screen.queryByTestId('action-card-reco_LINE_B')).not.toBeInTheDocument();
+        });
+
+        it('shows every card when overviewFilters.actionType is "all"', () => {
+            render(<ActionFeed
+                {...defaultProps}
+                actions={actionsMix}
+                selectedActionIds={new Set(['disco_LINE_A', 'reco_LINE_B'])}
+                overviewFilters={makeFilter('all')}
+            />);
+            expect(screen.getByTestId('action-card-disco_LINE_A')).toBeInTheDocument();
+            expect(screen.getByTestId('action-card-reco_LINE_B')).toBeInTheDocument();
+        });
+
+        it('shows every card when overviewFilters is undefined', () => {
+            render(<ActionFeed
+                {...defaultProps}
+                actions={actionsMix}
+                selectedActionIds={new Set(['disco_LINE_A', 'reco_LINE_B'])}
+            />);
+            expect(screen.getByTestId('action-card-disco_LINE_A')).toBeInTheDocument();
+            expect(screen.getByTestId('action-card-reco_LINE_B')).toBeInTheDocument();
+        });
+    });
+
+    describe('action-type filter — dropdown chips (local state, independent of overview)', () => {
+        it('dropdown chip click does NOT call onOverviewFiltersChange', async () => {
+            const onOverviewFiltersChange = vi.fn();
+            vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
+            render(<ActionFeed
+                {...defaultProps}
+                overviewFilters={{ categories: { green: true, orange: true, red: true, grey: true }, threshold: 1.5, showUnsimulated: false, actionType: 'all' }}
+                onOverviewFiltersChange={onOverviewFiltersChange}
+            />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            const discoChip = await screen.findByTestId('search-dropdown-filter-disco');
+            fireEvent.click(discoChip);
+            // Local state update — does NOT bubble up to the overview filter
+            expect(onOverviewFiltersChange).not.toHaveBeenCalled();
+        });
+
+        it('marks the active chip with aria-pressed="true" after clicking LS in the search dropdown', async () => {
+            vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
+            render(<ActionFeed {...defaultProps} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            const lsChip = await screen.findByTestId('search-dropdown-filter-ls');
+            fireEvent.click(lsChip);
+            expect(lsChip.getAttribute('aria-pressed')).toBe('true');
+            expect(screen.getByTestId('search-dropdown-filter-all').getAttribute('aria-pressed')).toBe('false');
+        });
+
+        it('filters the Scored Actions table after clicking DISCO chip', async () => {
+            const actionScores = {
+                line_disconnection: { scores: { disco_LINE_A: 10 } },
+                line_reconnection: { scores: { reco_LINE_B: 20 } },
+            };
+            vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
+            render(<ActionFeed {...defaultProps} actionScores={actionScores} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            const discoChip = await screen.findByTestId('search-dropdown-filter-disco');
+            fireEvent.click(discoChip);
+            expect(await screen.findByText('disco_LINE_A')).toBeInTheDocument();
+            expect(screen.queryByText('reco_LINE_B')).not.toBeInTheDocument();
+        });
+
+        it('clicking a dropdown chip does not throw', async () => {
+            vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
+            render(<ActionFeed {...defaultProps} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            const discoChip = await screen.findByTestId('search-dropdown-filter-disco');
+            expect(() => fireEvent.click(discoChip)).not.toThrow();
         });
     });
 });

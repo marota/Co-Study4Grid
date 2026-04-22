@@ -6,7 +6,8 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import React, { type RefObject } from 'react';
-import type { ActionDetail, AvailableAction } from '../types';
+import type { ActionDetail, ActionTypeFilterToken, AvailableAction } from '../types';
+import ActionTypeFilterChips from './ActionTypeFilterChips';
 
 export interface ScoredActionItem {
     type: string;
@@ -15,23 +16,13 @@ export interface ScoredActionItem {
     mwStart: number | null;
 }
 
-export type TypeFilters = {
-    disco: boolean;
-    reco: boolean;
-    open: boolean;
-    close: boolean;
-    pst: boolean;
-    ls: boolean;
-    rc: boolean;
-};
-
 interface ActionSearchDropdownProps {
     dropdownRef: RefObject<HTMLDivElement | null>;
     searchInputRef: RefObject<HTMLInputElement | null>;
     searchQuery: string;
     onSearchQueryChange: (query: string) => void;
-    typeFilters: TypeFilters;
-    onTypeFilterChange: (key: keyof TypeFilters) => void;
+    actionTypeFilter: ActionTypeFilterToken;
+    onActionTypeFilterChange: (token: ActionTypeFilterToken) => void;
     error: string | null;
     loadingActions: boolean;
     scoredActionsList: ScoredActionItem[];
@@ -56,8 +47,8 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
     searchInputRef,
     searchQuery,
     onSearchQueryChange,
-    typeFilters,
-    onTypeFilterChange,
+    actionTypeFilter,
+    onActionTypeFilterChange,
     error,
     loadingActions,
     scoredActionsList,
@@ -110,19 +101,12 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                     }}
                 />
             </div>
-            {/* Action type filter checkboxes */}
-            <div style={{ padding: '4px 8px', display: 'flex', flexWrap: 'wrap', gap: '6px', borderTop: '1px solid #eee', fontSize: '11px' }}>
-                {([['disco', 'Disconnections'], ['reco', 'Reconnections'], ['ls', 'Load Shedding'], ['rc', 'Renewable Curtailment'], ['pst', 'PST'], ['open', 'Open coupling'], ['close', 'Close coupling']] as const).map(([key, label]) => (
-                    <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', color: '#555' }}>
-                        <input
-                            type="checkbox"
-                            checked={typeFilters[key]}
-                            onChange={() => onTypeFilterChange(key)}
-                            style={{ margin: 0, cursor: 'pointer' }}
-                        />
-                        {label}
-                    </label>
-                ))}
+            <div style={{ padding: '4px 8px', borderTop: '1px solid #eee' }}>
+                <ActionTypeFilterChips
+                    testIdPrefix="search-dropdown-filter"
+                    value={actionTypeFilter}
+                    onChange={onActionTypeFilterChange}
+                />
             </div>
             {error && (
                 <div style={{

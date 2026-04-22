@@ -17,12 +17,31 @@
  * all three stay in lock-step when a new bucket is added.
  */
 
-import type { ActionTypeFilterToken } from '../types';
+import type { ActionOverviewFilters, ActionTypeFilterToken } from '../types';
 
 /** Canonical chip tokens rendered in the filter row (in display order). */
 export const ACTION_TYPE_FILTER_TOKENS: readonly ActionTypeFilterToken[] = [
     'all', 'disco', 'reco', 'ls', 'rc', 'open', 'close', 'pst',
 ];
+
+/**
+ * Default value for the shared `ActionOverviewFilters` object.
+ *
+ * This is the single source of truth for the filter initial state
+ * (App.tsx), the in-component fallback used when legacy call sites
+ * do not pass the filters prop (ActionOverviewDiagram), and the
+ * merge base used when ActionFeed patches only the `actionType`
+ * field through `onOverviewFiltersChange`.
+ *
+ * Keeping one literal means adding a new field to the filter object
+ * requires a single update here.
+ */
+export const DEFAULT_ACTION_OVERVIEW_FILTERS: ActionOverviewFilters = {
+    categories: { green: true, orange: true, red: true, grey: true },
+    threshold: 1.5,
+    showUnsimulated: false,
+    actionType: 'all',
+};
 
 export type { ActionTypeFilterToken };
 

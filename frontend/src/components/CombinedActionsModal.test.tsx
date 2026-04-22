@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
+import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -89,11 +90,11 @@ describe('CombinedActionsModal', () => {
                 'load_shedding': { scores: { 'ls1': 5 } }
             }
         };
-        render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithTypes as AnalysisResult} />);
 
+        render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithTypes as AnalysisResult} />);
         fireEvent.click(getExploreTab());
 
-        // Filter for disconnections
+        // Filter for disconnections — chip click updates local state inside ExplorePairsTab
         fireEvent.click(screen.getByRole('button', { name: 'DISCO' }));
         expect(screen.getByText('disco1')).toBeInTheDocument();
         expect(screen.queryByText('reco1')).not.toBeInTheDocument();
@@ -102,6 +103,35 @@ describe('CombinedActionsModal', () => {
         fireEvent.click(screen.getByRole('button', { name: 'LS' }));
         expect(screen.getByText('ls1')).toBeInTheDocument();
         expect(screen.queryByText('disco1')).not.toBeInTheDocument();
+    });
+
+    it('shows all actions in explore tab by default (no filter active)', () => {
+        const resultWithTypes: AnalysisResult = {
+            ...mockAnalysisResult,
+            actions: {
+                ...mockAnalysisResult.actions,
+                'disco1': { description_unitaire: 'Disco 1', max_rho: 0.8, rho_before: [0.8], rho_after: [0.7], max_rho_line: 'L1', is_rho_reduction: true, action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} } },
+                'reco1': { description_unitaire: 'Reco 1', max_rho: 0.9, rho_before: [0.9], rho_after: [0.8], max_rho_line: 'L2', is_rho_reduction: true, action_topology: { lines_ex_bus: {}, lines_or_bus: {}, gens_bus: {}, loads_bus: {} } },
+            },
+            action_scores: {
+                'disco': { scores: { 'disco1': 10 } },
+                'reco': { scores: { 'reco1': 20 } },
+            },
+        };
+        render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithTypes} />);
+        fireEvent.click(getExploreTab());
+        expect(screen.getByText('disco1')).toBeInTheDocument();
+        expect(screen.getByText('reco1')).toBeInTheDocument();
+    });
+
+    it('chip row is present in explore tab and clicking changes the filter', () => {
+        render(<CombinedActionsModal {...defaultProps} />);
+        fireEvent.click(getExploreTab());
+        const discoChip = screen.getByTestId('explore-pairs-filter-disco');
+        expect(discoChip).toBeInTheDocument();
+        // Clicking should not throw and should update internal state
+        expect(() => fireEvent.click(discoChip)).not.toThrow();
+        expect(discoChip.getAttribute('aria-pressed')).toBe('true');
     });
 
     it('groups actions by type in explore tab table including LS', async () => {
