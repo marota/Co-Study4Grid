@@ -208,6 +208,21 @@ class SimulationMixin:
 
         action = self._build_combined_action_object(action_ids, env, recent_actions)
 
+        # Re-pin the working variant to N-1 immediately before the
+        # simulate call.  `_fetch_n_and_n1_observations` may have
+        # returned cached observations WITHOUT adjusting the variant
+        # (see that function's cache-hit branches at lines 314-330),
+        # so the working variant can be left on N — or wherever a
+        # previous caller left it.  `obs.simulate(action,
+        # keep_variant=True)` applies the action on top of the CURRENT
+        # working variant in-place, so if we don't pin to N-1 here the
+        # simulation can run against the N state instead of N-1.  That
+        # surfaces on the frontend as Simulated Line landing on the
+        # contingency line itself with non-zero rho (physically
+        # impossible in N-1 where the contingency is disconnected).
+        n1_variant_id = self._get_n1_variant(disconnected_element)
+        n.set_working_variant(n1_variant_id)
+
         actual_fast_mode = getattr(config, "PYPOWSYBL_FAST_MODE", False)
         obs_simu_action, _, _, info_action = obs_simu_defaut.simulate(
             action,

@@ -84,10 +84,17 @@ class TestCacheSynchronization:
         # Contingency A
         mock_get_n.return_value = "n_var"
         # Each `simulate_manual_action` call now triggers `_get_n1_variant`
-        # twice — once via the `_ensure_n1_state_ready` guard at entry
-        # (see docs/performance/history/grid2op-shared-network.md), once inside the
-        # simulation body. Two simulate calls → four side-effect values.
-        mock_get_n1.side_effect = ["n1_A", "n1_A", "n1_B", "n1_B"]
+        # three times:
+        #   1. the `_ensure_n1_state_ready` guard at entry (see
+        #      docs/performance/history/grid2op-shared-network.md),
+        #   2. the N-1 fetch inside `_fetch_n_and_n1_observations`,
+        #   3. the explicit pre-simulate pin added to guarantee the
+        #      working variant is on N-1 before
+        #      `obs.simulate(action, keep_variant=True)` runs (otherwise
+        #      cache-hit paths leave the variant on N and the combined
+        #      simulation applies the action to the wrong base state).
+        # Two simulate calls → six side-effect values.
+        mock_get_n1.side_effect = ["n1_A", "n1_A", "n1_A", "n1_B", "n1_B", "n1_B"]
         
         obs_n = MagicMock(name="obs_n")
         obs_n.rho = [0.5]

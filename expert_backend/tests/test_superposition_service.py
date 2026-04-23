@@ -560,6 +560,83 @@ def test_run_analysis_step2_emits_result_event_after_target_augmentation():
     assert result_event["lines_overloaded"] == ["L0"]
 
 
+def test_simulate_manual_action_pins_n1_variant_before_simulate_even_on_cache_hit():
+    """Regression: `simulate_manual_action` must set the working variant
+    to the N-1 id IMMEDIATELY BEFORE `obs.simulate(action, keep_variant=True)`,
+    regardless of whether the N / N-1 observation caches hit.
+
+    Why: `_fetch_n_and_n1_observations` only calls `set_working_variant`
+    when a cache misses.  When both caches hit (the common case after
+    step1 has run), the working variant is left on whatever the previous
+    caller positioned — often N.  `obs.simulate(action, keep_variant=True)`
+    applies the action ON TOP OF THE CURRENT WORKING VARIANT in-place,
+    so without an explicit pin to N-1 the combined-action simulation
+    can run against the N state instead of N-1, surfacing on the
+    frontend as Simulated Line landing on the contingency line itself
+    with non-zero rho (physically impossible in true N-1).
+    """
+    svc = RecommenderService()
+    svc._dict_action = {"act1": {"content": {}, "description_unitaire": "d1"}}
+    svc._last_result = {"prioritized_actions": {}}
+
+    env = MagicMock()
+    n = env.network_manager.network
+    n.get_working_variant_id.return_value = "orig"
+    env.name_line = ["L1"]
+    obs_n = MagicMock()
+    obs_n.rho = np.array([0.5])
+    obs_n.name_line = ["L1"]
+    obs_n.n_components = 1
+    obs_n1 = MagicMock()
+    obs_n1.rho = np.array([0.8])
+    obs_n1.name_line = ["L1"]
+    obs_n1.n_components = 1
+    obs_after = MagicMock()
+    obs_after.rho = np.array([0.7])
+    obs_after.name_line = ["L1"]
+    obs_after.n_components = 1
+    obs_n1.simulate.return_value = (obs_after, None, None, {"exception": None})
+
+    svc._get_simulation_env = MagicMock(return_value=env)
+    svc._get_base_network = MagicMock(return_value=n)
+    svc._get_n_variant = MagicMock(return_value="n_var")
+    svc._get_n1_variant = MagicMock(return_value="n1_var")
+    svc._get_monitoring_parameters = MagicMock(return_value=(["L1"], ["L1"]))
+
+    # Prime both caches so `_fetch_n_and_n1_observations` takes the
+    # cache-hit branch — it will NOT touch set_working_variant, so we
+    # must verify the explicit pin-to-N-1 kicks in before .simulate().
+    svc._cached_obs_n = obs_n
+    svc._cached_obs_n_id = "n_var"
+    svc._cached_obs_n1 = obs_n1
+    svc._cached_obs_n1_id = "n1_var"
+
+    # Track the order of calls against the shared Network.
+    call_log = []
+    n.set_working_variant.side_effect = lambda vid: call_log.append(("set_working_variant", vid))
+    orig_simulate = obs_n1.simulate
+    def wrapped_simulate(*args, **kwargs):
+        call_log.append(("simulate",))
+        return orig_simulate.return_value
+    obs_n1.simulate = wrapped_simulate
+
+    config.MONITORING_FACTOR_THERMAL_LIMITS = 0.95
+    config.PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD = 0.02
+    config.PYPOWSYBL_FAST_MODE = False
+
+    svc.simulate_manual_action("act1", "DISCO_A")
+
+    # Find the last set_working_variant call before the simulate call.
+    sim_idx = next((i for i, c in enumerate(call_log) if c[0] == "simulate"), None)
+    assert sim_idx is not None, "simulate was never called"
+    pre_simulate_variants = [c[1] for c in call_log[:sim_idx] if c[0] == "set_working_variant"]
+    assert pre_simulate_variants, "no set_working_variant was called before simulate"
+    assert pre_simulate_variants[-1] == "n1_var", (
+        f"expected variant pinned to N-1 ('n1_var') right before simulate, "
+        f"last set was {pre_simulate_variants[-1]!r}. Full pre-simulate order: {pre_simulate_variants}"
+    )
+
+
 def test_augment_combined_actions_with_target_max_rho_is_noop_without_context():
     """No-op when the analysis context is missing obs_simu_defaut or
     lines_overloaded_ids — nothing to scope the target against."""
