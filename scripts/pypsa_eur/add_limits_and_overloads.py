@@ -204,7 +204,7 @@ for lid, row in lines_after.iterrows():
 flow_df = pd.DataFrame(line_flows).set_index("id")
 flow_df = flow_df.sort_values("i_a", ascending=False)
 
-print(f"\n  Top 20 loaded lines:")
+print("\n  Top 20 loaded lines:")
 for i, (lid, row) in enumerate(flow_df.head(20).iterrows()):
     print(
         f"    {i + 1:2d}. {lid[:55]:55s}  I={row['i_a']:.1f} A  S={row['s_mva']:.1f} MVA"
@@ -307,7 +307,7 @@ n.create_operational_limits(limits_df)
 print(f"  Created {len(limit_entries)} operational limit entries")
 
 # Show expected loading for parallel corridors
-print(f"\n  Expected N-state and N-1 loading for corridor lines:")
+print("\n  Expected N-state and N-1 loading for corridor lines:")
 shown = 0
 for key, group_lines in sorted(
     parallel_groups.items(),
