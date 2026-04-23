@@ -466,3 +466,36 @@ def compute_combined_rho(
         + betas[0] * obs_act1.rho
         + betas[1] * obs_act2.rho
     )
+
+
+def compute_target_max_rho(
+    rho_combined: np.ndarray,
+    name_line_list: Any,
+    lines_overloaded_ids: list[int],
+) -> tuple[float, str]:
+    """Pick max rho / line over the user-selected overloaded lines only.
+
+    Rationale: the global ``max_rho`` scan across every monitored line
+    has to stay broad to catch NEW overloads that the action pair may
+    introduce (see ``test_superposition_max_rho_filtering_regression``
+    which pins that behaviour).  But on lines far from either action,
+    linearisation error can put an arbitrary high-loaded line at the
+    top of the scan — a line with no relation to the contingency the
+    user is resolving.  The "target" max reports the effect ON THE
+    LINES THE USER CARES ABOUT — the contingency's actual overloads —
+    so the UI can surface it alongside the global max and give a
+    direct estimated-vs-simulated comparison on the same line set.
+
+    Returns ``(0.0, "N/A")`` when no overload ids are available or all
+    are out of range (caller should treat that as "no target info").
+    """
+    if not lines_overloaded_ids:
+        return 0.0, "N/A"
+    n_lines = len(rho_combined)
+    focus_ids = [int(i) for i in lines_overloaded_ids if 0 <= int(i) < n_lines]
+    if not focus_ids:
+        return 0.0, "N/A"
+    focus_rho = rho_combined[focus_ids]
+    argmax = int(np.argmax(focus_rho))
+    names = list(name_line_list)
+    return float(focus_rho[argmax]), str(names[focus_ids[argmax]])

@@ -61,6 +61,10 @@ from expert_backend.services.analysis.mw_start_scoring import (
 )
 from expert_backend.services.analysis.pdf_watcher import find_latest_pdf
 from expert_backend.services.sanitize import sanitize_for_json
+from expert_backend.services.simulation_helpers import (
+    compute_combined_rho,
+    compute_target_max_rho,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -352,13 +356,13 @@ class AnalysisMixin:
             results = run_analysis_step2_discovery(context)
             self._last_result = results
 
-            enriched_actions = self._enrich_actions(
-                results["prioritized_actions"],
-                lines_overloaded_names=results.get("lines_overloaded_names"),
-            )
-            # Never leak combined-action ids into the main actions feed —
-            # those are estimations that live in `combined_actions`.
-            enriched_actions = {aid: data for aid, data in enriched_actions.items() if "+" not in aid}
+            # Enrich each pre-computed pair with a `target_max_rho` /
+            # `target_max_rho_line` scoped to the user-selected overloads
+            # — the UI can show this alongside the library's global
+            # `max_rho` so the operator sees the pair's effect on the
+            # contingency they're resolving even when linearisation
+            # noise puts the global max on an off-target line.
+            self._augment_combined_actions_with_target_max_rho(results, context)
 
             action_scores = self._compute_mw_start_for_scores(results.get("action_scores", {}))
 
@@ -381,6 +385,59 @@ class AnalysisMixin:
         except Exception as e:
             logger.exception("Backend Error in Analysis Resolution")
             yield {"type": "error", "message": f"Backend Error in Analysis Resolution: {str(e)}"}
+
+    def _augment_combined_actions_with_target_max_rho(self, results: dict, context: dict) -> None:
+        """Add ``target_max_rho`` / ``target_max_rho_line`` to each
+        pre-computed pair in ``results['combined_actions']``.
+
+        The target max is computed over ``context['lines_overloaded_ids']``
+        only — the user-selected overloads that the pair is meant to
+        resolve — using the same formula as the on-demand
+        ``compute_superposition`` path.  Leaves ``max_rho`` /
+        ``max_rho_line`` untouched so the global-scan warning for
+        newly-introduced overloads is preserved (see
+        ``test_superposition_max_rho_filtering_regression``).
+        """
+        combined_actions = results.get("combined_actions") or {}
+        if not combined_actions:
+            return
+        obs_start = context.get("obs_simu_defaut")
+        lines_overloaded_ids = context.get("lines_overloaded_ids") or []
+        prioritized = results.get("prioritized_actions") or {}
+        if obs_start is None or not lines_overloaded_ids:
+            return
+
+        try:
+            name_line_list = list(obs_start.name_line)
+        except Exception as e:
+            logger.debug("target max_rho: cannot read name_line: %s", e)
+            return
+        monitoring_factor = float(getattr(config, "MONITORING_FACTOR_THERMAL_LIMITS", 0.95))
+
+        for pair_id, pair in combined_actions.items():
+            if not isinstance(pair, dict) or "error" in pair:
+                continue
+            betas = pair.get("betas")
+            if not betas or len(betas) != 2:
+                continue
+            try:
+                aid1, aid2 = [p.strip() for p in pair_id.split("+", 1)]
+            except ValueError:
+                continue
+            obs1 = (prioritized.get(aid1) or {}).get("observation")
+            obs2 = (prioritized.get(aid2) or {}).get("observation")
+            if obs1 is None or obs2 is None:
+                continue
+            try:
+                rho_combined = compute_combined_rho(obs_start, obs1, obs2, list(betas))
+            except Exception as e:
+                logger.debug("target max_rho: rho_combined failed for %s: %s", pair_id, e)
+                continue
+            target_max, target_line = compute_target_max_rho(
+                rho_combined, name_line_list, list(lines_overloaded_ids),
+            )
+            pair["target_max_rho"] = target_max * monitoring_factor if target_max else 0.0
+            pair["target_max_rho_line"] = target_line
 
     @staticmethod
     def _narrow_context_to_selected_overloads(

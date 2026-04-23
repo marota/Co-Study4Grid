@@ -32,6 +32,7 @@ from expert_backend.services.simulation_helpers import (
     compute_action_metrics,
     compute_combined_rho,
     compute_reduction_setpoint,
+    compute_target_max_rho,
     extract_action_topology,
     is_pst_action,
     normalise_non_convergence,
@@ -881,6 +882,10 @@ class SimulationMixin:
             max_rho = float(masked_rho[max_idx])
             max_rho_line = masked_names[max_idx]
 
+        target_max_rho, target_max_rho_line = compute_target_max_rho(
+            rho_combined, name_line_list, lines_overloaded_ids,
+        )
+
         logger.info(
             "[compute_superposition] monitored lines: %d/%d, lines_overloaded force-included: %d",
             int(np.sum(care_mask)), num_lines, len(lines_overloaded_ids),
@@ -897,6 +902,13 @@ class SimulationMixin:
         result.update({
             "max_rho": max_rho * monitoring_factor,
             "max_rho_line": max_rho_line,
+            # Max computed over the USER-SELECTED overloaded lines — the
+            # ones the pair is meant to resolve.  Lets the UI show the
+            # effect on the target contingency alongside the global
+            # `max_rho`, which may land on an off-target line due to
+            # linearisation error on lines far from either action.
+            "target_max_rho": target_max_rho * monitoring_factor if target_max_rho else 0.0,
+            "target_max_rho_line": target_max_rho_line,
             "is_rho_reduction": is_rho_reduction,
             "rho_after": (rho_combined[lines_overloaded_ids] * monitoring_factor).tolist(),
             "rho_before": (obs_start.rho[lines_overloaded_ids] * monitoring_factor).tolist(),

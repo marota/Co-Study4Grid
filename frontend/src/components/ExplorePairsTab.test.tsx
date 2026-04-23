@@ -253,6 +253,33 @@ describe('ExplorePairsTab', () => {
         expect(within(card).queryByText('Explore Pairs Comparison')).not.toBeInTheDocument();
     });
 
+    it('surfaces target_max_rho in the comparison card when it differs from the global estimated line', () => {
+        const preview: CombinedAction = {
+            action1_id: 'act1', action2_id: 'act2', betas: [1.5, 0.5],
+            max_rho: 0.82, max_rho_line: 'LOUHAL31PYMON',
+            estimated_max_rho: 0.82, estimated_max_rho_line: 'LOUHAL31PYMON',
+            target_max_rho: 0.20, target_max_rho_line: 'BEON L31CPVAN',
+            is_rho_reduction: false, description: 'Combined',
+            p_or_combined: [], rho_before: [0.8], rho_after: [0.20],
+        };
+        render(<ExplorePairsTab {...defaultProps} selectedIds={new Set(['act1', 'act2'])} preview={preview} />);
+        const target = screen.getByTestId('target-max-rho');
+        expect(target).toHaveTextContent(/20\.0%.*BEON L31CPVAN/);
+    });
+
+    it('hides target_max_rho when it matches the global estimated line (nothing to add)', () => {
+        const preview: CombinedAction = {
+            action1_id: 'act1', action2_id: 'act2', betas: [1.0, 0.9],
+            max_rho: 0.72, max_rho_line: 'L3',
+            estimated_max_rho: 0.72, estimated_max_rho_line: 'L3',
+            target_max_rho: 0.72, target_max_rho_line: 'L3',
+            is_rho_reduction: true, description: 'Combined',
+            p_or_combined: [], rho_before: [0.8], rho_after: [0.72],
+        };
+        render(<ExplorePairsTab {...defaultProps} selectedIds={new Set(['act1', 'act2'])} preview={preview} />);
+        expect(screen.queryByTestId('target-max-rho')).not.toBeInTheDocument();
+    });
+
     it('uses the "Explore Pairs Comparison" title when an estimate is present', () => {
         const preview: CombinedAction = {
             action1_id: 'act1', action2_id: 'act2', betas: [1.0], max_rho: 0.72,

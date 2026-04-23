@@ -137,6 +137,8 @@ const CombinedActionsModal: React.FC<Props> = ({
                     betas: data.betas,
                     estimated_max_rho: estMaxRho,
                     estimated_max_rho_line: estMaxRhoLine,
+                    target_max_rho: data.target_max_rho ?? null,
+                    target_max_rho_line: data.target_max_rho_line,
                     is_suspect: !!data.is_islanded,
                     isSimulated,
                     simulated_max_rho: simMaxRho,

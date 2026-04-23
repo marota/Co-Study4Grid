@@ -24,6 +24,8 @@ export interface ComputedPairEntry {
     betas?: number[];
     estimated_max_rho?: number | null;
     estimated_max_rho_line?: string;
+    target_max_rho?: number | null;
+    target_max_rho_line?: string;
     is_suspect: boolean;
     isSimulated: boolean;
     simulated_max_rho: number | null;
@@ -94,7 +96,14 @@ const ComputedPairsTable: React.FC<ComputedPairsTableProps> = ({
                                         </span>
                                     ) : '—'}
                                 </td>
-                                <td style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>{p.estimated_max_rho_line ? displayName(p.estimated_max_rho_line) : 'N/A'}</td>
+                                <td style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>
+                                    {p.estimated_max_rho_line ? displayName(p.estimated_max_rho_line) : 'N/A'}
+                                    {p.target_max_rho != null && p.target_max_rho_line && p.target_max_rho_line !== 'N/A' && p.target_max_rho_line !== p.estimated_max_rho_line && (
+                                        <div style={{ fontSize: '10px', color: '#888', marginTop: '2px', fontStyle: 'normal' }} title="Max on the lines this pair was selected to resolve">
+                                            target: {(p.target_max_rho * 100).toFixed(1)}% on {displayName(p.target_max_rho_line)}
+                                        </div>
+                                    )}
+                                </td>
 
                                 <td style={{ textAlign: 'center' }}>
                                     {isSimulated && simMaxRho != null ? (

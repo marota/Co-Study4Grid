@@ -333,6 +333,11 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                                         <div style={{ fontSize: '12px', color: '#666' }}>
                                             Line: {displayName(preview.estimated_max_rho_line ?? preview.max_rho_line)}
                                         </div>
+                                        {preview.target_max_rho != null && preview.target_max_rho_line && preview.target_max_rho_line !== 'N/A' && preview.target_max_rho_line !== (preview.estimated_max_rho_line ?? preview.max_rho_line) && (
+                                            <div style={{ fontSize: '11px', color: '#555', marginTop: '6px', padding: '4px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '4px', display: 'inline-block' }} data-testid="target-max-rho">
+                                                Target overload: <strong style={{ color: (preview.target_max_rho ?? 0) <= monitoringFactor ? '#28a745' : '#d35400' }}>{((preview.target_max_rho ?? 0) * 100).toFixed(1)}%</strong> on {displayName(preview.target_max_rho_line)}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                                 <div style={{ flex: 1 }}>

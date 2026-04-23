@@ -345,6 +345,86 @@ def test_compute_superposition_falls_back_to_fresh_fetch_without_context(recomme
         assert env.get_obs.call_count == 2, "expected fresh fetch for both N-1 and N in fallback path"
 
 
+def _install_fake_monitoring(recommender, lines, with_limits=None):
+    """Short-circuit `_get_monitoring_parameters` so the test does not
+    rely on the auto-mocked pypowsybl limits chain (which otherwise
+    returns an empty `branches_with_limits` and filters every line out
+    of the care_mask)."""
+    bwl = list(lines if with_limits is None else with_limits)
+    recommender._get_monitoring_parameters = MagicMock(return_value=(list(lines), bwl))
+
+
+def test_compute_superposition_emits_target_max_rho_on_overload_lines(recommender):
+    """`compute_superposition` must return ``target_max_rho`` /
+    ``target_max_rho_line`` scoped to ``lines_overloaded_ids`` — the
+    user-selected overloads the pair is meant to resolve — so the UI
+    can surface the pair's effect on the contingency alongside the
+    global ``max_rho`` (which may land on an off-target line due to
+    linearisation error).
+
+    Regression for "Estimated Max Loading: 81.9% on LOUHAL31PYMON" vs
+    "Actual Max Loading: 52.0% on BOCTOL71N.SE5" — neither line was an
+    originally-overloaded one; target_* fields let the frontend show
+    the effect on the actual overloads.
+    """
+    aid1, aid2 = "act1", "act2"
+    name_line = ["OVERLOAD_TARGET", "FARLINE"]
+    obs_n1 = _make_obs([0.4, 0.5], [40.0, 50.0])
+    obs_n1.name_line = np.array(name_line)
+    obs1 = _make_obs([0.3, 0.6], [30.0, 60.0])
+    obs1.name_line = np.array(name_line)
+    obs2 = _make_obs([0.3, 0.55], [30.0, 55.0])
+    obs2.name_line = np.array(name_line)
+    actions = {
+        aid1: {"action": MagicMock(), "observation": obs1},
+        aid2: {"action": MagicMock(), "observation": obs2},
+    }
+    _setup_superposition_env(recommender, actions, {}, name_line=name_line)
+    _install_fake_monitoring(recommender, name_line)
+    recommender._analysis_context = {
+        "obs_simu_defaut": obs_n1,
+        "lines_overloaded_ids": [0],
+    }
+
+    with patch('expert_backend.services.simulation_mixin._identify_action_elements', return_value=([0], [])), \
+         patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
+        # rho_combined at betas=[1.5, 0.5]:
+        #   OVERLOAD_TARGET: |(1-2)*0.4 + 1.5*0.3 + 0.5*0.3|  = 0.20
+        #   FARLINE        : |(1-2)*0.5 + 1.5*0.6 + 0.5*0.55| = 0.675
+        mock_sp.return_value = {"betas": [1.5, 0.5], "p_or_combined": [100.0]}
+        result = recommender.compute_superposition(aid1, aid2, "contingency")
+
+    assert result["target_max_rho_line"] == "OVERLOAD_TARGET"
+    # target_max_rho is scaled by monitoring_factor (0.95):
+    # 0.20 * 0.95 = 0.19
+    assert abs(result["target_max_rho"] - 0.20 * 0.95) < 1e-3
+
+
+def test_compute_superposition_target_max_rho_keys_always_present(recommender):
+    """The target_max_rho / target_max_rho_line fields must always be in
+    the payload so the frontend does not have to branch on their
+    existence — the frontend can detect "no target info" via
+    ``target_max_rho_line == "N/A"``."""
+    aid1, aid2 = "act1", "act2"
+    obs1 = _make_obs([0.9], [90.0])
+    obs2 = _make_obs([0.85], [85.0])
+    actions = {
+        aid1: {"action": MagicMock(), "observation": obs1},
+        aid2: {"action": MagicMock(), "observation": obs2},
+    }
+    _setup_superposition_env(recommender, actions, {})
+    _install_fake_monitoring(recommender, ["LINE1"])
+    recommender._analysis_context = None
+
+    with patch('expert_backend.services.simulation_mixin._identify_action_elements', return_value=([0], [])), \
+         patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
+        mock_sp.return_value = {"betas": [0.5, 0.5], "p_or_combined": [100.0]}
+        result = recommender.compute_superposition(aid1, aid2, "contingency")
+
+    assert "target_max_rho" in result
+    assert "target_max_rho_line" in result
+
+
 def test_superposition_lines_overloaded_reads_context_ids_or_names(recommender):
     """`_superposition_lines_overloaded` must prefer the step1-populated
     keys (``lines_overloaded_ids`` and ``lines_overloaded_names``) so the
@@ -385,6 +465,73 @@ def test_superposition_lines_overloaded_reads_context_ids_or_names(recommender):
         monitoring_factor=0.95, worsening_threshold=0.02,
     )
     assert ids == [0]
+
+
+def test_augment_combined_actions_with_target_max_rho_adds_target_fields():
+    """`AnalysisMixin._augment_combined_actions_with_target_max_rho`
+    must add ``target_max_rho`` / ``target_max_rho_line`` to each
+    library-populated pair without touching the existing ``max_rho`` /
+    ``max_rho_line`` — preserves the global-scan new-overload warning
+    while surfacing the pair's effect on the user-selected overloads.
+    """
+    svc = RecommenderService()
+
+    name_line = ["OVERLOAD_TARGET", "FARLINE"]
+    obs_start = _make_obs([0.4, 0.5])
+    obs_start.name_line = np.array(name_line)
+    obs_act1 = _make_obs([0.3, 0.6])
+    obs_act1.name_line = np.array(name_line)
+    obs_act2 = _make_obs([0.3, 0.55])
+    obs_act2.name_line = np.array(name_line)
+
+    pair_id = "act1+act2"
+    results = {
+        "prioritized_actions": {
+            "act1": {"observation": obs_act1},
+            "act2": {"observation": obs_act2},
+        },
+        "combined_actions": {
+            pair_id: {
+                "betas": [1.5, 0.5],
+                "max_rho": 0.64,
+                "max_rho_line": "FARLINE",
+            },
+        },
+    }
+    context = {"obs_simu_defaut": obs_start, "lines_overloaded_ids": [0]}
+
+    config.MONITORING_FACTOR_THERMAL_LIMITS = 0.95
+    svc._augment_combined_actions_with_target_max_rho(results, context)
+
+    pair = results["combined_actions"][pair_id]
+    # Existing fields are preserved.
+    assert pair["max_rho_line"] == "FARLINE"
+    # New target fields are scoped to lines_overloaded_ids = [0] (OVERLOAD_TARGET).
+    assert pair["target_max_rho_line"] == "OVERLOAD_TARGET"
+    # target_max_rho is the OVERLOAD_TARGET rho (0.20) scaled by 0.95.
+    assert abs(pair["target_max_rho"] - 0.20 * 0.95) < 1e-3
+
+
+def test_augment_combined_actions_with_target_max_rho_is_noop_without_context():
+    """No-op when the analysis context is missing obs_simu_defaut or
+    lines_overloaded_ids — nothing to scope the target against."""
+    svc = RecommenderService()
+
+    results = {
+        "prioritized_actions": {},
+        "combined_actions": {
+            "act1+act2": {
+                "betas": [1.0, 1.0],
+                "max_rho": 0.80,
+                "max_rho_line": "LINE_A",
+            },
+        },
+    }
+    svc._augment_combined_actions_with_target_max_rho(results, context={})
+
+    pair = results["combined_actions"]["act1+act2"]
+    assert "target_max_rho" not in pair
+    assert "target_max_rho_line" not in pair
 
 
 if __name__ == "__main__":

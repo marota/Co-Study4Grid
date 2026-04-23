@@ -120,6 +120,30 @@ describe('ComputedPairsTable', () => {
         expect(screen.getByText('—')).toBeInTheDocument();
     });
 
+    it('shows a "target: X% on LINE" subtitle when the target overload differs from the estimated max line', () => {
+        const focusedPair: ComputedPairEntry = {
+            ...basePair,
+            estimated_max_rho: 0.82,
+            estimated_max_rho_line: 'LOUHAL31PYMON',
+            target_max_rho: 0.20,
+            target_max_rho_line: 'BEON L31CPVAN',
+        };
+        render(<ComputedPairsTable {...defaultProps} computedPairsList={[focusedPair]} />);
+        expect(screen.getByText(/target:.*20\.0%.*BEON L31CPVAN/)).toBeInTheDocument();
+    });
+
+    it('does not render target subtitle when target line equals estimated line', () => {
+        const matchingPair: ComputedPairEntry = {
+            ...basePair,
+            estimated_max_rho: 0.82,
+            estimated_max_rho_line: 'L3',
+            target_max_rho: 0.82,
+            target_max_rho_line: 'L3',
+        };
+        render(<ComputedPairsTable {...defaultProps} computedPairsList={[matchingPair]} />);
+        expect(screen.queryByText(/target:/)).not.toBeInTheDocument();
+    });
+
     it('shows islanding icon for simulated islanded pair', () => {
         const islandedPair: ComputedPairEntry = {
             ...basePair,

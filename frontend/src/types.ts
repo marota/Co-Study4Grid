@@ -94,6 +94,12 @@ export interface CombinedAction {
     disconnected_mw?: number;
     estimated_max_rho?: number | null;
     estimated_max_rho_line?: string;
+    // Max over the user-selected overloaded lines only — surfaces the
+    // pair's predicted effect on the contingency alongside the global
+    // `max_rho`, which may land on an off-target line because of
+    // linearisation error on lines far from either action.
+    target_max_rho?: number | null;
+    target_max_rho_line?: string;
     error?: string;
 }
 
