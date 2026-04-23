@@ -107,8 +107,6 @@ const ActionCard: React.FC<ActionCardProps> = ({
 
     const renderBadges = () => {
         const badges: React.ReactNode[] = [];
-        const isLoadShedding = details.load_shedding_details && details.load_shedding_details.length > 0;
-        const isRenewableCurtailment = details.curtailment_details && details.curtailment_details.length > 0;
         const badgeBtn = (name: string, bg: string, color: string, title: string, onDoubleClick?: (e: React.MouseEvent) => void) => (
             <button key={name}
                 style={{ padding: '2px 7px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600, textDecoration: 'underline dotted', flexShrink: 0, backgroundColor: bg, color }}
@@ -119,65 +117,70 @@ const ActionCard: React.FC<ActionCardProps> = ({
             </button>
         );
 
-        if (isLoadShedding) {
-            const vlSet = new Set<string>();
-            details.load_shedding_details!.forEach(ls => {
-                if (ls.voltage_level_id && !vlSet.has(ls.voltage_level_id)) {
-                    vlSet.add(ls.voltage_level_id);
-                    badges.push(badgeBtn(ls.voltage_level_id, '#d1fae5', '#065f46', `Click: zoom to ${ls.voltage_level_id} | Double-click: open SLD`, (e) => {
-                        e.stopPropagation();
-                        onVlDoubleClick?.(id, ls.voltage_level_id!);
-                    }));
-                }
-            });
-        } else if (isRenewableCurtailment) {
-            const vlSet = new Set<string>();
-            details.curtailment_details!.forEach(rc => {
-                if (rc.voltage_level_id && !vlSet.has(rc.voltage_level_id)) {
-                    vlSet.add(rc.voltage_level_id);
-                    badges.push(badgeBtn(rc.voltage_level_id, '#d1fae5', '#065f46', `Click: zoom to ${rc.voltage_level_id} | Double-click: open SLD`, (e) => {
-                        e.stopPropagation();
-                        onVlDoubleClick?.(id, rc.voltage_level_id!);
-                    }));
-                }
-            });
-        } else {
-            if (nodesByEquipmentId) {
-                const vlNames = getActionTargetVoltageLevels(details, id, nodesByEquipmentId);
-                vlNames.forEach(vlName => {
-                    badges.push(badgeBtn(vlName, '#d1fae5', '#065f46', `Click: zoom to ${vlName} | Double-click: open SLD`, (e) => {
-                        e.stopPropagation();
-                        onVlDoubleClick?.(id, vlName);
-                    }));
-                });
+        // Collect badges from every source that applies. A combined
+        // action like ``load_shedding_X+reco_Y`` owes a badge to BOTH
+        // sub-actions — using an if/else-if/else here used to drop the
+        // topology-based sub-action (reco / disco / coupling) whenever
+        // the pair also contained a load-shedding or curtailment leg.
+        const vlSet = new Set<string>();
+
+        details.load_shedding_details?.forEach(ls => {
+            if (ls.voltage_level_id && !vlSet.has(ls.voltage_level_id)) {
+                vlSet.add(ls.voltage_level_id);
+                badges.push(badgeBtn(ls.voltage_level_id, '#d1fae5', '#065f46', `Click: zoom to ${ls.voltage_level_id} | Double-click: open SLD`, (e) => {
+                    e.stopPropagation();
+                    onVlDoubleClick?.(id, ls.voltage_level_id!);
+                }));
             }
+        });
 
-            const isCoupling = isCouplingAction(id, details.description_unitaire);
-            const lineNames = edgesByEquipmentId
-                ? getActionTargetLines(details, id, edgesByEquipmentId)
-                : Array.from(new Set([
-                    ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_ex_bus || {})),
-                    ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_or_bus || {})),
-                    ...Object.keys(details.action_topology?.pst_tap || {}),
-                ]));
+        details.curtailment_details?.forEach(rc => {
+            if (rc.voltage_level_id && !vlSet.has(rc.voltage_level_id)) {
+                vlSet.add(rc.voltage_level_id);
+                badges.push(badgeBtn(rc.voltage_level_id, '#d1fae5', '#065f46', `Click: zoom to ${rc.voltage_level_id} | Double-click: open SLD`, (e) => {
+                    e.stopPropagation();
+                    onVlDoubleClick?.(id, rc.voltage_level_id!);
+                }));
+            }
+        });
 
-            lineNames.forEach(name => {
-                if (badges.some(b => React.isValidElement(b) && b.key === name)) return;
+        if (nodesByEquipmentId) {
+            const vlNames = getActionTargetVoltageLevels(details, id, nodesByEquipmentId);
+            vlNames.forEach(vlName => {
+                if (vlSet.has(vlName)) return;
+                vlSet.add(vlName);
+                badges.push(badgeBtn(vlName, '#d1fae5', '#065f46', `Click: zoom to ${vlName} | Double-click: open SLD`, (e) => {
+                    e.stopPropagation();
+                    onVlDoubleClick?.(id, vlName);
+                }));
+            });
+        }
+
+        const isCoupling = isCouplingAction(id, details.description_unitaire);
+        const lineNames = edgesByEquipmentId
+            ? getActionTargetLines(details, id, edgesByEquipmentId)
+            : Array.from(new Set([
+                ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_ex_bus || {})),
+                ...(isCoupling ? [] : Object.keys(details.action_topology?.lines_or_bus || {})),
+                ...Object.keys(details.action_topology?.pst_tap || {}),
+            ]));
+
+        lineNames.forEach(name => {
+            if (badges.some(b => React.isValidElement(b) && b.key === name)) return;
+            badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
+        });
+
+        if (badges.length === 0) {
+            const topo = details.action_topology;
+            const equipNames = Array.from(new Set([
+                ...Object.keys(topo?.gens_bus || {}),
+                ...Object.keys(topo?.loads_bus || {}),
+                ...Object.keys(topo?.loads_p || {}),
+                ...Object.keys(topo?.gens_p || {}),
+            ]));
+            equipNames.forEach(name => {
                 badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
             });
-
-            if (badges.length === 0) {
-                const topo = details.action_topology;
-                const equipNames = Array.from(new Set([
-                    ...Object.keys(topo?.gens_bus || {}),
-                    ...Object.keys(topo?.loads_bus || {}),
-                    ...Object.keys(topo?.loads_p || {}),
-                    ...Object.keys(topo?.gens_p || {}),
-                ]));
-                equipNames.forEach(name => {
-                    badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
-                });
-            }
         }
 
         return (

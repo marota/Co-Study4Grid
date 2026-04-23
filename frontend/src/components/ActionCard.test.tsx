@@ -323,4 +323,62 @@ describe('ActionCard', () => {
         render(<ActionCard {...defaultProps} details={details} />);
         expect(screen.getByText('No reduction')).toBeInTheDocument();
     });
+
+    // Regression: for a combined action like
+    // ``load_shedding_BEON3 TR311+reco_GEN.PY762``, the card used to
+    // render ONLY the load-shedding voltage level as a clickable badge
+    // and drop the reco's line because an ``if (isLoadShedding) { …
+    // return } else { topology-based extraction }`` short-circuit
+    // skipped the topology branch whenever load-shedding details were
+    // present. Both sub-actions must now produce a badge. Same
+    // expectation holds for ``curtailment + reco`` and for pairs where
+    // one leg is a disco / coupling.
+    it('renders both load-shedding VL and reco line for combined LS+reco action', () => {
+        const details: ActionDetail = {
+            ...baseDetails,
+            load_shedding_details: [
+                { load_name: 'BEON3 TR311', voltage_level_id: 'BEON3', shedded_mw: 6.4 },
+            ],
+            action_topology: {
+                lines_ex_bus: { 'GEN.PY762': 1 },
+                lines_or_bus: {},
+                gens_bus: {},
+                loads_bus: {},
+            },
+        };
+        render(
+            <ActionCard
+                {...defaultProps}
+                id="load_shedding_BEON3 TR311+reco_GEN.PY762"
+                details={details}
+            />
+        );
+        // Both sub-actions' impacted assets must be clickable.
+        expect(screen.getByRole('button', { name: 'BEON3' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'GEN.PY762' })).toBeInTheDocument();
+    });
+
+    it('renders both curtailment VL and reco line for combined RC+reco action', () => {
+        const details: ActionDetail = {
+            ...baseDetails,
+            curtailment_details: [
+                { gen_name: 'WIND_A', voltage_level_id: 'VL_WIND', curtailed_mw: 42.0 },
+            ],
+            action_topology: {
+                lines_ex_bus: {},
+                lines_or_bus: { 'LINE_R': 1 },
+                gens_bus: {},
+                loads_bus: {},
+            },
+        };
+        render(
+            <ActionCard
+                {...defaultProps}
+                id="curtail_WIND_A+reco_LINE_R"
+                details={details}
+            />
+        );
+        expect(screen.getByRole('button', { name: 'VL_WIND' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'LINE_R' })).toBeInTheDocument();
+    });
 });
