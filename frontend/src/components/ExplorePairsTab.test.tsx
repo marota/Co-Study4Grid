@@ -222,6 +222,48 @@ describe('ExplorePairsTab', () => {
         expect(screen.queryByTestId('simulate-combined-button')).not.toBeInTheDocument();
     });
 
+    it('clicking the top Simulate Combined button calls onSimulate', () => {
+        const onSimulate = vi.fn();
+        const preview: CombinedAction = {
+            action1_id: 'act1', action2_id: 'act2', betas: [1.0], max_rho: 0.72,
+            max_rho_line: 'L3', is_rho_reduction: true, description: 'Combined',
+            p_or_combined: [], rho_before: [0.8], rho_after: [0.72],
+        };
+        render(<ExplorePairsTab {...defaultProps} selectedIds={new Set(['act1', 'act2'])} preview={preview} onSimulate={onSimulate} />);
+        fireEvent.click(screen.getByTestId('simulate-combined-top-button'));
+        expect(onSimulate).toHaveBeenCalled();
+    });
+
+    it('disables the top Simulate Combined button while simulating', () => {
+        const preview: CombinedAction = {
+            action1_id: 'act1', action2_id: 'act2', betas: [1.0], max_rho: 0.72,
+            max_rho_line: 'L3', is_rho_reduction: true, description: 'Combined',
+            p_or_combined: [], rho_before: [0.8], rho_after: [0.72],
+        };
+        render(<ExplorePairsTab {...defaultProps} selectedIds={new Set(['act1', 'act2'])} preview={preview} simulating={true} />);
+        expect(screen.getByTestId('simulate-combined-top-button')).toBeDisabled();
+    });
+
+    it('uses the "Simulation Result" title when only simulation ran (no estimate)', () => {
+        const feedback = { max_rho: 0.68, max_rho_line: 'L2', is_rho_reduction: true };
+        render(<ExplorePairsTab {...defaultProps} selectedIds={new Set(['act1', 'act2'])} simulationFeedback={feedback} />);
+        const card = screen.getByTestId('comparison-card');
+        // "Simulation Result" appears as both the card title and the column header — so we expect 2 matches
+        expect(within(card).getAllByText('Simulation Result').length).toBe(2);
+        expect(within(card).queryByText('Explore Pairs Comparison')).not.toBeInTheDocument();
+    });
+
+    it('uses the "Explore Pairs Comparison" title when an estimate is present', () => {
+        const preview: CombinedAction = {
+            action1_id: 'act1', action2_id: 'act2', betas: [1.0], max_rho: 0.72,
+            max_rho_line: 'L3', is_rho_reduction: true, description: 'Combined',
+            p_or_combined: [], rho_before: [0.8], rho_after: [0.72],
+        };
+        render(<ExplorePairsTab {...defaultProps} selectedIds={new Set(['act1', 'act2'])} preview={preview} />);
+        const card = screen.getByTestId('comparison-card');
+        expect(within(card).getByText('Explore Pairs Comparison')).toBeInTheDocument();
+    });
+
     it('shows error message in comparison card', () => {
         const preview: CombinedAction = {
             action1_id: 'act1', action2_id: 'act2', betas: [1.0], max_rho: 0.72,

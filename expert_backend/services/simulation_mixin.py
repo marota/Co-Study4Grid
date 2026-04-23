@@ -628,8 +628,19 @@ class SimulationMixin:
         original_variant = n.get_working_variant_id()
 
         # Fetch N-1 and N observations (order matters for test mocks).
-        n.set_working_variant(self._get_n1_variant(disconnected_element))
-        obs_start = env.get_obs()
+        # Prefer the N-1 observation captured at step1 when available —
+        # grid2op's ``obs.simulate(action, keep_variant=True)`` used by
+        # ``simulate_manual_action`` can mutate the shared N-1 variant,
+        # so a fresh ``env.get_obs()`` here would drift away from the
+        # baseline step2 used to pre-compute ``combined_actions`` betas.
+        # Reusing the context obs keeps the on-demand re-estimation
+        # numerically consistent with the "Computed Pairs" view.
+        ctx_obs_n1 = self._obs_n1_from_context()
+        if ctx_obs_n1 is not None:
+            obs_start = ctx_obs_n1
+        else:
+            n.set_working_variant(self._get_n1_variant(disconnected_element))
+            obs_start = env.get_obs()
         self._log_per_line_rho(action1_id, action2_id, line_idxs1, line_idxs2, obs_start, env, all_actions)
 
         monitoring_factor = getattr(config, "MONITORING_FACTOR_THERMAL_LIMITS", 0.95)
@@ -762,16 +773,32 @@ class SimulationMixin:
     ):
         """Determine the active monitoring set for the superposition result.
 
-        Prefers `_analysis_context.lines_overloaded` when available (keeps
-        the pair result aligned with the step2 analysis view); otherwise
-        recomputes from `obs_start` with the same pre-existing-worsening
-        rule as `simulate_manual_action`.
+        Prefers the analysis context's overload set when available (keeps
+        the pair result aligned with the step2 "Computed Pairs" view);
+        otherwise recomputes from `obs_start` with the same
+        pre-existing-worsening rule as `simulate_manual_action`.
+
+        Context lookup order:
+          1. ``lines_overloaded_ids`` — indices resolved by step1 against
+             the same ``name_line`` ordering (used by step2 discovery).
+          2. ``lines_overloaded_names`` — step1 populates this key.
+          3. ``lines_overloaded`` — written by session reload
+             (``restore_analysis_context``).
         """
-        ctx_overloaded = (self._analysis_context or {}).get("lines_overloaded")
+        ctx = self._analysis_context or {}
+        ctx_ids = ctx.get("lines_overloaded_ids")
+        if ctx_ids:
+            ids = [int(i) for i in ctx_ids if 0 <= int(i) < len(name_line_list)]
+            logger.info(
+                "[compute_superposition] Using analysis context lines_overloaded_ids: %d lines",
+                len(ids),
+            )
+            return ids
+        ctx_overloaded = ctx.get("lines_overloaded_names") or ctx.get("lines_overloaded")
         if ctx_overloaded:
             ids = [name_to_idx_map[l] for l in ctx_overloaded if l in name_to_idx_map]
             logger.info(
-                "[compute_superposition] Using analysis context lines_overloaded: %d lines",
+                "[compute_superposition] Using analysis context lines_overloaded names: %d lines",
                 len(ids),
             )
             return ids

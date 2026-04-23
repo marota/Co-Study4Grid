@@ -277,5 +277,115 @@ def test_dict_action_merge_preserves_original_keys(recommender):
     assert result["action"] is new_data["action"]
 
 
+def test_compute_superposition_reuses_context_obs_simu_defaut(recommender):
+    """Regression: on-demand `compute_superposition` must use the N-1
+    observation captured by step1 (stored on `_analysis_context`) as
+    `obs_start` rather than fetching a fresh `env.get_obs()`.
+
+    Background: step2's `run_analysis_step2_discovery` pre-computes betas
+    using `context["obs_simu_defaut"]`. Grid2Op's
+    `obs.simulate(action, keep_variant=True)` (used by
+    `simulate_manual_action`) can mutate the shared N-1 variant, so a
+    fresh fetch here would see a drifted baseline and produce betas
+    that diverge from the "Computed Pairs" view for the same pair.
+    Reusing the context obs keeps the two paths numerically consistent.
+    """
+    aid1, aid2 = "act1", "act2"
+    obs1 = _make_obs([0.9], [90.0])
+    obs2 = _make_obs([0.9], [85.0])
+    actions = {
+        aid1: {"action": MagicMock(), "observation": obs1},
+        aid2: {"action": MagicMock(), "observation": obs2},
+    }
+    _setup_superposition_env(recommender, actions, {})
+
+    # Simulate what step1 leaves behind: a context carrying the original
+    # N-1 observation. A later fresh `env.get_obs()` would return a
+    # drifted observation (different rho values) — the reuse must pick
+    # the context obs, not the drifted fresh fetch.
+    ctx_obs = _make_obs([1.5], [150.0])
+    recommender._analysis_context = {"obs_simu_defaut": ctx_obs}
+
+    with patch('expert_backend.services.simulation_mixin._identify_action_elements', return_value=([0], [])), \
+         patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_combine:
+        mock_combine.return_value = {"betas": [0.5, 0.5], "p_or_combined": [100.0]}
+
+        recommender.compute_superposition(aid1, aid2, "contingency")
+
+        obs_start_passed = mock_combine.call_args.kwargs["obs_start"]
+        assert obs_start_passed is ctx_obs, (
+            "compute_superposition should pass the context's obs_simu_defaut as "
+            "obs_start so betas match the step2 pre-computed values"
+        )
+
+
+def test_compute_superposition_falls_back_to_fresh_fetch_without_context(recommender):
+    """When no analysis context exists (first-time pair estimation with
+    no prior step1), `compute_superposition` must still work by fetching
+    `obs_start` from `env.get_obs()`. This test pins the fallback so the
+    new context-preferred path does not silently break the no-context
+    case.
+    """
+    aid1, aid2 = "act1", "act2"
+    obs1 = _make_obs([0.9], [90.0])
+    obs2 = _make_obs([0.9], [85.0])
+    actions = {
+        aid1: {"action": MagicMock(), "observation": obs1},
+        aid2: {"action": MagicMock(), "observation": obs2},
+    }
+    env = _setup_superposition_env(recommender, actions, {})
+    recommender._analysis_context = None
+
+    with patch('expert_backend.services.simulation_mixin._identify_action_elements', return_value=([0], [])), \
+         patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_combine:
+        mock_combine.return_value = {"betas": [0.5, 0.5], "p_or_combined": [100.0]}
+
+        recommender.compute_superposition(aid1, aid2, "contingency")
+
+        assert env.get_obs.call_count == 2, "expected fresh fetch for both N-1 and N in fallback path"
+
+
+def test_superposition_lines_overloaded_reads_context_ids_or_names(recommender):
+    """`_superposition_lines_overloaded` must prefer the step1-populated
+    keys (``lines_overloaded_ids`` and ``lines_overloaded_names``) so the
+    on-demand monitoring set matches what step2's discovery used —
+    previously only the session-reload key ``lines_overloaded`` was
+    consulted, causing fresh-analysis on-demand re-estimation to
+    recompute from ``obs_start`` and drift from the pre-computed view.
+    """
+    name_line = ["L0", "L1", "L2", "L3"]
+    obs_start = _make_obs([0.5, 0.8, 0.99, 1.1])
+
+    # Case 1: step1-populated `lines_overloaded_ids` wins.
+    recommender._analysis_context = {"lines_overloaded_ids": [1, 3]}
+    ids = recommender._superposition_lines_overloaded(
+        obs_start, name_line, {n: i for i, n in enumerate(name_line)},
+        pre_existing_rho={}, lines_we_care_about=set(name_line),
+        branches_with_limits=set(name_line),
+        monitoring_factor=0.95, worsening_threshold=0.02,
+    )
+    assert ids == [1, 3]
+
+    # Case 2: only names present — still resolved via name_to_idx_map.
+    recommender._analysis_context = {"lines_overloaded_names": ["L2", "L3"]}
+    ids = recommender._superposition_lines_overloaded(
+        obs_start, name_line, {n: i for i, n in enumerate(name_line)},
+        pre_existing_rho={}, lines_we_care_about=set(name_line),
+        branches_with_limits=set(name_line),
+        monitoring_factor=0.95, worsening_threshold=0.02,
+    )
+    assert ids == [2, 3]
+
+    # Case 3: session-reload key still honoured for backwards compat.
+    recommender._analysis_context = {"lines_overloaded": ["L0"]}
+    ids = recommender._superposition_lines_overloaded(
+        obs_start, name_line, {n: i for i, n in enumerate(name_line)},
+        pre_existing_rho={}, lines_we_care_about=set(name_line),
+        branches_with_limits=set(name_line),
+        monitoring_factor=0.95, worsening_threshold=0.02,
+    )
+    assert ids == [0]
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

@@ -369,6 +369,59 @@ def test_combined_actions_superposition(scenario_data, analysis_results):
         print(f"  {pair_key}: betas={[round(b, 4) for b in betas]}, "
               f"max_rho={pair_data['max_rho']:.3f}, rho_reduction={pair_data['is_rho_reduction']}")
 
+def test_compute_superposition_agrees_with_precomputed_pair(scenario_data, analysis_results):
+    """Regression: estimating a pair in Explore Pairs (on-demand
+    ``compute_superposition``) must return the same betas and
+    ``max_rho`` as the pre-computed "Computed Pairs" entry produced by
+    step2's ``run_analysis_step2_discovery`` for the identical pair.
+
+    Before the fix, the on-demand path fetched a fresh ``obs_start``
+    from ``env.get_obs()`` while the pre-computed path used the N-1
+    observation captured at step1. Grid2Op's
+    ``obs.simulate(action, keep_variant=True)`` (invoked by each
+    ``simulate_manual_action``) could mutate the shared N-1 variant,
+    so the fresh fetch drifted away from the step1 baseline and
+    produced very different betas (e.g. ``[3.193, 1.479]`` vs the
+    pre-computed ``[1.10, 0.92]``), sometimes flagged as "unreliable
+    superposition — betas outside [-2.0, 3.0]".
+    """
+    combined = analysis_results.get("combined_actions", {}) or {}
+    candidate = None
+    for pair_id, pair_data in combined.items():
+        if "+" not in pair_id or "error" in pair_data:
+            continue
+        betas = pair_data.get("betas")
+        if betas and all(np.isfinite(betas)):
+            candidate = (pair_id, pair_data)
+            break
+    if candidate is None:
+        pytest.skip("No non-errored combined pair produced by this scenario")
+
+    pair_id, pre = candidate
+    action1_id, action2_id = pair_id.split("+", 1)
+    contingency = scenario_data["contingency"]
+
+    on_demand = recommender_service.compute_superposition(
+        action1_id, action2_id, contingency
+    )
+    assert "error" not in on_demand, f"on-demand failed: {on_demand.get('error')}"
+
+    # Betas must agree — small floating-point tolerance for
+    # library-internal numerical paths.
+    for i, (b_pre, b_on) in enumerate(zip(pre["betas"], on_demand["betas"])):
+        assert b_pre == pytest.approx(b_on, rel=1e-3, abs=1e-3), (
+            f"Beta[{i}] drift between step2 and on-demand for {pair_id}: "
+            f"pre-computed={b_pre} vs on-demand={b_on}"
+        )
+
+    # `max_rho` is scaled by monitoring_factor in the on-demand path;
+    # compare the ratios to the corresponding max_rho_line values.
+    assert on_demand["max_rho"] == pytest.approx(pre["max_rho"], rel=5e-3, abs=5e-3), (
+        f"max_rho drift for {pair_id}: pre-computed={pre['max_rho']} vs "
+        f"on-demand={on_demand['max_rho']}"
+    )
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
 
