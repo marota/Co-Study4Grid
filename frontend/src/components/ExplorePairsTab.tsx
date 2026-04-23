@@ -230,7 +230,7 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
 
             {/* Action Bar / Comparison Card */}
             <div style={{ marginTop: '5px' }}>
-                {!preview ? (
+                {!preview && !simulationFeedback && !simulating && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <button
                             onClick={onEstimate}
@@ -274,7 +274,33 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                             {simulating ? '⌛ Simulating...' : (selectedIds.size === 2 ? 'Simulate Combined' : 'Select 2 actions to simulate')}
                         </button>
                     </div>
-                ) : (
+                )}
+
+                {preview && !simulationFeedback && (
+                    <button
+                        onClick={onSimulate}
+                        disabled={simulating}
+                        data-testid="simulate-combined-top-button"
+                        style={{
+                            width: '100%',
+                            padding: '10px',
+                            marginBottom: '8px',
+                            background: simulating ? '#6c757d' : '#27ae60',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: simulating ? 'not-allowed' : 'pointer',
+                            fontWeight: 'bold',
+                            fontSize: '13px',
+                            boxShadow: simulating ? 'none' : '0 2px 4px rgba(39,174,96,0.2)',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        {simulating ? '⌛ Simulating...' : 'Simulate Combined'}
+                    </button>
+                )}
+
+                {(preview || simulationFeedback || simulating) && (
                     <div style={{
                         padding: '15px',
                         background: error ? '#fff3cd' : '#e1f5fe',
@@ -282,70 +308,33 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                         borderLeft: '5px solid ' + (error ? '#856404' : '#0288d1'),
                         boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
                     }} data-testid="comparison-card">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                            <div style={{ flex: 1 }}>
-                                {preview.betas && (
-                                    <div style={{ marginBottom: '8px', fontSize: '11px', color: '#666', background: 'rgba(255,255,255,0.6)', padding: '2px 8px', borderRadius: '4px', display: 'inline-block', fontWeight: 600 }}>
-                                        Betas: {preview.betas.map(b => b.toFixed(3)).join(', ')}
-                                    </div>
-                                )}
-                                <div style={{ fontWeight: 800, color: error ? '#856404' : '#01579b', fontSize: '15px' }}>
-                                    {error ? '⚠️ Estimation Failed' : 'Explore Pairs Comparison'}
+                        <div style={{ marginBottom: '10px' }}>
+                            {preview?.betas && (
+                                <div style={{ marginBottom: '8px', fontSize: '11px', color: '#666', background: 'rgba(255,255,255,0.6)', padding: '2px 8px', borderRadius: '4px', display: 'inline-block', fontWeight: 600 }}>
+                                    Betas: {preview.betas.map(b => b.toFixed(3)).join(', ')}
                                 </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <button
-                                    onClick={onEstimate}
-                                    disabled={loading || hasRestricted}
-                                    title={hasRestricted ? 'Estimation is not available when a load shedding or curtailment action is selected — use Simulate Combined instead.' : undefined}
-                                    style={{
-                                        padding: '6px 12px',
-                                        background: 'white',
-                                        border: '1px solid ' + (hasRestricted ? '#bdc3c7' : '#3498db'),
-                                        color: hasRestricted ? '#bdc3c7' : '#3498db',
-                                        borderRadius: '4px',
-                                        cursor: (loading || hasRestricted) ? 'not-allowed' : 'pointer',
-                                        fontSize: '12px',
-                                        fontWeight: 'bold'
-                                    }}
-                                >
-                                    {loading ? '...' : (hasRestricted ? 'Estimation unavailable' : 'Estimate combination effect')}
-                                </button>
-                                <button
-                                    onClick={onSimulate}
-                                    disabled={simulating}
-                                    style={{
-                                        padding: '6px 16px',
-                                        background: simulating ? '#6c757d' : '#27ae60',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '6px',
-                                        cursor: simulating ? 'not-allowed' : 'pointer',
-                                        fontWeight: 'bold',
-                                        fontSize: '12px',
-                                        boxShadow: simulating ? 'none' : '0 2px 4px rgba(39,174,96,0.2)',
-                                        minWidth: '140px'
-                                    }}
-                                >
-                                    {simulating ? '⌛ Simulating...' : 'Simulate Combined'}
-                                </button>
+                            )}
+                            <div style={{ fontWeight: 800, color: error ? '#856404' : '#01579b', fontSize: '15px' }}>
+                                {error ? '⚠️ Estimation Failed' : (preview ? 'Explore Pairs Comparison' : 'Simulation Result')}
                             </div>
                         </div>
 
                         {!error && (
                             <div style={{ display: 'flex', gap: '30px', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '12px' }}>
-                                <div style={{ flex: 1, borderRight: '1px solid rgba(0,0,0,0.05)', paddingRight: '15px' }}>
-                                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Estimated Effect</div>
-                                    <div style={{ fontSize: '13px', marginBottom: '4px' }}>
-                                        Estimated Max Loading: <strong style={{ color: (preview.estimated_max_rho ?? preview.max_rho ?? 0) <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{((preview.estimated_max_rho ?? preview.max_rho ?? 0) * 100).toFixed(1)}%</strong>
-                                        {preview.is_islanded && (
-                                            <span style={{ marginLeft: '6px' }} title="Estimation suspect due to islanding">⚠️</span>
-                                        )}
+                                {preview && (
+                                    <div style={{ flex: 1, borderRight: '1px solid rgba(0,0,0,0.05)', paddingRight: '15px' }}>
+                                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Estimated Effect</div>
+                                        <div style={{ fontSize: '13px', marginBottom: '4px' }}>
+                                            Estimated Max Loading: <strong style={{ color: (preview.estimated_max_rho ?? preview.max_rho ?? 0) <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{((preview.estimated_max_rho ?? preview.max_rho ?? 0) * 100).toFixed(1)}%</strong>
+                                            {preview.is_islanded && (
+                                                <span style={{ marginLeft: '6px' }} title="Estimation suspect due to islanding">⚠️</span>
+                                            )}
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: '#666' }}>
+                                            Line: {displayName(preview.estimated_max_rho_line ?? preview.max_rho_line)}
+                                        </div>
                                     </div>
-                                    <div style={{ fontSize: '12px', color: '#666' }}>
-                                        Line: {displayName(preview.estimated_max_rho_line ?? preview.max_rho_line)}
-                                    </div>
-                                </div>
+                                )}
                                 <div style={{ flex: 1 }}>
                                     <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Simulation Result</div>
                                     {simulating && (
@@ -374,7 +363,7 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                                         </div>
                                     )}
                                     {!simulating && !simulationFeedback && (
-                                        <div style={{ color: '#aaa', fontSize: '12px', fontStyle: 'italic', marginTop: '5px' }}>Click "Simulate Combined" to run</div>
+                                        <div style={{ color: '#aaa', fontSize: '12px', fontStyle: 'italic', marginTop: '5px' }}>Click "Simulate Combined" above to run</div>
                                     )}
                                 </div>
                             </div>

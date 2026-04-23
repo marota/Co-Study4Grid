@@ -6,7 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import ExplorePairsTab from './ExplorePairsTab';
 import type { AnalysisResult, CombinedAction } from '../types';
@@ -171,6 +171,55 @@ describe('ExplorePairsTab', () => {
         render(<ExplorePairsTab {...defaultProps} selectedIds={new Set(['act1', 'act2'])} preview={preview} simulationFeedback={feedback} />);
         expect(screen.getByTestId('simulation-feedback')).toBeInTheDocument();
         expect(screen.getByText('68.0%')).toBeInTheDocument();
+    });
+
+    it('shows the Simulate Combined button on top of the card while a preview is shown and no simulation has run yet', () => {
+        const preview: CombinedAction = {
+            action1_id: 'act1', action2_id: 'act2', betas: [1.0], max_rho: 0.72,
+            max_rho_line: 'L3', is_rho_reduction: true, description: 'Combined',
+            p_or_combined: [], rho_before: [0.8], rho_after: [0.72],
+        };
+        render(<ExplorePairsTab {...defaultProps} selectedIds={new Set(['act1', 'act2'])} preview={preview} />);
+        expect(screen.getByTestId('simulate-combined-top-button')).toBeInTheDocument();
+    });
+
+    it('hides the top Simulate Combined button once a simulation result is available', () => {
+        const preview: CombinedAction = {
+            action1_id: 'act1', action2_id: 'act2', betas: [1.0], max_rho: 0.72,
+            max_rho_line: 'L3', is_rho_reduction: true, description: 'Combined',
+            p_or_combined: [], rho_before: [0.8], rho_after: [0.72],
+        };
+        const feedback = { max_rho: 0.68, max_rho_line: 'L2', is_rho_reduction: true };
+        render(<ExplorePairsTab {...defaultProps} selectedIds={new Set(['act1', 'act2'])} preview={preview} simulationFeedback={feedback} />);
+        expect(screen.queryByTestId('simulate-combined-top-button')).not.toBeInTheDocument();
+    });
+
+    it('renders the card with only the Simulation Result column when simulation ran without an estimate', () => {
+        const feedback = { max_rho: 0.68, max_rho_line: 'L2', is_rho_reduction: true };
+        render(<ExplorePairsTab {...defaultProps} selectedIds={new Set(['act1', 'act2'])} simulationFeedback={feedback} />);
+        expect(screen.getByTestId('comparison-card')).toBeInTheDocument();
+        expect(screen.getByTestId('simulation-feedback')).toBeInTheDocument();
+        expect(screen.queryByText(/Estimated Max Loading/)).not.toBeInTheDocument();
+    });
+
+    it('does not render Estimate / Simulate buttons inside the comparison card header', () => {
+        const preview: CombinedAction = {
+            action1_id: 'act1', action2_id: 'act2', betas: [1.0], max_rho: 0.72,
+            max_rho_line: 'L3', is_rho_reduction: true, description: 'Combined',
+            p_or_combined: [], rho_before: [0.8], rho_after: [0.72],
+        };
+        render(<ExplorePairsTab {...defaultProps} selectedIds={new Set(['act1', 'act2'])} preview={preview} />);
+        const card = screen.getByTestId('comparison-card');
+        expect(within(card).queryByText('Estimate combination effect')).not.toBeInTheDocument();
+        expect(within(card).queryByText('Estimation unavailable')).not.toBeInTheDocument();
+        expect(within(card).queryByText('Simulate Combined')).not.toBeInTheDocument();
+    });
+
+    it('hides the bottom action bar once a simulation has run (no preview path)', () => {
+        const feedback = { max_rho: 0.68, max_rho_line: 'L2', is_rho_reduction: true };
+        render(<ExplorePairsTab {...defaultProps} selectedIds={new Set(['act1', 'act2'])} simulationFeedback={feedback} />);
+        expect(screen.queryByTestId('estimate-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('simulate-combined-button')).not.toBeInTheDocument();
     });
 
     it('shows error message in comparison card', () => {
