@@ -685,7 +685,7 @@ def step_calibrate_limits(ctx: PipelineContext) -> None:
 
     loadings.sort()
     pct_below_50 = sum(1 for x in loadings if x <= 50.0) / len(loadings) * 100
-    log.info(f"  N-state loading distribution:")
+    log.info("  N-state loading distribution:")
     log.info(
         f"    min={loadings[0]:.1f}%, median={loadings[len(loadings) // 2]:.1f}%, "
         f"max={loadings[-1]:.1f}%"
