@@ -356,6 +356,14 @@ class AnalysisMixin:
             results = run_analysis_step2_discovery(context)
             self._last_result = results
 
+            enriched_actions = self._enrich_actions(
+                results["prioritized_actions"],
+                lines_overloaded_names=results.get("lines_overloaded_names"),
+            )
+            # Never leak combined-action ids into the main actions feed —
+            # those are estimations that live in `combined_actions`.
+            enriched_actions = {aid: data for aid, data in enriched_actions.items() if "+" not in aid}
+
             # Enrich each pre-computed pair with a `target_max_rho` /
             # `target_max_rho_line` scoped to the user-selected overloads
             # — the UI can show this alongside the library's global

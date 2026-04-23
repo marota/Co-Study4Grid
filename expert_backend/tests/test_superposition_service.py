@@ -512,6 +512,54 @@ def test_augment_combined_actions_with_target_max_rho_adds_target_fields():
     assert abs(pair["target_max_rho"] - 0.20 * 0.95) < 1e-3
 
 
+def test_run_analysis_step2_emits_result_event_after_target_augmentation():
+    """Regression: the real `run_analysis_step2` body must still build
+    `enriched_actions` and yield a ``{type: 'result'}`` event.  Previous
+    failure: when the target-max-rho augmentation was added we
+    accidentally removed the `enriched_actions` block, so the final
+    yield hit ``NameError: name 'enriched_actions' is not defined``
+    at runtime — a frontend-visible 500 with no test coverage because
+    the existing split-analysis test mocks the whole method at the
+    module seam."""
+    from expert_backend.services.recommender_service import RecommenderService
+    from unittest.mock import patch
+
+    svc = RecommenderService()
+    svc._analysis_context = {
+        "obs_simu_defaut": _make_obs([0.8]),
+        "lines_overloaded_ids": [0],
+        "lines_overloaded_names": ["L0"],
+        "lines_overloaded_ids_kept": [0],
+        "lines_we_care_about": ["L0"],
+    }
+    svc._analysis_context["obs_simu_defaut"].name_line = np.array(["L0"])
+
+    results = {
+        "prioritized_actions": {},
+        "action_scores": {},
+        "lines_overloaded_names": ["L0"],
+        "combined_actions": {},
+    }
+
+    with patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph",
+               side_effect=lambda ctx: ctx), \
+         patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery",
+               return_value=results), \
+         patch.object(svc, "_get_latest_pdf_path", return_value=None), \
+         patch.object(svc, "_enrich_actions", return_value={}), \
+         patch.object(svc, "_compute_mw_start_for_scores", return_value={}):
+        events = list(svc.run_analysis_step2(["L0"]))
+
+    # pdf event + result event, both typed, no error.
+    event_types = [e.get("type") for e in events]
+    assert "error" not in event_types, f"unexpected error event: {events}"
+    assert "pdf" in event_types
+    assert "result" in event_types
+    result_event = next(e for e in events if e.get("type") == "result")
+    assert result_event["actions"] == {}
+    assert result_event["lines_overloaded"] == ["L0"]
+
+
 def test_augment_combined_actions_with_target_max_rho_is_noop_without_context():
     """No-op when the analysis context is missing obs_simu_defaut or
     lines_overloaded_ids — nothing to scope the target against."""
