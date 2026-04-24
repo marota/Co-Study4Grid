@@ -201,3 +201,35 @@ def test_preserves_styling_attributes():
     assert '<title>A</title>' in out
     assert 'data-name="A"' in out
     assert 'data-source="A"' in out
+
+
+def test_viewbox_rewritten_to_layout_aspect_ratio():
+    """The transform MUST rewrite the SVG viewBox so a wide
+    geographic layout doesn't get squashed into graphviz's narrow
+    hierarchical canvas — otherwise edges render with no visible
+    tail (only the arrowhead peeks out from behind the target node)."""
+    # Horizontally-wide layout (3:1 aspect).
+    layout = {"A": (0.0, 0.0), "B": (3000.0, 1000.0)}
+    out = transform_html(HIERARCHICAL_HTML, layout)
+    m = re.search(r'<svg[^>]*viewBox="([^"]+)"', out)
+    assert m, "Missing viewBox"
+    parts = m.group(1).split()
+    assert len(parts) == 4
+    vb_w = float(parts[2])
+    vb_h = float(parts[3])
+    # Old viewBox was 400x400 (1:1) — it must have changed.
+    assert (vb_w, vb_h) != (400.0, 400.0)
+    # The new viewBox must roughly preserve the layout's 3:1 aspect.
+    assert vb_w > vb_h
+
+
+def test_graph_transform_reanchored_to_new_viewbox():
+    """The top-level `<g class=graph>` transform keeps the y-flip
+    landing inside the new viewBox. After the rewrite the translate
+    pair reads ``(MARGIN, new_h - MARGIN)``."""
+    layout = {"A": (0.0, 0.0), "B": (100.0, 100.0)}
+    out = transform_html(HIERARCHICAL_HTML, layout)
+    # Expect the graph-level transform to contain translate(40 ...)
+    m = re.search(r'<g[^>]*class="graph"[^>]*transform="([^"]+)"', out)
+    assert m, "Missing graph transform"
+    assert "translate(40 " in m.group(1)

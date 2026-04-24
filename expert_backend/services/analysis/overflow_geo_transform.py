@@ -65,6 +65,18 @@ _MARGIN = 40.0      # px, inner padding inside the viewBox when fitting
 _NODE_GAP = 18.0    # px, pull the arrowhead back this much from the
                     # target node's centre so the tip lands on the
                     # node's outline, not inside it
+_NODE_RADIUS_PX = 27.0  # matches the `rx` the library's graphviz
+                        # output uses on ellipses — the default node
+                        # width (0.75in × 72pt/in) rounded to the
+                        # graphviz shape.
+_TARGET_SPACING_RATIO = 6.0  # target average inter-node distance,
+                             # expressed as multiples of node radius.
+                             # Keeps edges visible with a clear tail
+                             # and leaves room for the midpoint label.
+_MIN_VIEWBOX_DIM = 600.0     # px, viewBox floor so tiny grids still
+                             # get a usable canvas.
+_MAX_VIEWBOX_DIM = 4000.0    # px, viewBox ceiling so extreme spread
+                             # grids don't blow up the iframe.
 
 
 def _fmt(v: float) -> str:
@@ -160,14 +172,22 @@ def transform_html(html: str, layout: Mapping[str, tuple[float, float]]) -> str:
         )
 
     # --------------------------------------------------------------
-    # 2. Project layout bbox into the existing viewBox
+    # 2. Choose scale from layout spacing + rewrite viewBox
     # --------------------------------------------------------------
-    vb = svg_root.get("viewBox", "0 0 1000 1000").split()
-    try:
-        vb_x, vb_y, vb_w, vb_h = (float(v) for v in vb)
-    except (ValueError, TypeError):
-        vb_x, vb_y, vb_w, vb_h = 0.0, 0.0, 1000.0, 1000.0
-
+    # The library's hierarchical HTML uses a narrow viewBox
+    # (optimised for graphviz's top-down tree layout). Fitting a wide
+    # geographic bbox into it squashes everything horizontally and the
+    # straight-line edges end up almost fully hidden behind the two
+    # node circles — only the arrowhead peeks out. We fix this by:
+    #   (a) picking a scale that makes the average inter-substation
+    #       distance ≈ _TARGET_SPACING_RATIO × node radius, so edges
+    #       keep a clear tail,
+    #   (b) rewriting the SVG viewBox to the natural aspect ratio of
+    #       the layout bbox, and
+    #   (c) re-anchoring the graphviz top-level
+    #       `<g class="graph"> transform="... translate(Ox Oy)"` so
+    #       its y-down/y-up flip lands the content inside the new
+    #       viewBox.
     min_lx = min(p[0] for p in matched)
     max_lx = max(p[0] for p in matched)
     min_ly = min(p[1] for p in matched)
@@ -175,22 +195,37 @@ def transform_html(html: str, layout: Mapping[str, tuple[float, float]]) -> str:
     span_x = max_lx - min_lx or 1.0
     span_y = max_ly - min_ly or 1.0
 
-    usable_w = max(vb_w - 2 * _MARGIN, 1.0)
-    usable_h = max(vb_h - 2 * _MARGIN, 1.0)
-    scale = min(usable_w / span_x, usable_h / span_y)
-    proj_w = span_x * scale
-    proj_h = span_y * scale
-    off_x = vb_x + _MARGIN + (usable_w - proj_w) / 2
-    off_y = vb_y + _MARGIN + (usable_h - proj_h) / 2
+    scale = _scale_for_target_spacing(matched)
+
+    # Natural viewBox size from the chosen scale.
+    natural_w = span_x * scale + 2 * _MARGIN
+    natural_h = span_y * scale + 2 * _MARGIN
+    # Clamp the LARGER dimension to [_MIN_VIEWBOX_DIM, _MAX_VIEWBOX_DIM]
+    # and rescale the other side proportionally so the geographic
+    # aspect ratio is preserved even at the caps.
+    largest = max(natural_w, natural_h)
+    if largest < _MIN_VIEWBOX_DIM:
+        boost = _MIN_VIEWBOX_DIM / largest
+        scale *= boost
+        natural_w *= boost
+        natural_h *= boost
+    elif largest > _MAX_VIEWBOX_DIM:
+        shrink = _MAX_VIEWBOX_DIM / largest
+        scale *= shrink
+        natural_w *= shrink
+        natural_h *= shrink
+    new_w, new_h = natural_w, natural_h
+
+    svg_root.set("viewBox", f"0 0 {_fmt(new_w)} {_fmt(new_h)}")
+    svg_root.set("width", f"{_fmt(new_w)}pt")
+    svg_root.set("height", f"{_fmt(new_h)}pt")
+    _reanchor_graph_transform(svg_root, new_h)
 
     def project(lx: float, ly: float) -> tuple[float, float]:
-        """Layout (x, y) → viewBox (x, y) in graphviz y-up convention."""
-        px = (lx - min_lx) * scale + off_x
-        # grid_layout y tends to grow north (up) — match the graphviz
-        # convention by keeping y-up inside the SVG coordinate system.
-        # The SVG y-flip at the top of the tree handles display.
-        py = (ly - min_ly) * scale + off_y
-        return px, py
+        """Layout (x, y) → graphviz-local (x, y_up). The graph-level
+        transform maps this to screen via translate(MARGIN, new_h - MARGIN)
+        + cy=-Y_up → screen_y = (new_h - MARGIN) - Y_up."""
+        return (lx - min_lx) * scale, (ly - min_ly) * scale
 
     new_positions: dict[str, tuple[float, float]] = {}
     for name, old in old_positions.items():
@@ -278,6 +313,58 @@ def _pull_back(sx: float, sy: float, tx: float, ty: float, distance: float) -> t
         return tx, ty
     ratio = (length - distance) / length
     return sx + dx * ratio, sy + dy * ratio
+
+
+def _scale_for_target_spacing(points: list[tuple[float, float]]) -> float:
+    """Pick a layout-to-viewBox scale so the median nearest-neighbour
+    distance between points becomes ``_TARGET_SPACING_RATIO × node
+    radius`` pixels.  That keeps edge tails visible without letting
+    one far-away substation blow up the overall canvas (as a bbox /
+    mean-distance scaling would).  Falls back to 1.0 when fewer than
+    two points are available."""
+    if len(points) < 2:
+        return 1.0
+    # Nearest-neighbour distance per point, then the median over the
+    # whole set — O(N²) but N is the number of substations in the
+    # overflow graph (typically < 500, usually dozens).
+    nearest: list[float] = []
+    for i, (ax, ay) in enumerate(points):
+        best = float("inf")
+        for j, (bx, by) in enumerate(points):
+            if i == j:
+                continue
+            d = math.hypot(ax - bx, ay - by)
+            if d < best:
+                best = d
+        if best != float("inf") and best > 0:
+            nearest.append(best)
+    if not nearest:
+        return 1.0
+    nearest.sort()
+    median = nearest[len(nearest) // 2]
+    target_px = _TARGET_SPACING_RATIO * _NODE_RADIUS_PX
+    return target_px / median
+
+
+def _reanchor_graph_transform(svg_root, new_h: float) -> None:
+    """Rewrite the top-level ``<g class="graph"> transform`` so its
+    y-flip lands on the new viewBox.  The library emits something like
+    ``scale(1 1) rotate(0) translate(4 1352)`` where 1352 was the
+    original viewBox height.  We replace the last translate pair with
+    ``translate(MARGIN, new_h - MARGIN)`` so ``cy=-Y_up`` renders at
+    ``screen_y = (new_h - MARGIN) - Y_up``, inside the padded new
+    viewBox."""
+    for g in svg_root.iter():
+        if _local_tag(g) != "g" or not _has_class(g, "graph"):
+            continue
+        t = g.get("transform", "")
+        new_translate = f"translate({_fmt(_MARGIN)} {_fmt(new_h - _MARGIN)})"
+        if "translate(" in t:
+            t = re.sub(r"translate\([^)]*\)", new_translate, t)
+        else:
+            t = f"{t} {new_translate}".strip()
+        g.set("transform", t)
+        return
 
 
 def _arrowhead_points(sx: float, sy: float, ex: float, ey: float) -> str:
