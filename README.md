@@ -5,7 +5,7 @@
 > Formerly known as **ExpertAssist**. Rebranded to Co-Study4Grid in release 0.4 (PR #65).
 
 ![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)
-![Release](https://img.shields.io/badge/release-0.5.0-green)
+![Release](https://img.shields.io/badge/release-0.6.5-green)
 
 ---
 
@@ -39,17 +39,37 @@
 
 ### Frontend engineering
 - **React 19 + TypeScript 5.9 + Vite 7**, strict mode (`noUnusedLocals`, `noUnusedParameters`).
-- **Phase 1 refactor** (PR #74): `App.tsx` reduced from ~2100 → ~650 lines, now a pure state-orchestration hub; UI split into focused presentational components under `components/` and `components/modals/`.
-- **Phase 2 state-management optimization** (PR #75): memoized wrappers, centralized state resets, `React.memo` on heavy children — eliminates unnecessary re-renders of the three heaviest components.
+- **Phase 1 refactor** (PR #74): `App.tsx` reduced from ~2100 lines to a pure state-orchestration hub; UI split into focused presentational components under `components/` and `components/modals/`.
+- **Phase 2 hook extraction** (PR #109): `useN1Fetch` (svgPatch fast-path + `/api/n1-diagram` fallback) and `useDiagramHighlights` (per-tab SVG highlight pipeline) extracted out of `App.tsx`; sidebar moved into dedicated `AppSidebar` / `SidebarSummary` / `StatusToasts` components.
+- **SVG DOM recycling** (PR #108): `utils/svgPatch.ts` clones the mounted N-state SVG and patches only per-branch deltas on N-1 / action tab switches — **~80 % faster** tab switching on the ~12 MB French NAD (full benches in [`CHANGELOG.md`](CHANGELOG.md) 0.6.5).
+- **Code-quality gate** (PR #104): CI enforces zero `print()` / bare except / `any` / `@ts-ignore`, module-size ceilings, and publishes a full Markdown metrics report to each run's workflow summary.
 - **React ErrorBoundary** wrapping the app root (PR #82) to contain crashes.
-- **Vitest + React Testing Library** unit tests co-located as `*.test.tsx`.
-- **Standalone single-file UI** (`standalone_interface.html`) mirroring every feature of the React app, for zero-install demos.
+- **Vitest + React Testing Library** unit tests co-located as `*.test.tsx` — ~1000 specs.
+- **Auto-generated single-file UI** (`frontend/dist-standalone/standalone.html` via `npm run build:standalone`, PR #101) mirroring every feature of the React app, for zero-install demos. The legacy hand-maintained `standalone_interface.html` has been decommissioned.
 
 ---
 
-## Performance Highlights (release 0.5.0)
+## Performance Highlights
 
-Measured on the full French grid (~10k branches) with `scripts/profile_diagram_perf.py`. Full write-up in [`docs/performance/history/pr-perf-optimization-summary.md`](docs/performance/history/pr-perf-optimization-summary.md) and [`docs/performance/performance-profiling.md`](docs/performance/performance-profiling.md).
+Measured on the full French grid (`bare_env_20240828T0100Z`, ~10k
+branches, ~12 MB NAD SVG) with `scripts/profile_diagram_perf.py` and
+the backend micro-benches under `benchmarks/`. Full write-ups in
+[`docs/performance/history/`](docs/performance/history/) and
+[`CHANGELOG.md`](CHANGELOG.md).
+
+### 0.6.5 — SVG DOM recycling (PR #108)
+
+| Endpoint | Cold | Warm (median of 3) | Payload |
+|---|---|---|---|
+| `/api/n1-diagram` (full)      | 3.01 s | 2.39 s | 27.1 MB |
+| `/api/n1-diagram-patch` (new) | 0.49 s | 0.50 s |  5.5 MB |
+| **Δ** | **−83.8 %** | **−79.1 %** | 20.3 % of full |
+
+Mirrored on `/api/action-variant-diagram-patch` with dashed-class
+toggling for `disco_*` / `reco_*` and VL-subtree splicing for
+coupling / node-merging / node-splitting actions.
+
+### 0.5.0 — vectorisation + observation caching
 
 | Metric                              | Before   | After   | Speed-up   |
 |-------------------------------------|----------|---------|------------|
@@ -66,6 +86,7 @@ Measured on the full French grid (~10k branches) with `scripts/profile_diagram_p
 - Observation caching in the manual-action loop (eliminates redundant `get_obs()` refetches).
 - Pre-built `SimulationEnvironment` and `dict_action` reused across steps.
 - `lxml`-based NaN stripping + gzip compression for large SVG payloads (PR #70).
+- `display:none` on inactive SVG tabs cuts live DOM from ~600 k to ~200 k nodes (PRs #99, #102).
 - Frontend: throttled datalist rendering, zoom guard, level-of-detail tiers, and stable portal target for detached tabs to avoid unmount/remount cascades.
 
 ---
@@ -80,18 +101,32 @@ Co-Study4Grid/
 │   ├── main.py                  # API endpoints and app configuration
 │   └── services/
 │       ├── network_service.py       # Network loading and queries (pypowsybl)
-│       └── recommender_service.py   # Analysis orchestration, PDF/SVG generation
+│       ├── recommender_service.py   # Analysis orchestration, PDF/SVG generation
+│       ├── diagram_mixin.py  +  diagram/    # NAD/SLD orchestrator + 7 helpers
+│       ├── analysis_mixin.py +  analysis/   # Two-step analysis + 4 helpers
+│       ├── simulation_mixin.py + simulation_helpers.py  # Manual + combined actions
+│       └── sanitize.py              # NumPy → native-Python JSON coercion
 ├── frontend/                    # React + TypeScript + Vite frontend
+│   ├── dist-standalone/             # Auto-generated single-file UI bundle
+│   │                                # (npm run build:standalone)
 │   └── src/
-│       ├── App.tsx                  # State orchestration hub (~650 lines)
+│       ├── App.tsx                  # State orchestration hub (~1150 lines)
 │       ├── api.ts                   # Axios HTTP client
 │       ├── types.ts                 # Shared TypeScript interfaces
-│       ├── hooks/                   # Custom hooks (useSettings, useAnalysis, ...)
-│       ├── utils/                   # sessionUtils, interactionLogger, svgUtils
+│       ├── hooks/                   # useSettings / useAnalysis / useDiagrams /
+│       │                            # useN1Fetch / useDiagramHighlights / …
+│       ├── utils/                   # svgUtils (barrel) + svg/* submodules,
+│       │                            # svgPatch, actionTypes, sessionUtils,
+│       │                            # interactionLogger, mergeAnalysisResult, …
 │       └── components/              # Header, ActionFeed, VisualizationPanel,
-│                                    # OverloadPanel, CombinedActionsModal, modals/
-├── standalone_interface.html    # Self-contained single-file HTML version of the UI
-├── docs/                        # Architecture, performance, and feature docs
+│                                    # OverloadPanel, CombinedActionsModal,
+│                                    # AppSidebar, SidebarSummary, StatusToasts,
+│                                    # ActionTypeFilterChips, modals/, …
+├── standalone_interface_legacy.html # DECOMMISSIONED frozen snapshot (do not edit)
+├── docs/                        # features/, performance/, architecture/,
+│                                # proposals/, data/  — see docs/README.md
+├── benchmarks/                  # Offline micro-benches (warm / cold timings)
+├── scripts/                     # Parity + quality gates + PyPSA-EUR pipeline
 └── Overflow_Graph/              # Generated PDF output directory (created at runtime)
 ```
 
@@ -189,12 +224,15 @@ Open the Vite dev-server URL shown in the terminal (typically `http://localhost:
 |--------|------|-------------|
 | `GET`  | `/api/network-diagram` | Get the N-state network SVG (NAD) |
 | `POST` | `/api/n1-diagram` | Get the post-contingency N-1 diagram with flow deltas |
+| `POST` | `/api/n1-diagram-patch` | Per-branch delta (SVG-less) for DOM-recycling fast path (PR #108) |
 | `POST` | `/api/action-variant-diagram` | Diagram after applying a remedial action |
+| `POST` | `/api/action-variant-diagram-patch` | Per-branch delta + VL-subtree splice for action DOM recycling |
 | `POST` | `/api/focused-diagram` | Sub-diagram focused on an element with configurable depth |
 | `POST` | `/api/action-variant-focused-diagram` | Focused NAD for a specific VL in post-action state |
 | `POST` | `/api/n-sld` | Single Line Diagram for a voltage level in N state |
 | `POST` | `/api/n1-sld` | SLD in N-1 state with flow deltas |
 | `POST` | `/api/action-variant-sld` | SLD in post-action state |
+| `POST` | `/api/simulate-and-variant-diagram` | NDJSON stream: `{type:"metrics"}` then `{type:"diagram"}` so sidebar updates ahead of the SVG |
 | `GET`  | `/results/pdf/{filename}` | Serve generated overflow PDFs from `Overflow_Graph/` |
 
 ---
@@ -214,9 +252,8 @@ Open the Vite dev-server URL shown in the terminal (typically `http://localhost:
 - **axios** — HTTP client
 - **react-select** — searchable dropdown for branch selection
 - **react-zoom-pan-pinch** — pan/zoom for SVG visualizations
-- **framer-motion** — animations
-- **lucide-react** — icons
-- **Vitest** + **React Testing Library** — unit tests
+- **vite-plugin-singlefile** — auto-generated single-file standalone bundle
+- **Vitest** + **React Testing Library** — unit tests (~1000 specs)
 
 ---
 
@@ -233,29 +270,69 @@ npm run preview    # Preview production build
 
 ### Tests
 
-Frontend unit tests (Vitest):
+Backend unit tests (pytest, runs without `pypowsybl` /
+`expert_op4grid_recommender` thanks to the `conftest.py` mock
+layer — see [`expert_backend/tests/CLAUDE.md`](expert_backend/tests/CLAUDE.md)):
+
+```bash
+pytest                                   # Full backend suite
+pytest expert_backend/tests/test_mw_start.py   # Single file
+pytest -k "TestSuperposition"            # Pattern
+```
+
+Frontend unit tests (Vitest + React Testing Library):
 
 ```bash
 cd frontend && npm run test
 ```
 
-Backend integration tests (require a running backend with valid data paths):
+Code-quality gate (CI-enforced, PR #104):
 
 ```bash
-python test_backend.py          # Config, branches, and analysis tests
-python test_api_stream.py       # Streaming response tests
-python test_n1_api.py           # N-1 contingency diagram tests
-python test_voltage_api.py      # Voltage levels API tests
-python verify_n1_simulation.py  # N-1 simulation verification
+python scripts/check_code_quality.py                 # Exit non-zero on regression
+python scripts/code_quality_report.py --summary      # Local Markdown report
+```
+
+Ad-hoc integration / profiling scripts (require a running backend
+and real data paths):
+
+```bash
+python expert_backend/test_backend.py                # Config + branches + analysis
+python scripts/profile_diagram_perf.py               # NAD rendering profiler
+python scripts/pypsa_eur/test_pipeline.py            # PyPSA-EUR end-to-end smoke test
+pytest scripts/pypsa_eur                             # PyPSA-EUR pipeline unit tests
 ```
 
 ---
 
 ## Standalone Interface
 
-`standalone_interface.html` is a self-contained single-file version of the UI that can be opened directly in a browser (pointed at a running backend). It mirrors every feature of the React app — including detachable tabs, SLD highlights, combined actions, PST / curtailment / load-shedding cards, interaction logging, and zoom-tier level of detail — with no build step.
+The single-file standalone UI is **auto-generated** from the React
+source tree (PR #101). Build it with:
 
-When making UI changes, always mirror them in both the React app and the standalone interface.
+```bash
+cd frontend && npm run build:standalone
+```
+
+The output is `frontend/dist-standalone/standalone.html` — a ~1 MB
+self-contained HTML with React + CSS inlined via
+`vite-plugin-singlefile`. Open it directly in a browser (pointed at
+a running backend). It mirrors every feature of the React app —
+detachable tabs, SLD highlights, combined actions, PST / curtailment
+/ load-shedding cards, interaction logging, zoom-tier level of
+detail, SVG DOM recycling — with no build step for consumers.
+
+The legacy hand-maintained `standalone_interface.html` has been
+decommissioned and renamed to `standalone_interface_legacy.html`
+(committed as a frozen snapshot, do NOT edit). UI changes land only
+in `frontend/src/` — the auto-generated bundle inherits them on the
+next `npm run build:standalone`.
+
+Parity between the React source and the bundle is guarded by four
+layers of automated checks (`scripts/check_standalone_parity.py`,
+`scripts/check_session_fidelity.py`,
+`scripts/check_gesture_sequence.py`, `scripts/check_invariants.py`)
+— see [`frontend/PARITY_AUDIT.md`](frontend/PARITY_AUDIT.md).
 
 ---
 
@@ -271,7 +348,7 @@ When making UI changes, always mirror them in both the React app and the standal
 
 ## Changelog
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the list of changes per release. The current release is **0.5.0**.
+See [`CHANGELOG.md`](CHANGELOG.md) for the list of changes per release. The current release is **0.6.5**.
 
 ---
 

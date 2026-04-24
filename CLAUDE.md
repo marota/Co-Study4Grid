@@ -11,36 +11,60 @@ Co-Study4Grid is a full-stack web application for **power grid contingency analy
 ```
 Co-Study4Grid/
 ├── CLAUDE.md                  # This file — project overview + standalone parity audit
+├── README.md                  # User-facing project description + quick start
+├── CHANGELOG.md               # Per-release changelog (current: 0.6.5)
+├── CONTRIBUTING.md            # Contributor setup, code-quality gate
+├── pyproject.toml             # Python project metadata + ruff config (E9/F ruleset)
+├── pytest.ini                 # Pytest config (testpaths = expert_backend/tests)
 ├── expert_backend/            # Python FastAPI backend
 │   ├── CLAUDE.md              # Backend-scoped guide (singletons, mixins, lifecycle)
 │   ├── main.py                # FastAPI app: endpoints, CORS, gzip helpers, NDJSON streaming
 │   ├── requirements.txt
+│   ├── test_backend.py        # Ad-hoc integration script (not part of pytest)
 │   ├── services/
 │   │   ├── network_service.py     # pypowsybl Network singleton + metadata queries
 │   │   ├── recommender_service.py # Analysis orchestrator (composes the 3 mixins below)
-│   │   ├── diagram_mixin.py       # NAD/SLD generation, layout cache, flow deltas
-│   │   ├── analysis_mixin.py      # Two-step contingency analysis + action enrichment
-│   │   ├── simulation_mixin.py    # Manual-action simulation + superposition
-│   │   └── sanitize.py            # NumPy → native-Python recursive coercion
+│   │   ├── diagram_mixin.py       # NAD/SLD orchestrator — delegates to services/diagram/
+│   │   ├── analysis_mixin.py      # Two-step analysis orchestrator — delegates to services/analysis/
+│   │   ├── simulation_mixin.py    # Manual-action + superposition orchestrator
+│   │   ├── simulation_helpers.py  # Stateless helpers extracted from simulation_mixin (PR #104)
+│   │   ├── sanitize.py            # NumPy → native-Python recursive coercion
+│   │   ├── analysis/              # PR #104 decomposition — action_enrichment,
+│   │   │                          # mw_start_scoring, analysis_runner, pdf_watcher
+│   │   └── diagram/               # PR #104 decomposition — layout_cache, nad_params,
+│   │                              # nad_render, sld_render, overloads, flows, deltas
 │   └── tests/                 # pytest suite — see tests/CLAUDE.md for the mock layer
 ├── frontend/                  # React 19 + TypeScript 5.9 + Vite 7 frontend
 │   ├── CLAUDE.md              # Frontend-scoped guide (App.tsx hub, hooks, SVG levers)
-│   ├── package.json, vite.config.ts, eslint.config.js, tsconfig*.json
+│   ├── package.json, vite.config.ts, vite.config.standalone.ts,
+│   │                          # eslint.config.js, tsconfig*.json
 │   └── src/
-│       ├── App.tsx                # State orchestration hub (~1000 lines)
+│       ├── App.tsx                # State orchestration hub (~1150 lines)
 │       ├── api.ts                 # Axios HTTP client (base URL: 127.0.0.1:8000)
 │       ├── types.ts               # All TypeScript interfaces (one file)
-│       ├── hooks/                 # useSettings/useActions/useAnalysis/useDiagrams/
-│       │                          # useSession/useDetachedTabs/useTiedTabsSync/usePanZoom/
-│       │                          # useSldOverlay
-│       ├── components/            # Header, ActionFeed, ActionCard, ActionOverviewDiagram,
-│       │                          # VisualizationPanel, OverloadPanel, CombinedActionsModal,
-│       │                          # ComputedPairsTable, ExplorePairsTab, SldOverlay,
-│       │                          # DetachableTabHost, MemoizedSvgContainer, ErrorBoundary
+│       ├── hooks/                 # useSettings / useActions / useAnalysis / useDiagrams /
+│       │                          # useSession / useDetachedTabs / useTiedTabsSync /
+│       │                          # usePanZoom / useSldOverlay / useN1Fetch (svgPatch fast-
+│       │                          # path + full fallback) / useDiagramHighlights (per-tab
+│       │                          # highlight pipeline + Flow/Impacts view-mode state)
+│       ├── components/            # Header, ActionFeed, ActionCard, ActionCardPopover,
+│       │                          # ActionSearchDropdown, ActionTypeFilterChips,
+│       │                          # ActionOverviewDiagram, AppSidebar, SidebarSummary,
+│       │                          # StatusToasts, VisualizationPanel, OverloadPanel,
+│       │                          # CombinedActionsModal, ComputedPairsTable,
+│       │                          # ExplorePairsTab, SldOverlay, DetachableTabHost,
+│       │                          # MemoizedSvgContainer, ErrorBoundary
 │       │                          # + modals/ (SettingsModal, ReloadSessionModal,
 │       │                          #            ConfirmationDialog)
-│       └── utils/                 # svgUtils, overloadHighlights, sessionUtils,
-│                                  # interactionLogger, popoverPlacement, mergeAnalysisResult
+│       └── utils/                 # svgUtils (barrel re-exporting utils/svg/*),
+│                                  # svgPatch (DOM-recycling patch applier),
+│                                  # overloadHighlights, sessionUtils, interactionLogger,
+│                                  # popoverPlacement, mergeAnalysisResult, actionTypes
+│                                  # (classifyActionType + DEFAULT_ACTION_OVERVIEW_FILTERS),
+│                                  # fileRegistry (structure regression guard)
+│           └── svg/               # PR #104 decomposition — idMap, metadataIndex,
+│                                  # svgBoost, fitRect, deltaVisuals, actionPinData,
+│                                  # actionPinRender, highlights
 ├── standalone_interface_legacy.html  # DECOMMISSIONED 2026-04-20 — hand-maintained
 │                              # single-file mirror frozen at its last version and
 │                              # tracked here for reference only. Replaced by the
@@ -54,13 +78,17 @@ Co-Study4Grid/
 ├── benchmarks/                # Perf scripts (bench_load_study, _bench_common)
 ├── Overflow_Graph/            # Generated PDFs (created at runtime)
 ├── overrides.txt              # Pinned versions for transitive Python deps
+├── requirements_py310.txt     # Python 3.10-pinned requirements superset
 ├── scripts/                   # Integration / parity / build helpers —
 │                              # `check_standalone_parity.py`,
 │                              # `check_session_fidelity.py`,
 │                              # `check_gesture_sequence.py`,
 │                              # `check_invariants.py`, `check_code_quality.py`,
-│                              # `code_quality_report.py`, `test_pipeline.py`, …
-├── CONTRIBUTING.md            # Contributor setup, code-quality gate
+│                              # `code_quality_report.py`, `profile_diagram_perf.py`,
+│                              # `test_code_quality_report.py`,
+│                              # `test_estimation_vs_simulation_small_grid.py`,
+│                              # and `pypsa_eur/` (full PyPSA-EUR → XIIDM pipeline
+│                              # with its own pytest coverage)
 ├── .editorconfig              # Cross-editor indent / EOL defaults
 ├── .env.example               # Template for backend env vars (CORS, …)
 └── .gitignore                 # Excludes __pycache__/, *.pyc, *.pyo, node_modules/
@@ -93,8 +121,8 @@ Co-Study4Grid/
 - **axios** - HTTP client
 - **react-select** - Searchable dropdown for branch selection
 - **react-zoom-pan-pinch** - Pan/zoom for visualizations
-- **framer-motion** - Animations
-- **lucide-react** - Icons
+- **vite-plugin-singlefile** - Auto-generated single-file standalone bundle
+- **Vitest** + **React Testing Library** - Unit / integration tests
 
 ## Development Workflow
 
@@ -138,13 +166,17 @@ pytest                                   # Full backend suite
 pytest expert_backend/tests/test_foo.py  # Single file
 ```
 
-Ad-hoc integration scripts live in `scripts/` and require a running
-backend with real data paths:
+Ad-hoc integration scripts live in `scripts/` (and `scripts/pypsa_eur/`
+for the PyPSA-EUR → XIIDM pipeline). The pipeline scripts carry their
+own pytest coverage (`scripts/pypsa_eur/test_*.py`) alongside the
+backend suite; the rest require a running backend with real data:
 
 ```bash
-python scripts/test_pipeline.py          # End-to-end smoke test
-python scripts/test_n1_calibration.py    # N-1 flow calibration check
-python scripts/test_grid_layout.py       # Layout loading sanity check
+pytest scripts/pypsa_eur                           # Pipeline unit tests
+python scripts/pypsa_eur/test_pipeline.py          # End-to-end smoke test
+python scripts/pypsa_eur/test_n1_calibration.py    # N-1 flow calibration check
+python scripts/pypsa_eur/test_grid_layout.py       # Layout loading sanity check
+python scripts/profile_diagram_perf.py             # NAD rendering profiler
 ```
 
 Frontend unit tests use Vitest:
@@ -175,31 +207,38 @@ Both scripts run in CI (`.github/workflows/code-quality.yml` and
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET  | `/api/user-config` | Read persisted user configuration (paths, recommender params) |
+| POST | `/api/user-config` | Persist user configuration |
+| GET  | `/api/config-file-path` | Get the current user-config file path |
+| POST | `/api/config-file-path` | Set a custom user-config file path |
 | POST | `/api/config` | Set network path, action file path, and all recommender parameters |
-| GET | `/api/branches` | List disconnectable elements (lines + 2-winding transformers) |
-| GET | `/api/voltage-levels` | List voltage levels in the network |
-| GET | `/api/nominal-voltages` | Map voltage level IDs to nominal voltages (kV) |
-| GET | `/api/element-voltage-levels` | Resolve equipment ID to its voltage level IDs |
-| POST | `/api/run-analysis` | Run full N-1 contingency analysis (streaming NDJSON) |
+| GET  | `/api/branches` | List disconnectable elements (lines + 2-winding transformers) |
+| GET  | `/api/voltage-levels` | List voltage levels in the network |
+| GET  | `/api/nominal-voltages` | Map voltage level IDs to nominal voltages (kV) |
+| GET  | `/api/element-voltage-levels` | Resolve equipment ID to its voltage level IDs |
+| POST | `/api/run-analysis` | Run full N-1 contingency analysis (streaming NDJSON, legacy) |
 | POST | `/api/run-analysis-step1` | Two-step analysis Part 1: detect overloads |
 | POST | `/api/run-analysis-step2` | Two-step analysis Part 2: resolve with actions (streaming NDJSON) |
-| GET | `/api/network-diagram` | Get N-state network SVG diagram (NAD) |
+| GET  | `/api/network-diagram` | Get N-state network SVG diagram (NAD) |
 | POST | `/api/n1-diagram` | Get post-contingency N-1 diagram with flow deltas |
+| POST | `/api/n1-diagram-patch` | SVG-less per-branch delta for DOM-recycling fast path (PR #108) |
 | POST | `/api/action-variant-diagram` | Get network state after applying a remedial action |
+| POST | `/api/action-variant-diagram-patch` | Per-branch delta + VL-subtree splice for action DOM recycling |
 | POST | `/api/focused-diagram` | Generate NAD sub-diagram focused on a specific element |
 | POST | `/api/action-variant-focused-diagram` | Focused NAD for specific VL in post-action state |
 | POST | `/api/n-sld` | Single Line Diagram for voltage level in N state |
 | POST | `/api/n1-sld` | Single Line Diagram in N-1 state (with flow deltas) |
 | POST | `/api/action-variant-sld` | SLD in post-action state |
-| GET | `/api/actions` | Return all available action IDs and descriptions |
+| GET  | `/api/actions` | Return all available action IDs and descriptions |
 | POST | `/api/simulate-manual-action` | Simulate a specific action against a contingency |
+| POST | `/api/simulate-and-variant-diagram` | NDJSON stream: `{type:"metrics"}` then `{type:"diagram"}` so sidebar updates ahead of the SVG |
 | POST | `/api/compute-superposition` | Compute combined effect of two actions (superposition theorem) |
 | POST | `/api/save-session` | Save session folder with JSON snapshot + PDF copy |
-| GET | `/api/list-sessions` | List available session folders in a directory |
+| GET  | `/api/list-sessions` | List available session folders in a directory |
 | POST | `/api/load-session` | Load session JSON and restore PDFs |
 | POST | `/api/restore-analysis-context` | Restore analysis context from saved session |
-| GET | `/api/pick-path` | Open native OS file/directory picker (tkinter subprocess) |
-| GET | `/results/pdf/{filename}` | Serve generated PDF files from `Overflow_Graph/` |
+| GET  | `/api/pick-path` | Open native OS file/directory picker (tkinter subprocess) |
+| GET  | `/results/pdf/{filename}` | Serve generated PDF files from `Overflow_Graph/` |
 
 ## Key Patterns & Conventions
 
@@ -209,18 +248,23 @@ Both scripts run in CI (`.github/workflows/code-quality.yml` and
 - **AC/DC fallback**: Analysis first tries AC load flow; falls back to DC if AC does not converge
 - **Threaded analysis**: `run_analysis` runs the computation in a background thread and polls for PDF generation
 - **JSON sanitization**: NumPy types are recursively converted to native Python types via `sanitize_for_json()`
+- **Mixin → helper-package decomposition (PR #104 / #106)**: `DiagramMixin`, `AnalysisMixin` and `SimulationMixin` are thin orchestrators. Pure numerics live in `services/diagram/`, `services/analysis/` and `services/simulation_helpers.py` respectively — dependency-injected so existing `@patch` tests keep working.
+- **SVG DOM recycling (PR #108)**: patch endpoints (`/api/n1-diagram-patch`, `/api/action-variant-diagram-patch`) return per-branch deltas + optional VL-subtree splices so the frontend can clone the already-mounted N-state SVG instead of re-downloading the full NAD (~80 % faster tab switches on large grids).
 - **Shared diagram helpers**: `RecommenderService` uses `_load_network()`, `_load_layout()`, `_default_nad_parameters()`, and `_generate_diagram()` to deduplicate diagram generation logic across endpoints
 - **Focused diagrams**: The `/api/focused-diagram` endpoint resolves an element to its voltage levels and generates a sub-diagram with configurable depth, useful for inspecting specific parts of large grids
-- **No formal Python linter config**: Code follows PEP 8 conventions manually
+- **Ruff-gated**: `pyproject.toml` configures a narrow `E9` + `F` ruleset (real bugs only); stylistic rules deliberately off
 
 ### Frontend
 - **Strict TypeScript**: `strict: true`, `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`
 - **Functional components** with React hooks; no external state management library
 - **Inline styles**: Components use inline `style` objects rather than CSS modules or utility classes
-- **Component architecture (Phase 1 refactored)**:
-  - `App.tsx` (~650 lines) is the **state orchestration hub** — it wires all hooks together and handles cross-hook logic (e.g., `handleApplySettings`). It should NOT contain large JSX blocks.
-  - **Presentational components** live in `components/` and `components/modals/`. They receive data and callbacks via typed props; all business logic stays in `App.tsx`.
+- **Component architecture (Phase 2 hook extraction, PR #109)**:
+  - `App.tsx` (~1150 lines) is the **state orchestration hub** — it wires all hooks together and handles cross-hook logic (e.g., `handleApplySettings`). It should NOT contain large JSX blocks.
+  - **Presentational components** live in `components/` and `components/modals/`. They receive data and callbacks via typed props; all business logic stays in `App.tsx` or in hooks.
+  - `hooks/useN1Fetch.ts` owns the N-1 diagram fetch pipeline (svgPatch fast-path + `/api/n1-diagram` fallback + contingency-change confirm routing).
+  - `hooks/useDiagramHighlights.ts` owns the per-tab SVG highlight pipeline (overload halos, contingency highlight, action targets, delta visuals) + per-tab Flow/Impacts view-mode state.
   - `useSettings.ts` exposes `SettingsState` (all settings values + setters), which is passed wholesale to `SettingsModal` to avoid 30+ prop-drilling.
+- **SVG DOM recycling (PR #108)**: `utils/svgPatch.ts` clones the already-mounted N-state `SVGSVGElement` and patches only per-branch deltas on N-1 / action tab switches, saving a 12–28 MB SVG re-download and re-parse.
 - **Props-based data flow**: State lifted to `App.tsx`, passed down via props
 - **ESLint**: Flat config (v9+) with `typescript-eslint`, `react-hooks`, and `react-refresh` plugins
 - **Unit tests** use Vitest + React Testing Library. Isolated component tests (no backend mocking needed) live alongside their components as `*.test.tsx` files.
@@ -246,7 +290,8 @@ Both scripts run in CI (`.github/workflows/code-quality.yml` and
 - See `docs/features/save-results.md` for session save/load, `docs/features/interaction-logging.md` for the replay contract, and `docs/features/action-overview-diagram.md` for the Remedial Action overview (pin overlay on N-1 network)
 
 ### SVG Visualization
-Both the React frontend and `standalone_interface.html` render pypowsybl
+Both the React frontend and the auto-generated
+`frontend/dist-standalone/standalone.html` render pypowsybl
 NAD/SLD payloads:
 - **Dynamic text scaling** (`utils/svgUtils.ts:boostSvgForLargeGrid` /
   standalone `boostSvgForLargeGrid`): font sizes for node labels, edge
@@ -261,9 +306,9 @@ NAD/SLD payloads:
   they sit.
 - **ViewBox zoom**: auto-centers on selected contingency targets with
   adjustable padding.
-- **Pan/zoom**: React uses `react-zoom-pan-pinch` (smooth,
-  inertia-aware); standalone uses inline viewBox math (basic, no
-  inertia). See the parity audit below for the gap.
+- **Pan/zoom**: `react-zoom-pan-pinch` in both the React dev build
+  and the auto-generated standalone (they share the same source
+  tree).
 
 ## Dependencies
 
@@ -287,13 +332,13 @@ NAD/SLD payloads:
 ## Notes for AI Assistants
 
 - The backend API base URL is hardcoded to `http://localhost:8000` in `frontend/src/api.ts`
-- CORS is configured to allow all origins (`allow_origins=["*"]`)
-- **Frontend architecture (Phase 1 refactored)**: `App.tsx` is the state orchestration hub; it must NOT contain large inline JSX blocks. Extracted presentational components live in `components/` and `components/modals/`. When adding new UI sections, create a new component file and wire it in `App.tsx`.
+- CORS is wide-open by default (`allow_origins=["*"]`) but configurable via the `CORS_ALLOWED_ORIGINS` env var (PR #104, see `.env.example`)
+- **Frontend architecture (Phase 2 hook extraction, PR #109)**: `App.tsx` is the state orchestration hub; it must NOT contain large inline JSX blocks. Extracted presentational components live in `components/` and `components/modals/`; cross-cutting state pipelines live in `hooks/` (notably `useN1Fetch` and `useDiagramHighlights`). When adding new UI sections, create a new component file (or hook for stateful pipelines) and wire it in `App.tsx`.
 - **`useSettings` hook**: Exposes a `SettingsState` object with all settings fields + setters. This is passed wholesale to `SettingsModal` to avoid excessive prop drilling. Adding a new setting means: (1) add to `useSettings.ts`, (2) add to `SettingsModal.tsx`. No manual standalone mirror is required — the legacy hand-maintained file has been decommissioned and the auto-generated bundle inherits from the React source automatically.
-- **Standalone bundle (auto-generated)**: `npm run build:standalone` in `frontend/` produces `frontend/dist-standalone/standalone.html` — a single-file HTML with React + CSS inlined via `vite-plugin-singlefile`. This is the canonical distribution artifact replacing the former `standalone_interface.html`. The legacy file remains on disk as `standalone_interface_legacy.html` (untracked) for reference.
-- There is no CI/CD pipeline, Dockerfile, or containerization configured
+- **Standalone bundle (auto-generated)**: `npm run build:standalone` in `frontend/` produces `frontend/dist-standalone/standalone.html` — a single-file HTML with React + CSS inlined via `vite-plugin-singlefile`. This is the canonical distribution artifact replacing the former `standalone_interface.html`. The legacy file remains on disk as `standalone_interface_legacy.html` (tracked as a frozen snapshot — do NOT edit).
+- **CI pipelines**: GitHub Actions (`.github/workflows/code-quality.yml`, `parity.yml`) and CircleCI (`.circleci/config.yml`) both run the code-quality gate, ruff, and the parity scripts. No Dockerfile / containerization.
 - Root `.gitignore` excludes `__pycache__/`, `*.pyc`, `*.pyo`; `frontend/.gitignore` handles frontend build artifacts
-- Integration helpers and parity scripts live under `scripts/`. They are NOT part of the pytest suite — invoke them directly (`python scripts/<name>.py`).
+- Integration helpers and parity scripts live under `scripts/`. They are NOT part of the pytest suite — invoke them directly. The PyPSA-EUR pipeline scripts under `scripts/pypsa_eur/` DO carry pytest coverage (`test_build_pipeline.py`, `test_calibrate_thermal_limits.py`, `test_generate_n1_overloads.py`, `test_regenerate_grid_layout.py`).
 - `overrides.txt` contains pinned versions for transitive Python dependencies that need to be forced to specific versions
 - **Frontend unit tests** use Vitest + React Testing Library. Isolated component tests live as `*.test.tsx` files next to their component. Run with `cd frontend && npm run test`. No backend mocking is needed for component tests since they only use mocked props.
 - The two-step analysis flow (step1: detect overloads, step2: resolve) is the primary user workflow; the single-step `/api/run-analysis` is a legacy alternative
@@ -310,7 +355,7 @@ and delta-vs-previous commits — lives in
 document is the working record of the parity project and is
 updated as fixes land.
 
-Quick status summary (2026-04-20):
+Quick status summary (2026-04-24):
 
 - Canonical distribution is now the auto-generated
   `frontend/dist-standalone/standalone.html`
@@ -319,7 +364,9 @@ Quick status summary (2026-04-20):
   renamed to `standalone_interface_legacy.html` — committed as
   a frozen snapshot of its last version (commit `5d2b9d1` content),
   do NOT edit further. Regenerate UI from `frontend/src/` via
-  `npm run build:standalone` instead.
+  `npm run build:standalone` instead. The standalone versioned
+  snapshot was bumped to v0.7 on `adae7ac` to include references
+  to the new `/api/*-diagram-patch` endpoints.
 - Four parity layers run against the React source + the
   standalone of choice:
   - **Layer 1 — static parity** (`scripts/check_standalone_parity.py`)
