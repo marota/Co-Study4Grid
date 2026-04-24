@@ -21,18 +21,33 @@ expert_backend/
 ├── test_backend.py            # Ad-hoc integration script (not part of pytest)
 ├── services/
 │   ├── __init__.py
-│   ├── network_service.py     # NetworkService singleton — pypowsybl Network
-│   │                          # loading, branch / VL / nominal-voltage queries
-│   ├── recommender_service.py # RecommenderService singleton — orchestrates
-│   │                          # analysis. Composes the three mixins below.
-│   ├── diagram_mixin.py       # NAD/SLD generation, layout cache, flow deltas,
-│   │                          # overload detection
-│   ├── analysis_mixin.py      # Two-step contingency analysis (step1 detect,
-│   │                          # step2 resolve), action enrichment, MW/tap-start
-│   ├── simulation_mixin.py    # Manual-action simulation, superposition,
-│   │                          # action-dictionary helpers
-│   └── sanitize.py            # NumPy → native-Python recursive coercion
-│                              # (`sanitize_for_json`)
+│   ├── network_service.py         # NetworkService singleton — pypowsybl Network
+│   │                              # loading, branch / VL / nominal-voltage queries
+│   ├── recommender_service.py     # RecommenderService singleton — orchestrates
+│   │                              # analysis. Composes the three mixins below.
+│   ├── diagram_mixin.py           # NAD/SLD orchestrator — delegates pure
+│   │                              # numerics to services/diagram/ helpers
+│   ├── diagram/                   # PR #104 decomposition (ex-diagram_mixin):
+│   │   ├── layout_cache.py        # - (path, mtime)-keyed grid_layout.json loader
+│   │   ├── nad_params.py          # - default NadParameters factory
+│   │   ├── nad_render.py          # - NAD generation + NaN-element stripping
+│   │   ├── sld_render.py          # - SLD SVG + metadata with fallbacks
+│   │   ├── overloads.py           # - overload filtering, element-currents
+│   │   ├── flows.py               # - branch + asset flow extractors (vectorised)
+│   │   └── deltas.py              # - terminal-aware flow-delta math (pure)
+│   ├── analysis_mixin.py          # Two-step orchestrator — delegates pure
+│   │                              # numerics to services/analysis/ helpers
+│   ├── analysis/                  # PR #104 decomposition (ex-analysis_mixin):
+│   │   ├── action_enrichment.py   # - LS / curtail / PST / topology details
+│   │   ├── mw_start_scoring.py    # - MW-at-start dispatcher + per-type math
+│   │   ├── analysis_runner.py     # - AC→DC fallback worker, PDF-polling stream
+│   │   └── pdf_watcher.py         # - overflow PDF glob + mtime filter
+│   ├── simulation_mixin.py        # Manual-action + superposition orchestrator
+│   ├── simulation_helpers.py      # PR #104 decomposition — 14 stateless
+│   │                              # helpers (setpoint math, PST parsing, care
+│   │                              # mask, metrics, result serialisation, …)
+│   └── sanitize.py                # NumPy → native-Python recursive coercion
+│                                  # (`sanitize_for_json`)
 └── tests/                     # pytest suite — see tests/CLAUDE.md
 ```
 
@@ -49,6 +64,18 @@ the same `self`. The composition is intentional: state lifecycle
 (`__init__`, `reset`, `update_config`) stays in `recommender_service.py`
 and the mixins reach into it through `self`. Treat the mixins as one
 class split across files for readability.
+
+**Mixin → helper-package decomposition (PR #104 / #106).** Each
+mixin is now a **thin orchestrator** that delegates stateless pure
+numerics to sibling packages: `services/diagram/` (7 modules),
+`services/analysis/` (4 modules), and `services/simulation_helpers.py`
+(14 free functions). The split keeps the mixins manageable while
+preserving `@patch` compatibility — helpers that need service
+collaborators (`get_virtual_line_flow`, `run_analysis`, …) accept
+them as optional callables and the mixin reads those from its own
+module namespace at call time, so legacy
+`@patch('expert_backend.services.analysis_mixin.*')` tests keep
+working unchanged.
 
 ## Singletons & shared state
 
@@ -124,6 +151,14 @@ Diagram & topology:
   `docs/performance/history/loading-parallel.md`).
 - `POST /api/n1-diagram` / `/api/action-variant-diagram` /
   `/api/focused-diagram` / `/api/action-variant-focused-diagram`
+- `POST /api/n1-diagram-patch` / `/api/action-variant-diagram-patch`
+  — **SVG-less per-branch deltas** for the frontend DOM-recycling
+  fast path (PR #108). Return the same flow / contingency / topology
+  metadata as the full endpoints but omit the multi-MB SVG body. The
+  frontend's `utils/svgPatch.ts` clones the already-mounted N-state
+  SVG and patches it with this delta — ~80 % faster tab switches on
+  the ~12 MB French NAD. See
+  `docs/performance/history/svg-dom-recycling.md`.
 - `POST /api/n-sld` / `/api/n1-sld` / `/api/action-variant-sld`
 
 Analysis:
@@ -274,21 +309,22 @@ no prefetch was ever started (e.g. tests bypassing `update_config`).
 ## Conventions
 
 - **Logging**: `logger = logging.getLogger(__name__)`. Use it
-  (no `print`) for new code.
-- **No formal Python linter**: code follows PEP 8 manually. Match
-  the surrounding style (4-space indent, type hints where helpful,
-  docstrings on public methods).
+  (no `print`, no `traceback.print_exc()`) for new code — the
+  code-quality gate enforces this (PR #104).
+- **Ruff** is configured in `pyproject.toml` with a narrow
+  `E9` + `F` ruleset (real bugs only — no stylistic rules). Run
+  `ruff check expert_backend` before committing.
 - **Error handling at the API boundary**: services raise standard
   exceptions; `main.py` translates them to `HTTPException` with a
   meaningful detail message. Internal validation that "can't fail"
   shouldn't be there — trust the caller.
 - **No backwards-compatibility shims**: when a feature changes,
-  update the consumers in the same commit (frontend, standalone
-  HTML, tests).
-- **`standalone_interface.html` parity**: the root has a self-
-  contained single-file mirror of the React UI. UI-related backend
-  changes (new endpoints, payload shape changes) need a manual
-  mirror there too.
+  update the consumers in the same commit (frontend, tests).
+- **Auto-generated standalone**: no manual mirroring is required.
+  `npm run build:standalone` regenerates
+  `frontend/dist-standalone/standalone.html` from the React source
+  tree; the legacy hand-maintained `standalone_interface.html` has
+  been decommissioned (PR #101).
 
 ## Running
 
@@ -299,6 +335,7 @@ python -m expert_backend.main
 uvicorn expert_backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-CORS is wide-open (`allow_origins=["*"]`) because the dev frontend
-hits the backend cross-origin. Tighten before any non-local
-deployment.
+CORS defaults to wide-open (`allow_origins=["*"]`) because the dev
+frontend hits the backend cross-origin. It is configurable via the
+`CORS_ALLOWED_ORIGINS` env var (PR #104 — see `.env.example`).
+Tighten before any non-local deployment.

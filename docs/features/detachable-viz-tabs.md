@@ -310,7 +310,7 @@ concrete choices / deviations:
 | Pop-up blocker fallback | Toast + cancel | Inline error set via `setError(...)` — reuses the existing global error banner rather than introducing a new toast component. |
 | Global event listener audit | `usePanZoom`, `SldOverlay`, zoom code | Done for `usePanZoom.ts` and `SldOverlay.tsx`. No other globals needed patching. |
 | Styles `MutationObserver` | Optional | Not shipped — unnecessary in practice. |
-| `standalone_interface.html` mirror | Disabled button with "dev build only" tooltip | **Not mirrored** in this iteration. The standalone HTML is a single-file dev artefact that does not use React portals, and wiring popup cloning into it would add significant complexity with little user value. Left as a known follow-up if we ever want feature parity. |
+| Standalone mirror | Disabled button with "dev build only" tooltip | No longer a separate concern. The legacy hand-maintained `standalone_interface.html` has been decommissioned (PR #101) and the canonical distribution is now `frontend/dist-standalone/standalone.html`, auto-generated from this React source via `npm run build:standalone`. Detach therefore works identically in the bundle — the Unicode-glyph button and popup-based detach flow are inherited unchanged. |
 | Interaction log | Not covered in plan | Added `tab_detached` / `tab_reattached` events so session replays can reproduce window layout. |
 | Tests | Vitest hook tests + panel behaviour tests | Shipped: `hooks/useDetachedTabs.test.ts` (148 lines) covering detach/reattach/focus/pruning/popup-blocked paths. Panel-level tests were not added — the hook tests + manual verification were deemed sufficient given the amount of DOM/Window mocking a full panel test would require. |
 
@@ -848,9 +848,7 @@ Vitest suites:
    If Vite HMR injects new styles while a tab is detached, the popup
    will not pick them up until it is reattached and detached again. This
    only affects dev mode.
-3. **`standalone_interface.html` parity** — the single-file standalone
-   interface does not support detaching. See the table above.
-4. **Full page reload** — reloading the main window closes all detached
+3. **Full page reload** — reloading the main window closes all detached
    popups (by design). We do not currently persist and restore detached
    state across reloads.
 

@@ -58,9 +58,14 @@ Flow for contingency change:
 5. On confirm: `clearContingencyState()` is called, `committedBranchRef` is updated, branch is committed
 6. On cancel: dialog closes, input stays at committed branch
 
-#### Standalone Interface (`standalone_interface.html`)
+#### Standalone Interface
 
-Uses `window.confirm()` (native browser dialog) for consistency with the existing Load Study and Apply Settings confirmation patterns already present in the standalone version.
+No separate standalone mirror is required: the single-file distribution is now
+`frontend/dist-standalone/standalone.html`, auto-generated from this same React
+source via `npm run build:standalone` (PR #101). It therefore renders the exact
+same `ConfirmationDialog` component — the legacy hand-maintained
+`standalone_interface.html` that used `window.confirm()` has been decommissioned
+and frozen as `standalone_interface_legacy.html`.
 
 ---
 
@@ -105,23 +110,39 @@ The `/api/config` endpoint now **always reloads the network** and **resets the r
 - Cached simulation environments (`_simulation_env`) from a previous analysis
 - Leftover `_base_network`, `_last_disconnected_element`, `_dict_action`, `_analysis_context`
 
-The `RecommenderService.reset()` method clears:
-- `_last_result`
-- `_is_running`, `_generator`
-- `_base_network`, `_simulation_env`
-- `_last_disconnected_element`
-- `_dict_action`, `_analysis_context`
-- `_layout_cache` — the cached `grid_layout.json` DataFrame used as
-  `fixed_positions` for NAD generation. Must be cleared so a new study
-  loaded from a different grid does not reuse the previous grid's
-  substation coordinates.
-- `_overflow_layout_mode` — reset to `"hierarchical"` so a new
-  study's Overflow Analysis tab always opens in the default layout.
-- `_overflow_layout_cache` — cleared so file paths produced for
-  the previous contingency cannot be served for the new one.
-- `_last_step2_context` — the preserved enriched Step-2 context
-  used by `/api/regenerate-overflow-graph`; stale context must
-  not be reused after a study reload.
+The `RecommenderService.reset()` method clears, in order:
+1. `_drain_pending_base_nad_prefetch()` — first, so a still-running
+   prefetch thread cannot finish after reset and write into the next
+   study's cache.
+2. Per-study analysis state: `_last_result`, `_is_running`,
+   `_generator`, `_base_network`, `_simulation_env`,
+   `_last_disconnected_element`, `_dict_action`, `_analysis_context`,
+   `_saved_computed_pairs`.
+3. Fast-path caches: `_cached_obs_n`, `_cached_obs_n_id`,
+   `_cached_obs_n1`, `_cached_obs_n1_id`, `_cached_env_context`,
+   `_initial_pst_taps`, `_lf_status_by_variant`.
+4. `_layout_cache` — the cached `grid_layout.json` DataFrame used as
+   `fixed_positions` for NAD generation. Must be cleared so a new
+   study loaded from a different grid does not reuse the previous
+   grid's substation coordinates.
+5. NAD-prefetch state: `_prefetched_base_nad`,
+   `_prefetched_base_nad_error`, `_prefetched_base_nad_event`,
+   `_prefetched_base_nad_thread`.
+6. Overflow-graph toggle state:
+   - `_overflow_layout_mode` — reset to `"hierarchical"` so a new
+     study's Overflow Analysis tab always opens in the default layout.
+   - `_overflow_layout_cache` — cleared so file paths produced for
+     the previous contingency cannot be served for the new one.
+   - `_last_step2_context` — the preserved enriched Step-2 context
+     used by `/api/regenerate-overflow-graph`; stale context must
+     not be reused after a study reload.
+
+Adding a new per-study cache? It MUST be listed in
+`RecommenderService.reset()` (see
+`expert_backend/services/recommender_service.py:99`) and, if it holds
+a thread / future / event, drained first via a `_drain_pending_*`
+helper — otherwise it WILL leak across studies (regression history:
+the `_layout_cache` fix on `claude/fix-grid-layout-reset-8TYEV`).
 
 ### Why Force Reload?
 

@@ -960,13 +960,26 @@ export function useDiagrams(
   // ===== Voltage Range Filter =====
   const staleVoltageFilter = useRef<Set<TabId>>(new Set());
   const prevVFTabRef = useRef<TabId>(activeTab);
+  // Track, per tab, whether the last applied filter actually hid
+  // something. We can only safely skip the filter loop on a
+  // fully-open range when the previous range was ALSO fully open —
+  // otherwise we'd leave previously-hidden elements (e.g. all 400 kV
+  // nodes/edges when the user was pinned to 225 kV) invisible after
+  // the user expands the range back out.
+  const prevFilterHadHidden = useRef<Record<TabId, boolean>>({
+    n: false,
+    'n-1': false,
+    action: false,
+    overflow: false,
+  });
 
-  const applyVoltageFilter = useCallback((container: HTMLElement | null, metaIndex: MetadataIndex | null) => {
+  const applyVoltageFilter = useCallback((tab: TabId, container: HTMLElement | null, metaIndex: MetadataIndex | null) => {
     if (!container || !metaIndex) return;
     if (uniqueVoltages.length === 0 || Object.keys(nominalVoltageMap).length === 0) return;
 
     const [minKv, maxKv] = voltageRange;
-    if (minKv <= uniqueVoltages[0] && maxKv >= uniqueVoltages[uniqueVoltages.length - 1]) return;
+    const fullyOpen = minKv <= uniqueVoltages[0] && maxKv >= uniqueVoltages[uniqueVoltages.length - 1];
+    if (fullyOpen && !prevFilterHadHidden.current[tab]) return;
 
     const isInRange = (vlId: string) => {
       const kv = nominalVoltageMap[vlId];
@@ -975,9 +988,11 @@ export function useDiagrams(
 
     const { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId } = metaIndex;
     const idMap = getIdMap(container);
+    let anyHidden = false;
 
     for (const [vlId, node] of nodesByEquipmentId) {
       const visible = isInRange(vlId);
+      if (!visible) anyHidden = true;
       const show = visible ? '' : 'none';
       const el = idMap.get(node.svgId) as HTMLElement | undefined;
       if (el) el.style.display = show;
@@ -997,6 +1012,7 @@ export function useDiagrams(
       const vl1InRange = node1 ? isInRange(node1.equipmentId) : true;
       const vl2InRange = node2 ? isInRange(node2.equipmentId) : true;
       const edgeVisible = vl1InRange || vl2InRange;
+      if (!edgeVisible) anyHidden = true;
       const show = edgeVisible ? '' : 'none';
 
       const el = idMap.get(edge.svgId) as HTMLElement | undefined;
@@ -1010,6 +1026,8 @@ export function useDiagrams(
         if (ei) ei.style.display = show;
       }
     }
+
+    prevFilterHadHidden.current[tab] = anyHidden;
   }, [voltageRange, nominalVoltageMap, uniqueVoltages]);
 
   useEffect(() => {
@@ -1020,17 +1038,17 @@ export function useDiagrams(
 
     const runFilter = () => {
       if (activeTab === 'n' || activeTab === 'overflow') {
-        applyVoltageFilter(nSvgContainerRef.current, nMetaIndex);
+        applyVoltageFilter('n', nSvgContainerRef.current, nMetaIndex);
         staleVoltageFilter.current.delete('n');
         staleVoltageFilter.current.add('n-1');
         staleVoltageFilter.current.add('action');
       } else if (activeTab === 'n-1') {
-        applyVoltageFilter(n1SvgContainerRef.current, n1MetaIndex);
+        applyVoltageFilter('n-1', n1SvgContainerRef.current, n1MetaIndex);
         staleVoltageFilter.current.delete('n-1');
         staleVoltageFilter.current.add('n');
         staleVoltageFilter.current.add('action');
       } else if (activeTab === 'action') {
-        applyVoltageFilter(actionSvgContainerRef.current, actionMetaIndex);
+        applyVoltageFilter('action', actionSvgContainerRef.current, actionMetaIndex);
         staleVoltageFilter.current.delete('action');
         staleVoltageFilter.current.add('n');
         staleVoltageFilter.current.add('n-1');
