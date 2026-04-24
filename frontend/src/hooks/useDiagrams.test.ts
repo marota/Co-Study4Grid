@@ -39,6 +39,12 @@ vi.mock('../api', () => ({
         getActionVariantSld: vi.fn().mockResolvedValue({ svg: '<svg></svg>' }),
         getElementVoltageLevels: vi.fn().mockResolvedValue({ voltage_level_ids: [] }),
         getFocusedDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
+        regenerateOverflowGraph: vi.fn().mockResolvedValue({
+            pdf_url: '/results/pdf/overflow_geo.html',
+            pdf_path: '/tmp/Overflow_Graph/overflow_geo.html',
+            mode: 'geo',
+            cached: false,
+        }),
     },
 }));
 
@@ -911,5 +917,95 @@ describe('computeKnownItemsSet — auto-zoom guard', () => {
         expect(() => computeKnownItemsSet([], [], [null, undefined, null])).not.toThrow();
         const set = computeKnownItemsSet(['BRANCH_A'], [], [null]);
         expect(set.has('BRANCH_A')).toBe(true);
+    });
+});
+
+describe('useDiagrams — overflow layout toggle', () => {
+    beforeEach(() => {
+        interactionLogger.clear();
+        vi.clearAllMocks();
+    });
+
+    const makeResult = (pdf_url: string) => ({
+        pdf_url,
+        pdf_path: `/tmp/Overflow_Graph/${pdf_url.split('/').pop()}`,
+        actions: {},
+        action_scores: null,
+        lines_overloaded: [],
+        message: '',
+        dc_fallback: false,
+    });
+
+    it('handleOverflowLayoutChange calls api.regenerateOverflowGraph and merges pdf_url', async () => {
+        const { result } = renderHook(() => useDiagrams([], [], ''));
+        const api = (await import('../api')).api;
+        (api.regenerateOverflowGraph as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+            pdf_url: '/results/pdf/new_geo.html',
+            pdf_path: '/tmp/Overflow_Graph/new_geo.html',
+            mode: 'geo',
+            cached: false,
+        });
+
+        const setResult = vi.fn();
+        setResult.mockImplementation((updater: unknown) => {
+            if (typeof updater === 'function') {
+                return (updater as (p: unknown) => unknown)(makeResult('/results/pdf/old.html'));
+            }
+            return updater;
+        });
+        const setError = vi.fn();
+
+        await act(async () => {
+            await result.current.handleOverflowLayoutChange('geo', setResult, setError);
+        });
+
+        expect(api.regenerateOverflowGraph).toHaveBeenCalledWith('geo');
+        // setResult must receive a function that merges the new pdf_url
+        // into the previous result without wiping other fields.
+        expect(setResult).toHaveBeenCalled();
+        const updater = setResult.mock.calls[0][0] as (prev: ReturnType<typeof makeResult>) => unknown;
+        const merged = updater(makeResult('/results/pdf/old.html'));
+        expect((merged as { pdf_url: string }).pdf_url).toBe('/results/pdf/new_geo.html');
+        expect((merged as { pdf_path: string }).pdf_path).toBe('/tmp/Overflow_Graph/new_geo.html');
+        expect(setError).not.toHaveBeenCalled();
+        expect(result.current.overflowLayoutMode).toBe('geo');
+    });
+
+    it('emits overflow_layout_mode_toggled interaction event with the target mode', async () => {
+        const { result } = renderHook(() => useDiagrams([], [], ''));
+        await act(async () => {
+            await result.current.handleOverflowLayoutChange('geo', vi.fn(), vi.fn());
+        });
+        const events = interactionLogger.getLog();
+        const toggle = events.find((e) => e.type === 'overflow_layout_mode_toggled');
+        expect(toggle).toBeDefined();
+        expect(toggle?.details).toMatchObject({ to: 'geo' });
+    });
+
+    it('surfaces errors via setError without throwing', async () => {
+        const { result } = renderHook(() => useDiagrams([], [], ''));
+        const api = (await import('../api')).api;
+        (api.regenerateOverflowGraph as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+            new Error('backend down'),
+        );
+
+        const setResult = vi.fn();
+        const setError = vi.fn();
+        await act(async () => {
+            await result.current.handleOverflowLayoutChange('geo', setResult, setError);
+        });
+        expect(setError).toHaveBeenCalled();
+        const msg = setError.mock.calls[0][0] as string;
+        expect(msg).toContain('backend down');
+        // State isn't flipped on failure — the previous mode persists.
+        expect(result.current.overflowLayoutMode).toBe('hierarchical');
+    });
+
+    it('clears overflowLayoutLoading after the request resolves', async () => {
+        const { result } = renderHook(() => useDiagrams([], [], ''));
+        await act(async () => {
+            await result.current.handleOverflowLayoutChange('geo', vi.fn(), vi.fn());
+        });
+        expect(result.current.overflowLayoutLoading).toBe(false);
     });
 });

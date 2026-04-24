@@ -100,7 +100,9 @@ why enabling that is unsafe for the FastAPI thread pool today.
   `_analysis_context`, `_saved_computed_pairs`, `_cached_obs_n*`,
   `_cached_env_context`, `_initial_pst_taps`,
   `_lf_status_by_variant`, `_layout_cache`,
-  `_prefetched_base_nad*`. Adding a new instance-level cache?
+  `_prefetched_base_nad*`, `_overflow_layout_mode` (back to
+  `"hierarchical"`), `_overflow_layout_cache` (empty dict),
+  `_last_step2_context`. Adding a new instance-level cache?
   Add it here too — otherwise it WILL leak across studies (see the
   `_layout_cache` regression fixed on
   `claude/fix-grid-layout-reset-8TYEV`).
@@ -128,6 +130,13 @@ Analysis:
 - `POST /api/run-analysis-step1` — detect overloads (returns once).
 - `POST /api/run-analysis-step2` — resolve, **streaming** NDJSON.
 - `POST /api/run-analysis` — single-step legacy NDJSON stream.
+- `POST /api/regenerate-overflow-graph` — toggle overflow-graph
+  layout between hierarchical (graphviz `dot`) and geo
+  (graphviz `neato -n` using `grid_layout.json`). Non-streaming.
+  Cache-backed: the first call per mode produces a new HTML file
+  via `run_analysis_step2_graph`; subsequent calls in the same
+  mode return the cached path instantly. Cache is cleared at the
+  start of every fresh `run_analysis_step2` and on `reset()`.
 - `POST /api/simulate-manual-action` — one-off simulation.
 - `POST /api/simulate-and-variant-diagram` — combined NDJSON stream
   emitting `{type:"metrics"}` then `{type:"diagram"}` so the

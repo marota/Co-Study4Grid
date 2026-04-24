@@ -171,6 +171,10 @@ SPEC_DETAILS: dict[str, dict] = {
     "tab_tied":                 _spec_row({"tab"}),
     "tab_untied":               _spec_row({"tab"}),
     "view_mode_changed":        _spec_row({"mode", "tab", "scope"}),
+    # Overflow Analysis tab layout toggle ("Hierarchical" / "Geo").
+    # Start event carries the target mode; completion event adds
+    # `cached` (boolean) or `error` (string).
+    "overflow_layout_mode_toggled": _spec_row({"to"}),
     "voltage_range_changed":    _spec_row({"min", "max"}),
     "asset_clicked":            _spec_row({"action_id", "asset_name", "tab"}),
     "zoom_in":                  _spec_row({"tab"}),

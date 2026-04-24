@@ -296,6 +296,9 @@ function App() {
     // it to 'n-1' immediately. Resetting to 'n' interfered with the
     // auto-zoom effect on the second contingency change.
     diagrams.setVlOverlay(null);
+    // Fresh contingency / study starts in hierarchical mode so the
+    // toggle matches the backend's freshly-cleared overflow cache.
+    diagrams.setOverflowLayoutMode('hierarchical');
     setError('');
     analysis.setInfoMessage('');
     diagrams.setInspectQuery('');
@@ -382,6 +385,16 @@ function App() {
     (actionId: string | null) =>
       diagrams.handleActionSelect(actionId, result, selectedBranch, voltageLevels.length, setResult, setError),
     [diagrams, result, selectedBranch, voltageLevels.length, setResult, setError]
+  );
+
+  // Overflow Analysis tab's Hierarchical / Geo toggle — the hook's
+  // handler needs `setResult` / `setError` to merge the new
+  // pdf_url back into `analysisHook.result`, same pattern as
+  // `handleActionSelect` above.
+  const wrappedOverflowLayoutChange = useCallback(
+    (mode: 'hierarchical' | 'geo') =>
+      diagrams.handleOverflowLayoutChange(mode, setResult, setError),
+    [diagrams, setResult, setError]
   );
 
   // Force-select variant used after a (re)simulation. This skips the
@@ -1100,6 +1113,9 @@ function App() {
             onViewModeChange={handleViewModeChange}
             viewModeForTab={viewModeForTab}
             onViewModeChangeForTab={handleViewModeChangeForTab}
+            overflowLayoutMode={diagrams.overflowLayoutMode}
+            overflowLayoutLoading={diagrams.overflowLayoutLoading}
+            onOverflowLayoutChange={wrappedOverflowLayoutChange}
             inspectQuery={inspectQuery}
             onInspectQueryChange={handleInspectQueryChange}
             onInspectQueryChangeFor={handleInspectQueryChangeFor}

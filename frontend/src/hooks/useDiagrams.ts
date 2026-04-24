@@ -79,6 +79,18 @@ export interface DiagramsState {
   setActionViewMode: (v: 'network' | 'delta') => void;
   handleViewModeChange: (mode: 'network' | 'delta') => void;
 
+  // Overflow-graph layout toggle (Hierarchical / Geo).
+  // Per-session state; the backend keeps a cache keyed by mode so
+  // subsequent toggles are instant.
+  overflowLayoutMode: 'hierarchical' | 'geo';
+  setOverflowLayoutMode: (v: 'hierarchical' | 'geo') => void;
+  overflowLayoutLoading: boolean;
+  handleOverflowLayoutChange: (
+    mode: 'hierarchical' | 'geo',
+    setResult: Dispatch<SetStateAction<AnalysisResult | null>>,
+    setError: (v: string) => void,
+  ) => Promise<void>;
+
   // ViewBox
   originalViewBox: ViewBox | null;
   setOriginalViewBox: (v: ViewBox | null) => void;
@@ -218,6 +230,50 @@ export function useDiagrams(
   // by `utils/specConformance.test.ts`.
   const handleViewModeChange = useCallback((mode: 'network' | 'delta') => {
     setActionViewMode(mode);
+  }, []);
+
+  // Overflow-graph layout toggle state. `overflowLayoutLoading` is
+  // true only during a cache-miss regeneration (graphviz re-run);
+  // cache hits resolve synchronously so the UI doesn't flash a
+  // spinner for instant switches.
+  const [overflowLayoutMode, setOverflowLayoutMode] =
+    useState<'hierarchical' | 'geo'>('hierarchical');
+  const [overflowLayoutLoading, setOverflowLayoutLoading] = useState(false);
+  const handleOverflowLayoutChange = useCallback(async (
+    mode: 'hierarchical' | 'geo',
+    setResult: Dispatch<SetStateAction<AnalysisResult | null>>,
+    setError: (v: string) => void,
+  ) => {
+    // Consult the latest state from React — bail out if the user
+    // clicked the currently-active button (prevents a pointless
+    // backend round-trip).
+    setOverflowLayoutMode((current) => {
+      if (current === mode) return current;
+      return current;  // actual change happens after the request resolves
+    });
+    const correlationId = interactionLogger.record('overflow_layout_mode_toggled', {
+      to: mode,
+    });
+    setOverflowLayoutLoading(true);
+    try {
+      const response = await api.regenerateOverflowGraph(mode);
+      setResult((prev) => {
+        if (!prev) return prev;
+        return { ...prev, pdf_url: response.pdf_url, pdf_path: response.pdf_path };
+      });
+      setOverflowLayoutMode(mode);
+      interactionLogger.recordCompletion(correlationId, {
+        cached: response.cached,
+      });
+    } catch (e) {
+      const msg = (e instanceof Error) ? e.message : String(e);
+      setError(`Failed to regenerate overflow graph in ${mode} mode: ${msg}`);
+      interactionLogger.recordCompletion(correlationId, {
+        error: msg,
+      });
+    } finally {
+      setOverflowLayoutLoading(false);
+    }
   }, []);
 
   // ViewBox
@@ -1051,6 +1107,9 @@ export function useDiagrams(
     actionDiagramLoading, setActionDiagramLoading,
     actionViewMode, setActionViewMode,
     handleViewModeChange,
+    overflowLayoutMode, setOverflowLayoutMode,
+    overflowLayoutLoading,
+    handleOverflowLayoutChange,
     originalViewBox, setOriginalViewBox,
     inspectQuery, setInspectQuery,
     setInspectQueryForTab,
@@ -1081,6 +1140,7 @@ export function useDiagrams(
   }), [
     activeTab, nDiagram, n1Diagram, n1Loading,
     selectedActionId, actionDiagram, actionDiagramLoading, actionViewMode, handleViewModeChange,
+    overflowLayoutMode, overflowLayoutLoading, handleOverflowLayoutChange,
     originalViewBox, inspectQuery,
     nPZ, n1PZ, actionPZ,
     nMetaIndex, n1MetaIndex, actionMetaIndex,

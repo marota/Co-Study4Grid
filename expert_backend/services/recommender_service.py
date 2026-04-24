@@ -95,6 +95,19 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._prefetched_base_nad_error = None  # Exception if the prefetch thread failed
         self._prefetched_base_nad_event = None  # threading.Event signalling completion
         self._prefetched_base_nad_thread = None # threading.Thread handle (join on reset)
+        # Overflow-graph layout toggle (Hierarchical / Geo).
+        # `_overflow_layout_mode` holds the currently-rendered mode; the
+        # cache maps mode -> absolute path of the HTML file produced for
+        # that mode during the current Step-2 run so subsequent toggles
+        # are instant (no graphviz re-run). Cleared on reset() and at the
+        # start of each fresh run_analysis_step2.
+        self._overflow_layout_mode = "hierarchical"
+        self._overflow_layout_cache: dict[str, str] = {}
+        # Enriched Step-2 context (populated by `AnalysisMixin.run_analysis_step2`
+        # after `run_analysis_step2_graph` returns). Preserved so
+        # `/api/regenerate-overflow-graph` can re-invoke graph generation
+        # without redoing step1 setup or action discovery.
+        self._last_step2_context = None
 
     def reset(self):
         """Clear all cached analysis state. Called when loading a new study."""
@@ -134,6 +147,62 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._prefetched_base_nad_error = None
         self._prefetched_base_nad_event = None
         self._prefetched_base_nad_thread = None
+        # Overflow-graph toggle state: reset so a new study always starts
+        # in hierarchical mode with an empty file-path cache.
+        self._overflow_layout_mode = "hierarchical"
+        self._overflow_layout_cache = {}
+        self._last_step2_context = None
+
+    # ------------------------------------------------------------------
+    # Overflow-graph layout (Hierarchical / Geo)
+    # ------------------------------------------------------------------
+
+    def _custom_layout_for_env(self, env):
+        """Return an ordered list of (x, y) tuples aligned with
+        ``env.name_sub``, loaded from ``grid_layout.json`` via
+        :meth:`DiagramMixin._load_layout` (``self._layout_cache``).
+
+        Returns ``None`` when no layout file is configured, the file
+        is unreadable, or any substation in ``env.name_sub`` has no
+        matching entry in the layout — callers fall back to
+        hierarchical rendering by passing ``custom_layout=None``
+        through to alphaDeesp (``Printer.display_geo``).
+        """
+        if env is None:
+            return None
+        df = self._load_layout()
+        if df is None or df.empty:
+            return None
+        # DataFrame columns: 'id' (or index), 'x', 'y'. Normalise.
+        if "id" in df.columns:
+            coords = {row["id"]: (row["x"], row["y"]) for _, row in df.iterrows()}
+        else:
+            coords = {idx: (row["x"], row["y"]) for idx, row in df.iterrows()}
+        try:
+            name_sub = list(env.name_sub)
+        except AttributeError:
+            return None
+        layout: list = []
+        for sub in name_sub:
+            if sub not in coords:
+                logger.info(
+                    "Overflow geo layout unavailable: substation %r has no "
+                    "entry in grid_layout.json; falling back to hierarchical.",
+                    sub,
+                )
+                return None
+            layout.append(coords[sub])
+        return layout
+
+    def _inject_custom_layout(self, context, mode):
+        """Mutate ``context`` so ``run_analysis_step2_graph`` picks the
+        requested layout. ``mode='geo'`` with an unresolvable layout
+        silently falls back to hierarchical (``None``) rather than
+        raising, so the UI still gets a graph."""
+        if mode == "geo":
+            context["custom_layout"] = self._custom_layout_for_env(context.get("env"))
+        else:
+            context["custom_layout"] = None
 
     # ------------------------------------------------------------------
     # Base-NAD prefetch (concurrent with update_config's env-setup phase)

@@ -174,6 +174,20 @@ export const api = {
         );
         return response.data;
     },
+    regenerateOverflowGraph: async (mode: 'hierarchical' | 'geo'): Promise<{
+        pdf_url: string | null;
+        pdf_path: string | null;
+        mode: string;
+        cached: boolean;
+    }> => {
+        const response = await axios.post<{
+            pdf_url: string | null;
+            pdf_path: string | null;
+            mode: string;
+            cached: boolean;
+        }>(`${API_BASE_URL}/api/regenerate-overflow-graph`, { mode });
+        return response.data;
+    },
     pickPath: async (type: 'file' | 'dir'): Promise<string | null> => {
         const response = await axios.get<{ path: string | null; error?: string }>(
             `${API_BASE_URL}/api/pick-path?type=${type}`

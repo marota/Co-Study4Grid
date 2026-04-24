@@ -115,6 +115,13 @@ The `RecommenderService.reset()` method clears:
   `fixed_positions` for NAD generation. Must be cleared so a new study
   loaded from a different grid does not reuse the previous grid's
   substation coordinates.
+- `_overflow_layout_mode` — reset to `"hierarchical"` so a new
+  study's Overflow Analysis tab always opens in the default layout.
+- `_overflow_layout_cache` — cleared so file paths produced for
+  the previous contingency cannot be served for the new one.
+- `_last_step2_context` — the preserved enriched Step-2 context
+  used by `/api/regenerate-overflow-graph`; stale context must
+  not be reused after a study reload.
 
 ### Why Force Reload?
 

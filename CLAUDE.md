@@ -192,6 +192,7 @@ Both scripts run in CI (`.github/workflows/code-quality.yml` and
 | POST | `/api/n1-sld` | Single Line Diagram in N-1 state (with flow deltas) |
 | POST | `/api/action-variant-sld` | SLD in post-action state |
 | GET | `/api/actions` | Return all available action IDs and descriptions |
+| POST | `/api/regenerate-overflow-graph` | Regenerate (or serve from cache) the overflow graph in hierarchical / geo layout — drives the toggle on the Overflow Analysis tab |
 | POST | `/api/simulate-manual-action` | Simulate a specific action against a contingency |
 | POST | `/api/compute-superposition` | Compute combined effect of two actions (superposition theorem) |
 | POST | `/api/save-session` | Save session folder with JSON snapshot + PDF copy |

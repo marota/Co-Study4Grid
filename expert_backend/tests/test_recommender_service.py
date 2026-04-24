@@ -649,3 +649,165 @@ class TestEnsureN1StateReady:
         with patch.object(service, "_drain_pending_base_nad_prefetch"), \
              patch.object(service, "_get_n1_variant", side_effect=RuntimeError("LF diverged")):
             service._ensure_n1_state_ready("LINE_A")  # Must not re-raise.
+
+
+class TestOverflowLayoutToggle:
+    """Tests for the Hierarchical / Geo layout toggle on the Overflow
+    Analysis tab — `_custom_layout_for_env`, `_inject_custom_layout`,
+    and `regenerate_overflow_graph` with its cache."""
+
+    def _make_env(self, subs):
+        env = MagicMock()
+        env.name_sub = list(subs)
+        return env
+
+    def _make_layout_df(self, rows):
+        import pandas as pd
+        return pd.DataFrame(rows)
+
+    def test_custom_layout_returns_list_in_sub_order(self):
+        service = RecommenderService()
+        df = self._make_layout_df([
+            {"id": "B", "x": 1.0, "y": 1.0},
+            {"id": "A", "x": 0.0, "y": 0.0},
+        ])
+        with patch.object(service, "_load_layout", return_value=df):
+            layout = service._custom_layout_for_env(self._make_env(["A", "B"]))
+        # Order must follow env.name_sub, NOT the DataFrame row order —
+        # alphaDeesp consumes custom_layout[i] as the position for
+        # env.name_sub[i].
+        assert layout == [(0.0, 0.0), (1.0, 1.0)]
+
+    def test_custom_layout_returns_none_when_no_layout(self):
+        service = RecommenderService()
+        with patch.object(service, "_load_layout", return_value=None):
+            assert service._custom_layout_for_env(self._make_env(["A"])) is None
+
+    def test_custom_layout_returns_none_when_node_missing(self):
+        service = RecommenderService()
+        df = self._make_layout_df([{"id": "A", "x": 0.0, "y": 0.0}])
+        with patch.object(service, "_load_layout", return_value=df):
+            # 'B' has no entry in the layout DataFrame — bail out.
+            assert service._custom_layout_for_env(self._make_env(["A", "B"])) is None
+
+    def test_inject_custom_layout_geo_sets_list(self):
+        service = RecommenderService()
+        env = self._make_env(["A"])
+        context = {"env": env}
+        with patch.object(service, "_custom_layout_for_env", return_value=[(0, 0)]):
+            service._inject_custom_layout(context, "geo")
+        assert context["custom_layout"] == [(0, 0)]
+
+    def test_inject_custom_layout_hierarchical_sets_none(self):
+        service = RecommenderService()
+        context = {"env": MagicMock(), "custom_layout": [(1, 1)]}
+        service._inject_custom_layout(context, "hierarchical")
+        assert context["custom_layout"] is None
+
+    def test_inject_custom_layout_geo_without_layout_falls_back(self):
+        """When no grid_layout.json is configured, geo mode silently
+        falls back to None so alphaDeesp renders hierarchically rather
+        than blowing up."""
+        service = RecommenderService()
+        context = {"env": MagicMock()}
+        with patch.object(service, "_custom_layout_for_env", return_value=None):
+            service._inject_custom_layout(context, "geo")
+        assert context["custom_layout"] is None
+
+    def test_regenerate_requires_prior_step2(self):
+        import pytest
+        service = RecommenderService()
+        service._last_step2_context = None
+        with pytest.raises(ValueError, match="Step-2"):
+            service.regenerate_overflow_graph("geo")
+
+    def test_regenerate_rejects_bad_mode(self):
+        import pytest
+        service = RecommenderService()
+        service._last_step2_context = {"env": MagicMock()}
+        with pytest.raises(ValueError, match="Unknown overflow layout mode"):
+            service.regenerate_overflow_graph("bogus")
+
+    def test_regenerate_geo_injects_layout(self):
+        service = RecommenderService()
+        context = {"env": self._make_env(["A"])}
+        service._last_step2_context = context
+        with patch.object(service, "_custom_layout_for_env", return_value=[(0, 0)]), \
+             patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph") as graph_fn, \
+             patch.object(service, "_get_latest_pdf_path", return_value="/tmp/overflow.html"):
+            result = service.regenerate_overflow_graph("geo")
+
+        assert context["custom_layout"] == [(0, 0)]
+        assert result["cached"] is False
+        assert result["mode"] == "geo"
+        assert result["pdf_path"] == "/tmp/overflow.html"
+        graph_fn.assert_called_once_with(context)
+        assert service._overflow_layout_cache["geo"] == "/tmp/overflow.html"
+
+    def test_regenerate_hierarchical_clears_layout(self):
+        service = RecommenderService()
+        context = {"env": MagicMock(), "custom_layout": [(9, 9)]}
+        service._last_step2_context = context
+        with patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph"), \
+             patch.object(service, "_get_latest_pdf_path", return_value="/tmp/h.html"):
+            service.regenerate_overflow_graph("hierarchical")
+        assert context["custom_layout"] is None
+
+    def test_regenerate_second_call_hits_cache(self, tmp_path):
+        """Second call in the same mode must NOT re-invoke graphviz —
+        the cache returns the previously-produced file path as-is and
+        flags `cached: True`."""
+        service = RecommenderService()
+        context = {"env": self._make_env(["A"])}
+        service._last_step2_context = context
+        cached_file = tmp_path / "overflow_geo.html"
+        cached_file.write_text("<html></html>")
+
+        with patch.object(service, "_custom_layout_for_env", return_value=[(0, 0)]), \
+             patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph") as graph_fn, \
+             patch.object(service, "_get_latest_pdf_path", return_value=str(cached_file)):
+            first = service.regenerate_overflow_graph("geo")
+            second = service.regenerate_overflow_graph("geo")
+
+        assert first["cached"] is False
+        assert second["cached"] is True
+        assert second["pdf_path"] == str(cached_file)
+        # graphviz only ran on the cache-miss path.
+        graph_fn.assert_called_once()
+
+    def test_regenerate_toggle_between_modes_caches_both(self, tmp_path):
+        """Hierarchical → Geo → Hierarchical → Geo should generate
+        each mode exactly once (two graphviz calls total)."""
+        service = RecommenderService()
+        context = {"env": self._make_env(["A"])}
+        service._last_step2_context = context
+        h_file = tmp_path / "o_hierarchi.html"
+        g_file = tmp_path / "o_geo.html"
+        h_file.write_text("<html></html>")
+        g_file.write_text("<html></html>")
+        paths = iter([str(h_file), str(g_file)])
+
+        with patch.object(service, "_custom_layout_for_env", return_value=[(0, 0)]), \
+             patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph") as graph_fn, \
+             patch.object(service, "_get_latest_pdf_path", side_effect=lambda *_: next(paths)):
+            r1 = service.regenerate_overflow_graph("hierarchical")
+            r2 = service.regenerate_overflow_graph("geo")
+            r3 = service.regenerate_overflow_graph("hierarchical")
+            r4 = service.regenerate_overflow_graph("geo")
+
+        assert [r1["cached"], r2["cached"], r3["cached"], r4["cached"]] == [False, False, True, True]
+        assert graph_fn.call_count == 2
+        assert service._overflow_layout_cache == {
+            "hierarchical": str(h_file),
+            "geo": str(g_file),
+        }
+
+    def test_reset_clears_overflow_layout_state(self):
+        service = RecommenderService()
+        service._overflow_layout_mode = "geo"
+        service._overflow_layout_cache = {"geo": "/tmp/x.html"}
+        service._last_step2_context = {"env": MagicMock()}
+        service.reset()
+        assert service._overflow_layout_mode == "hierarchical"
+        assert service._overflow_layout_cache == {}
+        assert service._last_step2_context is None

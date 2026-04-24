@@ -23,6 +23,7 @@ pst_tap_info callable).
 """
 
 import logging
+import os
 import time
 
 from expert_op4grid_recommender import config
@@ -288,6 +289,43 @@ class AnalysisMixin:
         return find_latest_pdf(config.SAVE_FOLDER_VISUALIZATION, analysis_start_time)
 
     # ------------------------------------------------------------------
+    # Overflow-graph layout toggle
+    # ------------------------------------------------------------------
+
+    def regenerate_overflow_graph(self, mode: str) -> dict:
+        """Regenerate (or serve from cache) the overflow graph in the
+        requested layout mode. Returns ``{pdf_path, mode, cached}``.
+
+        Cache hits are instant (no graphviz re-run). Cache misses
+        inject ``custom_layout`` into the preserved Step-2 context and
+        invoke ``run_analysis_step2_graph`` again, then record the
+        produced file path keyed by mode for future toggles.
+        """
+        if mode not in ("hierarchical", "geo"):
+            raise ValueError(
+                f"Unknown overflow layout mode: {mode!r}; expected 'hierarchical' or 'geo'."
+            )
+        context = getattr(self, "_last_step2_context", None)
+        if context is None:
+            raise ValueError("No Step-2 context available. Run the analysis first.")
+
+        cached_path = self._overflow_layout_cache.get(mode)
+        if cached_path and os.path.isfile(cached_path):
+            self._overflow_layout_mode = mode
+            logger.info("[Overflow] Serving cached %s graph: %s", mode, cached_path)
+            return {"pdf_path": cached_path, "mode": mode, "cached": True}
+
+        self._overflow_layout_mode = mode
+        self._inject_custom_layout(context, mode)
+        analysis_start_time = time.time()
+        logger.info("[Overflow] Regenerating %s graph (cache miss)", mode)
+        run_analysis_step2_graph(context)
+        produced = self._get_latest_pdf_path(analysis_start_time)
+        if produced:
+            self._overflow_layout_cache[mode] = produced
+        return {"pdf_path": produced, "mode": mode, "cached": False}
+
+    # ------------------------------------------------------------------
     # Public entry points — two-step + legacy single-step.
     # ------------------------------------------------------------------
 
@@ -347,10 +385,24 @@ class AnalysisMixin:
             self._analysis_context, selected_overloads, all_overloads, monitor_deselected
         )
         analysis_start_time = time.time()
+        # Fresh Step-2: drop any cached overflow files from an earlier
+        # contingency resolution so a regeneration call can't serve a
+        # stale graph that doesn't match the new selection. Inject the
+        # currently-selected layout mode so the first rendering already
+        # matches what the UI toggle is showing.
+        self._overflow_layout_cache = {}
+        self._inject_custom_layout(context, self._overflow_layout_mode)
         try:
             # Part 1: graph generation + PDF
             context = run_analysis_step2_graph(context)
-            yield {"type": "pdf", "pdf_path": self._get_latest_pdf_path(analysis_start_time)}
+            produced_pdf = self._get_latest_pdf_path(analysis_start_time)
+            if produced_pdf:
+                self._overflow_layout_cache[self._overflow_layout_mode] = produced_pdf
+            # Preserve the enriched context so /api/regenerate-overflow-graph
+            # can re-invoke run_analysis_step2_graph without redoing step1
+            # setup or the action-discovery pass.
+            self._last_step2_context = context
+            yield {"type": "pdf", "pdf_path": produced_pdf}
 
             # Part 2: action discovery
             results = run_analysis_step2_discovery(context)
