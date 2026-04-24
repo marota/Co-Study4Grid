@@ -690,29 +690,33 @@ class TestOverflowLayoutToggle:
             # 'B' has no entry in the layout DataFrame — bail out.
             assert service._custom_layout_for_env(self._make_env(["A", "B"])) is None
 
-    def test_inject_custom_layout_geo_sets_list(self):
+    def test_inject_custom_layout_geo_sets_list_returns_true(self):
         service = RecommenderService()
         env = self._make_env(["A"])
         context = {"env": env}
         with patch.object(service, "_custom_layout_for_env", return_value=[(0, 0)]):
-            service._inject_custom_layout(context, "geo")
+            injected = service._inject_custom_layout(context, "geo")
         assert context["custom_layout"] == [(0, 0)]
+        assert injected is True
 
-    def test_inject_custom_layout_hierarchical_sets_none(self):
+    def test_inject_custom_layout_hierarchical_sets_none_returns_true(self):
         service = RecommenderService()
         context = {"env": MagicMock(), "custom_layout": [(1, 1)]}
-        service._inject_custom_layout(context, "hierarchical")
+        injected = service._inject_custom_layout(context, "hierarchical")
         assert context["custom_layout"] is None
+        assert injected is True
 
-    def test_inject_custom_layout_geo_without_layout_falls_back(self):
-        """When no grid_layout.json is configured, geo mode silently
-        falls back to None so alphaDeesp renders hierarchically rather
-        than blowing up."""
+    def test_inject_custom_layout_geo_without_layout_returns_false(self):
+        """Geo mode with an unresolvable layout sets custom_layout to
+        None AND returns False so the regen endpoint can hard-fail
+        instead of silently producing a hierarchical graph under the
+        'geo' label."""
         service = RecommenderService()
         context = {"env": MagicMock()}
         with patch.object(service, "_custom_layout_for_env", return_value=None):
-            service._inject_custom_layout(context, "geo")
+            injected = service._inject_custom_layout(context, "geo")
         assert context["custom_layout"] is None
+        assert injected is False
 
     def test_regenerate_requires_prior_step2(self):
         import pytest
@@ -727,6 +731,25 @@ class TestOverflowLayoutToggle:
         service._last_step2_context = {"env": MagicMock()}
         with pytest.raises(ValueError, match="Unknown overflow layout mode"):
             service.regenerate_overflow_graph("bogus")
+
+    def test_regenerate_geo_raises_when_layout_unavailable(self):
+        """If the user clicks Geo but grid_layout.json is missing or
+        incomplete, the endpoint must NOT silently produce a
+        hierarchical graph under the 'geo' label — it raises ValueError
+        so the frontend can surface a toast with the actual mismatch."""
+        import pytest
+        service = RecommenderService()
+        service._last_step2_context = {"env": self._make_env(["A"])}
+        with patch.object(service, "_custom_layout_for_env", return_value=None), \
+             patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph") as graph_fn:
+            with pytest.raises(ValueError, match="Cannot render in geo mode"):
+                service.regenerate_overflow_graph("geo")
+        # Nothing should have been generated — we bailed out BEFORE
+        # calling graphviz.
+        graph_fn.assert_not_called()
+        # The cache must stay empty so a follow-up hierarchical click
+        # doesn't get a stale cached file.
+        assert "geo" not in service._overflow_layout_cache
 
     def test_regenerate_geo_injects_layout(self):
         service = RecommenderService()

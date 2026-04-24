@@ -315,15 +315,60 @@ class AnalysisMixin:
             logger.info("[Overflow] Serving cached %s graph: %s", mode, cached_path)
             return {"pdf_path": cached_path, "mode": mode, "cached": True}
 
+        injected = self._inject_custom_layout(context, mode)
+        if mode == "geo" and not injected:
+            # `_custom_layout_for_env` already logged a WARNING with the
+            # precise mismatch (missing substations, file size, samples).
+            # Raise a 400 so the frontend surfaces a toast rather than
+            # silently re-rendering hierarchical under the "geo" label.
+            raise ValueError(
+                "Cannot render in geo mode: grid_layout.json is missing entries "
+                "for some substations in the grid, or the layout file is not "
+                "configured. See the backend log (warning starting with "
+                "'Overflow geo layout unavailable') for the mismatch details."
+            )
         self._overflow_layout_mode = mode
-        self._inject_custom_layout(context, mode)
+        # Keep the library's static `USE_GRID_LAYOUT` constant (imported
+        # into expert_op4grid_recommender.graph_analysis.visualization at
+        # module load) in sync with the requested mode so the produced
+        # file name carries the correct `_geo` / `_hierarchi` suffix.
+        # Assignment to config.USE_GRID_LAYOUT alone is NOT enough — the
+        # module-level `from config import USE_GRID_LAYOUT` binds the
+        # name once, so we monkey-patch the already-imported module too.
+        self._sync_visualization_layout_flag(mode == "geo")
         analysis_start_time = time.time()
-        logger.info("[Overflow] Regenerating %s graph (cache miss)", mode)
+        logger.info(
+            "[Overflow] Regenerating %s graph (cache miss, custom_layout=%s)",
+            mode,
+            "list" if context.get("custom_layout") is not None else "None",
+        )
         run_analysis_step2_graph(context)
         produced = self._get_latest_pdf_path(analysis_start_time)
         if produced:
             self._overflow_layout_cache[mode] = produced
         return {"pdf_path": produced, "mode": mode, "cached": False}
+
+    def _sync_visualization_layout_flag(self, use_geo: bool) -> None:
+        """Mirror ``config.USE_GRID_LAYOUT`` into
+        ``expert_op4grid_recommender.graph_analysis.visualization`` so
+        the generated file name reflects the chosen mode.
+
+        The library's visualization module does
+        ``from expert_op4grid_recommender.config import USE_GRID_LAYOUT``
+        at module-load time, binding the name in its own namespace.
+        Updating ``config.USE_GRID_LAYOUT`` alone does NOT propagate;
+        we have to monkey-patch the already-imported module too.
+        Logs and returns on ImportError so the backend still starts
+        under the stubbed-out test conftest.
+        """
+        try:
+            from expert_op4grid_recommender import config as _rec_config
+            from expert_op4grid_recommender.graph_analysis import visualization as _viz
+        except ImportError as e:
+            logger.debug("Overflow layout flag sync skipped: %s", e)
+            return
+        _rec_config.USE_GRID_LAYOUT = use_geo
+        _viz.USE_GRID_LAYOUT = use_geo
 
     # ------------------------------------------------------------------
     # Public entry points — two-step + legacy single-step.
@@ -389,15 +434,24 @@ class AnalysisMixin:
         # contingency resolution so a regeneration call can't serve a
         # stale graph that doesn't match the new selection. Inject the
         # currently-selected layout mode so the first rendering already
-        # matches what the UI toggle is showing.
+        # matches what the UI toggle is showing. Unlike the regen
+        # endpoint, Step-2 silently falls back to hierarchical if geo
+        # can't be built — not blocking the analysis on a layout file
+        # issue is the right trade-off here.
         self._overflow_layout_cache = {}
-        self._inject_custom_layout(context, self._overflow_layout_mode)
+        injected = self._inject_custom_layout(context, self._overflow_layout_mode)
+        effective_mode = self._overflow_layout_mode if injected else "hierarchical"
+        self._sync_visualization_layout_flag(effective_mode == "geo")
         try:
             # Part 1: graph generation + PDF
             context = run_analysis_step2_graph(context)
             produced_pdf = self._get_latest_pdf_path(analysis_start_time)
             if produced_pdf:
-                self._overflow_layout_cache[self._overflow_layout_mode] = produced_pdf
+                # Key the cache by the mode that was ACTUALLY rendered —
+                # if geo fell back to hierarchical (missing layout keys)
+                # we must not register the file under "geo" or future
+                # geo clicks would serve a hierarchical graph.
+                self._overflow_layout_cache[effective_mode] = produced_pdf
             # Preserve the enriched context so /api/regenerate-overflow-graph
             # can re-invoke run_analysis_step2_graph without redoing step1
             # setup or the action-discovery pass.

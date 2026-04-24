@@ -167,13 +167,28 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         matching entry in the layout — callers fall back to
         hierarchical rendering by passing ``custom_layout=None``
         through to alphaDeesp (``Printer.display_geo``).
+
+        Logs a WARNING summarising the mismatch when geo mode can't be
+        built so the operator can fix their ``grid_layout.json`` (the
+        alphaDeesp renderer needs an ordered list that is 1:1 with
+        ``env.name_sub``; a single missing entry disqualifies the whole
+        layout).
         """
         if env is None:
+            logger.warning("Overflow geo layout unavailable: env is None")
             return None
         df = self._load_layout()
-        if df is None or df.empty:
+        if df is None or getattr(df, "empty", True):
+            logger.warning(
+                "Overflow geo layout unavailable: _load_layout() returned "
+                "empty/None. Check LAYOUT_FILE_PATH (current: %r).",
+                getattr(config, "LAYOUT_FILE_PATH", None),
+            )
             return None
-        # DataFrame columns: 'id' (or index), 'x', 'y'. Normalise.
+        # DataFrame shape produced by services/diagram/layout_cache.py:
+        # index=id, columns=[x, y]. Keep a defensive `'id' in columns`
+        # branch for other callers that might build the DataFrame
+        # differently.
         if "id" in df.columns:
             coords = {row["id"]: (row["x"], row["y"]) for _, row in df.iterrows()}
         else:
@@ -181,28 +196,52 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         try:
             name_sub = list(env.name_sub)
         except AttributeError:
+            logger.warning("Overflow geo layout unavailable: env has no .name_sub attribute")
             return None
-        layout: list = []
-        for sub in name_sub:
-            if sub not in coords:
-                logger.info(
-                    "Overflow geo layout unavailable: substation %r has no "
-                    "entry in grid_layout.json; falling back to hierarchical.",
-                    sub,
-                )
-                return None
-            layout.append(coords[sub])
-        return layout
+
+        missing = [sub for sub in name_sub if sub not in coords]
+        if missing:
+            # Surface a concrete, actionable diagnostic — not just
+            # "unavailable". Show the sizes on each side plus a short
+            # sample so the operator can compare against the file.
+            sample_missing = missing[:5]
+            sample_coord_keys = list(coords.keys())[:5]
+            logger.warning(
+                "Overflow geo layout unavailable: %d of %d substations "
+                "(%.0f%%) have no entry in grid_layout.json. "
+                "Layout file has %d entries. "
+                "Missing sample: %r. Layout-key sample: %r. "
+                "Falling back to hierarchical for this regen.",
+                len(missing),
+                len(name_sub),
+                100.0 * len(missing) / max(len(name_sub), 1),
+                len(coords),
+                sample_missing,
+                sample_coord_keys,
+            )
+            return None
+
+        return [coords[sub] for sub in name_sub]
 
     def _inject_custom_layout(self, context, mode):
         """Mutate ``context`` so ``run_analysis_step2_graph`` picks the
-        requested layout. ``mode='geo'`` with an unresolvable layout
-        silently falls back to hierarchical (``None``) rather than
-        raising, so the UI still gets a graph."""
+        requested layout.
+
+        ``mode='geo'`` with an unresolvable layout falls back to
+        ``None`` (hierarchical rendering) so the UI still gets a graph
+        — but callers that need a hard error (e.g. the regen endpoint
+        when the user explicitly asked for geo) should check the
+        return value and surface a 400.
+
+        Returns ``True`` when the requested mode was actually injected,
+        ``False`` when geo was requested but the helper bailed out.
+        """
         if mode == "geo":
-            context["custom_layout"] = self._custom_layout_for_env(context.get("env"))
-        else:
-            context["custom_layout"] = None
+            layout = self._custom_layout_for_env(context.get("env"))
+            context["custom_layout"] = layout
+            return layout is not None
+        context["custom_layout"] = None
+        return True
 
     # ------------------------------------------------------------------
     # Base-NAD prefetch (concurrent with update_config's env-setup phase)
