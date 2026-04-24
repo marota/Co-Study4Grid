@@ -17,7 +17,7 @@ frontend/
 ├── README.md
 ├── index.html                # Vite HTML entry point
 ├── package.json              # React 19, Vite 7, vitest, axios, react-select,
-│                             # react-zoom-pan-pinch, framer-motion, lucide-react
+│                             # react-zoom-pan-pinch, vite-plugin-singlefile
 ├── vite.config.ts            # Vite + Vitest plugin (jsdom env)
 ├── eslint.config.js          # Flat config (v9+) — typescript-eslint,
 │                             # react-hooks, react-refresh
@@ -55,6 +55,9 @@ frontend/
     │   ├── Header.tsx, ActionFeed.tsx, OverloadPanel.tsx,
     │   ├── VisualizationPanel.tsx, ActionCard.tsx, ActionCardPopover.tsx,
     │   ├── ActionOverviewDiagram.tsx, ActionSearchDropdown.tsx,
+    │   ├── ActionTypeFilterChips.tsx   # Shared chip row driving Manual
+    │   │                               # Selection, Explore Pairs, Overview,
+    │   │                               # and the Action Feed (PR #109)
     │   ├── CombinedActionsModal.tsx, ComputedPairsTable.tsx,
     │   ├── DetachableTabHost.tsx, ErrorBoundary.tsx, ExplorePairsTab.tsx,
     │   ├── MemoizedSvgContainer.tsx, SldOverlay.tsx,
@@ -68,12 +71,30 @@ frontend/
     │       ├── ReloadSessionModal.tsx     # Session reload list
     │       └── ConfirmationDialog.tsx     # Shared confirmation (contingency / reload)
     └── utils/                # Pure helpers (no React, no axios)
-        ├── svgUtils.ts                # SVG processing, highlights, metadata
+        ├── svgUtils.ts                # Barrel re-exporting every utils/svg/* module
+        ├── svg/                       # PR #104 decomposition of the original
+        │   ├── idMap.ts               # 1807-line svgUtils into 8 focused modules:
+        │   ├── metadataIndex.ts       # - idMap: cached WeakMap<container,id→Element>
+        │   ├── svgBoost.ts            # - metadataIndex: O(1) equipment-metadata lookup
+        │   ├── fitRect.ts             # - svgBoost: dynamic font/radius scale for big grids
+        │   ├── deltaVisuals.ts        # - fitRect: bounding-box auto-zoom
+        │   ├── actionPinData.ts       # - deltaVisuals: flow-delta colouring
+        │   ├── actionPinRender.ts     # - actionPin{Data,Render}: overview pin layer
+        │   └── highlights.ts          # - highlights: contingency / overload halos
+        ├── svgPatch.ts                # SVG DOM recycling: clone N-state SVG
+        │                              # and patch per-branch deltas on N-1 / action
+        │                              # tab switches (PR #108). Used by useN1Fetch.
+        ├── actionTypes.ts             # classifyActionType + matchesActionTypeFilter
+        │                              # + DEFAULT_ACTION_OVERVIEW_FILTERS — shared
+        │                              # by every filter UI surface (PR #109)
         ├── overloadHighlights.ts      # N-1 overload classification
         ├── popoverPlacement.ts        # Pin-popover positioning
         ├── sessionUtils.ts            # buildSessionResult snapshot
         ├── interactionLogger.ts       # Singleton replay-ready event log
         ├── mergeAnalysisResult.ts     # Merge step1 + step2 fields
+        ├── fileRegistry.ts            # Structure-regression guard (tracks expected
+        │                              # source-tree layout; fails the Vitest suite
+        │                              # when a file disappears unexpectedly)
         └── *.test.ts                  # Co-located unit tests
 ```
 
@@ -161,18 +182,26 @@ Confirmation dialog flow lives in `App.tsx`:
 
 ## SVG handling
 
-The frontend deals with multi-MB pypowsybl SVG payloads. Three
+The frontend deals with multi-MB pypowsybl SVG payloads. Four
 performance levers are applied today:
 
 - **`api.getNetworkDiagram` uses `format=text`** (`api.ts:69-92`):
   fetches a JSON-header + raw-SVG-body response so the browser
   doesn't `JSON.parse` a 25 MB string. Saves ~500 ms on large grids.
-- **`getIdMap(container)`** (`utils/svgUtils.ts:13-22`): cached
+- **`getIdMap(container)`** (`utils/svg/idMap.ts`): cached
   `WeakMap<HTMLElement, Map<id, Element>>` so highlight passes don't
   re-scan `[id]` selectors. Invalidate via `invalidateIdMapCache`
   whenever the SVG content changes.
-- **`boostSvgForLargeGrid`**: dynamic font/node-radius scaling for
-  grids ≥ 500 voltage levels so labels stay readable at high zoom.
+- **`boostSvgForLargeGrid`** (`utils/svg/svgBoost.ts`): dynamic
+  font/node-radius scaling for grids ≥ 500 voltage levels so labels
+  stay readable at high zoom.
+- **SVG DOM recycling** (`utils/svgPatch.ts`, PR #108): on N-1 /
+  action tab switches the N-state `SVGSVGElement` is cloned and
+  patched with per-branch deltas from the new
+  `/api/n1-diagram-patch` and `/api/action-variant-diagram-patch`
+  endpoints instead of being re-fetched and re-parsed. ~80 % faster
+  on the ~12 MB French NAD. Falls back to the full NAD on any
+  unsupported edge case.
 
 The visualization is rendered inside `react-zoom-pan-pinch`. Zoom
 state is owned by `usePanZoom` per tab (`nPZ`, `n1PZ`, `actionPZ`,

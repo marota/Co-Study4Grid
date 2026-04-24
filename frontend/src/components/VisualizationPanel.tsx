@@ -1129,30 +1129,43 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             <div className="voltage-slider-container">
                                 <div className="voltage-slider-track" />
                                 <div className="voltage-slider-range" style={{ bottom: pctLow + '%', top: (100 - pctHigh) + '%' }} />
-                                <input type="range"
-                                    min={logMin} max={logMax} step="any"
-                                    value={Math.log(voltageRange[0])}
-                                    onChange={e => {
-                                        const logV = parseFloat(e.target.value);
-                                        const snapped = uniqueVoltages.reduce((best, uv) =>
-                                            Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best
-                                        );
-                                        if (snapped <= voltageRange[1]) onVoltageRangeChange([snapped, voltageRange[1]]);
-                                    }}
-                                    style={{ zIndex: 3, height: '100%' }}
-                                />
-                                <input type="range"
-                                    min={logMin} max={logMax} step="any"
-                                    value={Math.log(voltageRange[1])}
-                                    onChange={e => {
-                                        const logV = parseFloat(e.target.value);
-                                        const snapped = uniqueVoltages.reduce((best, uv) =>
-                                            Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best
-                                        );
-                                        if (snapped >= voltageRange[0]) onVoltageRangeChange([voltageRange[0], snapped]);
-                                    }}
-                                    style={{ zIndex: 4, height: '100%' }}
-                                />
+                                {/* When both handles collapse at maxV, the default (high on
+                                    top) pins the range: the high handle can't move up
+                                    (already at max) and hides the low handle that could
+                                    still be dragged down. Raise the low handle so the user
+                                    can grab it to expand the range again. */}
+                                {(() => {
+                                    const collapsedAtMax = voltageRange[0] === voltageRange[1] && voltageRange[1] === maxV;
+                                    const lowZ = collapsedAtMax ? 5 : 3;
+                                    return (
+                                        <>
+                                            <input type="range"
+                                                min={logMin} max={logMax} step="any"
+                                                value={Math.log(voltageRange[0])}
+                                                onChange={e => {
+                                                    const logV = parseFloat(e.target.value);
+                                                    const snapped = uniqueVoltages.reduce((best, uv) =>
+                                                        Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best
+                                                    );
+                                                    if (snapped <= voltageRange[1]) onVoltageRangeChange([snapped, voltageRange[1]]);
+                                                }}
+                                                style={{ zIndex: lowZ, height: '100%' }}
+                                            />
+                                            <input type="range"
+                                                min={logMin} max={logMax} step="any"
+                                                value={Math.log(voltageRange[1])}
+                                                onChange={e => {
+                                                    const logV = parseFloat(e.target.value);
+                                                    const snapped = uniqueVoltages.reduce((best, uv) =>
+                                                        Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best
+                                                    );
+                                                    if (snapped >= voltageRange[0]) onVoltageRangeChange([voltageRange[0], snapped]);
+                                                }}
+                                                style={{ zIndex: 4, height: '100%' }}
+                                            />
+                                        </>
+                                    );
+                                })()}
                                 <div className="voltage-slider-ticks">
                                     {uniqueVoltages.map(kv => (
                                         <span key={kv} style={{ bottom: logScale(kv) + '%' }}>

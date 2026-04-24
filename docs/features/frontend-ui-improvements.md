@@ -1,7 +1,10 @@
 # Frontend UI Improvements Plan
 
 > **Status**: Implemented  
-> **Scope**: `frontend/` components + `standalone_interface.html`  
+> **Scope**: `frontend/src/` components. The auto-generated
+> `frontend/dist-standalone/standalone.html` (PR #101) inherits from
+> the React source via `npm run build:standalone`; the legacy
+> hand-maintained `standalone_interface.html` has been decommissioned.  
 > **Date**: 2026-04-01
 
 ---

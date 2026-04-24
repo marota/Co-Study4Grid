@@ -1,9 +1,37 @@
 # App.tsx Refactoring Plan: Extract Custom Hooks
 
-## Goal
-Refactor the 2100-line `App.tsx` into a lean orchestrator (~800 lines) by wiring up 5 pre-written custom hooks that extract state and logic.
+> **Status: SHIPPED (historical plan).**
+> Both refactor waves have landed and this document is preserved as
+> the commit-trail log, not a live plan. App.tsx is now ~1150 lines
+> (down from 2100) and is the state-orchestration hub described in
+> `frontend/CLAUDE.md`. For the current architecture, start with
+> [`frontend/CLAUDE.md`](../../frontend/CLAUDE.md); for the latest
+> extraction round (Phase 2 hook extraction — `useN1Fetch`,
+> `useDiagramHighlights`, `AppSidebar`, `SidebarSummary`,
+> `StatusToasts`) see the App.tsx refactor-history table at the
+> bottom of that file and the 0.6.5 entry in
+> [`CHANGELOG.md`](../../CHANGELOG.md).
+>
+> Completed waves:
+> 1. **Phase 1 (PR #74, committed)** — extract the five pre-written
+>    hooks listed below, plus presentational components.
+> 2. **Phase 2 hook extraction (PR #109, commit `5869ad1`)** —
+>    split the N-1 fetch pipeline into `useN1Fetch`, the per-tab
+>    SVG highlight pipeline into `useDiagramHighlights`, and the
+>    sidebar layout into `AppSidebar` / `SidebarSummary` /
+>    `StatusToasts`. Reduced `App.tsx` from 1575 to ~1150 lines.
+>
+> Deferred (explicitly scoped out of PR #109 — see the refactor
+> history table in `frontend/CLAUDE.md`): orchestrator hooks
+> (`useSettingsOrchestration`, `useSaveLoadSession`,
+> `useStateReset`), `AppContext`-provider conversion, and the
+> NDJSON parser extraction for `handleSimulateUnsimulatedAction`.
 
-## Current State
+## Goal (as of Phase 1)
+Refactor the 2100-line `App.tsx` into a lean orchestrator by wiring
+up 5 pre-written custom hooks that extract state and logic.
+
+## Initial State (as of Phase 1 start)
 - 5 hook files exist in `frontend/src/hooks/` (untracked):
   - `useSettings.ts` (253 lines) - paths, recommender params, settings modal
   - `useActions.ts` (121 lines) - action selection/rejection/favorite state
@@ -13,7 +41,7 @@ Refactor the 2100-line `App.tsx` into a lean orchestrator (~800 lines) by wiring
 - `usePanZoom.ts` (288 lines) - already committed and used by both App.tsx and useDiagrams
 - Type imports in all 5 hooks have been fixed (`React.Dispatch` -> `Dispatch`, etc.)
 - `useSettings` has been partially integrated into App.tsx (Step 2 done)
-- App.tsx currently compiles clean at ~1959 lines
+- App.tsx then compiled clean at ~1959 lines.
 
 ## Hook Interfaces Summary
 

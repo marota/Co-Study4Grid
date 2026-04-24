@@ -913,3 +913,82 @@ describe('computeKnownItemsSet — auto-zoom guard', () => {
         expect(set.has('BRANCH_A')).toBe(true);
     });
 });
+
+describe('useDiagrams — voltage range filter', () => {
+    // Regression guards for the kV-filter reset bug: when the user
+    // collapsed the range to a single voltage (hiding elements on
+    // other levels) and then expanded it back out, the previously
+    // hidden elements stayed invisible because an early-return in
+    // applyVoltageFilter short-circuited the fully-open case without
+    // resetting `display:none` from the prior narrow-range run.
+    beforeEach(() => {
+        interactionLogger.clear();
+        vi.clearAllMocks();
+    });
+
+    const buildHarness = () => {
+        const container = document.createElement('div');
+        container.innerHTML = '<svg><g id="svg-VL400"></g><g id="svg-VL225"></g></svg>';
+        document.body.appendChild(container);
+        const el400 = container.querySelector('#svg-VL400') as HTMLElement;
+        const el225 = container.querySelector('#svg-VL225') as HTMLElement;
+        return { container, el400, el225 };
+    };
+
+    const populate = (
+        result: { current: ReturnType<typeof useDiagrams> },
+        container: HTMLElement,
+    ) => {
+        act(() => {
+            result.current.nSvgContainerRef.current = container as HTMLDivElement;
+            result.current.setNDiagram({
+                svg: '<svg></svg>',
+                metadata: {
+                    nodes: [
+                        { equipmentId: 'VL400', svgId: 'svg-VL400', x: 0, y: 0 },
+                        { equipmentId: 'VL225', svgId: 'svg-VL225', x: 0, y: 0 },
+                    ],
+                    edges: [],
+                } as unknown as string,
+                originalViewBox: { x: 0, y: 0, width: 100, height: 100 },
+            });
+            result.current.setNominalVoltageMap({ VL400: 400, VL225: 225 });
+            result.current.setUniqueVoltages([225, 400]);
+        });
+    };
+
+    it('hides out-of-range voltage-level elements when the range is narrowed', () => {
+        const { result } = renderHook(() => useDiagrams([], [], ''));
+        const { container, el400, el225 } = buildHarness();
+        populate(result, container);
+
+        act(() => {
+            result.current.setVoltageRange([225, 225]);
+        });
+
+        expect(el400.style.display).toBe('none');
+        expect(el225.style.display).toBe('');
+        document.body.removeChild(container);
+    });
+
+    it('restores previously hidden elements when the range is expanded back to fully open', () => {
+        const { result } = renderHook(() => useDiagrams([], [], ''));
+        const { container, el400, el225 } = buildHarness();
+        populate(result, container);
+
+        // Narrow the range to hide 400 kV.
+        act(() => {
+            result.current.setVoltageRange([225, 225]);
+        });
+        expect(el400.style.display).toBe('none');
+
+        // Expand back to fully open. Previously the early-return would
+        // short-circuit and leave el400 stuck at display:none.
+        act(() => {
+            result.current.setVoltageRange([225, 400]);
+        });
+        expect(el400.style.display).toBe('');
+        expect(el225.style.display).toBe('');
+        document.body.removeChild(container);
+    });
+});
