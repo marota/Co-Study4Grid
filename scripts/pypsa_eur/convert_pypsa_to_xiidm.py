@@ -77,7 +77,7 @@ class PipelineContext:
 
     # Config
     target_voltages: list = field(default_factory=list)
-    target_country: str = "FR"
+    target_country: Optional[str] = "FR"
     data_dir: str = ""
     out_dir: str = ""
 
@@ -128,16 +128,19 @@ def step_load_data(ctx: PipelineContext) -> None:
     )
 
     # ── Filter ──
+    country_label = ctx.target_country if ctx.target_country else "ALL countries"
     log.info(
-        f"Step 1b — Filtering to {ctx.target_country} "
+        f"Step 1b — Filtering to {country_label} "
         f"{'/'.join(str(int(v)) for v in ctx.target_voltages)} kV AC …"
     )
-    buses = buses_raw[
-        (buses_raw["country"] == ctx.target_country)
-        & (buses_raw["voltage"].isin(ctx.target_voltages))
+    voltage_mask = (
+        buses_raw["voltage"].isin(ctx.target_voltages)
         & (buses_raw["dc"] == "f")
         & (buses_raw["under_construction"] == "f")
-    ].copy()
+    )
+    if ctx.target_country:
+        voltage_mask = voltage_mask & (buses_raw["country"] == ctx.target_country)
+    buses = buses_raw[voltage_mask].copy()
 
     bus_ids = set(buses.index)
     lines = lines_raw[
@@ -237,8 +240,9 @@ def step_build_network(ctx: PipelineContext) -> None:
 
     log.info("Step 2 — Building pypowsybl Network …")
 
+    country_slug = ctx.target_country.lower() if ctx.target_country else "eur"
     v_str = "_".join(str(int(v)) for v in ctx.target_voltages)
-    n = pp.network.create_empty(f"pypsa_eur_fr{v_str}")
+    n = pp.network.create_empty(f"pypsa_eur_{country_slug}{v_str}")
 
     # ── Substations (merge transformer-connected buses) ──
     bus_to_ss = {b: f"SS_{safe_id(b)}" for b in bus_list}
@@ -251,15 +255,21 @@ def step_build_network(ctx: PipelineContext) -> None:
     log.info(f"  Substations: {len(unique_ss)} (merged trafo pairs)")
 
     ss_name_map = {}
+    ss_country_map = {}
     for b in bus_list:
         ss_id = bus_to_ss[b]
         if ss_id not in ss_name_map:
             ss_name_map[ss_id] = _bus_name(b)
+            ss_country_map[ss_id] = (
+                ctx.target_country
+                if ctx.target_country
+                else str(buses.loc[b, "country"]) if "country" in buses.columns else ""
+            )
 
     n.create_substations(
         pd.DataFrame(
             {
-                "country": ["FR"] * len(unique_ss),
+                "country": [ss_country_map.get(ss, ctx.target_country or "") for ss in unique_ss],
                 "name": [ss_name_map.get(ss, ss) for ss in unique_ss],
             },
             index=unique_ss,
@@ -1035,9 +1045,10 @@ def run_pipeline(
 
     effective_steps = [s for s in steps if not (s == 4 and skip_n1)]
 
+    country_label = target_country if target_country else "ALL countries"
     log.info("=" * 60)
     log.info(
-        f"Pipeline: {target_country} "
+        f"Pipeline: {country_label} "
         f"{'/'.join(str(int(v)) for v in target_voltages)} kV"
     )
     log.info(f"Output: {out_dir}")
@@ -1107,7 +1118,7 @@ Examples:
     )
     parser.add_argument(
         "--country", type=str, default="FR",
-        help="Country filter (default: FR)",
+        help="Country filter (default: FR). Pass '' or 'ALL' for all countries.",
     )
     parser.add_argument(
         "--output-dir", type=str, default=None,
@@ -1134,12 +1145,14 @@ Examples:
     data_dir = os.path.join(base_dir, "data", "pypsa_eur_osm")
 
     target_voltages = [float(v.strip()) for v in args.voltages.split(",")]
+    target_country = args.country if args.country and args.country.upper() != "ALL" else None
 
     if args.output_dir:
         out_dir = args.output_dir
     else:
+        c_slug = target_country.lower() if target_country else "eur"
         v_str = "_".join(str(int(v)) for v in target_voltages)
-        out_dir = os.path.join(base_dir, "data", f"pypsa_eur_fr{v_str}")
+        out_dir = os.path.join(base_dir, "data", f"pypsa_eur_{c_slug}{v_str}")
     os.makedirs(out_dir, exist_ok=True)
 
     # Resolve steps
@@ -1156,7 +1169,7 @@ Examples:
 
     run_pipeline(
         target_voltages=target_voltages,
-        target_country=args.country,
+        target_country=target_country,
         out_dir=out_dir,
         data_dir=data_dir,
         steps=steps,

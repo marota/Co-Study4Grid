@@ -211,6 +211,50 @@ class TestArgumentPropagation:
         out = cmd[cmd.index("--output-dir") + 1]
         assert out.endswith("pypsa_eur_fr400")
 
+    def test_country_empty_gives_eur_output_dir(self, captured_runs, monkeypatch):
+        """--country '' (all countries) should produce data/pypsa_eur_eur<slug>."""
+        monkeypatch.setattr(
+            sys, "argv",
+            ["build_pipeline.py", "--steps", "2", "--voltages", "400", "--country", ""],
+        )
+        bp.main()
+        cmd = captured_runs[0]
+        out = cmd[cmd.index("--output-dir") + 1]
+        assert out.endswith("pypsa_eur_eur400")
+
+    def test_country_all_gives_eur_output_dir(self, captured_runs, monkeypatch):
+        """--country ALL should also produce data/pypsa_eur_eur<slug>."""
+        monkeypatch.setattr(
+            sys, "argv",
+            ["build_pipeline.py", "--steps", "2", "--voltages", "400", "--country", "ALL"],
+        )
+        bp.main()
+        cmd = captured_runs[0]
+        out = cmd[cmd.index("--output-dir") + 1]
+        assert out.endswith("pypsa_eur_eur400")
+
+    def test_country_passed_to_step_2(self, captured_runs, monkeypatch):
+        """--country value must be forwarded to step 2 via --country flag."""
+        monkeypatch.setattr(
+            sys, "argv",
+            ["build_pipeline.py", "--steps", "2", "--country", "DE"],
+        )
+        bp.main()
+        cmd = captured_runs[0]
+        assert "--country" in cmd
+        assert cmd[cmd.index("--country") + 1] == "DE"
+
+    def test_country_empty_forwarded_as_empty_string_to_step_2(self, captured_runs, monkeypatch):
+        """--country '' must forward an empty string to step 2."""
+        monkeypatch.setattr(
+            sys, "argv",
+            ["build_pipeline.py", "--steps", "2", "--country", ""],
+        )
+        bp.main()
+        cmd = captured_runs[0]
+        assert "--country" in cmd
+        assert cmd[cmd.index("--country") + 1] == ""
+
     def test_osm_cache_flag_passed_to_step_1(self, captured_runs, monkeypatch, tmp_path):
         cache = tmp_path / "osm_cache.json"
         cache.write_text("{}")
