@@ -129,27 +129,14 @@ def _get_line_limits_from_xml(xiidm_path: Path) -> dict:
 
 def _get_line_limits(net, xiidm_path: Path) -> dict:
     """Build a dict of line_id -> permanentLimit (A) from the network."""
-    limits = {}
-
-    # pypowsybl >= 1.x: get_operational_limits
+    # get_operational_limits returns a MultiIndex DataFrame; reset_index first
+    # so "type" and "acceptable_duration" are plain columns, not index levels.
     try:
-        op_lims = net.get_operational_limits()
-        for idx, row in op_lims.iterrows():
-            el_id = idx if isinstance(idx, str) else idx[0]
-            if row.get("type") == "CURRENT" and row.get("name") == "permanent":
-                limits[el_id] = float(row["value"])
-        if limits:
-            return limits
-    except Exception:
-        pass
-
-    # Fallback: current_limits
-    try:
-        cl = net.get_current_limits()
-        for idx, row in cl.iterrows():
-            el_id = idx if isinstance(idx, str) else idx[0]
-            if "permanent_limit" in row:
-                limits[el_id] = float(row["permanent_limit"])
+        op_lims = net.get_operational_limits().reset_index()
+        perm = op_lims[
+            (op_lims["type"] == "CURRENT") & (op_lims["acceptable_duration"] == -1)
+        ]
+        limits = dict(zip(perm["element_id"], perm["value"].astype(float)))
         if limits:
             return limits
     except Exception:
