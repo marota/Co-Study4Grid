@@ -2,9 +2,9 @@
 fetch_osm_names.py
 ==================
 Batch-fetches real names (RTE codes, human-readable names) for all OSM objects
-referenced by the French PyPSA-EUR network from the Overpass API.
+referenced by a PyPSA-EUR network from the Overpass API.
 
-Produces:  data/pypsa_eur_fr{voltage}/osm_names.json
+Produces:  data/pypsa_eur_{country}{voltage}/osm_names.json
 
 Structure:
   {
@@ -23,8 +23,9 @@ The script caches results in osm_names.json. Re-running it will skip already-fet
 unless --force is passed.
 
 Usage:
-    python scripts/fetch_osm_names.py                          # default: 400 kV
-    python scripts/fetch_osm_names.py --voltages 225,400       # 225 + 400 kV
+    python scripts/fetch_osm_names.py                          # default: FR, 400 kV
+    python scripts/fetch_osm_names.py --voltages 225,400       # FR, 225 + 400 kV
+    python scripts/fetch_osm_names.py --country ALL --voltages 380,400   # all of Europe
     python scripts/fetch_osm_names.py --voltages 225,400 --output-dir data/pypsa_eur_fr225_400
     python scripts/fetch_osm_names.py --force                  # re-fetch all
 """
@@ -52,10 +53,19 @@ parser.add_argument(
     help="Target voltage levels (comma-separated, e.g., '225,400'). Default: 400",
 )
 parser.add_argument(
+    "--country",
+    type=str,
+    default="FR",
+    help=(
+        "Country filter (ISO-2 code, default: FR). "
+        "Pass '' or 'ALL' to query all countries (European-wide network)."
+    ),
+)
+parser.add_argument(
     "--output-dir",
     type=str,
     default=None,
-    help="Output directory (default: data/pypsa_eur_fr{voltage})",
+    help="Output directory (default: data/pypsa_eur_{country}{voltage})",
 )
 parser.add_argument(
     "--force",
@@ -80,18 +90,24 @@ BASE_DIR = os.path.join(SCRIPT_DIR, "..", "..")
 DATA_DIR = os.path.join(BASE_DIR, "data", "pypsa_eur_osm")
 
 TARGET_VOLTAGES = [float(v.strip()) for v in args.voltages.split(",")]
-TARGET_COUNTRY = "FR"
+TARGET_COUNTRY = (
+    args.country
+    if args.country and args.country.strip() and args.country.strip().upper() != "ALL"
+    else None
+)
+COUNTRY_SLUG = TARGET_COUNTRY.lower() if TARGET_COUNTRY else "eur"
 
 if args.output_dir:
     OUT_DIR = args.output_dir if os.path.isabs(args.output_dir) else os.path.join(BASE_DIR, args.output_dir)
 else:
     v_str = "_".join(str(int(v)) for v in TARGET_VOLTAGES)
-    OUT_DIR = os.path.join(BASE_DIR, "data", f"pypsa_eur_fr{v_str}")
+    OUT_DIR = os.path.join(BASE_DIR, "data", f"pypsa_eur_{COUNTRY_SLUG}{v_str}")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 OUTPUT_FILE = os.path.join(OUT_DIR, "osm_names.json")
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
+log.info(f"Target country: {TARGET_COUNTRY if TARGET_COUNTRY else 'ALL countries'}")
 log.info(f"Target voltages: {TARGET_VOLTAGES} kV")
 log.info(f"Output directory: {OUT_DIR}")
 
@@ -132,7 +148,7 @@ def _extract_tags(element: dict) -> dict:
     tags = element.get("tags", {})
     result = {}
 
-    # Name hierarchy: ref:FR:RTE_nom > ref:FR:RTE > name > (empty)
+    # FR-specific RTE codes (kept for backward compatibility with the FR cache)
     ref_rte_nom = tags.get("ref:FR:RTE_nom", "")
     ref_rte = tags.get("ref:FR:RTE", "")
     name = tags.get("name", "")
@@ -144,8 +160,23 @@ def _extract_tags(element: dict) -> dict:
     if name:
         result["name"] = name
 
-    # Best human-readable name
-    result["display_name"] = ref_rte_nom or ref_rte or name or ""
+    # Generic operator-specific code (e.g. ref:DE:50Hertz, ref:IT:Terna, ref:ES:REE).
+    # Pick the first non-empty `ref:XX:*` tag we find as a country-agnostic fallback.
+    generic_ref = ""
+    for tag_key, tag_val in tags.items():
+        if (
+            tag_key.startswith("ref:")
+            and tag_val
+            and tag_key not in ("ref:FR:RTE", "ref:FR:RTE_nom")
+        ):
+            generic_ref = tag_val
+            break
+    if generic_ref:
+        result["ref_generic"] = generic_ref
+
+    # Best human-readable name. Order:
+    #   FR RTE codes (preserve historical FR cache) > OSM `name` > any operator ref
+    result["display_name"] = ref_rte_nom or ref_rte or name or generic_ref or ""
 
     # Power type
     power = tags.get("power", "")
@@ -271,12 +302,14 @@ def main():
     # ── Load and filter buses ──
     log.info("Loading OSM CSVs …")
     buses = pd.read_csv(os.path.join(DATA_DIR, "buses.csv"), index_col=0)
-    fr400 = buses[
-        (buses["country"] == TARGET_COUNTRY)
-        & (buses["voltage"].isin(TARGET_VOLTAGES))
+    voltage_mask = (
+        buses["voltage"].isin(TARGET_VOLTAGES)
         & (buses["dc"] == "f")
         & (buses["under_construction"] == "f")
-    ]
+    )
+    if TARGET_COUNTRY:
+        voltage_mask = voltage_mask & (buses["country"] == TARGET_COUNTRY)
+    fr400 = buses[voltage_mask]
 
     lines = pd.read_csv(os.path.join(DATA_DIR, "lines.csv"), index_col=0, quotechar="'")
     fr_lines = lines[
@@ -284,7 +317,8 @@ def main():
         & (lines["under_construction"] == "f")
     ]
 
-    log.info(f"  {len(fr400)} FR buses, {len(fr_lines)} FR lines")
+    scope_label = TARGET_COUNTRY if TARGET_COUNTRY else "ALL"
+    log.info(f"  {len(fr400)} {scope_label} buses, {len(fr_lines)} {scope_label} lines")
 
     # ── Collect OSM IDs to query ──
 

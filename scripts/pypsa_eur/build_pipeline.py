@@ -180,11 +180,15 @@ def main() -> None:
         cmd = [
             py, str(SCRIPT_DIR / "fetch_osm_names.py"),
             "--voltages", voltages,
+            "--country", country if country else "ALL",
+            "--output-dir", str(out_dir),
         ]
         if args.osm_cache:
             cmd += ["--cache-from", args.osm_cache]
         else:
-            # Re-use the cache that ships with fr400 if present.
+            # Seed from the fr400 cache when available — entries are keyed by raw
+            # OSM id, so reusing them is safe even for a Europe-wide run; it just
+            # avoids re-fetching the French substations.
             default_cache = BASE_DIR / "data" / "pypsa_eur_fr400" / "osm_names.json"
             if default_cache.is_file():
                 cmd += ["--cache-from", str(default_cache)]

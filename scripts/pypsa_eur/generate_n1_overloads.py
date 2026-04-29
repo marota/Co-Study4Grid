@@ -71,6 +71,16 @@ parser.add_argument(
     help="Also test 2-winding transformer contingencies",
 )
 parser.add_argument(
+    "--chunk-size",
+    type=int,
+    default=0,
+    help=(
+        "Process contingencies in chunks of this size (0 = single batch). "
+        "Use a non-zero value (e.g. 1000) on very large networks where the "
+        "full N-1 result table would exceed the GraalVM 32GB heap."
+    ),
+)
+parser.add_argument(
     "--output",
     type=str,
     default=None,
@@ -234,72 +244,86 @@ def main():
         vl2 = row.get("voltage_level2_id", "")
         line_vls[lid] = (vl1, vl2)
 
-    # ── Create security analysis ──────────────────────────────────────────
-    log.info("Setting up security analysis …")
-    sa = pp.security.create_analysis()
-
-    # Register each line as a single-element contingency
-    sa.add_single_element_contingencies(contingency_ids)
-    log.info(f"  Registered {len(contingency_ids)} contingencies")
-
-    # Monitor all lines for post-contingency currents
     all_line_ids = list(lines_df.index)
-    sa.add_monitored_elements(branch_ids=all_line_ids)
-    log.info(f"  Monitoring {len(all_line_ids)} branches")
-
-    # ── Run analysis ──────────────────────────────────────────────────────
     lf_params = _get_lf_params()
 
-    log.info(
-        f"Running {'DC' if args.dc else 'AC'} security analysis "
-        f"({len(contingency_ids)} contingencies) …"
-    )
-    t1 = time.time()
+    # ── Run analysis (optionally chunked to fit the GraalVM heap) ─────────
+    chunk_size = args.chunk_size if args.chunk_size > 0 else len(contingency_ids)
+    if chunk_size < len(contingency_ids):
+        log.info(
+            f"Chunking N-1 sweep into batches of {chunk_size} contingencies "
+            f"× {len(all_line_ids)} monitored branches"
+        )
 
-    if args.dc:
-        result = sa.run_dc(net, parameters=lf_params)
-    else:
-        result = sa.run_ac(net, parameters=lf_params)
+    overloads_chunks: list[pd.DataFrame] = []
+    total_non_converged = 0
+    t_sa = 0.0
 
-    t_sa = time.time() - t1
+    for chunk_start in range(0, len(contingency_ids), chunk_size):
+        chunk_ids = contingency_ids[chunk_start:chunk_start + chunk_size]
+        n_chunks = (len(contingency_ids) + chunk_size - 1) // chunk_size
+        chunk_idx = chunk_start // chunk_size + 1
+
+        sa = pp.security.create_analysis()
+        sa.add_single_element_contingencies(chunk_ids)
+        sa.add_monitored_elements(branch_ids=all_line_ids)
+
+        log.info(
+            f"Running {'DC' if args.dc else 'AC'} security analysis "
+            f"chunk {chunk_idx}/{n_chunks} ({len(chunk_ids)} contingencies) …"
+        )
+        t1 = time.time()
+        if args.dc:
+            result = sa.run_dc(net, parameters=lf_params)
+        else:
+            result = sa.run_ac(net, parameters=lf_params)
+        t_chunk = time.time() - t1
+        t_sa += t_chunk
+        log.info(f"  chunk {chunk_idx} completed in {t_chunk:.1f}s")
+
+        post_results = result.post_contingency_results
+        total_non_converged += sum(
+            1 for pr in post_results.values()
+            if getattr(pr, "status", None) is not None and pr.status.name != "CONVERGED"
+        )
+
+        br = result.branch_results
+        if "operator_strategy_id" in br.index.names:
+            br = br.droplevel("operator_strategy_id")
+        cont_level = br.index.get_level_values("contingency_id")
+        br = br[cont_level != ""]
+
+        i_max = br[["i1", "i2"]].abs().max(axis=1)
+        branch_ids = br.index.get_level_values("branch_id")
+        cont_ids_idx = br.index.get_level_values("contingency_id")
+        limits_series = pd.Series(branch_ids, index=br.index).map(limits).astype(float)
+        loading_pct = (i_max / limits_series.where(limits_series > 0)) * 100.0
+        mask = (loading_pct > args.threshold) & (branch_ids != cont_ids_idx)
+
+        overloads_chunks.append(pd.DataFrame({
+            "contingency_id": cont_ids_idx[mask],
+            "branch_id": branch_ids[mask],
+            "current_a": i_max[mask].round(1).values,
+            "limit_a": limits_series[mask].round(1).values,
+            "loading_pct": loading_pct[mask].round(1).values,
+        }))
+
+        # Free per-chunk Java-side state before the next iteration so the heap
+        # is reclaimed between batches.
+        del result, br, i_max, branch_ids, cont_ids_idx, limits_series, loading_pct, mask
+
     log.info(f"  Security analysis completed in {t_sa:.1f}s")
+    total_tested = len(contingency_ids) - total_non_converged
 
     # ── Extract results ───────────────────────────────────────────────────
     log.info("Processing results …")
-
-    branch_results = result.branch_results  # MultiIndex (contingency_id, operator_strategy_id, branch_id)
-    post_results = result.post_contingency_results  # dict[str, PostContingencyResult]
-
-    # Count non-converged contingencies
-    total_non_converged = sum(
-        1 for pr in post_results.values()
-        if getattr(pr, "status", None) is not None and pr.status.name != "CONVERGED"
+    overloads_df = (
+        pd.concat(overloads_chunks, ignore_index=True)
+        if overloads_chunks
+        else pd.DataFrame(
+            columns=["contingency_id", "branch_id", "current_a", "limit_a", "loading_pct"]
+        )
     )
-    total_tested = len(contingency_ids) - total_non_converged
-
-    # Drop the constant operator_strategy_id level and the pre-contingency rows
-    br = branch_results
-    if "operator_strategy_id" in br.index.names:
-        br = br.droplevel("operator_strategy_id")
-    cont_level = br.index.get_level_values("contingency_id")
-    br = br[cont_level != ""]
-
-    # Vectorized overload detection
-    i_max = br[["i1", "i2"]].abs().max(axis=1)
-    branch_ids = br.index.get_level_values("branch_id")
-    cont_ids_idx = br.index.get_level_values("contingency_id")
-    limits_series = pd.Series(branch_ids, index=br.index).map(limits).astype(float)
-
-    loading_pct = (i_max / limits_series.where(limits_series > 0)) * 100.0
-    mask = (loading_pct > args.threshold) & (branch_ids != cont_ids_idx)
-
-    overloads_df = pd.DataFrame({
-        "contingency_id": cont_ids_idx[mask],
-        "branch_id": branch_ids[mask],
-        "current_a": i_max[mask].round(1).values,
-        "limit_a": limits_series[mask].round(1).values,
-        "loading_pct": loading_pct[mask].round(1).values,
-    })
 
     # Group into the per-contingency structure
     contingencies_with_overload = []
