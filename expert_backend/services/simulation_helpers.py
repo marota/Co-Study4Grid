@@ -41,6 +41,12 @@ TOPO_KEYS: frozenset[str] = frozenset({
     "pst_tap",
 })
 
+# Minimum disconnected load (MW) required to flag an islanding event.
+# Below this, an extra connected component is treated as an AC load-flow
+# numerical artefact (typically fast-mode local non-convergence on
+# extreme PST taps) rather than a real outage.
+ISLANDING_MW_THRESHOLD: float = 1.0
+
 
 def canonicalize_action_id(action_id: str) -> str:
     """Return a canonical "+"-joined ID (components sorted alphabetically)."""
@@ -299,10 +305,16 @@ def compute_action_metrics(
         n_components_after > obs.n_components
         or n_components_after > obs_simu_defaut.n_components
     ):
-        result["is_islanded"] = True
-        result["disconnected_mw"] = float(
+        # Topology shows more components, but only flag a real islanding
+        # when actual load left the main component. Sub-threshold deltas
+        # are almost always AC-LF numerical artefacts (extreme PST taps,
+        # fast-mode local non-convergence) rather than physical outages.
+        disconnected_mw = float(
             max(0.0, obs_simu_defaut.main_component_load_mw - obs_simu_action.main_component_load_mw)
         )
+        if disconnected_mw >= ISLANDING_MW_THRESHOLD:
+            result["is_islanded"] = True
+            result["disconnected_mw"] = disconnected_mw
 
     rho_after = (_to_1d(obs_simu_action.rho)[lines_overloaded_ids] * mf).tolist()
     result["rho_after"] = rho_after
