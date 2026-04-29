@@ -65,6 +65,14 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
     display: none;
 }
 
+/* User-toggle: hide every voltage-level label everywhere on the diagram.
+   pypowsybl emits all VL labels inside a single root-level
+   `<foreignObject class="nad-text-nodes">`, so a single rule on that
+   class is enough to cover the entire NAD regardless of zoom tier. */
+.svg-container.nad-hide-vl-labels foreignObject.nad-text-nodes {
+    display: none;
+}
+
 /* ===== Highlight styles ===== */
 
 .nad-highlight {

@@ -526,6 +526,7 @@ export type InteractionType =
     | 'zoom_out'
     | 'zoom_reset'
     | 'inspect_query_changed'
+    | 'vl_names_toggled'
     // SLD Overlay
     | 'sld_overlay_opened'
     | 'sld_overlay_tab_changed'

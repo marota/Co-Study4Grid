@@ -79,6 +79,13 @@ export interface DiagramsState {
   setActionViewMode: (v: 'network' | 'delta') => void;
   handleViewModeChange: (mode: 'network' | 'delta') => void;
 
+  // Voltage-level name labels: when false, the per-node labels rendered
+  // by pypowsybl inside the NAD's `<foreignObject class="nad-text-nodes">`
+  // are hidden via CSS, and the equipment id is exposed as a native
+  // `<title>` tooltip on hover instead. Defaults to true.
+  showVoltageLevelNames: boolean;
+  setShowVoltageLevelNames: (v: boolean) => void;
+
   // ViewBox
   originalViewBox: ViewBox | null;
   setOriginalViewBox: (v: ViewBox | null) => void;
@@ -219,6 +226,8 @@ export function useDiagrams(
   const handleViewModeChange = useCallback((mode: 'network' | 'delta') => {
     setActionViewMode(mode);
   }, []);
+
+  const [showVoltageLevelNames, setShowVoltageLevelNames] = useState<boolean>(true);
 
   // ViewBox
   const [originalViewBox, setOriginalViewBox] = useState<ViewBox | null>(null);
@@ -1051,6 +1060,7 @@ export function useDiagrams(
     actionDiagramLoading, setActionDiagramLoading,
     actionViewMode, setActionViewMode,
     handleViewModeChange,
+    showVoltageLevelNames, setShowVoltageLevelNames,
     originalViewBox, setOriginalViewBox,
     inspectQuery, setInspectQuery,
     setInspectQueryForTab,
@@ -1081,6 +1091,7 @@ export function useDiagrams(
   }), [
     activeTab, nDiagram, n1Diagram, n1Loading,
     selectedActionId, actionDiagram, actionDiagramLoading, actionViewMode, handleViewModeChange,
+    showVoltageLevelNames,
     originalViewBox, inspectQuery,
     nPZ, n1PZ, actionPZ,
     nMetaIndex, n1MetaIndex, actionMetaIndex,
