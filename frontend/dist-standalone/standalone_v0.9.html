@@ -12498,7 +12498,7 @@ function requireClient() {
   return client.exports;
 }
 var clientExports = requireClient();
-const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId }) => {
+const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId, hideVlLabels = false }) => {
   React.useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container || !svg) return;
@@ -12514,7 +12514,7 @@ const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId }) 
     "div",
     {
       ref: containerRef,
-      className: "svg-container",
+      className: hideVlLabels ? "svg-container nad-hide-vl-labels" : "svg-container",
       id: `${tabId}-svg-container`,
       style: { display, width: "100%", height: "100%", overflow: "hidden" }
     }
@@ -13004,6 +13004,26 @@ const applyDeltaVisuals = (container, diagram, metaIndex, isDeltaMode) => {
       }
     }
   }
+};
+const SVG_NS$1 = "http://www.w3.org/2000/svg";
+const VL_TITLE_MARKER = "data-vl-title";
+const applyVlTitles = (container, metaIndex, displayName) => {
+  if (!container || !metaIndex) return;
+  const idMap = getIdMap(container);
+  metaIndex.nodesBySvgId.forEach((node, svgId) => {
+    const el = idMap.get(svgId);
+    if (!el) return;
+    const equipmentId = node.equipmentId;
+    const friendly = displayName ? displayName(equipmentId) : equipmentId;
+    const text = friendly && friendly !== equipmentId ? `${friendly} (${equipmentId})` : equipmentId;
+    let title = el.querySelector(`:scope > title[${VL_TITLE_MARKER}]`);
+    if (!title) {
+      title = document.createElementNS(SVG_NS$1, "title");
+      title.setAttribute(VL_TITLE_MARKER, "");
+      el.insertBefore(title, el.firstChild);
+    }
+    if (title.textContent !== text) title.textContent = text;
+  });
 };
 const severityFill = {
   green: "#28a745",
@@ -16231,7 +16251,9 @@ const VisualizationPanel = ({
   onOverviewFiltersChange,
   unsimulatedActionIds,
   unsimulatedActionInfo,
-  onSimulateUnsimulatedAction
+  onSimulateUnsimulatedAction,
+  showVoltageLevelNames = true,
+  onToggleVoltageLevelNames
 }) => {
   const detachTabCb = onDetachTab ?? (() => {
   });
@@ -16473,6 +16495,27 @@ const VisualizationPanel = ({
               inspectQuery,
               onChangeQuery: inspectQueryChangeForCb,
               filteredInspectables
+            }
+          ),
+          onToggleVoltageLevelNames && /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => onToggleVoltageLevelNames(!showVoltageLevelNames),
+              title: showVoltageLevelNames ? "Hide voltage-level names on the diagram (hover bus circles to see them as tooltips)" : "Show voltage-level names on the diagram",
+              "aria-pressed": showVoltageLevelNames,
+              "data-testid": "toggle-vl-names",
+              style: {
+                background: showVoltageLevelNames ? "#e8f0fe" : "#fff",
+                color: showVoltageLevelNames ? "#2c7be5" : "#555",
+                border: `1px solid ${showVoltageLevelNames ? "#2c7be5" : "#ccc"}`,
+                borderRadius: "4px",
+                padding: "4px 8px",
+                cursor: "pointer",
+                fontSize: "12px",
+                fontWeight: 600,
+                boxShadow: "0 2px 5px rgba(0,0,0,0.15)"
+              },
+              children: "🏷 VL"
             }
           ),
           inspectQuery && voltageLevels.includes(inspectQuery) && /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -16961,7 +17004,7 @@ const VisualizationPanel = ({
             left: 0
           }, children: [
             detachedTabs["n"] && renderDetachedHeader("n", "Network (N)", "#3498db"),
-            /* @__PURE__ */ jsxRuntimeExports.jsx(MemoizedSvgContainer, { svg: nDiagram?.svg || "", containerRef: nSvgContainerRef, display: "block", tabId: "n" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(MemoizedSvgContainer, { svg: nDiagram?.svg || "", containerRef: nSvgContainerRef, display: "block", tabId: "n", hideVlLabels: !showVoltageLevelNames }),
             configLoading && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", background: "rgba(255,255,255,0.85)", zIndex: 20 }, children: "Loading configuration..." }),
             !configLoading && !nDiagram?.svg && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", background: "white" }, children: "Load configuration to see diagram" }),
             renderTabOverlay("n", true)
@@ -17009,7 +17052,7 @@ const VisualizationPanel = ({
               n1Diagram.lf_status || "did not converge",
               " — voltage values may be missing or approximate"
             ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx(MemoizedSvgContainer, { svg: n1Diagram?.svg || "", containerRef: n1SvgContainerRef, display: "block", tabId: "n-1" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(MemoizedSvgContainer, { svg: n1Diagram?.svg || "", containerRef: n1SvgContainerRef, display: "block", tabId: "n-1", hideVlLabels: !showVoltageLevelNames }),
             n1Loading && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", background: "rgba(255,255,255,0.85)", zIndex: 20 }, children: "Generating N-1 Diagram..." }),
             !n1Loading && !n1Diagram?.svg && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", fontStyle: "italic", textAlign: "center", padding: "40px", background: "white" }, children: "Select a contingency element from the dropdown to view the N-1 state." }),
             renderTabOverlay("n-1", true)
@@ -17062,7 +17105,7 @@ const VisualizationPanel = ({
               actionDiagram.lf_status || "did not converge",
               " — voltage values may be missing or approximate"
             ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx(MemoizedSvgContainer, { svg: actionDiagram?.svg || "", containerRef: actionSvgContainerRef, display: "block", tabId: "action" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(MemoizedSvgContainer, { svg: actionDiagram?.svg || "", containerRef: actionSvgContainerRef, display: "block", tabId: "action", hideVlLabels: !showVoltageLevelNames }),
             /* @__PURE__ */ jsxRuntimeExports.jsx(
               ActionOverviewDiagram$1,
               {
@@ -23931,6 +23974,7 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
   const handleViewModeChange = reactExports.useCallback((mode) => {
     setActionViewMode(mode);
   }, []);
+  const [showVoltageLevelNames, setShowVoltageLevelNames] = reactExports.useState(true);
   const [overflowLayoutMode, setOverflowLayoutMode] = reactExports.useState("hierarchical");
   const [overflowLayoutLoading, setOverflowLayoutLoading] = reactExports.useState(false);
   const handleOverflowLayoutChange = reactExports.useCallback(async (mode, setResult, setError) => {
@@ -24528,6 +24572,8 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
     actionViewMode,
     setActionViewMode,
     handleViewModeChange,
+    showVoltageLevelNames,
+    setShowVoltageLevelNames,
     overflowLayoutMode,
     setOverflowLayoutMode,
     overflowLayoutLoading,
@@ -24583,6 +24629,7 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
     actionDiagramLoading,
     actionViewMode,
     handleViewModeChange,
+    showVoltageLevelNames,
     overflowLayoutMode,
     overflowLayoutLoading,
     handleOverflowLayoutChange,
@@ -25654,7 +25701,9 @@ function App() {
     inspectableItems,
     nSvgContainerRef,
     n1SvgContainerRef,
-    actionSvgContainerRef
+    actionSvgContainerRef,
+    showVoltageLevelNames,
+    setShowVoltageLevelNames
   } = diagrams;
   const [scrollTarget, setScrollTarget] = reactExports.useState(null);
   const scrollSeqRef = reactExports.useRef(0);
@@ -25813,6 +25862,7 @@ function App() {
     diagrams.setN1Diagram(null);
     diagrams.setOriginalViewBox(null);
     diagrams.setActionViewMode("network");
+    diagrams.setShowVoltageLevelNames(true);
     diagrams.setN1Loading(false);
     diagrams.setActionDiagramLoading(false);
     diagrams.committedBranchRef.current = "";
@@ -26283,6 +26333,15 @@ function App() {
   reactExports.useEffect(() => {
     diagrams.selectedBranchForSld.current = selectedBranch;
   }, [selectedBranch, diagrams.selectedBranchForSld]);
+  reactExports.useEffect(() => {
+    applyVlTitles(nSvgContainerRef.current, diagrams.nMetaIndex, displayName);
+  }, [nDiagram, diagrams.nMetaIndex, displayName, nSvgContainerRef]);
+  reactExports.useEffect(() => {
+    applyVlTitles(n1SvgContainerRef.current, diagrams.n1MetaIndex, displayName);
+  }, [n1Diagram, diagrams.n1MetaIndex, displayName, n1SvgContainerRef]);
+  reactExports.useEffect(() => {
+    applyVlTitles(actionSvgContainerRef.current, diagrams.actionMetaIndex, displayName);
+  }, [actionDiagram, diagrams.actionMetaIndex, displayName, actionSvgContainerRef]);
   useN1Fetch({
     selectedBranch,
     branches,
@@ -26337,6 +26396,10 @@ function App() {
     interactionLogger.record("inspect_query_changed", { query: q });
     diagrams.setInspectQuery(q);
   }, [diagrams]);
+  const handleToggleVoltageLevelNames = reactExports.useCallback((show) => {
+    interactionLogger.record("vl_names_toggled", { show });
+    setShowVoltageLevelNames(show);
+  }, [setShowVoltageLevelNames]);
   const handleInspectQueryChangeFor = reactExports.useCallback((targetTab, q) => {
     interactionLogger.record("inspect_query_changed", { query: q, target_tab: targetTab });
     diagrams.setInspectQueryForTab(targetTab, q);
@@ -26526,7 +26589,9 @@ function App() {
           onOverviewFiltersChange: setOverviewFilters,
           unsimulatedActionIds,
           unsimulatedActionInfo,
-          onSimulateUnsimulatedAction: handleSimulateUnsimulatedAction
+          onSimulateUnsimulatedAction: handleSimulateUnsimulatedAction,
+          showVoltageLevelNames,
+          onToggleVoltageLevelNames: handleToggleVoltageLevelNames
         }
       ) })
     ] }),
@@ -26831,6 +26896,25 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 /* Region: edge-info visible, but node label boxes still hidden */
 [data-zoom-tier="region"] .nad-vl-nodes foreignObject {
     display: none;
+}
+
+/* User-toggle: hide every voltage-level label on the diagram. pypowsybl
+   emits VL labels in two interchangeable shapes depending on the diagram
+   configuration: a root-level `<foreignObject class="nad-text-nodes">`
+   carrying HTML `<div>` labels, and inline `<text>` siblings under
+   `.nad-vl-nodes` / `.nad-label-nodes`. Cover both shapes (and the
+   inline `nad-label-box` divs that some pypowsybl builds emit at the
+   SVG root without a foreignObject wrapper) so the toggle works across
+   all networks. `!important` overrides pypowsybl's own inline `<style>`
+   block, which is appended to the document AFTER App.css when the SVG
+   is injected by `replaceChildren(svg)`. */
+.svg-container.nad-hide-vl-labels .nad-text-nodes,
+.svg-container.nad-hide-vl-labels foreignObject.nad-text-nodes,
+.svg-container.nad-hide-vl-labels .nad-vl-nodes foreignObject,
+.svg-container.nad-hide-vl-labels .nad-label-nodes foreignObject,
+.svg-container.nad-hide-vl-labels .nad-label-nodes,
+.svg-container.nad-hide-vl-labels .nad-label-box {
+    display: none !important;
 }
 
 /* ===== Highlight styles ===== */
