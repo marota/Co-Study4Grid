@@ -1,9 +1,11 @@
 # Cycle de développement de Co-Study4Grid
 
 > Résumé du cycle de développement reconstruit à partir du `git log`
-> (358 commits, du 28/03/2026 au 30/04/2026) et du `CHANGELOG.md`,
-> qui retrace les versions 0.5.0 → 0.6.5 et renvoie à l'historique
-> antérieur (PRs #57–#65, ère « ExpertAssist »).
+> (358 commits, du 28/03/2026 au 30/04/2026), du `CHANGELOG.md` et
+> des descriptions de PRs depuis GitHub. Les 65 PRs antérieures au
+> rebrand (`ExpertAssist`, 14/02 → 28/03/2026) ne figurent pas dans
+> le clone local ; leur reconstitution s'appuie sur les descriptions
+> de PR.
 
 Ce document est une vue d'ensemble chronologique des grandes phases
 du projet. Pour les détails par sujet, voir les docs ciblées :
@@ -13,6 +15,69 @@ du projet. Pour les détails par sujet, voir les docs ciblées :
   [`phase2-state-management-optimization.md`](phase2-state-management-optimization.md)
 - Pipeline PyPSA-EUR → XIIDM : [`../data/pypsa-eur-osm-to-xiidm.md`](../data/pypsa-eur-osm-to-xiidm.md)
 - Audit de parité standalone : [`../../frontend/PARITY_AUDIT.md`](../../frontend/PARITY_AUDIT.md)
+
+## Vue d'ensemble
+
+### Chronologie
+
+```mermaid
+gantt
+    title Cycle de développement de Co-Study4Grid
+    dateFormat YYYY-MM-DD
+    axisFormat %d/%m
+
+    section 1. ExpertAssist
+    Bootstrap (pré-PR #1)              :done, p11, 2026-02-01, 2026-02-13
+    Bouclage métier (#1–#15)           :done, p12, 2026-02-14, 2026-02-22
+    Maturation UX (#16–#24)            :done, p13, 2026-02-22, 2026-03-01
+    Robustesse + CI (#25–#46)          :done, p14, 2026-03-01, 2026-03-10
+    Persistance + actions (#47–#56)    :done, p15, 2026-03-10, 2026-03-22
+    Two-step + rebrand (#57–#65)       :done, p16, 2026-03-22, 2026-03-28
+
+    section 2. 0.5.0
+    Catalogue + perf + tabs (#66–#90)  :done, p2,  2026-03-29, 2026-04-14
+
+    section 3. Consolidation
+    0.6.0 (refactor + standalone auto) :done, p3a, 2026-04-14, 2026-04-20
+    0.6.5 (qualité + parité)           :done, p3b, 2026-04-20, 2026-04-22
+
+    section 4. PyPSA-EUR
+    Pipeline + datasets (#112)         :done, p4,  2026-04-16, 2026-04-24
+    Post-merge (overflow viewer)       :done, p4b, 2026-04-24, 2026-04-30
+```
+
+### Architecture d'ensemble
+
+```mermaid
+graph LR
+    User(["Opérateur réseau"])
+
+    subgraph Frontend
+        ReactSPA["React 19 + TS<br/>(Vite dev)"]
+        StandaloneHTML["standalone.html<br/>(vite-plugin-singlefile)"]
+    end
+
+    subgraph Backend
+        FastAPI["FastAPI + Uvicorn<br/>:8000"]
+        Recommender["expert_op4grid_<br/>recommender"]
+        Pypowsybl["pypowsybl<br/>(load flow + NAD/SLD)"]
+    end
+
+    subgraph Data
+        Network[".xiidm + actions.json<br/>+ grid_layout.json"]
+        Sessions["Overflow_Graph/<br/>+ session.json"]
+    end
+
+    User -->|HTTP| ReactSPA
+    User -->|HTTP| StandaloneHTML
+    ReactSPA -->|axios| FastAPI
+    StandaloneHTML -->|axios| FastAPI
+    FastAPI --> Recommender
+    FastAPI --> Pypowsybl
+    Pypowsybl --> Network
+    Recommender --> Network
+    FastAPI --> Sessions
+```
 
 ---
 
@@ -208,6 +273,39 @@ contrats utilisateur encore en vigueur :
   vieux nom et nettoyage). C'est ce point qui ouvre l'historique
   git visible localement.
 
+#### Flux d'analyse en deux étapes (PR #57)
+
+Le contrat utilisateur principal posé par cette dernière vague :
+
+```mermaid
+sequenceDiagram
+    actor U as Utilisateur
+    participant F as Frontend
+    participant B as Backend
+    participant R as Recommender
+
+    U->>F: Sélectionne contingence
+    F->>B: POST /api/n1-diagram
+    B-->>F: SVG N-1 + lines_overloaded
+    F-->>U: Affiche N-1 + halos surcharges
+
+    U->>F: Clic « Run analysis »
+    F->>B: POST /api/run-analysis-step1
+    B->>R: detect_overloads()
+    R-->>B: overloads + can_proceed
+    B-->>F: { overloads, can_proceed }
+    F-->>U: Liste les surcharges détectées
+
+    U->>F: Coche les surcharges à résoudre
+    F->>B: POST /api/run-analysis-step2 (NDJSON)
+    B->>R: resolve(selected_overloads)
+    R-->>B: PDF prêt
+    B-->>F: { type:"pdf", path }
+    R-->>B: scores d'actions
+    B-->>F: { type:"result", actions }
+    F-->>U: Action cards + Overflow PDF
+```
+
 > **Bilan de la phase ExpertAssist** : 65 PRs sur 6 semaines, des
 > couches de scaffold + visualisation NAD multi-tab à un workflow
 > N-1 deux-étapes streamé, avec persistance de session, interaction
@@ -217,44 +315,199 @@ contrats utilisateur encore en vigueur :
 > les vectorisations perf — l'architecture qui sous-tend ce qui
 > existe aujourd'hui est bâtie ici.
 
-## 2. Ajout de features (0.5.0, fin mars → 14/04/2026)
+## 2. Premier tag de release : 0.5.0 (29/03 → 14/04/2026, PRs #66 → #~95)
 
-Première release taguée, qui rebrande *ExpertAssist → Co-Study4Grid*
-(PR #65) et empile la quasi-totalité du catalogue fonctionnel :
+Le tag 0.5.0 (14/04/2026) entérine **l'architecture ExpertAssist
+au complet** (cf. § 1) et y ajoute, en deux semaines :
 
-- **Catalogue d'actions remédiales complet** : topologie, **PST tap** (PR #78),
-  **curtailment renouvelable** (PR #72), **délestage de charge** (PR #61/#73)
-  avec MW configurable.
-- **Actions combinées** : *Computed Pairs* + *Explore Pairs*, théorème de
-  superposition avec fallback simulation complète (PR #72).
-- **Workflow N-1 en deux étapes** (détecter → sélectionner → résoudre)
-  qui devient le chemin principal, l'endpoint mono-passe restant en legacy.
-- **Onglets de visualisation détachables** pour le multi-écran (PR #84/#86/#87/#90).
-- **Highlights SLD**, **colonne MW Start**, **sous-diagrammes focalisés**
-  (`/api/focused-diagram`).
-- **Save Results / Reload Session** + **interaction-logging rejouable**
-  (PRs #62/#64) — restauration sans re-simulation.
-- **Performance** : vectorisations massives (`care_mask` ~1 100×, flux ~13×,
-  deltas ~47×, cache d'observations ~65×) → simulation manuelle
-  ~16,5 s → ~4 s sur le réseau français entier (PR #66).
-- **Confirmation dialogs**, **React ErrorBoundary**, zoom-tier LoD.
+1. les optimisations perf qui rendent le réseau français interactif,
+2. le catalogue d'actions remédiales final (curtailment, PST tap,
+   load shedding au nouveau format `loads_p`/`gens_p`),
+3. la première décomposition de `App.tsx` côté composants,
+4. les onglets de visualisation détachables pour multi-écran.
+
+> **Note de réconciliation** : les briques *save / reload session*,
+> *interaction-logging rejouable*, *MW Start* et *highlights SLD*
+> (PRs #49 / #52 / #62 / #63 / #64) sont en fait pré-rebrand —
+> elles arrivent en 0.5.0 par le simple effet du tag, sans nouveau
+> code dans cette fenêtre. Voir § 1.5–1.6.
+
+### 2.1. Vectorisation backend (PR #66, 29/03)
+
+Première PR post-rebrand. Cible la latence de
+`simulate_manual_action` sur le réseau français complet (~10 k
+branches) :
+
+| Étage                              | Avant     | Après    | Speedup    |
+|------------------------------------|-----------|----------|------------|
+| `care_mask` + détection surcharges | 12,17 s   | 0,01 s   | **1 100×** |
+| Extraction des flux                | 0,82 s    | 0,06 s   | **13×**    |
+| Calcul des deltas terminal-aware   | 0,47 s    | 0,01 s   | **47×**    |
+| Cache d'observations (boucle)      | —         | —        | **~65×**   |
+| **Total simulation manuelle**      | **16,5 s**| **4,0 s**| **4×**     |
+
+Tests dédiés : `test_vectorized_monitoring.py`,
+`test_cache_synchronization.py`, `test_performance_budgets.py`
+(SLA logique sous 50 ms).
+
+Une stratégie *viewport-based subsets* (50× de payload) a été
+prototypée puis **rejetée** dans la même PR — perte d'intégrité du
+highlighting global ; les retours d'expérience vivent dans
+`docs/proposals/rendering-lod-strategies.md`.
+
+### 2.2. Polish UI + parité standalone (PRs #69 → #71)
+
+- **PR #69** — restauration du chargement de `grid_layout.json`
+  (fix régression layout) + tests de non-régression.
+- **PR #70** — fix latence affichage *Overflow Graph* + tab-switch
+  standalone, throttling `datalist`, garde-fou zoom sur match exact,
+  fix `NaN` dans le SVG boost.
+- **PR #71** — uniformisation des highlights React + standalone :
+  suppression des `drop-shadow`, opacité solide pour overloads,
+  actions et contingencies, fix dimming des cibles d'action.
+
+### 2.3. Catalogue d'actions remédiales final (PRs #72, #73, #78)
+
+- **PR #72 (01/04)** — branche `feature/renewable-curtailment-integration` :
+  `simulate_manual_action` retourne `action_topology` immédiatement
+  (sync UI instantanée), descriptions unifiées (`'GEN' at voltage
+  level 'VL'`), enregistrement des actions manuelles dans le
+  registre central (SLD highlights), fix du signe MW
+  curtailé/sheddé, badges interactifs (générateurs/charges/VL).
+- **PR #73 (07/04)** — support du **nouveau format `loads_p` / `gens_p`**
+  pour load shedding et curtailment (active power setpoints au lieu
+  de `bus = -1`) :
+  - Backward-compat plein avec le format legacy
+    (`loads_bus` / `gens_bus` à `-1`).
+  - `_compute_load_shedding_details`, `_compute_curtailment_details`,
+    `_mw_start_*` détectent les deux formats.
+  - 553 lignes de tests dédiées (`test_power_reduction_format.py`).
+  - **MW configurable** côté UI + ré-simulation depuis la table de
+    score.
+- **PR #78 (09–11/04)** — **PST tap re-simulation** :
+  `_compute_pst_details()` extrait `low_tap` / `high_tap` du
+  network manager ; `simulate_manual_action(target_tap=…)` clamp
+  automatiquement aux bornes ; UI éditable (purple theme) avec
+  bouton *Re-simulate* per-action.
+
+### 2.4. Décomposition `App.tsx` post-rebrand (PRs #74, #75)
+
+- **PR #74 (08/04, Phase 1 *Component Decomposition*)** —
+  extraction des 4 composants top-level hors d'`App.tsx` :
+  `Header`, `SettingsModal` (qui reçoit le `SettingsState` complet
+  du hook `useSettings`), `ReloadSessionModal`, `ConfirmationDialog`.
+  `App.tsx` passe de **~1 000 → ~650 lignes**.
+- **PR #75 (08/04, Phase 2 *State Management Optimization*)** —
+  **rationalisation des re-renders** :
+  - 9 wrappers cross-hook mémoizés via `useCallback`.
+  - `clearContingencyState()` / `resetAllState()` extraits pour
+    déduplication (25+ lignes de resets manuels par appelant).
+  - 8 callbacks JSX inline → handlers nommés `useCallback`.
+  - 9 settings groupés dans un `RecommenderDisplayConfig`
+    mémoizé (un prop au lieu de 9 vers `ActionFeed`).
+  - **`React.memo`** sur les composants lourds : `VisualizationPanel`
+    (1 266 LoC), `ActionFeed` (~500), `OverloadPanel`.
+
+```mermaid
+graph LR
+    A["App.tsx<br/>~2 100 LoC"] -- "PR #56 (21/03, pré-rebrand)<br/>5 hooks extraits" --> B["~800 LoC"]
+    B -- "PR #74 (08/04)<br/>Header + 3 modals" --> C["~650 LoC"]
+    C -- "PR #75 (08/04)<br/>useCallback + React.memo" --> D["~650 LoC<br/>memoizé"]
+    D -- "PR #109 (post-0.5.0)<br/>useN1Fetch + Sidebar" --> E["~1 150 LoC<br/>orchestration hub"]
+```
+
+### 2.5. Onglets de visualisation détachables (PRs #84, #87, #90)
+
+Refonte multi-écran complète :
+
+- **PR #84 (13/04)** — chacun des 4 onglets (N / N-1 / action /
+  overflow) peut être **détaché dans une fenêtre séparée** :
+  - Hook `useDetachedTabs` qui pilote le cycle de vie des popups
+    (cleanup `pagehide` + polling pour les fermetures via chrome
+    navigateur).
+  - `TabPortal` (React portals) qui *relocate* le sous-arbre sans
+    le démonter — préserve `MemoizedSvgContainer`, refs, viewBox
+    auto-zoomé.
+  - `usePanZoom` et `SldOverlay` bindent désormais leurs listeners
+    `mousemove`/`mouseup` sur le `ownerWindow` de l'élément, pour
+    que drag-pan et drag-move continuent de fonctionner dans les
+    popups.
+  - 2 nouveaux types d'événement : `tab_detached`, `tab_reattached`
+    (replay-ready).
+- **PR #86 (14/04)** — warmup du test de budget perf sur petit
+  réseau pour absorber le cold-start CI (mocks, BLAS/pandas froid).
+- **PR #87 (14/04)** — `InspectSearchField` custom (DOM dans le
+  même sous-arbre que l'input) qui remplace le couple
+  `<input list>` + `<datalist>`. Contourne un bug Chromium où le
+  datalist natif s'ouvre dans la mauvaise fenêtre quand le champ
+  est dans un popup.
+- **PR #90 (14/04)** — fix : sélection d'une action dans le popup
+  ne *bascule plus* la fenêtre principale sur l'onglet `action`
+  (le placeholder "Detached" ne réapparaît plus à chaque clic).
+
+### 2.6. Tableau récapitulatif des features 0.5.0 « réellement nouvelles »
+
+| Feature                                | PR                | Date     |
+|----------------------------------------|-------------------|----------|
+| Vectorisation backend (4× speedup)     | #66               | 29/03    |
+| Polish highlights React + standalone   | #69, #70, #71     | 30/03    |
+| Curtailment integration + manual SLD   | #72               | 01/04    |
+| Format `loads_p`/`gens_p` + MW édit.   | #73               | 07/04    |
+| `App.tsx` Phase 1 (composants)         | #74               | 08/04    |
+| `App.tsx` Phase 2 (mémoization)        | #75               | 08/04    |
+| PST tap re-simulation                  | #78               | 09–11/04 |
+| Onglets détachables                    | #84, #86, #87, #90| 13–14/04 |
+
+> Les features *save / reload / interaction-logging / MW Start /
+> SLD highlights / two-step analysis* étaient déjà en place avant
+> le tag 0.5.0 — voir § 1.5 et § 1.6.
 
 ## 3. Consolidation de la base de code et de sa qualité (0.6.0 → 0.6.5, 14/04 → 22/04/2026)
 
 Les features ralentissent au profit de l'architecture, de la dette
 technique et de la non-régression :
 
-- **Refactor `App.tsx`** : Phase 1 (PR #74) 2 100 → 650 lignes,
-  transformation en *state-orchestration hub*. Phase 2 (PR #75)
-  memoization + `React.memo`. Phase 2 hooks (PR #109) : extraction
-  de `useN1Fetch`, `useDiagramHighlights`, `AppSidebar`,
-  `SidebarSummary`, `StatusToasts` — `App.tsx` retombe à ~1 150 lignes.
-- **Décomposition backend (PR #104/#106)** : `simulate_manual_action`
-  599 → 146 LoC, `compute_superposition` 285 → 108, `analysis_mixin`
-  1 116 → 509 + 4 modules, `diagram_mixin` 974 → 469 + 7 modules,
-  via injection de dépendances pour préserver les `@patch` existants.
+- **Phase 2 hooks `App.tsx` (PR #109)** — extraction de `useN1Fetch`,
+  `useDiagramHighlights`, `AppSidebar`, `SidebarSummary`,
+  `StatusToasts`. Le hub remonte de ~650 à **~1 150 lignes** (le
+  prix à payer pour réinjecter de l'orchestration cross-hook propre).
+  Voir le diagramme d'évolution en § 2.4.
+- **Décomposition backend (PR #104/#106)** : injection de
+  dépendances pour préserver les `@patch` existants côté tests.
+
+```mermaid
+graph TB
+    subgraph "Avant"
+        SMA1["simulate_manual_action<br/>599 LoC"]
+        CS1["compute_superposition<br/>285 LoC"]
+        AM1["analysis_mixin<br/>1 116 LoC"]
+        DM1["diagram_mixin<br/>974 LoC"]
+    end
+
+    subgraph "Après PR #104 / #106"
+        SMA2["simulate_manual_action<br/>146 LoC"]
+        CS2["compute_superposition<br/>108 LoC"]
+        AM2["analysis_mixin<br/>509 LoC"]
+        DM2["diagram_mixin<br/>469 LoC"]
+        SH["simulation_helpers.py"]
+        AD["services/analysis/<br/>4 modules"]
+        DD["services/diagram/<br/>7 modules"]
+    end
+
+    SMA1 --> SMA2
+    SMA1 --> SH
+    CS1 --> CS2
+    CS1 --> SH
+    AM1 --> AM2
+    AM1 --> AD
+    DM1 --> DM2
+    DM1 --> DD
+```
+
 - **Décomposition frontend** : `svgUtils.ts` 1 807 → 60 lignes
-  + 8 modules focalisés.
+  + 8 modules focalisés (`idMap`, `metadataIndex`, `svgBoost`,
+  `fitRect`, `deltaVisuals`, `actionPinData`, `actionPinRender`,
+  `highlights`).
 - **Standalone auto-généré** (PR #101) : `vite-plugin-singlefile`
   produit `dist-standalone/standalone.html` ; le
   `standalone_interface.html` manuel est gelé puis renommé `_legacy`.
@@ -281,6 +534,31 @@ technique et de la non-régression :
 Branche `feat/pypsa-eur-network-scripts`, mergée le 24/04. Construit
 un pipeline reproductible PyPSA-EUR → XIIDM, livré avec deux jeux
 de données engagés dans `data/` :
+
+```mermaid
+flowchart LR
+    A[("PyPSA-EUR<br/>europe.nc")] --> B[build_pipeline.py]
+    B --> C[convert_pypsa_to_xiidm.py]
+
+    OSM[("OpenStreetMap")] --> E[fetch_osm_names.py]
+
+    C --> G[add_detailed_topology.py]
+    E --> G
+
+    G --> H[calibrate_thermal_limits.py]
+    H --> I[("XIIDM calibré 75 GW")]
+
+    I --> J[generate_n1_overloads.py]
+    I --> K[regenerate_grid_layout.py]
+
+    J --> L[("data/pypsa_eur_fr400")]
+    K --> L
+    J --> M[("data/pypsa_eur_fr225_400")]
+    K --> M
+
+    L --> APP[Co-Study4Grid]
+    M --> APP
+```
 
 - **`41005e0`** (16/04) : pipeline initial *PyPSA-EUR France 400 kV
   build & conversion*.
