@@ -65,6 +65,25 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
     display: none;
 }
 
+/* User-toggle: hide every voltage-level label on the diagram. pypowsybl
+   emits VL labels in two interchangeable shapes depending on the diagram
+   configuration: a root-level `<foreignObject class="nad-text-nodes">`
+   carrying HTML `<div>` labels, and inline `<text>` siblings under
+   `.nad-vl-nodes` / `.nad-label-nodes`. Cover both shapes (and the
+   inline `nad-label-box` divs that some pypowsybl builds emit at the
+   SVG root without a foreignObject wrapper) so the toggle works across
+   all networks. `!important` overrides pypowsybl's own inline `<style>`
+   block, which is appended to the document AFTER App.css when the SVG
+   is injected by `replaceChildren(svg)`. */
+.svg-container.nad-hide-vl-labels .nad-text-nodes,
+.svg-container.nad-hide-vl-labels foreignObject.nad-text-nodes,
+.svg-container.nad-hide-vl-labels .nad-vl-nodes foreignObject,
+.svg-container.nad-hide-vl-labels .nad-label-nodes foreignObject,
+.svg-container.nad-hide-vl-labels .nad-label-nodes,
+.svg-container.nad-hide-vl-labels .nad-label-box {
+    display: none !important;
+}
+
 /* ===== Highlight styles ===== */
 
 .nad-highlight {

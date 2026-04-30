@@ -17,9 +17,11 @@ interface SvgContainerProps {
     containerRef: RefObject<HTMLDivElement | null>;
     display: string;
     tabId: TabId;
+    /** When false, the NAD voltage-level label foreignObject is hidden via CSS. */
+    hideVlLabels?: boolean;
 }
 
-const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId }: SvgContainerProps) => {
+const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId, hideVlLabels = false }: SvgContainerProps) => {
     React.useLayoutEffect(() => {
         const container = containerRef.current;
         if (!container || !svg) return;
@@ -38,7 +40,7 @@ const MemoizedSvgContainer = React.memo(({ svg, containerRef, display, tabId }: 
     return (
         <div
             ref={containerRef}
-            className="svg-container"
+            className={hideVlLabels ? 'svg-container nad-hide-vl-labels' : 'svg-container'}
             id={`${tabId}-svg-container`}
             style={{ display, width: '100%', height: '100%', overflow: 'hidden' }}
         />
