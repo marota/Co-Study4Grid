@@ -2,10 +2,11 @@
 
 > Résumé du cycle de développement reconstruit à partir du `git log`
 > (358 commits, du 28/03/2026 au 30/04/2026), du `CHANGELOG.md` et
-> des descriptions de PRs depuis GitHub. Les 65 PRs antérieures au
-> rebrand (`ExpertAssist`, 14/02 → 28/03/2026) ne figurent pas dans
-> le clone local ; leur reconstitution s'appuie sur les descriptions
-> de PR.
+> des descriptions de PRs depuis GitHub. Pour les 65 PRs antérieures
+> au rebrand (`ExpertAssist`, 14/02 → 28/03/2026), absentes du clone
+> local de `Co-Study4Grid`, les métriques s'appuient sur le clone
+> de `marota/ExpertAssist` (783 commits, premier commit `9218c4c`
+> du 13/02/2026) en plus des descriptions de PR.
 
 Ce document est une vue d'ensemble chronologique des grandes phases
 du projet. Pour les détails par sujet, voir les docs ciblées :
@@ -93,23 +94,71 @@ arrive en 0.5.0 (14/04/2026) avec la quasi-totalité de l'architecture
 encore en place aujourd'hui ; ce qui suit est donc plus qu'un
 préalable — c'est l'essentiel du socle.
 
-### 1.1. Bootstrap (avant le 14/02/2026, antérieur à la PR #1)
+### 1.1. Bootstrap — commit d'init `9218c4c` (vendredi 13/02/2026 13:25)
 
-PR #1 est déjà titré **« Improve NAD rendering for large grids and
-refactor diagram generation »** : le scaffolding existe donc déjà,
-poussé directement sur `main` sans PR. À ce stade le projet possède :
+Le tout premier commit du repo `marota/ExpertAssist` s'intitule
+sobrement *« initialisation of ExpertAssist interface »* : **44
+fichiers, 2 513 insertions** poussées d'un seul jet. Le scaffolding
+n'arrive donc pas vide à PR #1 — il arrive déjà fonctionnel de bout
+en bout, sur ~2,5 k LoC.
 
-- Un backend **FastAPI** + un frontend **React + TypeScript + Vite**
-  monorepo, plus le **mirror HTML standalone** maintenu en parallèle.
-- Un chargement réseau via **pypowsybl**, la génération NAD pour les
-  états N et N-1, et un premier passage d'analyse câblé sur le
-  recommender.
-- Un client **axios** pointé sur le backend local.
+**Backend (130 + 384 + 52 LoC)** — `expert_backend/main.py` expose
+**7 endpoints** :
+
+```
+POST /api/config              GET  /api/network-diagram
+GET  /api/branches            POST /api/n1-diagram
+GET  /api/voltage-levels      POST /api/run-analysis  (NDJSON streaming)
+GET  /api/pick-path           ↳ via tkinter en subprocess
+```
+
+Le `RecommenderService` charge déjà le réseau via **pypowsybl**,
+génère NAD pour N et N-1, et orchestre le recommender en
+`StreamingResponse`. **CORS wide-open**, mount static
+`/results/pdf → Overflow_Graph/`, et la fenêtre OS-native pour
+choisir un fichier ou un dossier sont *présents au commit zéro*.
+
+**Frontend (35 LoC `App.tsx` + 19 LoC `api.ts`)** — un shell React
+de **3 composants** (`ConfigurationPanel` 92 LoC, `VisualizationPanel`
+33 LoC, `ActionFeed` 43 LoC). Le client `axios` ne propose que
+`updateConfig` / `getBranches` / `runAnalysis`. Le titre de l'app
+est encore **« Expert_op4grid Recommender Interface »** ;
+*ExpertAssist* en sera le nom de produit.
+
+**Standalone** — `standalone_interface.html` est déjà à **755 LoC**.
+Il sera maintenu en parallèle de la SPA pendant toute la durée de
+l'ère ExpertAssist.
+
+**Outillage de dev embarqué** — 5 scripts ad-hoc pour reproduire les
+problèmes observés pendant le bootstrap : `test_api_stream.py`,
+`test_n1_api.py`, `test_voltage_api.py`, `verify_n1_simulation.py`,
+`inspect_metadata.py`, plus `repro_stuck.py` et `fix_zoom.py`.
+Deux Overflow Graphs PDF sont commitées comme exemple-jouet.
+
+> Le projet *naît* avec le streaming NDJSON et le triangle
+> *config → branche → analyse* déjà bouclé. Tout ce qui suit est
+> de l'enrichissement.
 
 ### 1.2. Bouclage métier de bout en bout (14 → 22/02/2026, PRs #1 → #15)
 
 Première semaine de PRs : on rend le triangle *réseau → contingence →
-action* utilisable de bout en bout.
+action* utilisable de bout en bout. **À l'arrivée (commit `35646f6`,
+21/02)** :
+
+| Fichier                           | Init     | Après PR #15 | × |
+|-----------------------------------|----------|--------------|---|
+| `frontend/src/App.tsx`            | 35       | 617          | ×17 |
+| `frontend/src/components/VisualizationPanel.tsx` | 33   | 260          | ×8  |
+| `expert_backend/main.py`          | 130      | 233          | ×1,8 |
+| `expert_backend/services/recommender_service.py` | 384  | 636          | ×1,7 |
+| `standalone_interface.html`       | 755      | 2 100        | ×2,8 |
+| Endpoints backend                 | 7        | 13           | +6  |
+
+Endpoints ajoutés sur la fenêtre : `/api/nominal-voltages`,
+`/api/action-variant-diagram`, `/api/element-voltage-levels`,
+`/api/focused-diagram`, `/api/actions`, `/api/simulate-manual-action`.
+
+Les PRs, par ordre de merge :
 
 - **PR #1 (14/02)** — *NAD rendering for large grids* : `boostSvgForLargeGrid()`
   (scale fonts/labels/legends en `sqrt(taille/référence)` au-delà de
@@ -228,9 +277,10 @@ C'est la phase où la base devient testable et fiable :
   highlights de contingence orange.
 - **PR #56 (21/03)** — **App.tsx Phase 1** : extraction de **5 hooks**
   (`useSettings`, `useActions`, `useAnalysis`, `useDiagrams`,
-  `useSession`) ; `App.tsx` passe de **2 100+ → ~800 lignes** et
-  devient un *state-orchestration hub*. C'est aussi la PR qui
-  introduit `docs/app-refactoring-plan.md`.
+  `useSession`) ; `App.tsx` passe **2 100 → 969 lignes** au merge
+  (la cible de la PR description était ~800, atteinte dans les PRs
+  suivantes par cleanup). C'est aussi la PR qui introduit
+  `docs/app-refactoring-plan.md`.
 
 ### 1.6. Two-step analysis, replay-ready logging et rebrand (22 → 28/03/2026, PRs #57 → #65)
 
@@ -410,8 +460,9 @@ highlighting global ; les retours d'expérience vivent dans
 
 ```mermaid
 graph LR
-    A["App.tsx<br/>~2 100 LoC"] -- "PR #56 (21/03, pré-rebrand)<br/>5 hooks extraits" --> B["~800 LoC"]
-    B -- "PR #74 (08/04)<br/>Header + 3 modals" --> C["~650 LoC"]
+    A["App.tsx<br/>~2 100 LoC<br/>(pic, ~PR #55)"] -- "PR #56 (21/03)<br/>5 hooks extraits" --> B["~969 LoC<br/>au merge"]
+    B -- "PRs cleanup<br/>22-28/03" --> B2["~800 LoC"]
+    B2 -- "PR #74 (08/04)<br/>Header + 3 modals" --> C["~650 LoC"]
     C -- "PR #75 (08/04)<br/>useCallback + React.memo" --> D["~650 LoC<br/>memoizé"]
     D -- "PR #109 (post-0.5.0)<br/>useN1Fetch + Sidebar" --> E["~1 150 LoC<br/>orchestration hub"]
 ```
