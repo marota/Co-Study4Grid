@@ -520,6 +520,7 @@ export type InteractionType =
     | 'tab_tied'
     | 'tab_untied'
     | 'view_mode_changed'
+    | 'overflow_layout_mode_toggled'
     | 'voltage_range_changed'
     | 'asset_clicked'
     | 'zoom_in'

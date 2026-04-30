@@ -81,6 +81,9 @@ const SPEC: Record<string, SpecRow> = {
   tab_tied:                       { required: new Set(['tab']) },
   tab_untied:                     { required: new Set(['tab']) },
   view_mode_changed:              { required: new Set(['mode', 'tab', 'scope']) },
+  // Overflow Analysis tab layout toggle. `to` = target mode ('hierarchical' | 'geo');
+  // start event only. Completion event carries `cached` or `error`.
+  overflow_layout_mode_toggled:   { required: new Set(['to']) },
   voltage_range_changed:          { required: new Set(['min', 'max']) },
   asset_clicked:                  { required: new Set(['action_id', 'asset_name', 'tab']) },
   zoom_in:                        { required: new Set(['tab']) },

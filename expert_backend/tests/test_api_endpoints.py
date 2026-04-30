@@ -1366,3 +1366,85 @@ class TestDiagramGzipCompression:
         assert len(lines) == 2
         assert json.loads(lines[0])["type"] == "pdf"
         assert json.loads(lines[1])["type"] == "result"
+
+
+class TestRegenerateOverflowGraph:
+    """`POST /api/regenerate-overflow-graph` — cache-backed Hierarchical
+    / Geo toggle for the Overflow Analysis tab."""
+
+    def test_success_adds_pdf_url(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.regenerate_overflow_graph.return_value = {
+            "pdf_path": "/tmp/Overflow_Graph/overflow_geo.html",
+            "mode": "geo",
+            "cached": False,
+        }
+        response = client.post(
+            "/api/regenerate-overflow-graph",
+            json={"mode": "geo"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["mode"] == "geo"
+        assert data["cached"] is False
+        assert data["pdf_path"] == "/tmp/Overflow_Graph/overflow_geo.html"
+        # `pdf_url` must be derived from the basename so the static mount
+        # at /results/pdf/ can serve the file regardless of its on-disk
+        # parent directory.
+        assert data["pdf_url"] == "/results/pdf/overflow_geo.html"
+        mock_rs.regenerate_overflow_graph.assert_called_once_with("geo")
+
+    def test_cached_response_passes_through(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.regenerate_overflow_graph.return_value = {
+            "pdf_path": "/tmp/Overflow_Graph/overflow_hierarchi.html",
+            "mode": "hierarchical",
+            "cached": True,
+        }
+        response = client.post(
+            "/api/regenerate-overflow-graph",
+            json={"mode": "hierarchical"},
+        )
+        assert response.status_code == 200
+        assert response.json()["cached"] is True
+
+    def test_no_prior_step2_returns_400(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.regenerate_overflow_graph.side_effect = ValueError(
+            "No Step-2 context available. Run the analysis first."
+        )
+        response = client.post(
+            "/api/regenerate-overflow-graph",
+            json={"mode": "geo"},
+        )
+        assert response.status_code == 400
+        assert "Step-2" in response.json()["detail"]
+
+    def test_rejects_bad_mode_from_service(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.regenerate_overflow_graph.side_effect = ValueError(
+            "Unknown overflow layout mode: 'foo'; expected 'hierarchical' or 'geo'."
+        )
+        response = client.post(
+            "/api/regenerate-overflow-graph",
+            json={"mode": "foo"},
+        )
+        assert response.status_code == 400
+        assert "foo" in response.json()["detail"]
+
+    def test_missing_pdf_path_does_not_set_url(self, client, mock_services):
+        """When graphviz produced nothing (older recommender install,
+        for example), pdf_path is None — the route must not synthesize
+        a bogus pdf_url."""
+        _, mock_rs = mock_services
+        mock_rs.regenerate_overflow_graph.return_value = {
+            "pdf_path": None,
+            "mode": "geo",
+            "cached": False,
+        }
+        response = client.post(
+            "/api/regenerate-overflow-graph",
+            json={"mode": "geo"},
+        )
+        assert response.status_code == 200
+        assert "pdf_url" not in response.json()

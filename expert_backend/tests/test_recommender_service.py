@@ -71,11 +71,78 @@ class TestRecommenderService:
         assert config.IGNORE_RECONNECTIONS is True
         assert config.PYPOWSYBL_FAST_MODE is False
 
+        # Overflow viewer: HTML is now the default output format (PR #74
+        # interactive viewer). Legacy .pdf loading is handled at the
+        # file-watcher / session-load layer, not via config.
+        assert config.VISUALIZATION_FORMAT == "html"
+
         # Verify side effects (mocks)
         mock_load_actions.assert_called_once_with(Path(action_path))
         # Since disco_ actions were not in mock_load_actions.return_value, it should have auto-generated them
         # and called open(action_path, 'w')
         mock_file.assert_called_with(Path(action_path), 'w')
+
+    @patch("expert_backend.services.recommender_service.enrich_actions_lazy")
+    @patch("expert_backend.services.recommender_service.load_actions")
+    @patch("expert_backend.services.network_service.network_service")
+    @patch("builtins.open", new_callable=mock_open)
+    def test_update_config_disables_superposition_verify(
+        self, mock_file, mock_network_service, mock_load_actions, mock_enrich
+    ):
+        """update_config must flip VERIFY_SUPERPOSITION_MAX_RHO off so the
+        combined-action-pair simulation verification doesn't double the
+        Step-2 runtime in production analyses. Guarded by hasattr so
+        older recommender installs stay happy — we simulate the upstream
+        attribute being present (commit 1f980169 onward) by pre-setting
+        it to True on the config module."""
+        mock_load_actions.return_value = {"disco_line1": {}}  # already has disco
+        mock_network_service.get_disconnectable_elements.return_value = ["line1"]
+        mock_network_service.get_monitored_elements.return_value = ["line1"]
+
+        # Simulate an install that has the verify flag (like venv_py310).
+        # `reset_config` autouse fixture restores the original value/absence
+        # after the test, so this assignment is test-local.
+        config.VERIFY_SUPERPOSITION_MAX_RHO = True
+
+        service = RecommenderService()
+        settings = ConfigRequest(
+            network_path="/tmp/net.xiidm",
+            action_file_path="/tmp/act.json",
+        )
+        service.update_config(settings)
+
+        assert config.VERIFY_SUPERPOSITION_MAX_RHO is False
+
+    @patch("expert_backend.services.recommender_service.enrich_actions_lazy")
+    @patch("expert_backend.services.recommender_service.load_actions")
+    @patch("expert_backend.services.network_service.network_service")
+    @patch("builtins.open", new_callable=mock_open)
+    def test_update_config_superposition_verify_absent_is_noop(
+        self, mock_file, mock_network_service, mock_load_actions, mock_enrich
+    ):
+        """Older recommender installs (pre-commit 1f980169) don't have
+        VERIFY_SUPERPOSITION_MAX_RHO on the config module. update_config
+        must NOT raise AttributeError nor synthesize the attribute —
+        the hasattr guard keeps backward compatibility."""
+        mock_load_actions.return_value = {"disco_line1": {}}
+        mock_network_service.get_disconnectable_elements.return_value = ["line1"]
+        mock_network_service.get_monitored_elements.return_value = ["line1"]
+
+        # Ensure the attribute is absent before the call. `reset_config`
+        # will restore the module state afterwards.
+        if hasattr(config, "VERIFY_SUPERPOSITION_MAX_RHO"):
+            delattr(config, "VERIFY_SUPERPOSITION_MAX_RHO")
+
+        service = RecommenderService()
+        settings = ConfigRequest(
+            network_path="/tmp/net.xiidm",
+            action_file_path="/tmp/act.json",
+        )
+        service.update_config(settings)  # must not raise
+
+        # Backend must not have synthesized the field when it wasn't there
+        # upstream — keeps the recommender config as authoritative.
+        assert not hasattr(config, "VERIFY_SUPERPOSITION_MAX_RHO")
         
     def test_update_config_defaults(self):
         # We also want to verify that default settings work as expected
@@ -582,3 +649,170 @@ class TestEnsureN1StateReady:
         with patch.object(service, "_drain_pending_base_nad_prefetch"), \
              patch.object(service, "_get_n1_variant", side_effect=RuntimeError("LF diverged")):
             service._ensure_n1_state_ready("LINE_A")  # Must not re-raise.
+
+
+class TestOverflowLayoutToggle:
+    """Tests for the Hierarchical / Geo layout toggle on the Overflow
+    Analysis tab — `_load_layout_coords` and `regenerate_overflow_graph`
+    (cache-backed, SVG-transform based)."""
+
+    def _make_layout_df(self, rows):
+        import pandas as pd
+        df = pd.DataFrame(rows)
+        if "id" in df.columns:
+            df = df.set_index("id")
+        return df
+
+    # ---- _load_layout_coords ----
+
+    def test_load_layout_coords_returns_dict_from_indexed_df(self):
+        service = RecommenderService()
+        df = self._make_layout_df([
+            {"id": "A", "x": 1.0, "y": 2.0},
+            {"id": "B", "x": 3.0, "y": 4.0},
+        ])
+        with patch.object(service, "_load_layout", return_value=df):
+            coords = service._load_layout_coords()
+        assert coords == {"A": (1.0, 2.0), "B": (3.0, 4.0)}
+
+    def test_load_layout_coords_empty_when_no_layout(self):
+        service = RecommenderService()
+        with patch.object(service, "_load_layout", return_value=None):
+            assert service._load_layout_coords() == {}
+
+    # ---- regenerate_overflow_graph ----
+
+    def test_regenerate_rejects_bad_mode(self):
+        import pytest
+        service = RecommenderService()
+        with pytest.raises(ValueError, match="Unknown overflow layout mode"):
+            service.regenerate_overflow_graph("bogus")
+
+    def test_regenerate_requires_prior_step2(self):
+        """When no hierarchical file was produced by Step 2 yet, both
+        modes fail fast — there is nothing to transform and nothing to
+        serve."""
+        import pytest
+        service = RecommenderService()
+        service._overflow_layout_cache = {}
+        with pytest.raises(ValueError, match="Run the analysis"):
+            service.regenerate_overflow_graph("geo")
+        with pytest.raises(ValueError, match="Run the analysis"):
+            service.regenerate_overflow_graph("hierarchical")
+
+    def test_regenerate_hierarchical_returns_cached_file(self, tmp_path):
+        """Hierarchical is always the file Step-2 produced; the regen
+        endpoint simply returns it from the cache."""
+        service = RecommenderService()
+        h_file = tmp_path / "overflow_hierarchi.html"
+        h_file.write_text("<html></html>")
+        service._overflow_layout_cache = {"hierarchical": str(h_file)}
+
+        result = service.regenerate_overflow_graph("hierarchical")
+        assert result == {
+            "pdf_path": str(h_file),
+            "mode": "hierarchical",
+            "cached": True,
+        }
+
+    def test_regenerate_geo_runs_transform_and_writes_new_file(self, tmp_path):
+        """First Geo call reads the cached hierarchical HTML, runs
+        `overflow_geo_transform.transform_html` with the layout coords,
+        and writes the result to `<hierarchical>_geo.html`."""
+        service = RecommenderService()
+        h_file = tmp_path / "overflow.html"
+        h_file.write_text("<html>hierarchical</html>")
+        service._overflow_layout_cache = {"hierarchical": str(h_file)}
+
+        layout = {"A": (0.0, 0.0)}
+        with patch.object(service, "_load_layout_coords", return_value=layout), \
+             patch(
+                "expert_backend.services.analysis.overflow_geo_transform.transform_html",
+                return_value="<html>geo</html>",
+             ) as transform:
+            result = service.regenerate_overflow_graph("geo")
+
+        transform.assert_called_once_with("<html>hierarchical</html>", layout)
+        expected = tmp_path / "overflow_geo.html"
+        assert result == {"pdf_path": str(expected), "mode": "geo", "cached": False}
+        assert expected.read_text() == "<html>geo</html>"
+        assert service._overflow_layout_cache["geo"] == str(expected)
+        assert service._overflow_layout_mode == "geo"
+
+    def test_regenerate_geo_raises_when_layout_missing(self, tmp_path):
+        import pytest
+        service = RecommenderService()
+        h_file = tmp_path / "overflow.html"
+        h_file.write_text("<html>hierarchical</html>")
+        service._overflow_layout_cache = {"hierarchical": str(h_file)}
+        with patch.object(service, "_load_layout_coords", return_value={}):
+            with pytest.raises(ValueError, match="no grid_layout.json"):
+                service.regenerate_overflow_graph("geo")
+        assert "geo" not in service._overflow_layout_cache
+
+    def test_regenerate_geo_surfaces_transform_errors(self, tmp_path):
+        import pytest
+        service = RecommenderService()
+        h_file = tmp_path / "overflow.html"
+        h_file.write_text("<html>hierarchical</html>")
+        service._overflow_layout_cache = {"hierarchical": str(h_file)}
+        with patch.object(service, "_load_layout_coords", return_value={"A": (0, 0)}), \
+             patch(
+                "expert_backend.services.analysis.overflow_geo_transform.transform_html",
+                side_effect=ValueError("No positioned nodes"),
+             ):
+            with pytest.raises(ValueError, match="No positioned nodes"):
+                service.regenerate_overflow_graph("geo")
+        assert "geo" not in service._overflow_layout_cache
+
+    def test_regenerate_geo_second_call_hits_cache(self, tmp_path):
+        """The second Geo click MUST NOT re-run the transform."""
+        service = RecommenderService()
+        h_file = tmp_path / "overflow.html"
+        h_file.write_text("<html>hierarchical</html>")
+        service._overflow_layout_cache = {"hierarchical": str(h_file)}
+
+        with patch.object(service, "_load_layout_coords", return_value={"A": (0, 0)}), \
+             patch(
+                "expert_backend.services.analysis.overflow_geo_transform.transform_html",
+                return_value="<html>geo</html>",
+             ) as transform:
+            first = service.regenerate_overflow_graph("geo")
+            second = service.regenerate_overflow_graph("geo")
+
+        assert first["cached"] is False
+        assert second["cached"] is True
+        assert second["pdf_path"] == first["pdf_path"]
+        transform.assert_called_once()
+
+    def test_regenerate_toggle_between_modes_reuses_cache(self, tmp_path):
+        """Hier → Geo → Hier → Geo should transform exactly once."""
+        service = RecommenderService()
+        h_file = tmp_path / "overflow.html"
+        h_file.write_text("<html>hierarchical</html>")
+        service._overflow_layout_cache = {"hierarchical": str(h_file)}
+
+        with patch.object(service, "_load_layout_coords", return_value={"A": (0, 0)}), \
+             patch(
+                "expert_backend.services.analysis.overflow_geo_transform.transform_html",
+                return_value="<html>geo</html>",
+             ) as transform:
+            r1 = service.regenerate_overflow_graph("hierarchical")
+            r2 = service.regenerate_overflow_graph("geo")
+            r3 = service.regenerate_overflow_graph("hierarchical")
+            r4 = service.regenerate_overflow_graph("geo")
+
+        # Every call is a cache hit because hierarchical is pre-seeded
+        # and geo was cached after the first miss.
+        assert [r1["cached"], r2["cached"], r3["cached"], r4["cached"]] == [True, False, True, True]
+        transform.assert_called_once()
+
+    def test_reset_clears_overflow_layout_state(self):
+        service = RecommenderService()
+        service._overflow_layout_mode = "geo"
+        service._overflow_layout_cache = {"geo": "/tmp/x.html"}
+        service._last_step2_context = {"env": MagicMock()}
+        service.reset()
+        assert service._overflow_layout_mode == "hierarchical"
+        assert service._overflow_layout_cache == {}
+        assert service._last_step2_context is None

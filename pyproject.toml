@@ -38,6 +38,8 @@ dependencies = [
 test = [
     "pytest",
     "httpx",
+    "lxml",
+    "pandas",
 ]
 quality = [
     "ruff>=0.6",

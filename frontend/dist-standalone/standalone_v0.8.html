@@ -13695,9 +13695,27 @@ const SldOverlay = ({
   const overlayBodyRef = reactExports.useRef(null);
   const [overlayPos, setOverlayPos] = reactExports.useState({ x: 16, y: 16 });
   const [overlayTransform, setOverlayTransform] = reactExports.useState({ scale: 1, tx: 0, ty: 0 });
-  reactExports.useEffect(() => {
+  const appliedDeltaSigRef = reactExports.useRef("");
+  reactExports.useLayoutEffect(() => {
     const container = overlayBodyRef.current;
     if (!container) return;
+    const deltaSig = JSON.stringify({
+      svgLen: vlOverlay.svg?.length ?? 0,
+      meta: vlOverlay.sldMetadata?.length ?? 0,
+      tab: vlOverlay.tab,
+      mode: actionViewMode,
+      fd: vlOverlay.flow_deltas ? Object.keys(vlOverlay.flow_deltas).sort() : [],
+      rfd: vlOverlay.reactive_flow_deltas ? Object.keys(vlOverlay.reactive_flow_deltas).sort() : [],
+      ad: vlOverlay.asset_deltas ? Object.keys(vlOverlay.asset_deltas).sort() : []
+    });
+    const expectDelta = actionViewMode === "delta" && !!vlOverlay.svg && (!!vlOverlay.flow_deltas || !!vlOverlay.asset_deltas);
+    const deltaDomPresent = container.querySelector(
+      ".sld-delta-positive, .sld-delta-negative, .sld-delta-grey, .sld-delta-text-positive, .sld-delta-text-negative, .sld-delta-text-grey, [data-original-text]"
+    ) !== null;
+    if (deltaSig === appliedDeltaSigRef.current && (expectDelta ? deltaDomPresent : !deltaDomPresent)) {
+      return;
+    }
+    appliedDeltaSigRef.current = deltaSig;
     const SLD_DELTA_CLASSES = [
       "sld-delta-positive",
       "sld-delta-negative",
@@ -13907,15 +13925,7 @@ const SldOverlay = ({
         cellEl.querySelectorAll(".sld-reactive-power .sld-label").forEach((l) => l.classList.add(`sld-delta-text-${catQ}`));
       }
     }
-  }, [
-    vlOverlay.svg,
-    vlOverlay.sldMetadata,
-    vlOverlay.tab,
-    actionViewMode,
-    vlOverlay.flow_deltas,
-    vlOverlay.reactive_flow_deltas,
-    vlOverlay.asset_deltas
-  ]);
+  });
   const appliedSigRef = reactExports.useRef("");
   reactExports.useLayoutEffect(() => {
     const container = overlayBodyRef.current;
@@ -14326,6 +14336,12 @@ const ACTION_TYPE_FILTER_TOKENS = [
   "close",
   "pst"
 ];
+const DEFAULT_ACTION_OVERVIEW_FILTERS = {
+  categories: { green: true, orange: true, red: true, grey: true },
+  threshold: 1.5,
+  showUnsimulated: false,
+  actionType: "all"
+};
 const classifyActionType = (actionId, description, scoreType) => {
   const t = (scoreType ?? "").toLowerCase();
   const aid = actionId.toLowerCase();
@@ -14655,8 +14671,6 @@ const ActionCard = ({
   };
   const renderBadges = () => {
     const badges = [];
-    const isLoadShedding = details.load_shedding_details && details.load_shedding_details.length > 0;
-    const isRenewableCurtailment = details.curtailment_details && details.curtailment_details.length > 0;
     const badgeBtn = (name, bg, color, title, onDoubleClick) => /* @__PURE__ */ jsxRuntimeExports.jsx(
       "button",
       {
@@ -14671,60 +14685,57 @@ const ActionCard = ({
       },
       name
     );
-    if (isLoadShedding) {
-      const vlSet = /* @__PURE__ */ new Set();
-      details.load_shedding_details.forEach((ls) => {
-        if (ls.voltage_level_id && !vlSet.has(ls.voltage_level_id)) {
-          vlSet.add(ls.voltage_level_id);
-          badges.push(badgeBtn(ls.voltage_level_id, "#d1fae5", "#065f46", `Click: zoom to ${ls.voltage_level_id} | Double-click: open SLD`, (e) => {
-            e.stopPropagation();
-            onVlDoubleClick?.(id, ls.voltage_level_id);
-          }));
-        }
-      });
-    } else if (isRenewableCurtailment) {
-      const vlSet = /* @__PURE__ */ new Set();
-      details.curtailment_details.forEach((rc) => {
-        if (rc.voltage_level_id && !vlSet.has(rc.voltage_level_id)) {
-          vlSet.add(rc.voltage_level_id);
-          badges.push(badgeBtn(rc.voltage_level_id, "#d1fae5", "#065f46", `Click: zoom to ${rc.voltage_level_id} | Double-click: open SLD`, (e) => {
-            e.stopPropagation();
-            onVlDoubleClick?.(id, rc.voltage_level_id);
-          }));
-        }
-      });
-    } else {
-      if (nodesByEquipmentId) {
-        const vlNames = getActionTargetVoltageLevels(details, id, nodesByEquipmentId);
-        vlNames.forEach((vlName) => {
-          badges.push(badgeBtn(vlName, "#d1fae5", "#065f46", `Click: zoom to ${vlName} | Double-click: open SLD`, (e) => {
-            e.stopPropagation();
-            onVlDoubleClick?.(id, vlName);
-          }));
-        });
+    const vlSet = /* @__PURE__ */ new Set();
+    details.load_shedding_details?.forEach((ls) => {
+      if (ls.voltage_level_id && !vlSet.has(ls.voltage_level_id)) {
+        vlSet.add(ls.voltage_level_id);
+        badges.push(badgeBtn(ls.voltage_level_id, "#d1fae5", "#065f46", `Click: zoom to ${ls.voltage_level_id} | Double-click: open SLD`, (e) => {
+          e.stopPropagation();
+          onVlDoubleClick?.(id, ls.voltage_level_id);
+        }));
       }
-      const isCoupling = isCouplingAction(id, details.description_unitaire);
-      const lineNames = edgesByEquipmentId ? getActionTargetLines(details, id, edgesByEquipmentId) : Array.from(/* @__PURE__ */ new Set([
-        ...isCoupling ? [] : Object.keys(details.action_topology?.lines_ex_bus || {}),
-        ...isCoupling ? [] : Object.keys(details.action_topology?.lines_or_bus || {}),
-        ...Object.keys(details.action_topology?.pst_tap || {})
+    });
+    details.curtailment_details?.forEach((rc) => {
+      if (rc.voltage_level_id && !vlSet.has(rc.voltage_level_id)) {
+        vlSet.add(rc.voltage_level_id);
+        badges.push(badgeBtn(rc.voltage_level_id, "#d1fae5", "#065f46", `Click: zoom to ${rc.voltage_level_id} | Double-click: open SLD`, (e) => {
+          e.stopPropagation();
+          onVlDoubleClick?.(id, rc.voltage_level_id);
+        }));
+      }
+    });
+    if (nodesByEquipmentId) {
+      const vlNames = getActionTargetVoltageLevels(details, id, nodesByEquipmentId);
+      vlNames.forEach((vlName) => {
+        if (vlSet.has(vlName)) return;
+        vlSet.add(vlName);
+        badges.push(badgeBtn(vlName, "#d1fae5", "#065f46", `Click: zoom to ${vlName} | Double-click: open SLD`, (e) => {
+          e.stopPropagation();
+          onVlDoubleClick?.(id, vlName);
+        }));
+      });
+    }
+    const isCoupling = isCouplingAction(id, details.description_unitaire);
+    const lineNames = edgesByEquipmentId ? getActionTargetLines(details, id, edgesByEquipmentId) : Array.from(/* @__PURE__ */ new Set([
+      ...isCoupling ? [] : Object.keys(details.action_topology?.lines_ex_bus || {}),
+      ...isCoupling ? [] : Object.keys(details.action_topology?.lines_or_bus || {}),
+      ...Object.keys(details.action_topology?.pst_tap || {})
+    ]));
+    lineNames.forEach((name) => {
+      if (badges.some((b) => React.isValidElement(b) && b.key === name)) return;
+      badges.push(badgeBtn(name, "#dbeafe", "#1e40af", `Zoom to ${name}`));
+    });
+    if (badges.length === 0) {
+      const topo = details.action_topology;
+      const equipNames = Array.from(/* @__PURE__ */ new Set([
+        ...Object.keys(topo?.gens_bus || {}),
+        ...Object.keys(topo?.loads_bus || {}),
+        ...Object.keys(topo?.loads_p || {}),
+        ...Object.keys(topo?.gens_p || {})
       ]));
-      lineNames.forEach((name) => {
-        if (badges.some((b) => React.isValidElement(b) && b.key === name)) return;
+      equipNames.forEach((name) => {
         badges.push(badgeBtn(name, "#dbeafe", "#1e40af", `Zoom to ${name}`));
       });
-      if (badges.length === 0) {
-        const topo = details.action_topology;
-        const equipNames = Array.from(/* @__PURE__ */ new Set([
-          ...Object.keys(topo?.gens_bus || {}),
-          ...Object.keys(topo?.loads_bus || {}),
-          ...Object.keys(topo?.loads_p || {}),
-          ...Object.keys(topo?.gens_p || {})
-        ]));
-        equipNames.forEach((name) => {
-          badges.push(badgeBtn(name, "#dbeafe", "#1e40af", `Zoom to ${name}`));
-        });
-      }
     }
     return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: "4px", flexShrink: 0, maxWidth: "180px", justifyContent: "flex-end" }, children: badges });
   };
@@ -15178,12 +15189,6 @@ const scaleViewBox = (vb, factor) => ({
   w: vb.w * factor,
   h: vb.h * factor
 });
-const DEFAULT_FILTERS = {
-  categories: { green: true, orange: true, red: true, grey: true },
-  threshold: 1.5,
-  showUnsimulated: false,
-  actionType: "all"
-};
 const ActionOverviewDiagram = ({
   n1Diagram,
   n1MetaIndex,
@@ -15211,11 +15216,11 @@ const ActionOverviewDiagram = ({
   onSimulateUnsimulatedAction
 }) => {
   const activeFilters = reactExports.useMemo(() => {
-    if (!filters) return DEFAULT_FILTERS;
+    if (!filters) return DEFAULT_ACTION_OVERVIEW_FILTERS;
     return {
-      ...DEFAULT_FILTERS,
+      ...DEFAULT_ACTION_OVERVIEW_FILTERS,
       ...filters,
-      actionType: filters.actionType ?? DEFAULT_FILTERS.actionType
+      actionType: filters.actionType ?? DEFAULT_ACTION_OVERVIEW_FILTERS.actionType
     };
   }, [filters]);
   const containerRef = reactExports.useRef(null);
@@ -15606,16 +15611,17 @@ const ActionOverviewDiagram = ({
             "data-testid": "action-overview-header",
             style: {
               flexShrink: 0,
-              padding: "6px 14px",
+              padding: "4px 10px",
               display: "flex",
               alignItems: "center",
-              flexWrap: "wrap",
-              gap: "10px",
-              rowGap: "6px",
+              flexWrap: "nowrap",
+              gap: "6px",
               fontSize: "12px",
               background: "#f8fafc",
               borderBottom: "1px solid #e2e8f0",
-              color: "#334155"
+              color: "#334155",
+              overflowX: "auto",
+              whiteSpace: "nowrap"
             },
             children: [
               hasAnyAction && /* @__PURE__ */ jsxRuntimeExports.jsxs(
@@ -15623,7 +15629,7 @@ const ActionOverviewDiagram = ({
                 {
                   "data-testid": "overview-pin-counter",
                   title: `${pins.length} pin${pins.length === 1 ? "" : "s"} on the N-1 network${unsimulatedPins.length > 0 ? ` (+ ${unsimulatedPins.length} un-simulated)` : ""}`,
-                  style: { display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 600, color: "#1f2937" },
+                  style: { display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 600, color: "#1f2937", flexShrink: 0 },
                   children: [
                     /* @__PURE__ */ jsxRuntimeExports.jsx("span", { "aria-hidden": true, children: "📍" }),
                     /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontVariantNumeric: "tabular-nums" }, children: [
@@ -15633,134 +15639,147 @@ const ActionOverviewDiagram = ({
                   ]
                 }
               ),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  CategoryToggle,
-                  {
-                    testId: "filter-category-green",
-                    color: "#28a745",
-                    label: "Solves overload",
-                    enabled: activeFilters.categories.green,
-                    onToggle: () => toggleCategory("green")
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  CategoryToggle,
-                  {
-                    testId: "filter-category-orange",
-                    color: "#f0ad4e",
-                    label: "Low margin",
-                    enabled: activeFilters.categories.orange,
-                    onToggle: () => toggleCategory("orange")
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  CategoryToggle,
-                  {
-                    testId: "filter-category-red",
-                    color: "#dc3545",
-                    label: "Still overloaded",
-                    enabled: activeFilters.categories.red,
-                    onToggle: () => toggleCategory("red")
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  CategoryToggle,
-                  {
-                    testId: "filter-category-grey",
-                    color: "#9ca3af",
-                    label: "Divergent / islanded",
-                    enabled: activeFilters.categories.grey,
-                    onToggle: () => toggleCategory("grey")
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "button",
-                  {
-                    "data-testid": "filter-select-all",
-                    type: "button",
-                    onClick: () => setAllCategories(true),
-                    title: "Enable all categories",
-                    style: filterChipButtonStyle,
-                    children: "All"
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "button",
-                  {
-                    "data-testid": "filter-select-none",
-                    type: "button",
-                    onClick: () => setAllCategories(false),
-                    title: "Disable all categories",
-                    style: filterChipButtonStyle,
-                    children: "None"
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "label",
-                  {
-                    "data-testid": "filter-threshold",
-                    style: { display: "inline-flex", alignItems: "center", gap: 6 },
-                    title: "Hide actions whose max loading rate exceeds this threshold",
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#475569" }, children: "Max loading" }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx(
-                        "input",
-                        {
-                          type: "range",
-                          min: 0.5,
-                          max: 3,
-                          step: 0.05,
-                          value: activeFilters.threshold,
-                          onChange: (e) => setThreshold(parseFloat(e.target.value)),
-                          style: { width: 110 }
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                CategoryToggle,
+                {
+                  testId: "filter-category-green",
+                  color: "#28a745",
+                  label: "Solves overload",
+                  enabled: activeFilters.categories.green,
+                  onToggle: () => toggleCategory("green")
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                CategoryToggle,
+                {
+                  testId: "filter-category-orange",
+                  color: "#f0ad4e",
+                  label: "Low margin",
+                  enabled: activeFilters.categories.orange,
+                  onToggle: () => toggleCategory("orange")
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                CategoryToggle,
+                {
+                  testId: "filter-category-red",
+                  color: "#dc3545",
+                  label: "Still overloaded",
+                  enabled: activeFilters.categories.red,
+                  onToggle: () => toggleCategory("red")
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                CategoryToggle,
+                {
+                  testId: "filter-category-grey",
+                  color: "#9ca3af",
+                  label: "Divergent / islanded",
+                  enabled: activeFilters.categories.grey,
+                  onToggle: () => toggleCategory("grey")
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  "data-testid": "filter-select-all",
+                  type: "button",
+                  onClick: () => setAllCategories(true),
+                  title: "Enable all categories",
+                  style: filterChipButtonStyle,
+                  children: "All"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  "data-testid": "filter-select-none",
+                  type: "button",
+                  onClick: () => setAllCategories(false),
+                  title: "Disable all categories",
+                  style: filterChipButtonStyle,
+                  children: "None"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "label",
+                {
+                  "data-testid": "filter-threshold",
+                  style: { display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 },
+                  title: "Hide actions whose max loading rate (%) exceeds this threshold",
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#475569" }, children: "Max loading" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "input",
+                      {
+                        "data-testid": "filter-threshold-input",
+                        type: "number",
+                        min: 0,
+                        max: 300,
+                        step: 1,
+                        value: Math.round(activeFilters.threshold * 100),
+                        onChange: (e) => {
+                          const raw = parseInt(e.target.value, 10);
+                          if (!Number.isFinite(raw)) return;
+                          const clamped = Math.max(0, Math.min(300, raw));
+                          setThreshold(clamped / 100);
+                        },
+                        style: {
+                          width: 52,
+                          padding: "2px 4px",
+                          fontSize: 12,
+                          fontVariantNumeric: "tabular-nums",
+                          border: "1px solid #cbd5e1",
+                          borderRadius: 4,
+                          textAlign: "right"
                         }
-                      ),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { minWidth: 38, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#1f2937", fontWeight: 600 }, children: `${Math.round(activeFilters.threshold * 100)}%` })
-                    ]
+                      }
+                    ),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#475569" }, children: "%" })
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "label",
+                {
+                  "data-testid": "filter-show-unsimulated",
+                  style: { display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", flexShrink: 0 },
+                  title: "Show scored-but-not-yet-simulated actions as dimmed pins. Double-click a dimmed pin to run its simulation.",
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "input",
+                      {
+                        type: "checkbox",
+                        checked: activeFilters.showUnsimulated,
+                        onChange: toggleUnsimulated
+                      }
+                    ),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#475569" }, children: "Show unsimulated" })
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "span",
+                {
+                  "aria-hidden": true,
+                  style: {
+                    display: "inline-block",
+                    width: 1,
+                    height: 18,
+                    background: "#cbd5e1",
+                    margin: "0 2px",
+                    flexShrink: 0
                   }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "label",
-                  {
-                    "data-testid": "filter-show-unsimulated",
-                    style: { display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer" },
-                    title: "Show scored-but-not-yet-simulated actions as dimmed pins. Double-click a dimmed pin to run its simulation.",
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx(
-                        "input",
-                        {
-                          type: "checkbox",
-                          checked: activeFilters.showUnsimulated,
-                          onChange: toggleUnsimulated
-                        }
-                      ),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#475569" }, children: "Show unsimulated" })
-                    ]
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "span",
-                  {
-                    "aria-hidden": true,
-                    style: {
-                      display: "inline-block",
-                      width: 1,
-                      height: 18,
-                      background: "#cbd5e1",
-                      margin: "0 2px"
-                    }
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  ActionTypeFilterChips,
-                  {
-                    testIdPrefix: "overview-action-type-filter",
-                    value: activeFilters.actionType,
-                    onChange: setActionType
-                  }
-                )
-              ] })
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                ActionTypeFilterChips,
+                {
+                  testIdPrefix: "overview-action-type-filter",
+                  value: activeFilters.actionType,
+                  onChange: setActionType
+                }
+              )
             ]
           }
         ),
@@ -16019,7 +16038,8 @@ const filterChipButtonStyle = {
   padding: "3px 8px",
   cursor: "pointer",
   fontSize: 12,
-  fontWeight: 600
+  fontWeight: 600,
+  flexShrink: 0
 };
 const CategoryToggle = ({ color, label, enabled, onToggle, testId }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
   "button",
@@ -16040,7 +16060,8 @@ const CategoryToggle = ({ color, label, enabled, onToggle, testId }) => /* @__PU
       padding: "2px 8px",
       fontSize: 12,
       color: enabled ? "#1f2937" : "#94a3b8",
-      opacity: enabled ? 1 : 0.65
+      opacity: enabled ? 1 : 0.65,
+      flexShrink: 0
     },
     children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -16191,6 +16212,9 @@ const VisualizationPanel = ({
   onInspectQueryChangeFor,
   viewModeForTab,
   onViewModeChangeForTab,
+  overflowLayoutMode,
+  overflowLayoutLoading,
+  onOverflowLayoutChange,
   isTabTied,
   onToggleTabTie,
   n1MetaIndex,
@@ -16826,6 +16850,69 @@ const VisualizationPanel = ({
             backgroundColor: "white"
           }, children: [
             detachedTabs["overflow"] && renderDetachedHeader("overflow", "Overflow Analysis", "#27ae60"),
+            result?.pdf_url && onOverflowLayoutChange && /* @__PURE__ */ (() => {
+              const mode = overflowLayoutMode ?? "hierarchical";
+              const loading = !!overflowLayoutLoading;
+              const hasLayout = !!layoutPath;
+              return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+                position: "absolute",
+                top: "10px",
+                right: "10px",
+                zIndex: 100,
+                display: "flex",
+                alignItems: "center",
+                gap: "6px"
+              }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+                display: "flex",
+                borderRadius: "6px",
+                overflow: "hidden",
+                border: "1px solid #ccc",
+                boxShadow: "0 2px 5px rgba(0,0,0,0.15)",
+                fontSize: "12px",
+                fontWeight: 600,
+                backgroundColor: "#fff",
+                opacity: loading ? 0.7 : 1
+              }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: () => onOverflowLayoutChange("hierarchical"),
+                    disabled: loading,
+                    "aria-pressed": mode === "hierarchical",
+                    style: {
+                      padding: "4px 12px",
+                      border: "none",
+                      cursor: loading ? "wait" : "pointer",
+                      backgroundColor: mode === "hierarchical" ? "#007bff" : "#fff",
+                      color: mode === "hierarchical" ? "#fff" : "#555",
+                      transition: "all 0.15s ease"
+                    },
+                    children: "Hierarchical"
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: () => onOverflowLayoutChange("geo"),
+                    disabled: loading || !hasLayout,
+                    "aria-pressed": mode === "geo",
+                    title: hasLayout ? "" : "No grid_layout.json configured — set the Layout Path in Settings",
+                    style: {
+                      padding: "4px 12px",
+                      border: "none",
+                      borderLeft: "1px solid #ccc",
+                      cursor: loading || !hasLayout ? "not-allowed" : "pointer",
+                      backgroundColor: mode === "geo" ? "#007bff" : "#fff",
+                      color: mode === "geo" ? "#fff" : hasLayout ? "#555" : "#bbb",
+                      transition: "all 0.15s ease"
+                    },
+                    children: "Geo"
+                  }
+                )
+              ] }) });
+            })(),
             result?.pdf_url ? /* @__PURE__ */ jsxRuntimeExports.jsx(
               "iframe",
               {
@@ -17062,42 +17149,48 @@ const VisualizationPanel = ({
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "voltage-slider-container", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "voltage-slider-track" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "voltage-slider-range", style: { bottom: pctLow + "%", top: 100 - pctHigh + "%" } }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "input",
-              {
-                type: "range",
-                min: logMin,
-                max: logMax,
-                step: "any",
-                value: Math.log(voltageRange[0]),
-                onChange: (e) => {
-                  const logV = parseFloat(e.target.value);
-                  const snapped = uniqueVoltages.reduce(
-                    (best, uv) => Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best
-                  );
-                  if (snapped <= voltageRange[1]) onVoltageRangeChange([snapped, voltageRange[1]]);
-                },
-                style: { zIndex: 3, height: "100%" }
-              }
-            ),
-            /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "input",
-              {
-                type: "range",
-                min: logMin,
-                max: logMax,
-                step: "any",
-                value: Math.log(voltageRange[1]),
-                onChange: (e) => {
-                  const logV = parseFloat(e.target.value);
-                  const snapped = uniqueVoltages.reduce(
-                    (best, uv) => Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best
-                  );
-                  if (snapped >= voltageRange[0]) onVoltageRangeChange([voltageRange[0], snapped]);
-                },
-                style: { zIndex: 4, height: "100%" }
-              }
-            ),
+            (() => {
+              const collapsedAtMax = voltageRange[0] === voltageRange[1] && voltageRange[1] === maxV;
+              const lowZ = collapsedAtMax ? 5 : 3;
+              return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "input",
+                  {
+                    type: "range",
+                    min: logMin,
+                    max: logMax,
+                    step: "any",
+                    value: Math.log(voltageRange[0]),
+                    onChange: (e) => {
+                      const logV = parseFloat(e.target.value);
+                      const snapped = uniqueVoltages.reduce(
+                        (best, uv) => Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best
+                      );
+                      if (snapped <= voltageRange[1]) onVoltageRangeChange([snapped, voltageRange[1]]);
+                    },
+                    style: { zIndex: lowZ, height: "100%" }
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "input",
+                  {
+                    type: "range",
+                    min: logMin,
+                    max: logMax,
+                    step: "any",
+                    value: Math.log(voltageRange[1]),
+                    onChange: (e) => {
+                      const logV = parseFloat(e.target.value);
+                      const snapped = uniqueVoltages.reduce(
+                        (best, uv) => Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best
+                      );
+                      if (snapped >= voltageRange[0]) onVoltageRangeChange([voltageRange[0], snapped]);
+                    },
+                    style: { zIndex: 4, height: "100%" }
+                  }
+                )
+              ] });
+            })(),
             /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "voltage-slider-ticks", children: uniqueVoltages.map((kv) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { bottom: logScale(kv) + "%" }, children: kv === 25 ? "<25" : kv }, kv)) })
           ] })
         ] });
@@ -19771,6 +19864,10 @@ const api = {
     );
     return response.data;
   },
+  regenerateOverflowGraph: async (mode) => {
+    const response = await axios.post(`${API_BASE_URL}/api/regenerate-overflow-graph`, { mode });
+    return response.data;
+  },
   pickPath: async (type) => {
     const response = await axios.get(
       `${API_BASE_URL}/api/pick-path?type=${type}`
@@ -19927,7 +20024,15 @@ const ComputedPairsTable = ({
           "%",
           p.is_suspect && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { marginLeft: "4px" }, title: "Estimation suspect due to islanding", children: "⚠️" })
         ] }) : "—" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { fontSize: "11px", color: "#666", fontStyle: "italic" }, children: p.estimated_max_rho_line ? displayName(p.estimated_max_rho_line) : "N/A" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { fontSize: "11px", color: "#666", fontStyle: "italic" }, children: [
+          p.estimated_max_rho_line ? displayName(p.estimated_max_rho_line) : "N/A",
+          p.target_max_rho != null && p.target_max_rho_line && p.target_max_rho_line !== "N/A" && p.target_max_rho_line !== p.estimated_max_rho_line && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "10px", color: "#888", marginTop: "2px", fontStyle: "normal" }, title: "Max on the lines this pair was selected to resolve", children: [
+            "target: ",
+            (p.target_max_rho * 100).toFixed(1),
+            "% on ",
+            displayName(p.target_max_rho_line)
+          ] })
+        ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { textAlign: "center" }, children: isSimulated && simMaxRho != null ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "metric-badge metric-rho", style: {
           background: simMaxRho > monitoringFactor ? "#ffebee" : simMaxRho > monitoringFactor - 0.05 ? "#fff3cd" : "#e8f5e9",
           color: simMaxRho > monitoringFactor ? "#c62828" : simMaxRho > monitoringFactor - 0.05 ? "#856404" : "#2e7d32"
@@ -19980,7 +20085,7 @@ const ExplorePairsTab = ({
   onSimulateSingle,
   displayName = (id) => id
 }) => {
-  const [exploreFilter, setExploreFilter] = reactExports.useState("all");
+  const [actionTypeFilter, setActionTypeFilter] = reactExports.useState("all");
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "#f8f9fa", padding: "10px 15px", borderRadius: "6px", marginBottom: "15px", border: "1px solid #e9ecef" }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }, children: [
@@ -20007,18 +20112,17 @@ const ExplorePairsTab = ({
         }, style: { cursor: "pointer", fontSize: "14px", lineHeight: "10px" }, children: "×" })
       ] }, id)) })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { marginBottom: "12px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
       ActionTypeFilterChips,
       {
         testIdPrefix: "explore-pairs-filter",
-        value: exploreFilter,
-        onChange: setExploreFilter,
-        style: { marginBottom: "12px" }
+        value: actionTypeFilter,
+        onChange: setActionTypeFilter
       }
-    ),
+    ) }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, maxHeight: "350px", overflowY: "auto", border: "1px solid #eee", borderRadius: "4px", marginBottom: "15px" }, children: (() => {
       const filteredList = scoredActionsList.filter(
-        (item) => matchesActionTypeFilter(exploreFilter, item.actionId, null, item.type)
+        (item) => matchesActionTypeFilter(actionTypeFilter, item.actionId, null, item.type)
       );
       const types = Array.from(new Set(filteredList.map((item) => item.type)));
       if (filteredList.length === 0) {
@@ -20110,120 +20214,147 @@ const ExplorePairsTab = ({
         }) }) })
       ] }, type));
     })() }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { marginTop: "5px" }, children: !preview ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexDirection: "column", gap: "8px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-      "button",
-      {
-        onClick: onEstimate,
-        disabled: selectedIds.size !== 2 || loading || hasRestricted,
-        "data-testid": "estimate-button",
-        style: {
-          width: "100%",
-          padding: "12px",
-          background: selectedIds.size === 2 && !loading && !hasRestricted ? "#3498db" : "#ecf0f1",
-          color: selectedIds.size === 2 && !loading && !hasRestricted ? "white" : "#bdc3c7",
-          border: "none",
-          borderRadius: "6px",
-          cursor: selectedIds.size !== 2 || loading || hasRestricted ? "not-allowed" : "pointer",
-          fontWeight: "bold",
-          fontSize: "14px",
-          transition: "all 0.2s",
-          boxShadow: selectedIds.size === 2 && !loading && !hasRestricted ? "0 4px 6px rgba(52, 152, 219, 0.2)" : "none"
-        },
-        children: loading ? "⚙️ Estimating Combination..." : selectedIds.size === 2 ? hasRestricted ? "Combination not allowed" : "Estimate combination effect" : "Select 2 actions to estimate"
-      }
-    ) }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-      padding: "15px",
-      background: error ? "#fff3cd" : "#e1f5fe",
-      borderRadius: "8px",
-      borderLeft: "5px solid " + (error ? "#856404" : "#0288d1"),
-      boxShadow: "0 2px 5px rgba(0,0,0,0.05)"
-    }, "data-testid": "comparison-card", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
-          preview.betas && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: "8px", fontSize: "11px", color: "#666", background: "rgba(255,255,255,0.6)", padding: "2px 8px", borderRadius: "4px", display: "inline-block", fontWeight: 600 }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginTop: "5px" }, children: [
+      !preview && !simulationFeedback && !simulating && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "8px" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: onEstimate,
+            disabled: selectedIds.size !== 2 || loading || hasRestricted,
+            "data-testid": "estimate-button",
+            title: hasRestricted ? "Estimation is not available when a load shedding or curtailment action is selected — use Simulate Combined instead." : void 0,
+            style: {
+              width: "100%",
+              padding: "12px",
+              background: selectedIds.size === 2 && !loading && !hasRestricted ? "#3498db" : "#ecf0f1",
+              color: selectedIds.size === 2 && !loading && !hasRestricted ? "white" : "#bdc3c7",
+              border: "none",
+              borderRadius: "6px",
+              cursor: selectedIds.size !== 2 || loading || hasRestricted ? "not-allowed" : "pointer",
+              fontWeight: "bold",
+              fontSize: "14px",
+              transition: "all 0.2s",
+              boxShadow: selectedIds.size === 2 && !loading && !hasRestricted ? "0 4px 6px rgba(52, 152, 219, 0.2)" : "none"
+            },
+            children: loading ? "⚙️ Estimating Combination..." : selectedIds.size === 2 ? hasRestricted ? "Estimation not available for load shedding / curtailment" : "Estimate combination effect" : "Select 2 actions to estimate"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: onSimulate,
+            disabled: selectedIds.size !== 2 || simulating,
+            "data-testid": "simulate-combined-button",
+            style: {
+              width: "100%",
+              padding: "10px",
+              background: selectedIds.size === 2 && !simulating ? "#27ae60" : "#ecf0f1",
+              color: selectedIds.size === 2 && !simulating ? "white" : "#bdc3c7",
+              border: "none",
+              borderRadius: "6px",
+              cursor: selectedIds.size !== 2 || simulating ? "not-allowed" : "pointer",
+              fontWeight: "bold",
+              fontSize: "13px",
+              transition: "all 0.2s",
+              boxShadow: selectedIds.size === 2 && !simulating ? "0 2px 4px rgba(39,174,96,0.2)" : "none"
+            },
+            children: simulating ? "⌛ Simulating..." : selectedIds.size === 2 ? "Simulate Combined" : "Select 2 actions to simulate"
+          }
+        )
+      ] }),
+      preview && !simulationFeedback && /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          onClick: onSimulate,
+          disabled: simulating,
+          "data-testid": "simulate-combined-top-button",
+          style: {
+            width: "100%",
+            padding: "10px",
+            marginBottom: "8px",
+            background: simulating ? "#6c757d" : "#27ae60",
+            color: "white",
+            border: "none",
+            borderRadius: "6px",
+            cursor: simulating ? "not-allowed" : "pointer",
+            fontWeight: "bold",
+            fontSize: "13px",
+            boxShadow: simulating ? "none" : "0 2px 4px rgba(39,174,96,0.2)",
+            transition: "all 0.2s"
+          },
+          children: simulating ? "⌛ Simulating..." : "Simulate Combined"
+        }
+      ),
+      (preview || simulationFeedback || simulating) && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+        padding: "15px",
+        background: error ? "#fff3cd" : "#e1f5fe",
+        borderRadius: "8px",
+        borderLeft: "5px solid " + (error ? "#856404" : "#0288d1"),
+        boxShadow: "0 2px 5px rgba(0,0,0,0.05)"
+      }, "data-testid": "comparison-card", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: "10px" }, children: [
+          preview?.betas && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: "8px", fontSize: "11px", color: "#666", background: "rgba(255,255,255,0.6)", padding: "2px 8px", borderRadius: "4px", display: "inline-block", fontWeight: 600 }, children: [
             "Betas: ",
             preview.betas.map((b) => b.toFixed(3)).join(", ")
           ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: 800, color: error ? "#856404" : "#01579b", fontSize: "15px" }, children: error ? "⚠️ Estimation Failed" : "Explore Pairs Comparison" })
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: 800, color: error ? "#856404" : "#01579b", fontSize: "15px" }, children: error ? "⚠️ Estimation Failed" : preview ? "Explore Pairs Comparison" : "Simulation Result" })
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "8px" }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "button",
-            {
-              onClick: onEstimate,
-              disabled: loading,
-              style: { padding: "6px 12px", background: "white", border: "1px solid #3498db", color: "#3498db", borderRadius: "4px", cursor: "pointer", fontSize: "12px", fontWeight: "bold" },
-              children: loading ? "..." : "Estimate combination effect"
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "button",
-            {
-              onClick: onSimulate,
-              disabled: simulating || hasRestricted,
-              style: {
-                padding: "6px 16px",
-                background: simulating || hasRestricted ? "#6c757d" : "#27ae60",
-                color: "white",
-                border: "none",
-                borderRadius: "6px",
-                cursor: simulating || hasRestricted ? "not-allowed" : "pointer",
-                fontWeight: "bold",
-                fontSize: "12px",
-                boxShadow: simulating || hasRestricted ? "none" : "0 2px 4px rgba(39,174,96,0.2)",
-                minWidth: "140px"
-              },
-              children: simulating ? "⌛ Simulating..." : hasRestricted ? "Simulation Locked" : "Simulate Combined"
-            }
-          )
-        ] })
-      ] }),
-      !error && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "30px", borderTop: "1px solid rgba(0,0,0,0.05)", paddingTop: "12px" }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, borderRight: "1px solid rgba(0,0,0,0.05)", paddingRight: "15px" }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: "11px", fontWeight: 700, color: "#666", textTransform: "uppercase", marginBottom: "8px", letterSpacing: "0.5px" }, children: "Estimated Effect" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "13px", marginBottom: "4px" }, children: [
-            "Estimated Max Loading: ",
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("strong", { style: { color: (preview.estimated_max_rho ?? preview.max_rho ?? 0) <= monitoringFactor ? "#28a745" : "#d35400", fontSize: "16px" }, children: [
-              ((preview.estimated_max_rho ?? preview.max_rho ?? 0) * 100).toFixed(1),
-              "%"
-            ] }),
-            preview.is_islanded && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { marginLeft: "6px" }, title: "Estimation suspect due to islanding", children: "⚠️" })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "12px", color: "#666" }, children: [
-            "Line: ",
-            displayName(preview.estimated_max_rho_line ?? preview.max_rho_line)
-          ] })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: "11px", fontWeight: 700, color: "#666", textTransform: "uppercase", marginBottom: "8px", letterSpacing: "0.5px" }, children: "Simulation Result" }),
-          simulating && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { color: "#0056b3", fontSize: "13px", display: "flex", alignItems: "center", gap: "6px" }, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "⌛" }),
-            " Simulating combined action..."
-          ] }),
-          !simulating && simulationFeedback && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { "data-testid": "simulation-feedback", children: [
+        !error && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "30px", borderTop: "1px solid rgba(0,0,0,0.05)", paddingTop: "12px" }, children: [
+          preview && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, borderRight: "1px solid rgba(0,0,0,0.05)", paddingRight: "15px" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: "11px", fontWeight: 700, color: "#666", textTransform: "uppercase", marginBottom: "8px", letterSpacing: "0.5px" }, children: "Estimated Effect" }),
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "13px", marginBottom: "4px" }, children: [
-              "Actual Max Loading: ",
-              /* @__PURE__ */ jsxRuntimeExports.jsx("strong", { style: { color: (simulationFeedback.max_rho ?? 1) <= monitoringFactor ? "#28a745" : "#d35400", fontSize: "16px" }, children: simulationFeedback.max_rho != null ? `${(simulationFeedback.max_rho * 100).toFixed(1)}%` : "N/A" })
+              "Estimated Max Loading: ",
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("strong", { style: { color: (preview.estimated_max_rho ?? preview.max_rho ?? 0) <= monitoringFactor ? "#28a745" : "#d35400", fontSize: "16px" }, children: [
+                ((preview.estimated_max_rho ?? preview.max_rho ?? 0) * 100).toFixed(1),
+                "%"
+              ] }),
+              preview.is_islanded && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { marginLeft: "6px" }, title: "Estimation suspect due to islanding", children: "⚠️" })
             ] }),
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "12px", color: "#666" }, children: [
               "Line: ",
-              displayName(simulationFeedback.max_rho_line)
+              displayName(preview.estimated_max_rho_line ?? preview.max_rho_line)
             ] }),
-            simulationFeedback.is_islanded && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "11px", color: "#dc3545", marginTop: "6px", fontWeight: 600, background: "#fff5f5", padding: "2px 8px", borderRadius: "4px", display: "inline-block" }, children: [
-              "Islanding detected (",
-              simulationFeedback.disconnected_mw?.toFixed(1),
-              " MW disconnected)"
-            ] }),
-            simulationFeedback.non_convergence && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "11px", color: "#dc3545", marginTop: "6px", fontWeight: 600, background: "#fff5f5", padding: "2px 8px", borderRadius: "4px", display: "inline-block" }, children: [
-              "Non-convergence: ",
-              simulationFeedback.non_convergence
+            preview.target_max_rho != null && preview.target_max_rho_line && preview.target_max_rho_line !== "N/A" && preview.target_max_rho_line !== (preview.estimated_max_rho_line ?? preview.max_rho_line) && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "11px", color: "#555", marginTop: "6px", padding: "4px 8px", background: "rgba(255,255,255,0.6)", borderRadius: "4px", display: "inline-block" }, "data-testid": "target-max-rho", children: [
+              "Target overload: ",
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("strong", { style: { color: (preview.target_max_rho ?? 0) <= monitoringFactor ? "#28a745" : "#d35400" }, children: [
+                ((preview.target_max_rho ?? 0) * 100).toFixed(1),
+                "%"
+              ] }),
+              " on ",
+              displayName(preview.target_max_rho_line)
             ] })
           ] }),
-          !simulating && !simulationFeedback && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#aaa", fontSize: "12px", fontStyle: "italic", marginTop: "5px" }, children: 'Click "Simulate Combined" to run' })
-        ] })
-      ] }),
-      error && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: "13px", color: "#856404" }, children: error })
-    ] }) })
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: "11px", fontWeight: 700, color: "#666", textTransform: "uppercase", marginBottom: "8px", letterSpacing: "0.5px" }, children: "Simulation Result" }),
+            simulating && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { color: "#0056b3", fontSize: "13px", display: "flex", alignItems: "center", gap: "6px" }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "⌛" }),
+              " Simulating combined action..."
+            ] }),
+            !simulating && simulationFeedback && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { "data-testid": "simulation-feedback", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "13px", marginBottom: "4px" }, children: [
+                "Actual Max Loading: ",
+                /* @__PURE__ */ jsxRuntimeExports.jsx("strong", { style: { color: (simulationFeedback.max_rho ?? 1) <= monitoringFactor ? "#28a745" : "#d35400", fontSize: "16px" }, children: simulationFeedback.max_rho != null ? `${(simulationFeedback.max_rho * 100).toFixed(1)}%` : "N/A" })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "12px", color: "#666" }, children: [
+                "Line: ",
+                displayName(simulationFeedback.max_rho_line)
+              ] }),
+              simulationFeedback.is_islanded && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "11px", color: "#dc3545", marginTop: "6px", fontWeight: 600, background: "#fff5f5", padding: "2px 8px", borderRadius: "4px", display: "inline-block" }, children: [
+                "Islanding detected (",
+                simulationFeedback.disconnected_mw?.toFixed(1),
+                " MW disconnected)"
+              ] }),
+              simulationFeedback.non_convergence && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "11px", color: "#dc3545", marginTop: "6px", fontWeight: 600, background: "#fff5f5", padding: "2px 8px", borderRadius: "4px", display: "inline-block" }, children: [
+                "Non-convergence: ",
+                simulationFeedback.non_convergence
+              ] })
+            ] }),
+            !simulating && !simulationFeedback && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#aaa", fontSize: "12px", fontStyle: "italic", marginTop: "5px" }, children: 'Click "Simulate Combined" above to run' })
+          ] })
+        ] }),
+        error && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: "13px", color: "#856404" }, children: error })
+      ] })
+    ] })
   ] });
 };
 function canonicalizeId(id) {
@@ -20306,6 +20437,8 @@ const CombinedActionsModal = ({
         betas: data.betas,
         estimated_max_rho: estMaxRho,
         estimated_max_rho_line: estMaxRhoLine,
+        target_max_rho: data.target_max_rho ?? null,
+        target_max_rho_line: data.target_max_rho_line,
         is_suspect: !!data.is_islanded,
         isSimulated,
         simulated_max_rho: simMaxRho,
@@ -20397,12 +20530,6 @@ const CombinedActionsModal = ({
       interactionLogger.record("combine_pair_toggled", { action_id: id, selected: false });
     } else {
       if (newSet.size >= 2) return;
-      const detail = allActions[id];
-      const isRestricted = detail?.load_shedding_details && detail.load_shedding_details.length > 0 || detail?.curtailment_details && detail.curtailment_details.length > 0;
-      if (isRestricted) {
-        setError("Load shedding and curtailment actions cannot be combined with other actions.");
-        return;
-      }
       newSet.add(id);
       interactionLogger.record("combine_pair_toggled", { action_id: id, selected: true });
     }
@@ -20580,8 +20707,8 @@ const ActionSearchDropdown = ({
   searchInputRef,
   searchQuery,
   onSearchQueryChange,
-  typeFilters,
-  onTypeFilterChange,
+  actionTypeFilter,
+  onActionTypeFilterChange,
   error,
   loadingActions,
   scoredActionsList,
@@ -20636,18 +20763,14 @@ const ActionSearchDropdown = ({
             }
           }
         ) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { padding: "4px 8px", display: "flex", flexWrap: "wrap", gap: "6px", borderTop: "1px solid #eee", fontSize: "11px" }, children: [["disco", "Disconnections"], ["reco", "Reconnections"], ["ls", "Load Shedding"], ["rc", "Renewable Curtailment"], ["pst", "PST"], ["open", "Open coupling"], ["close", "Close coupling"]].map(([key, label]) => /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", alignItems: "center", gap: "3px", cursor: "pointer", color: "#555" }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "input",
-            {
-              type: "checkbox",
-              checked: typeFilters[key],
-              onChange: () => onTypeFilterChange(key),
-              style: { margin: 0, cursor: "pointer" }
-            }
-          ),
-          label
-        ] }, key)) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { padding: "4px 8px", borderTop: "1px solid #eee" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+          ActionTypeFilterChips,
+          {
+            testIdPrefix: "search-dropdown-filter",
+            value: actionTypeFilter,
+            onChange: onActionTypeFilterChange
+          }
+        ) }),
         error && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
           padding: "6px 8px",
           fontSize: "12px",
@@ -20672,6 +20795,25 @@ const ActionSearchDropdown = ({
               onResimulateTap,
               onShowTooltip,
               onHideTooltip
+            }
+          ),
+          !searchQuery && scoredActionsList.length === 0 && actionTypeFilter !== "all" && !!actionScores && Object.values(actionScores).some(
+            (d) => d && typeof d === "object" && Object.keys(d.scores ?? {}).length > 0
+          ) && /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "div",
+            {
+              "data-testid": "no-relevant-action-warning",
+              style: {
+                margin: "6px 8px",
+                padding: "6px 8px",
+                background: "#fff3cd",
+                border: "1px solid #ffeeba",
+                borderRadius: 4,
+                color: "#856404",
+                fontSize: 12,
+                lineHeight: 1.35
+              },
+              children: "⚠️ Warning: no relevant action detected with regards to overflow analysis"
             }
           ),
           !searchQuery && scoredActionsList.length === 0 && filteredActions.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { padding: "10px", textAlign: "center", color: "#888", fontSize: "13px" }, children: "All actions already added" }),
@@ -20983,7 +21125,6 @@ const ActionFeed = ({
   const [loadingActions, setLoadingActions] = reactExports.useState(false);
   const [simulating, setSimulating] = reactExports.useState(null);
   const [error, setError] = reactExports.useState(null);
-  const [typeFilters, setTypeFilters] = reactExports.useState({ disco: true, reco: true, open: true, close: true, pst: true, ls: true, rc: true });
   const searchInputRef = reactExports.useRef(null);
   const dropdownRef = reactExports.useRef(null);
   const [tooltip, setTooltip] = reactExports.useState(null);
@@ -21066,47 +21207,30 @@ const ActionFeed = ({
     }
     setTimeout(() => searchInputRef.current?.focus(), 50);
   };
+  const [dropdownTypeFilter, setDropdownTypeFilter] = reactExports.useState("all");
   const filteredActions = reactExports.useMemo(() => {
     const q = searchQuery.toLowerCase();
     const alreadyShown = new Set(Object.keys(actions));
     return availableActions.filter((a) => !alreadyShown.has(a.id)).filter((a) => {
-      const bucket = classifyActionType(a.id, a.description || null, a.type || null);
-      if (bucket === "unknown") {
-        return typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst;
-      }
-      return typeFilters[bucket];
+      if (dropdownTypeFilter === "all") return true;
+      return matchesActionTypeFilter(dropdownTypeFilter, a.id, a.description || null, a.type || null);
     }).filter((a) => a.id.toLowerCase().includes(q) || (a.description || "").toLowerCase().includes(q)).slice(0, 20);
-  }, [searchQuery, availableActions, actions, typeFilters]);
+  }, [searchQuery, availableActions, actions, dropdownTypeFilter]);
   const scoredActionsList = reactExports.useMemo(() => {
     if (!actionScores) return [];
     const list = [];
     for (const [type, data] of Object.entries(actionScores)) {
-      const isDiscoType = type === "line_disconnection";
-      const isRecoType = type === "line_reconnection";
-      const isOpenType = type === "open_coupling";
-      const isCloseType = type === "close_coupling";
-      const isPstType = type === "pst_tap_change" || type.includes("pst");
-      if (isDiscoType && !typeFilters.disco) continue;
-      if (isRecoType && !typeFilters.reco) continue;
-      if (isOpenType && !typeFilters.open) continue;
-      if (isCloseType && !typeFilters.close) continue;
-      if (isPstType && !typeFilters.pst) continue;
-      if ((type === "load_shedding" || type.includes("load_shedding")) && !typeFilters.ls) continue;
-      if ((type === "renewable_curtailment" || type.includes("renewable_curtailment")) && !typeFilters.rc) continue;
-      const isKnownType = isDiscoType || isRecoType || isOpenType || isCloseType || isPstType || type === "load_shedding" || type.includes("load_shedding") || type === "renewable_curtailment" || type.includes("renewable_curtailment");
-      if (!isKnownType && !(typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst && typeFilters.ls && typeFilters.rc)) {
-        continue;
-      }
       const scores = data?.scores || {};
       for (const [actionId, score] of Object.entries(scores)) {
-        const actionDetail = actions[actionId];
-        const bucket = classifyActionType(
-          actionId,
-          actionDetail?.description_unitaire || null,
-          type
-        );
-        const shouldShow = bucket === "unknown" ? typeFilters.disco && typeFilters.reco && typeFilters.open && typeFilters.close && typeFilters.pst && typeFilters.ls && typeFilters.rc : typeFilters[bucket];
-        if (!shouldShow) continue;
+        if (dropdownTypeFilter !== "all") {
+          const actionDetail = actions[actionId];
+          const bucket = classifyActionType(
+            actionId,
+            actionDetail?.description_unitaire || null,
+            type
+          );
+          if (bucket === "unknown" || bucket !== dropdownTypeFilter) continue;
+        }
         const mwStartMap = data?.mw_start;
         const mwStart = mwStartMap?.[actionId] ?? null;
         list.push({ type, actionId, score: Number(score), mwStart: mwStart != null ? Number(mwStart) : null });
@@ -21120,7 +21244,7 @@ const ActionFeed = ({
       }
       return b.score - a.score;
     });
-  }, [actionScores, typeFilters, actions]);
+  }, [actionScores, dropdownTypeFilter, actions]);
   reactExports.useEffect(() => {
     if (!searchOpen) return;
     const handler = (e) => {
@@ -21504,8 +21628,8 @@ const ActionFeed = ({
           searchInputRef,
           searchQuery,
           onSearchQueryChange: setSearchQuery,
-          typeFilters,
-          onTypeFilterChange: (key) => setTypeFilters((prev) => ({ ...prev, [key]: !prev[key] })),
+          actionTypeFilter: dropdownTypeFilter,
+          onActionTypeFilterChange: setDropdownTypeFilter,
           error,
           loadingActions,
           scoredActionsList,
@@ -21589,7 +21713,7 @@ const ActionFeed = ({
         renderActionList(selectedEntries)
       ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "8px", margin: "5px 0 15px 0" }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#666", fontStyle: "italic", fontSize: "13px", margin: 0 }, children: "Select an action manually or from suggested ones." }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        !analysisLoading && !pendingAnalysisResult && (!actionScores || Object.keys(actionScores).length === 0) && Object.keys(actions).length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs(
           "button",
           {
             onClick: handleOpenSearch,
@@ -22191,6 +22315,176 @@ const Header = ({
     )
   ] });
 };
+function SidebarSummary({
+  selectedBranch,
+  n1LinesOverloaded,
+  n1LinesOverloadedRho,
+  selectedOverloads,
+  displayName,
+  onContingencyZoom,
+  onOverloadClick
+}) {
+  const hasOverloads = (n1LinesOverloaded?.length ?? 0) > 0;
+  if (!selectedBranch && !hasOverloads) return null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      "data-testid": "sticky-feed-summary",
+      style: {
+        flexShrink: 0,
+        padding: "6px 12px",
+        background: "#f8f9fa",
+        borderBottom: "1px solid #ccc",
+        fontSize: "11px",
+        lineHeight: 1.5,
+        boxShadow: "0 1px 2px rgba(0,0,0,0.04)"
+      },
+      children: [
+        selectedBranch && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: "4px" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#555", fontWeight: 600, whiteSpace: "nowrap" }, children: "🎯 Contingency:" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              onClick: (e) => {
+                e.stopPropagation();
+                onContingencyZoom(selectedBranch);
+              },
+              title: `Zoom to ${selectedBranch} in the current diagram`,
+              style: {
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+                fontSize: "11px",
+                color: "#1e40af",
+                fontWeight: 600,
+                textDecoration: "underline dotted",
+                wordBreak: "break-word",
+                textAlign: "left"
+              },
+              children: [
+                "🔍 ",
+                displayName(selectedBranch)
+              ]
+            }
+          )
+        ] }),
+        hasOverloads && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: "4px" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#b91c1c", fontWeight: 600, whiteSpace: "nowrap" }, children: "⚠️ N-1:" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { wordBreak: "break-word" }, children: n1LinesOverloaded.map((name, i) => {
+            const rho = n1LinesOverloadedRho?.[i];
+            const rhoPct = rho != null && !Number.isNaN(rho) ? `${(rho * 100).toFixed(1)}%` : null;
+            const isSelected = selectedOverloads?.has(name) ?? true;
+            return /* @__PURE__ */ jsxRuntimeExports.jsxs(React.Fragment, { children: [
+              i > 0 && ", ",
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    onOverloadClick("", name, "n-1");
+                  },
+                  title: `Open N-1 tab and zoom to ${name}`,
+                  style: {
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                    fontSize: "11px",
+                    color: isSelected ? "#1e40af" : "#bdc3c7",
+                    fontWeight: isSelected ? 600 : 400,
+                    textDecoration: isSelected ? "underline dotted" : "none"
+                  },
+                  children: displayName(name)
+                }
+              ),
+              rhoPct && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: isSelected ? "#374151" : "#bdc3c7", marginLeft: "2px" }, children: [
+                "(",
+                rhoPct,
+                ")"
+              ] })
+            ] }, name);
+          }) })
+        ] })
+      ]
+    }
+  );
+}
+function AppSidebar({
+  selectedBranch,
+  branches,
+  nameMap,
+  n1LinesOverloaded,
+  n1LinesOverloadedRho,
+  selectedOverloads,
+  contingencyOptions,
+  onContingencyChange,
+  displayName,
+  onContingencyZoom,
+  onOverloadClick,
+  children
+}) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { "data-testid": "sidebar", style: { width: "25%", background: "#eee", borderRight: "1px solid #ccc", display: "flex", flexDirection: "column", overflow: "hidden" }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      SidebarSummary,
+      {
+        selectedBranch,
+        n1LinesOverloaded,
+        n1LinesOverloadedRho,
+        selectedOverloads,
+        displayName,
+        onContingencyZoom,
+        onOverloadClick
+      }
+    ),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, overflowY: "auto", padding: "15px", minHeight: 0, display: "flex", flexDirection: "column", gap: "15px" }, children: [
+      branches.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flexShrink: 0, padding: "10px 15px", background: "white", borderRadius: "8px", border: "1px solid #dee2e6", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { fontSize: "0.8rem", fontWeight: "bold", display: "block", marginBottom: "5px" }, children: "🎯 Select Contingency" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "input",
+          {
+            list: "contingencies",
+            value: selectedBranch,
+            onChange: onContingencyChange,
+            placeholder: "Search line/bus...",
+            style: { width: "100%", padding: "7px 10px", border: "1px solid #ccc", borderRadius: "4px", boxSizing: "border-box", fontSize: "0.85rem" }
+          }
+        ),
+        selectedBranch && nameMap[selectedBranch] && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: "0.78rem", color: "#4b5563", marginTop: "3px", fontStyle: "italic", lineHeight: 1.3 }, children: nameMap[selectedBranch] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("datalist", { id: "contingencies", children: contingencyOptions })
+      ] }),
+      children
+    ] })
+  ] });
+}
+function StatusToasts({ error, infoMessage }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+    error && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+      position: "fixed",
+      bottom: 20,
+      right: 20,
+      background: "#e74c3c",
+      color: "white",
+      padding: "10px 20px",
+      borderRadius: "4px",
+      boxShadow: "0 2px 10px rgba(0,0,0,0.2)",
+      zIndex: 1e3
+    }, children: error }),
+    infoMessage && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+      position: "fixed",
+      bottom: 20,
+      left: 20,
+      background: infoMessage.startsWith("SUCCESS") ? "#27ae60" : "#3498db",
+      color: "white",
+      padding: "12px 24px",
+      borderRadius: "4px",
+      boxShadow: "0 4px 15px rgba(0,0,0,0.3)",
+      zIndex: 1e3,
+      fontWeight: "bold",
+      border: "1px solid rgba(255,255,255,0.2)"
+    }, children: infoMessage })
+  ] });
+}
 const SettingsModal = ({ settings, onApply }) => {
   const {
     isSettingsOpen,
@@ -22680,148 +22974,6 @@ const ConfirmationDialog = ({
     }
   ) });
 };
-const cloneBaseSvg = (baseSvg) => {
-  return baseSvg.cloneNode(true);
-};
-const resetPriorPatch = (container) => {
-  container.querySelectorAll("[data-patched-flow]").forEach((el) => {
-    const original = el.getAttribute("data-patched-flow");
-    if (original !== null) {
-      el.textContent = original;
-    }
-    el.removeAttribute("data-patched-flow");
-  });
-  container.querySelectorAll(".nad-disconnected").forEach((el) => {
-    el.classList.remove("nad-disconnected");
-  });
-};
-const formatFlowValue = (value) => {
-  if (!Number.isFinite(value)) return "0";
-  return Math.round(value).toString();
-};
-const patchEdgeInfoText = (infoEl, label) => {
-  infoEl.querySelectorAll("foreignObject, text").forEach((t) => {
-    if (!t.hasAttribute("data-patched-flow")) {
-      t.setAttribute("data-patched-flow", t.textContent ?? "");
-    }
-    t.textContent = label;
-  });
-};
-const parseSvgFragment = (fragment) => {
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(
-      `<svg xmlns="http://www.w3.org/2000/svg">${fragment}</svg>`,
-      "image/svg+xml"
-    );
-    const first = doc.documentElement.firstElementChild;
-    return first ?? null;
-  } catch {
-    return null;
-  }
-};
-const spliceAndRewriteId = (clonedSvg, oldEl, fragment, targetSvgId, idMap) => {
-  const newEl = parseSvgFragment(fragment);
-  if (!newEl) return null;
-  try {
-    const imported = clonedSvg.ownerDocument.importNode(newEl, true);
-    imported.setAttribute("id", targetSvgId);
-    oldEl.replaceWith(imported);
-    idMap.set(targetSvgId, imported);
-    return imported;
-  } catch (e) {
-    console.warn("[svgPatch] splice failed for", targetSvgId, e);
-    return null;
-  }
-};
-const spliceVlSubtrees = (clonedSvg, baseMetaIndex, vlSubtrees, idMap) => {
-  for (const [vlId, entry] of Object.entries(vlSubtrees)) {
-    const nodeMeta = baseMetaIndex.nodesByEquipmentId.get(vlId);
-    const targetSvgId = nodeMeta?.svgId ?? `nad-vl-${vlId}`;
-    const oldNodeEl = idMap.get(targetSvgId);
-    if (!oldNodeEl) {
-      console.warn("[svgPatch] VL subtree splice — no live node for", vlId, targetSvgId);
-      continue;
-    }
-    const spliced = spliceAndRewriteId(
-      clonedSvg,
-      oldNodeEl,
-      entry.node_svg,
-      targetSvgId,
-      idMap
-    );
-    if (!spliced) {
-      console.warn("[svgPatch] VL subtree splice — fragment parse failed for", vlId);
-      continue;
-    }
-    const edgeFragments = entry.edge_fragments;
-    if (!edgeFragments) continue;
-    for (const [edgeEqId, edgeEntry] of Object.entries(edgeFragments)) {
-      const edgeMeta = baseMetaIndex.edgesByEquipmentId.get(edgeEqId);
-      if (!edgeMeta || !edgeMeta.svgId) continue;
-      const oldEdgeEl = idMap.get(edgeMeta.svgId);
-      if (!oldEdgeEl) continue;
-      spliceAndRewriteId(
-        clonedSvg,
-        oldEdgeEl,
-        edgeEntry.svg,
-        edgeMeta.svgId,
-        idMap
-      );
-    }
-  }
-};
-const buildSvgIdMap = (svg) => {
-  const map = /* @__PURE__ */ new Map();
-  svg.querySelectorAll("[id]").forEach((el) => map.set(el.id, el));
-  return map;
-};
-const applyPatchToClone = (clonedSvg, baseMetaIndex, patch) => {
-  if (!patch.patchable) {
-    return { svgElement: clonedSvg, metaIndex: baseMetaIndex };
-  }
-  resetPriorPatch(clonedSvg);
-  const { edgesByEquipmentId } = baseMetaIndex;
-  const idMap = buildSvgIdMap(clonedSvg);
-  if (patch.vl_subtrees && Object.keys(patch.vl_subtrees).length > 0) {
-    spliceVlSubtrees(clonedSvg, baseMetaIndex, patch.vl_subtrees, idMap);
-  }
-  const disconnected = patch.disconnected_edges ?? [];
-  for (const equipmentId of disconnected) {
-    const edge = edgesByEquipmentId.get(equipmentId);
-    if (!edge || !edge.svgId) continue;
-    const el = idMap.get(edge.svgId);
-    if (el) el.classList.add("nad-disconnected");
-  }
-  const absFlows = patch.absolute_flows;
-  if (absFlows && absFlows.p1) {
-    const p1 = absFlows.p1;
-    const p2 = absFlows.p2 ?? {};
-    for (const edgeId in p1) {
-      const edge = edgesByEquipmentId.get(edgeId);
-      if (!edge) continue;
-      const info1Id = edge.edgeInfo1?.svgId;
-      if (info1Id) {
-        const infoEl = idMap.get(info1Id);
-        if (infoEl) patchEdgeInfoText(infoEl, formatFlowValue(p1[edgeId]));
-      }
-      const info2Id = edge.edgeInfo2?.svgId;
-      const p2Val = p2[edgeId];
-      if (info2Id && p2Val !== void 0) {
-        const infoEl = idMap.get(info2Id);
-        if (infoEl) patchEdgeInfoText(infoEl, formatFlowValue(p2Val));
-      }
-    }
-  }
-  const parent = clonedSvg.parentElement;
-  if (parent) invalidateIdMapCache(parent);
-  return { svgElement: clonedSvg, metaIndex: baseMetaIndex };
-};
-function computeN1OverloadHighlights(analysisOverloads, n1DiagramOverloads, selectedOverloads) {
-  const source = analysisOverloads && analysisOverloads.length > 0 ? analysisOverloads : n1DiagramOverloads || [];
-  if (selectedOverloads.size === 0) return [...source];
-  return source.filter((name) => selectedOverloads.has(name));
-}
 function useSettings() {
   const [configFilePath, setConfigFilePath] = reactExports.useState("");
   const lastConfigFilePathRef = reactExports.useRef("");
@@ -23515,6 +23667,143 @@ function useAnalysis() {
     handleToggleOverload
   ]);
 }
+const cloneBaseSvg = (baseSvg) => {
+  return baseSvg.cloneNode(true);
+};
+const resetPriorPatch = (container) => {
+  container.querySelectorAll("[data-patched-flow]").forEach((el) => {
+    const original = el.getAttribute("data-patched-flow");
+    if (original !== null) {
+      el.textContent = original;
+    }
+    el.removeAttribute("data-patched-flow");
+  });
+  container.querySelectorAll(".nad-disconnected").forEach((el) => {
+    el.classList.remove("nad-disconnected");
+  });
+};
+const formatFlowValue = (value) => {
+  if (!Number.isFinite(value)) return "0";
+  return Math.round(value).toString();
+};
+const patchEdgeInfoText = (infoEl, label) => {
+  infoEl.querySelectorAll("foreignObject, text").forEach((t) => {
+    if (!t.hasAttribute("data-patched-flow")) {
+      t.setAttribute("data-patched-flow", t.textContent ?? "");
+    }
+    t.textContent = label;
+  });
+};
+const parseSvgFragment = (fragment) => {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(
+      `<svg xmlns="http://www.w3.org/2000/svg">${fragment}</svg>`,
+      "image/svg+xml"
+    );
+    const first = doc.documentElement.firstElementChild;
+    return first ?? null;
+  } catch {
+    return null;
+  }
+};
+const spliceAndRewriteId = (clonedSvg, oldEl, fragment, targetSvgId, idMap) => {
+  const newEl = parseSvgFragment(fragment);
+  if (!newEl) return null;
+  try {
+    const imported = clonedSvg.ownerDocument.importNode(newEl, true);
+    imported.setAttribute("id", targetSvgId);
+    oldEl.replaceWith(imported);
+    idMap.set(targetSvgId, imported);
+    return imported;
+  } catch (e) {
+    console.warn("[svgPatch] splice failed for", targetSvgId, e);
+    return null;
+  }
+};
+const spliceVlSubtrees = (clonedSvg, baseMetaIndex, vlSubtrees, idMap) => {
+  for (const [vlId, entry] of Object.entries(vlSubtrees)) {
+    const nodeMeta = baseMetaIndex.nodesByEquipmentId.get(vlId);
+    const targetSvgId = nodeMeta?.svgId ?? `nad-vl-${vlId}`;
+    const oldNodeEl = idMap.get(targetSvgId);
+    if (!oldNodeEl) {
+      console.warn("[svgPatch] VL subtree splice — no live node for", vlId, targetSvgId);
+      continue;
+    }
+    const spliced = spliceAndRewriteId(
+      clonedSvg,
+      oldNodeEl,
+      entry.node_svg,
+      targetSvgId,
+      idMap
+    );
+    if (!spliced) {
+      console.warn("[svgPatch] VL subtree splice — fragment parse failed for", vlId);
+      continue;
+    }
+    const edgeFragments = entry.edge_fragments;
+    if (!edgeFragments) continue;
+    for (const [edgeEqId, edgeEntry] of Object.entries(edgeFragments)) {
+      const edgeMeta = baseMetaIndex.edgesByEquipmentId.get(edgeEqId);
+      if (!edgeMeta || !edgeMeta.svgId) continue;
+      const oldEdgeEl = idMap.get(edgeMeta.svgId);
+      if (!oldEdgeEl) continue;
+      spliceAndRewriteId(
+        clonedSvg,
+        oldEdgeEl,
+        edgeEntry.svg,
+        edgeMeta.svgId,
+        idMap
+      );
+    }
+  }
+};
+const buildSvgIdMap = (svg) => {
+  const map = /* @__PURE__ */ new Map();
+  svg.querySelectorAll("[id]").forEach((el) => map.set(el.id, el));
+  return map;
+};
+const applyPatchToClone = (clonedSvg, baseMetaIndex, patch) => {
+  if (!patch.patchable) {
+    return { svgElement: clonedSvg, metaIndex: baseMetaIndex };
+  }
+  resetPriorPatch(clonedSvg);
+  const { edgesByEquipmentId } = baseMetaIndex;
+  const idMap = buildSvgIdMap(clonedSvg);
+  if (patch.vl_subtrees && Object.keys(patch.vl_subtrees).length > 0) {
+    spliceVlSubtrees(clonedSvg, baseMetaIndex, patch.vl_subtrees, idMap);
+  }
+  const disconnected = patch.disconnected_edges ?? [];
+  for (const equipmentId of disconnected) {
+    const edge = edgesByEquipmentId.get(equipmentId);
+    if (!edge || !edge.svgId) continue;
+    const el = idMap.get(edge.svgId);
+    if (el) el.classList.add("nad-disconnected");
+  }
+  const absFlows = patch.absolute_flows;
+  if (absFlows && absFlows.p1) {
+    const p1 = absFlows.p1;
+    const p2 = absFlows.p2 ?? {};
+    for (const edgeId in p1) {
+      const edge = edgesByEquipmentId.get(edgeId);
+      if (!edge) continue;
+      const info1Id = edge.edgeInfo1?.svgId;
+      if (info1Id) {
+        const infoEl = idMap.get(info1Id);
+        if (infoEl) patchEdgeInfoText(infoEl, formatFlowValue(p1[edgeId]));
+      }
+      const info2Id = edge.edgeInfo2?.svgId;
+      const p2Val = p2[edgeId];
+      if (info2Id && p2Val !== void 0) {
+        const infoEl = idMap.get(info2Id);
+        if (infoEl) patchEdgeInfoText(infoEl, formatFlowValue(p2Val));
+      }
+    }
+  }
+  const parent = clonedSvg.parentElement;
+  if (parent) invalidateIdMapCache(parent);
+  return { svgElement: clonedSvg, metaIndex: baseMetaIndex };
+};
 function useSldOverlay(activeTab, liveSelectedActionId) {
   const [vlOverlay, setVlOverlay] = reactExports.useState(null);
   const selectedBranchForSld = reactExports.useRef("");
@@ -23641,6 +23930,40 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
   const [actionViewMode, setActionViewMode] = reactExports.useState("network");
   const handleViewModeChange = reactExports.useCallback((mode) => {
     setActionViewMode(mode);
+  }, []);
+  const [overflowLayoutMode, setOverflowLayoutMode] = reactExports.useState("hierarchical");
+  const [overflowLayoutLoading, setOverflowLayoutLoading] = reactExports.useState(false);
+  const handleOverflowLayoutChange = reactExports.useCallback(async (mode, setResult, setError) => {
+    setOverflowLayoutMode((current) => {
+      if (current === mode) return current;
+      return current;
+    });
+    const correlationId = interactionLogger.record("overflow_layout_mode_toggled", {
+      to: mode
+    });
+    const startTs = (/* @__PURE__ */ new Date()).toISOString();
+    setOverflowLayoutLoading(true);
+    try {
+      const response = await api.regenerateOverflowGraph(mode);
+      setResult((prev) => {
+        if (!prev) return prev;
+        return { ...prev, pdf_url: response.pdf_url, pdf_path: response.pdf_path };
+      });
+      setOverflowLayoutMode(mode);
+      interactionLogger.recordCompletion("overflow_layout_mode_toggled", correlationId, {
+        to: mode,
+        cached: response.cached
+      }, startTs);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`Failed to regenerate overflow graph in ${mode} mode: ${msg}`);
+      interactionLogger.recordCompletion("overflow_layout_mode_toggled", correlationId, {
+        to: mode,
+        error: msg
+      }, startTs);
+    } finally {
+      setOverflowLayoutLoading(false);
+    }
   }, []);
   const [originalViewBox, setOriginalViewBox] = reactExports.useState(null);
   const [inspectQuery, setInspectQuery] = reactExports.useState("");
@@ -24081,19 +24404,28 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
   );
   const staleVoltageFilter = reactExports.useRef(/* @__PURE__ */ new Set());
   const prevVFTabRef = reactExports.useRef(activeTab);
-  const applyVoltageFilter = reactExports.useCallback((container, metaIndex) => {
+  const prevFilterHadHidden = reactExports.useRef({
+    n: false,
+    "n-1": false,
+    action: false,
+    overflow: false
+  });
+  const applyVoltageFilter = reactExports.useCallback((tab, container, metaIndex) => {
     if (!container || !metaIndex) return;
     if (uniqueVoltages.length === 0 || Object.keys(nominalVoltageMap).length === 0) return;
     const [minKv, maxKv] = voltageRange;
-    if (minKv <= uniqueVoltages[0] && maxKv >= uniqueVoltages[uniqueVoltages.length - 1]) return;
+    const fullyOpen = minKv <= uniqueVoltages[0] && maxKv >= uniqueVoltages[uniqueVoltages.length - 1];
+    if (fullyOpen && !prevFilterHadHidden.current[tab]) return;
     const isInRange = (vlId) => {
       const kv = nominalVoltageMap[vlId];
       return kv != null && kv >= minKv && kv <= maxKv;
     };
     const { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId } = metaIndex;
     const idMap = getIdMap(container);
+    let anyHidden = false;
     for (const [vlId, node] of nodesByEquipmentId) {
       const visible = isInRange(vlId);
+      if (!visible) anyHidden = true;
       const show = visible ? "" : "none";
       const el = idMap.get(node.svgId);
       if (el) el.style.display = show;
@@ -24112,6 +24444,7 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
       const vl1InRange = node1 ? isInRange(node1.equipmentId) : true;
       const vl2InRange = node2 ? isInRange(node2.equipmentId) : true;
       const edgeVisible = vl1InRange || vl2InRange;
+      if (!edgeVisible) anyHidden = true;
       const show = edgeVisible ? "" : "none";
       const el = idMap.get(edge.svgId);
       if (el) el.style.display = show;
@@ -24124,6 +24457,7 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
         if (ei) ei.style.display = show;
       }
     }
+    prevFilterHadHidden.current[tab] = anyHidden;
   }, [voltageRange, nominalVoltageMap, uniqueVoltages]);
   reactExports.useEffect(() => {
     if (uniqueVoltages.length === 0 || Object.keys(nominalVoltageMap).length === 0) return;
@@ -24131,17 +24465,17 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
     prevVFTabRef.current = activeTab;
     const runFilter = () => {
       if (activeTab === "n" || activeTab === "overflow") {
-        applyVoltageFilter(nSvgContainerRef.current, nMetaIndex);
+        applyVoltageFilter("n", nSvgContainerRef.current, nMetaIndex);
         staleVoltageFilter.current.delete("n");
         staleVoltageFilter.current.add("n-1");
         staleVoltageFilter.current.add("action");
       } else if (activeTab === "n-1") {
-        applyVoltageFilter(n1SvgContainerRef.current, n1MetaIndex);
+        applyVoltageFilter("n-1", n1SvgContainerRef.current, n1MetaIndex);
         staleVoltageFilter.current.delete("n-1");
         staleVoltageFilter.current.add("n");
         staleVoltageFilter.current.add("action");
       } else if (activeTab === "action") {
-        applyVoltageFilter(actionSvgContainerRef.current, actionMetaIndex);
+        applyVoltageFilter("action", actionSvgContainerRef.current, actionMetaIndex);
         staleVoltageFilter.current.delete("action");
         staleVoltageFilter.current.add("n");
         staleVoltageFilter.current.add("n-1");
@@ -24194,6 +24528,10 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
     actionViewMode,
     setActionViewMode,
     handleViewModeChange,
+    overflowLayoutMode,
+    setOverflowLayoutMode,
+    overflowLayoutLoading,
+    handleOverflowLayoutChange,
     originalViewBox,
     setOriginalViewBox,
     inspectQuery,
@@ -24245,6 +24583,9 @@ function useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs) {
     actionDiagramLoading,
     actionViewMode,
     handleViewModeChange,
+    overflowLayoutMode,
+    overflowLayoutLoading,
+    handleOverflowLayoutChange,
     originalViewBox,
     inspectQuery,
     nPZ,
@@ -24949,6 +25290,250 @@ function useTiedTabsSync(pzMap, activeTab, detachedTabs) {
   }, [tiedTabs, activeTab, detachedTabs, pzMap, nVb, n1Vb, actionVb]);
   return { tiedTabs, isTied, tie, untie, toggleTie };
 }
+function useN1Fetch({
+  selectedBranch,
+  branches,
+  voltageLevelsLength,
+  diagrams,
+  analysisLoading,
+  hasAnalysisState,
+  clearContingencyState,
+  setSelectedBranch,
+  setConfirmDialog,
+  setError
+}) {
+  const { n1Diagram, n1Loading, nDiagram } = diagrams;
+  reactExports.useEffect(() => {
+    if (!selectedBranch) {
+      diagrams.setN1Diagram(null);
+      if (!hasAnalysisState()) {
+        diagrams.committedBranchRef.current = "";
+      }
+      return;
+    }
+    if (branches.length > 0 && !branches.includes(selectedBranch)) return;
+    if (selectedBranch === diagrams.committedBranchRef.current && !diagrams.restoringSessionRef.current && (n1Diagram || hasAnalysisState() || n1Loading || analysisLoading)) return;
+    if (selectedBranch !== diagrams.committedBranchRef.current && hasAnalysisState() && !diagrams.restoringSessionRef.current) {
+      setConfirmDialog({ type: "contingency", pendingBranch: selectedBranch });
+      setSelectedBranch(diagrams.committedBranchRef.current);
+      return;
+    }
+    const isRestoring = diagrams.restoringSessionRef.current;
+    diagrams.restoringSessionRef.current = false;
+    diagrams.committedBranchRef.current = selectedBranch;
+    if (!isRestoring) {
+      clearContingencyState();
+      diagrams.setN1Diagram(null);
+    }
+    const fetchN1 = async () => {
+      diagrams.setN1Loading(true);
+      if (!isRestoring) {
+        diagrams.setActiveTab("n-1");
+      }
+      const baseSvgEl = diagrams.nSvgContainerRef.current?.querySelector("svg");
+      const baseMeta = diagrams.nMetaIndex;
+      const canPatch = !!baseSvgEl && !!baseMeta && !isRestoring;
+      if (canPatch) {
+        console.log("[svgPatch] N-1 patch PATH — calling /api/n1-diagram-patch", selectedBranch);
+        try {
+          const patch = await api.getN1DiagramPatch(selectedBranch);
+          if (patch.patchable) {
+            console.log("[svgPatch] N-1 patch applied (patchable=true)", selectedBranch);
+            const cloned = cloneBaseSvg(baseSvgEl);
+            applyPatchToClone(cloned, baseMeta, patch);
+            diagrams.setN1Diagram({
+              svg: cloned,
+              metadata: nDiagram?.metadata ?? null,
+              originalViewBox: nDiagram?.originalViewBox ? { ...nDiagram.originalViewBox } : null,
+              lines_overloaded: patch.lines_overloaded,
+              lines_overloaded_rho: patch.lines_overloaded_rho,
+              flow_deltas: patch.flow_deltas,
+              reactive_flow_deltas: patch.reactive_flow_deltas,
+              asset_deltas: patch.asset_deltas,
+              lf_converged: patch.lf_converged,
+              lf_status: patch.lf_status
+            });
+            diagrams.lastZoomState.current = { query: "", branch: "" };
+            diagrams.setN1Loading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn("[svgPatch] N-1 patch threw — falling back to full fetch", e);
+        }
+      } else {
+        console.log("[svgPatch] N-1 patch SKIPPED — no base N SVG/meta yet. baseSvgEl:", !!baseSvgEl, "baseMeta:", !!baseMeta, "restoring:", isRestoring);
+      }
+      try {
+        const res = await api.getN1Diagram(selectedBranch);
+        const { svg, viewBox } = processSvg(res.svg, voltageLevelsLength);
+        diagrams.setN1Diagram({ ...res, svg, originalViewBox: viewBox });
+        diagrams.lastZoomState.current = { query: "", branch: "" };
+      } catch (err) {
+        console.error("Failed to fetch N-1 diagram", err);
+        setError(`Failed to fetch N-1 diagram for ${selectedBranch}`);
+      } finally {
+        diagrams.setN1Loading(false);
+      }
+    };
+    fetchN1();
+  }, [
+    selectedBranch,
+    branches,
+    voltageLevelsLength,
+    hasAnalysisState,
+    clearContingencyState,
+    analysisLoading,
+    n1Diagram,
+    n1Loading,
+    setError,
+    diagrams,
+    nDiagram,
+    setConfirmDialog,
+    setSelectedBranch
+  ]);
+}
+function computeN1OverloadHighlights(analysisOverloads, n1DiagramOverloads, selectedOverloads) {
+  const source = analysisOverloads && analysisOverloads.length > 0 ? analysisOverloads : n1DiagramOverloads || [];
+  if (selectedOverloads.size === 0) return [...source];
+  return source.filter((name) => selectedOverloads.has(name));
+}
+function useDiagramHighlights({
+  diagrams,
+  result,
+  selectedBranch,
+  selectedOverloads,
+  monitoringFactor,
+  detachedTabs
+}) {
+  const {
+    activeTab,
+    nDiagram,
+    n1Diagram,
+    actionDiagram,
+    selectedActionId,
+    actionViewMode
+  } = diagrams;
+  const staleHighlights = reactExports.useRef(/* @__PURE__ */ new Set());
+  const prevHighlightTabRef = reactExports.useRef(activeTab);
+  const [detachedViewModes, setDetachedViewModes] = reactExports.useState({});
+  const viewModeForTab = reactExports.useCallback((tab) => {
+    if (detachedTabs[tab]) return detachedViewModes[tab] ?? "network";
+    return actionViewMode;
+  }, [detachedTabs, detachedViewModes, actionViewMode]);
+  const handleViewModeChangeForTab = reactExports.useCallback((tab, mode) => {
+    interactionLogger.record("view_mode_changed", { mode, tab, scope: detachedTabs[tab] ? "detached" : "main" });
+    if (detachedTabs[tab]) {
+      setDetachedViewModes((prev) => ({ ...prev, [tab]: mode }));
+    } else {
+      diagrams.setActionViewMode(mode);
+    }
+  }, [detachedTabs, diagrams]);
+  const detachedViewModesRef = reactExports.useRef(detachedViewModes);
+  reactExports.useLayoutEffect(() => {
+    detachedViewModesRef.current = detachedViewModes;
+  }, [detachedViewModes]);
+  reactExports.useEffect(() => {
+    const current = detachedViewModesRef.current;
+    let hasStale = false;
+    for (const tabId of Object.keys(current)) {
+      if (!detachedTabs[tabId]) {
+        hasStale = true;
+        break;
+      }
+    }
+    if (!hasStale) return;
+    const next = {};
+    for (const tabId of Object.keys(current)) {
+      if (detachedTabs[tabId]) next[tabId] = current[tabId];
+    }
+    setDetachedViewModes(next);
+  }, [detachedTabs]);
+  const applyHighlightsForTab = reactExports.useCallback((tab, mode) => {
+    const effectiveMode = mode ?? viewModeForTab(tab);
+    const overloadedLines = result?.lines_overloaded || [];
+    const n1OverloadedLines = computeN1OverloadHighlights(
+      overloadedLines,
+      n1Diagram?.lines_overloaded,
+      selectedOverloads
+    );
+    if (tab === "n-1") {
+      if (diagrams.n1SvgContainerRef.current) {
+        applyContingencyHighlight(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, selectedBranch);
+        if (diagrams.n1MetaIndex && n1OverloadedLines.length > 0) {
+          applyOverloadedHighlights(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, n1OverloadedLines);
+        }
+        applyDeltaVisuals(diagrams.n1SvgContainerRef.current, n1Diagram, diagrams.n1MetaIndex, effectiveMode === "delta");
+      }
+    }
+    if (tab === "action") {
+      const actionDetail = result?.actions?.[selectedActionId || ""];
+      if (actionDetail) {
+        const isSolved = actionDetail.max_rho != null && actionDetail.max_rho <= monitoringFactor;
+        let overloadsToHighlight = [];
+        if (!isSolved) {
+          if (actionDetail.lines_overloaded_after && actionDetail.lines_overloaded_after.length > 0) {
+            overloadsToHighlight = actionDetail.lines_overloaded_after;
+          } else {
+            if (overloadedLines.length > 0 && actionDetail.rho_after) {
+              overloadedLines.forEach((name, i) => {
+                const rho = actionDetail.rho_after[i];
+                if (rho != null && rho > monitoringFactor) {
+                  overloadsToHighlight.push(name);
+                }
+              });
+            }
+            if (actionDetail.max_rho != null && actionDetail.max_rho > monitoringFactor && actionDetail.max_rho_line) {
+              if (!overloadsToHighlight.includes(actionDetail.max_rho_line)) {
+                overloadsToHighlight.push(actionDetail.max_rho_line);
+              }
+            }
+          }
+        }
+        if (diagrams.actionSvgContainerRef.current) {
+          applyContingencyHighlight(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, selectedBranch);
+        }
+        if (diagrams.actionSvgContainerRef.current && diagrams.actionMetaIndex) {
+          applyOverloadedHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, overloadsToHighlight);
+        }
+        if (diagrams.actionSvgContainerRef.current) {
+          applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, actionDetail, selectedActionId);
+        }
+      } else {
+        if (diagrams.actionSvgContainerRef.current) {
+          applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, null, null, null);
+        }
+      }
+      applyDeltaVisuals(diagrams.actionSvgContainerRef.current, actionDiagram, diagrams.actionMetaIndex, effectiveMode === "delta");
+    }
+  }, [n1Diagram, actionDiagram, result, selectedActionId, selectedBranch, diagrams, monitoringFactor, viewModeForTab, selectedOverloads]);
+  reactExports.useEffect(() => {
+    const isTabSwitch = prevHighlightTabRef.current !== activeTab;
+    prevHighlightTabRef.current = activeTab;
+    const otherTabs = ["n", "n-1", "action"].filter((t) => t !== activeTab);
+    otherTabs.forEach((t) => staleHighlights.current.add(t));
+    const applyAll = () => {
+      applyHighlightsForTab(activeTab);
+      staleHighlights.current.delete(activeTab);
+      for (const detachedId of Object.keys(detachedTabs)) {
+        if (detachedId === activeTab) continue;
+        if (detachedId === "overflow") continue;
+        applyHighlightsForTab(detachedId);
+        staleHighlights.current.delete(detachedId);
+      }
+    };
+    if (isTabSwitch) {
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          applyAll();
+        });
+      });
+      return () => cancelAnimationFrame(id);
+    } else {
+      applyAll();
+    }
+  }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, detachedViewModes, detachedTabs, activeTab, selectedBranch, selectedOverloads, applyHighlightsForTab]);
+  return { viewModeForTab, handleViewModeChangeForTab };
+}
 function App() {
   const settings = useSettings();
   const {
@@ -25077,12 +25662,7 @@ function App() {
     scrollSeqRef.current += 1;
     setScrollTarget({ id: actionId, seq: scrollSeqRef.current });
   }, []);
-  const [overviewFilters, setOverviewFilters] = reactExports.useState({
-    categories: { green: true, orange: true, red: true, grey: true },
-    threshold: 1.5,
-    showUnsimulated: false,
-    actionType: "all"
-  });
+  const [overviewFilters, setOverviewFilters] = reactExports.useState(DEFAULT_ACTION_OVERVIEW_FILTERS);
   const { unsimulatedActionIds, unsimulatedActionInfo } = reactExports.useMemo(() => {
     const scores = analysis.result?.action_scores;
     if (!scores) return { unsimulatedActionIds: [], unsimulatedActionInfo: {} };
@@ -25186,6 +25766,7 @@ function App() {
     diagrams.setSelectedActionId(null);
     diagrams.setActionDiagram(null);
     diagrams.setVlOverlay(null);
+    diagrams.setOverflowLayoutMode("hierarchical");
     setError("");
     analysis.setInfoMessage("");
     diagrams.setInspectQuery("");
@@ -25243,6 +25824,10 @@ function App() {
   const wrappedActionSelect = reactExports.useCallback(
     (actionId) => diagrams.handleActionSelect(actionId, result, selectedBranch, voltageLevels.length, setResult, setError),
     [diagrams, result, selectedBranch, voltageLevels.length, setResult, setError]
+  );
+  const wrappedOverflowLayoutChange = reactExports.useCallback(
+    (mode) => diagrams.handleOverflowLayoutChange(mode, setResult, setError),
+    [diagrams, setResult, setError]
   );
   const wrappedForcedActionSelect = reactExports.useCallback(
     (actionId) => diagrams.handleActionSelect(actionId, result, selectedBranch, voltageLevels.length, setResult, setError, true),
@@ -25698,80 +26283,18 @@ function App() {
   reactExports.useEffect(() => {
     diagrams.selectedBranchForSld.current = selectedBranch;
   }, [selectedBranch, diagrams.selectedBranchForSld]);
-  reactExports.useEffect(() => {
-    if (!selectedBranch) {
-      diagrams.setN1Diagram(null);
-      if (!hasAnalysisState()) {
-        diagrams.committedBranchRef.current = "";
-      }
-      return;
-    }
-    if (branches.length > 0 && !branches.includes(selectedBranch)) return;
-    if (selectedBranch === diagrams.committedBranchRef.current && !diagrams.restoringSessionRef.current && (n1Diagram || hasAnalysisState() || n1Loading || analysisLoading)) return;
-    if (selectedBranch !== diagrams.committedBranchRef.current && hasAnalysisState() && !diagrams.restoringSessionRef.current) {
-      setConfirmDialog({ type: "contingency", pendingBranch: selectedBranch });
-      setSelectedBranch(diagrams.committedBranchRef.current);
-      return;
-    }
-    const isRestoring = diagrams.restoringSessionRef.current;
-    diagrams.restoringSessionRef.current = false;
-    diagrams.committedBranchRef.current = selectedBranch;
-    if (!isRestoring) {
-      clearContingencyState();
-      diagrams.setN1Diagram(null);
-    }
-    const fetchN1 = async () => {
-      diagrams.setN1Loading(true);
-      if (!isRestoring) {
-        diagrams.setActiveTab("n-1");
-      }
-      const baseSvgEl = diagrams.nSvgContainerRef.current?.querySelector("svg");
-      const baseMeta = diagrams.nMetaIndex;
-      const canPatch = !!baseSvgEl && !!baseMeta && !isRestoring;
-      if (canPatch) {
-        console.log("[svgPatch] N-1 patch PATH — calling /api/n1-diagram-patch", selectedBranch);
-        try {
-          const patch = await api.getN1DiagramPatch(selectedBranch);
-          if (patch.patchable) {
-            console.log("[svgPatch] N-1 patch applied (patchable=true)", selectedBranch);
-            const cloned = cloneBaseSvg(baseSvgEl);
-            applyPatchToClone(cloned, baseMeta, patch);
-            diagrams.setN1Diagram({
-              svg: cloned,
-              metadata: nDiagram?.metadata ?? null,
-              originalViewBox: nDiagram?.originalViewBox ? { ...nDiagram.originalViewBox } : null,
-              lines_overloaded: patch.lines_overloaded,
-              lines_overloaded_rho: patch.lines_overloaded_rho,
-              flow_deltas: patch.flow_deltas,
-              reactive_flow_deltas: patch.reactive_flow_deltas,
-              asset_deltas: patch.asset_deltas,
-              lf_converged: patch.lf_converged,
-              lf_status: patch.lf_status
-            });
-            diagrams.lastZoomState.current = { query: "", branch: "" };
-            diagrams.setN1Loading(false);
-            return;
-          }
-        } catch (e) {
-          console.warn("[svgPatch] N-1 patch threw — falling back to full fetch", e);
-        }
-      } else {
-        console.log("[svgPatch] N-1 patch SKIPPED — no base N SVG/meta yet. baseSvgEl:", !!baseSvgEl, "baseMeta:", !!baseMeta, "restoring:", isRestoring);
-      }
-      try {
-        const res = await api.getN1Diagram(selectedBranch);
-        const { svg, viewBox } = processSvg(res.svg, voltageLevels.length);
-        diagrams.setN1Diagram({ ...res, svg, originalViewBox: viewBox });
-        diagrams.lastZoomState.current = { query: "", branch: "" };
-      } catch (err) {
-        console.error("Failed to fetch N-1 diagram", err);
-        setError(`Failed to fetch N-1 diagram for ${selectedBranch}`);
-      } finally {
-        diagrams.setN1Loading(false);
-      }
-    };
-    fetchN1();
-  }, [selectedBranch, branches, voltageLevels.length, hasAnalysisState, clearContingencyState, analysisLoading, n1Diagram, n1Loading, setError, diagrams, nDiagram]);
+  useN1Fetch({
+    selectedBranch,
+    branches,
+    voltageLevelsLength: voltageLevels.length,
+    diagrams,
+    analysisLoading,
+    hasAnalysisState,
+    clearContingencyState,
+    setSelectedBranch,
+    setConfirmDialog,
+    setError
+  });
   reactExports.useEffect(() => {
     const nextSet = n1Diagram?.lines_overloaded ? new Set(n1Diagram.lines_overloaded) : /* @__PURE__ */ new Set();
     const currentSet = analysis.selectedOverloads;
@@ -25780,117 +26303,14 @@ function App() {
     }
     analysis.setSelectedOverloads(nextSet);
   }, [n1Diagram, analysisLoading, n1Loading, analysis]);
-  const staleHighlights = reactExports.useRef(/* @__PURE__ */ new Set());
-  const prevHighlightTabRef = reactExports.useRef(activeTab);
-  const [detachedViewModes, setDetachedViewModes] = reactExports.useState({});
-  const viewModeForTab = reactExports.useCallback((tab) => {
-    if (detachedTabs[tab]) return detachedViewModes[tab] ?? "network";
-    return actionViewMode;
-  }, [detachedTabs, detachedViewModes, actionViewMode]);
-  const handleViewModeChangeForTab = reactExports.useCallback((tab, mode) => {
-    interactionLogger.record("view_mode_changed", { mode, tab, scope: detachedTabs[tab] ? "detached" : "main" });
-    if (detachedTabs[tab]) {
-      setDetachedViewModes((prev) => ({ ...prev, [tab]: mode }));
-    } else {
-      diagrams.setActionViewMode(mode);
-    }
-  }, [detachedTabs, diagrams]);
-  reactExports.useEffect(() => {
-    setDetachedViewModes((prev) => {
-      const next = {};
-      let changed = false;
-      for (const tabId of Object.keys(prev)) {
-        if (detachedTabs[tabId]) {
-          next[tabId] = prev[tabId];
-        } else {
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [detachedTabs]);
-  const applyHighlightsForTab = reactExports.useCallback((tab, mode) => {
-    const effectiveMode = mode ?? viewModeForTab(tab);
-    const overloadedLines = result?.lines_overloaded || [];
-    const n1OverloadedLines = computeN1OverloadHighlights(
-      overloadedLines,
-      n1Diagram?.lines_overloaded,
-      selectedOverloads
-    );
-    if (tab === "n-1") {
-      if (diagrams.n1SvgContainerRef.current) {
-        if (diagrams.n1MetaIndex && n1OverloadedLines.length > 0) {
-          applyOverloadedHighlights(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, n1OverloadedLines);
-        }
-        applyContingencyHighlight(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, selectedBranch);
-        applyDeltaVisuals(diagrams.n1SvgContainerRef.current, n1Diagram, diagrams.n1MetaIndex, effectiveMode === "delta");
-      }
-    }
-    if (tab === "action") {
-      const actionDetail = result?.actions?.[selectedActionId || ""];
-      if (actionDetail) {
-        const isSolved = actionDetail.max_rho != null && actionDetail.max_rho <= monitoringFactor;
-        let overloadsToHighlight = [];
-        if (!isSolved) {
-          if (actionDetail.lines_overloaded_after && actionDetail.lines_overloaded_after.length > 0) {
-            overloadsToHighlight = actionDetail.lines_overloaded_after;
-          } else {
-            if (overloadedLines.length > 0 && actionDetail.rho_after) {
-              overloadedLines.forEach((name, i) => {
-                const rho = actionDetail.rho_after[i];
-                if (rho != null && rho > monitoringFactor) {
-                  overloadsToHighlight.push(name);
-                }
-              });
-            }
-            if (actionDetail.max_rho != null && actionDetail.max_rho > monitoringFactor && actionDetail.max_rho_line) {
-              if (!overloadsToHighlight.includes(actionDetail.max_rho_line)) {
-                overloadsToHighlight.push(actionDetail.max_rho_line);
-              }
-            }
-          }
-        }
-        if (diagrams.actionSvgContainerRef.current && diagrams.actionMetaIndex) {
-          applyOverloadedHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, overloadsToHighlight);
-        }
-        if (diagrams.actionSvgContainerRef.current) {
-          applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, actionDetail, selectedActionId);
-          applyContingencyHighlight(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, selectedBranch);
-        }
-      } else {
-        if (diagrams.actionSvgContainerRef.current) {
-          applyActionTargetHighlights(diagrams.actionSvgContainerRef.current, null, null, null);
-        }
-      }
-      applyDeltaVisuals(diagrams.actionSvgContainerRef.current, actionDiagram, diagrams.actionMetaIndex, effectiveMode === "delta");
-    }
-  }, [n1Diagram, actionDiagram, result, selectedActionId, selectedBranch, diagrams, monitoringFactor, viewModeForTab, selectedOverloads]);
-  reactExports.useEffect(() => {
-    const isTabSwitch = prevHighlightTabRef.current !== activeTab;
-    prevHighlightTabRef.current = activeTab;
-    const otherTabs = ["n", "n-1", "action"].filter((t) => t !== activeTab);
-    otherTabs.forEach((t) => staleHighlights.current.add(t));
-    const applyAll = () => {
-      applyHighlightsForTab(activeTab);
-      staleHighlights.current.delete(activeTab);
-      for (const detachedId of Object.keys(detachedTabs)) {
-        if (detachedId === activeTab) continue;
-        if (detachedId === "overflow") continue;
-        applyHighlightsForTab(detachedId);
-        staleHighlights.current.delete(detachedId);
-      }
-    };
-    if (isTabSwitch) {
-      const id = requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          applyAll();
-        });
-      });
-      return () => cancelAnimationFrame(id);
-    } else {
-      applyAll();
-    }
-  }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, detachedViewModes, detachedTabs, activeTab, selectedBranch, selectedOverloads, applyHighlightsForTab]);
+  const { viewModeForTab, handleViewModeChangeForTab } = useDiagramHighlights({
+    diagrams,
+    result,
+    selectedBranch,
+    selectedOverloads,
+    monitoringFactor,
+    detachedTabs
+  });
   const handleContingencyChange = reactExports.useCallback((e) => {
     interactionLogger.record("contingency_selected", { element: e.target.value });
     setSelectedBranch(e.target.value);
@@ -25962,169 +26382,86 @@ function App() {
       }
     ),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, display: "flex", overflow: "hidden" }, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { "data-testid": "sidebar", style: { width: "25%", background: "#eee", borderRight: "1px solid #ccc", display: "flex", flexDirection: "column", overflow: "hidden" }, children: [
-        (selectedBranch || (n1Diagram?.lines_overloaded?.length ?? 0) > 0) && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "div",
-          {
-            "data-testid": "sticky-feed-summary",
-            style: {
-              flexShrink: 0,
-              padding: "6px 12px",
-              background: "#f8f9fa",
-              borderBottom: "1px solid #ccc",
-              fontSize: "11px",
-              lineHeight: 1.5,
-              boxShadow: "0 1px 2px rgba(0,0,0,0.04)"
-            },
-            children: [
-              selectedBranch && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: "4px" }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#555", fontWeight: 600, whiteSpace: "nowrap" }, children: "🎯 Contingency:" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "button",
-                  {
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      handleZoomOnActiveTab(selectedBranch);
-                    },
-                    title: `Zoom to ${selectedBranch} in the current diagram`,
-                    style: {
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                      fontSize: "11px",
-                      color: "#1e40af",
-                      fontWeight: 600,
-                      textDecoration: "underline dotted",
-                      wordBreak: "break-word",
-                      textAlign: "left"
-                    },
-                    children: [
-                      "🔍 ",
-                      displayName(selectedBranch)
-                    ]
-                  }
-                )
-              ] }),
-              (n1Diagram?.lines_overloaded?.length ?? 0) > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: "4px" }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#b91c1c", fontWeight: 600, whiteSpace: "nowrap" }, children: "⚠️ N-1:" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { wordBreak: "break-word" }, children: n1Diagram.lines_overloaded.map((name, i) => {
-                  const rho = n1Diagram.lines_overloaded_rho?.[i];
-                  const rhoPct = rho != null && !Number.isNaN(rho) ? `${(rho * 100).toFixed(1)}%` : null;
-                  const isSelected = selectedOverloads?.has(name) ?? true;
-                  return /* @__PURE__ */ jsxRuntimeExports.jsxs(React.Fragment, { children: [
-                    i > 0 && ", ",
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "button",
-                      {
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          wrappedAssetClick("", name, "n-1");
-                        },
-                        title: `Open N-1 tab and zoom to ${name}`,
-                        style: {
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          padding: 0,
-                          fontSize: "11px",
-                          color: isSelected ? "#1e40af" : "#bdc3c7",
-                          fontWeight: isSelected ? 600 : 400,
-                          textDecoration: isSelected ? "underline dotted" : "none"
-                        },
-                        children: displayName(name)
-                      }
-                    ),
-                    rhoPct && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: isSelected ? "#374151" : "#bdc3c7", marginLeft: "2px" }, children: [
-                      "(",
-                      rhoPct,
-                      ")"
-                    ] })
-                  ] }, name);
-                }) })
-              ] })
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, overflowY: "auto", padding: "15px", minHeight: 0, display: "flex", flexDirection: "column", gap: "15px" }, children: [
-          branches.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flexShrink: 0, padding: "10px 15px", background: "white", borderRadius: "8px", border: "1px solid #dee2e6", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" }, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { fontSize: "0.8rem", fontWeight: "bold", display: "block", marginBottom: "5px" }, children: "🎯 Select Contingency" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "input",
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        AppSidebar,
+        {
+          selectedBranch,
+          branches,
+          nameMap,
+          n1LinesOverloaded: n1Diagram?.lines_overloaded,
+          n1LinesOverloadedRho: n1Diagram?.lines_overloaded_rho,
+          selectedOverloads,
+          contingencyOptions,
+          onContingencyChange: handleContingencyChange,
+          displayName,
+          onContingencyZoom: handleZoomOnActiveTab,
+          onOverloadClick: wrappedAssetClick,
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flexShrink: 0 }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+              OverloadPanel$1,
               {
-                list: "contingencies",
-                value: selectedBranch,
-                onChange: handleContingencyChange,
-                placeholder: "Search line/bus...",
-                style: { width: "100%", padding: "7px 10px", border: "1px solid #ccc", borderRadius: "4px", boxSizing: "border-box", fontSize: "0.85rem" }
+                nOverloads: nDiagram?.lines_overloaded || [],
+                n1Overloads: n1Diagram?.lines_overloaded || [],
+                nOverloadsRho: nDiagram?.lines_overloaded_rho,
+                n1OverloadsRho: n1Diagram?.lines_overloaded_rho,
+                onAssetClick: wrappedAssetClick,
+                showMonitoringWarning,
+                monitoredLinesCount,
+                totalLinesCount,
+                monitoringFactor,
+                preExistingOverloadThreshold,
+                onDismissWarning: handleDismissWarning,
+                onOpenSettings: handleOpenConfigSettings,
+                selectedOverloads,
+                onToggleOverload: analysis.handleToggleOverload,
+                monitorDeselected,
+                onToggleMonitorDeselected: handleToggleMonitorDeselected,
+                displayName
               }
-            ),
-            selectedBranch && nameMap[selectedBranch] && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: "0.78rem", color: "#4b5563", marginTop: "3px", fontStyle: "italic", lineHeight: 1.3 }, children: nameMap[selectedBranch] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("datalist", { id: "contingencies", children: contingencyOptions })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flexShrink: 0 }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-            OverloadPanel$1,
-            {
-              nOverloads: nDiagram?.lines_overloaded || [],
-              n1Overloads: n1Diagram?.lines_overloaded || [],
-              nOverloadsRho: nDiagram?.lines_overloaded_rho,
-              n1OverloadsRho: n1Diagram?.lines_overloaded_rho,
-              onAssetClick: wrappedAssetClick,
-              showMonitoringWarning,
-              monitoredLinesCount,
-              totalLinesCount,
-              monitoringFactor,
-              preExistingOverloadThreshold,
-              onDismissWarning: handleDismissWarning,
-              onOpenSettings: handleOpenConfigSettings,
-              selectedOverloads,
-              onToggleOverload: analysis.handleToggleOverload,
-              monitorDeselected,
-              onToggleMonitorDeselected: handleToggleMonitorDeselected,
-              displayName
-            }
-          ) }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            ActionFeed$1,
-            {
-              actions: result?.actions || {},
-              actionScores: result?.action_scores,
-              linesOverloaded: result?.lines_overloaded || [],
-              selectedActionId,
-              scrollTarget,
-              selectedActionIds,
-              rejectedActionIds,
-              manuallyAddedIds,
-              combinedActions: result?.combined_actions ?? null,
-              pendingAnalysisResult,
-              onDisplayPrioritizedActions: wrappedDisplayPrioritized,
-              onRunAnalysis: wrappedRunAnalysis,
-              canRunAnalysis: !!selectedBranch && !analysisLoading,
-              onActionSelect: wrappedActionSelect,
-              onActionFavorite: wrappedActionFavorite,
-              onActionReject: actionsHook.handleActionReject,
-              onAssetClick: wrappedAssetClick,
-              nodesByEquipmentId: diagrams.nMetaIndex?.nodesByEquipmentId ?? null,
-              edgesByEquipmentId: diagrams.nMetaIndex?.edgesByEquipmentId ?? null,
-              disconnectedElement: selectedBranch || null,
-              onManualActionAdded: wrappedManualActionAdded,
-              onActionResimulated: wrappedActionResimulated,
-              analysisLoading,
-              monitoringFactor,
-              onVlDoubleClick: handleVlDoubleClick,
-              recommenderConfig,
-              actionDictFileName,
-              actionDictStats,
-              onOpenSettings: handleOpenSettings,
-              onUpdateCombinedEstimation: handleUpdateCombinedEstimation,
-              displayName,
-              onActionDiagramPrimed: diagrams.primeActionDiagram,
-              voltageLevelsLength: voltageLevels.length,
-              overviewFilters
-            }
-          )
-        ] })
-      ] }),
+            ) }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              ActionFeed$1,
+              {
+                actions: result?.actions || {},
+                actionScores: result?.action_scores,
+                linesOverloaded: result?.lines_overloaded || [],
+                selectedActionId,
+                scrollTarget,
+                selectedActionIds,
+                rejectedActionIds,
+                manuallyAddedIds,
+                combinedActions: result?.combined_actions ?? null,
+                pendingAnalysisResult,
+                onDisplayPrioritizedActions: wrappedDisplayPrioritized,
+                onRunAnalysis: wrappedRunAnalysis,
+                canRunAnalysis: !!selectedBranch && !analysisLoading,
+                onActionSelect: wrappedActionSelect,
+                onActionFavorite: wrappedActionFavorite,
+                onActionReject: actionsHook.handleActionReject,
+                onAssetClick: wrappedAssetClick,
+                nodesByEquipmentId: diagrams.nMetaIndex?.nodesByEquipmentId ?? null,
+                edgesByEquipmentId: diagrams.nMetaIndex?.edgesByEquipmentId ?? null,
+                disconnectedElement: selectedBranch || null,
+                onManualActionAdded: wrappedManualActionAdded,
+                onActionResimulated: wrappedActionResimulated,
+                analysisLoading,
+                monitoringFactor,
+                onVlDoubleClick: handleVlDoubleClick,
+                recommenderConfig,
+                actionDictFileName,
+                actionDictStats,
+                onOpenSettings: handleOpenSettings,
+                onUpdateCombinedEstimation: handleUpdateCombinedEstimation,
+                displayName,
+                onActionDiagramPrimed: diagrams.primeActionDiagram,
+                voltageLevelsLength: voltageLevels.length,
+                overviewFilters,
+                onOverviewFiltersChange: setOverviewFilters
+              }
+            )
+          ]
+        }
+      ),
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, background: "white", display: "flex", flexDirection: "column" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
         VisualizationPanel$1,
         {
@@ -26149,6 +26486,9 @@ function App() {
           onViewModeChange: handleViewModeChange,
           viewModeForTab,
           onViewModeChangeForTab: handleViewModeChangeForTab,
+          overflowLayoutMode: diagrams.overflowLayoutMode,
+          overflowLayoutLoading: diagrams.overflowLayoutLoading,
+          onOverflowLayoutChange: wrappedOverflowLayoutChange,
           inspectQuery,
           onInspectQueryChange: handleInspectQueryChange,
           onInspectQueryChangeFor: handleInspectQueryChangeFor,
@@ -26198,30 +26538,7 @@ function App() {
         onConfirm: handleConfirmDialog
       }
     ),
-    error && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-      position: "fixed",
-      bottom: 20,
-      right: 20,
-      background: "#e74c3c",
-      color: "white",
-      padding: "10px 20px",
-      borderRadius: "4px",
-      boxShadow: "0 2px 10px rgba(0,0,0,0.2)",
-      zIndex: 1e3
-    }, children: error }),
-    infoMessage && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-      position: "fixed",
-      bottom: 20,
-      left: 20,
-      background: infoMessage.startsWith("SUCCESS") ? "#27ae60" : "#3498db",
-      color: "white",
-      padding: "12px 24px",
-      borderRadius: "4px",
-      boxShadow: "0 4px 15px rgba(0,0,0,0.3)",
-      zIndex: 1e3,
-      fontWeight: "bold",
-      border: "1px solid rgba(255,255,255,0.2)"
-    }, children: infoMessage })
+    /* @__PURE__ */ jsxRuntimeExports.jsx(StatusToasts, { error, infoMessage })
   ] });
 }
 class ErrorBoundary extends reactExports.Component {

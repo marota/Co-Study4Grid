@@ -23,6 +23,7 @@ pst_tap_info callable).
 """
 
 import logging
+import os
 import time
 
 from expert_op4grid_recommender import config
@@ -288,6 +289,75 @@ class AnalysisMixin:
         return find_latest_pdf(config.SAVE_FOLDER_VISUALIZATION, analysis_start_time)
 
     # ------------------------------------------------------------------
+    # Overflow-graph layout toggle
+    # ------------------------------------------------------------------
+
+    def regenerate_overflow_graph(self, mode: str) -> dict:
+        """Regenerate (or serve from cache) the overflow graph in the
+        requested layout mode. Returns ``{pdf_path, mode, cached}``.
+
+        Hierarchical mode just returns the file ``run_analysis_step2``
+        already produced (always cached under ``"hierarchical"``).
+        Geo mode runs a pure-SVG transform over that hierarchical HTML
+        using coordinates from ``grid_layout.json`` — no graphviz
+        re-run, no ``env.name_sub`` alignment, no dependency on
+        ``alphaDeesp`` custom-layout support. Both results are cached
+        per mode for instant subsequent toggles.
+        """
+        if mode not in ("hierarchical", "geo"):
+            raise ValueError(
+                f"Unknown overflow layout mode: {mode!r}; expected 'hierarchical' or 'geo'."
+            )
+
+        cached_path = self._overflow_layout_cache.get(mode)
+        if cached_path and os.path.isfile(cached_path):
+            self._overflow_layout_mode = mode
+            logger.info("[Overflow] Serving cached %s graph: %s", mode, cached_path)
+            return {"pdf_path": cached_path, "mode": mode, "cached": True}
+
+        hierarchical_path = self._overflow_layout_cache.get("hierarchical")
+        if not hierarchical_path or not os.path.isfile(hierarchical_path):
+            raise ValueError(
+                "No hierarchical overflow HTML to transform. Run the analysis "
+                "(Step 2) first."
+            )
+
+        if mode == "hierarchical":
+            # Must have been cached by run_analysis_step2 — we only
+            # arrive here on a cache miss, which for hierarchical only
+            # happens when someone cleared the cache while the file
+            # still exists on disk. Just re-register it.
+            self._overflow_layout_mode = "hierarchical"
+            self._overflow_layout_cache["hierarchical"] = hierarchical_path
+            return {"pdf_path": hierarchical_path, "mode": mode, "cached": False}
+
+        # mode == "geo" — transform the hierarchical HTML in-place.
+        from expert_backend.services.analysis.overflow_geo_transform import transform_html
+
+        layout = self._load_layout_coords()
+        if not layout:
+            raise ValueError(
+                "Cannot render in geo mode: no grid_layout.json is configured. "
+                "Set the Layout File path in Settings and re-run the analysis."
+            )
+
+        with open(hierarchical_path, "r", encoding="utf-8") as f:
+            hierarchical_html = f.read()
+        try:
+            geo_html = transform_html(hierarchical_html, layout)
+        except ValueError as e:
+            raise ValueError(f"Cannot render in geo mode: {e}") from e
+
+        root, ext = os.path.splitext(hierarchical_path)
+        geo_path = f"{root}_geo{ext}"
+        with open(geo_path, "w", encoding="utf-8") as f:
+            f.write(geo_html)
+        self._overflow_layout_mode = "geo"
+        self._overflow_layout_cache["geo"] = geo_path
+        logger.info("[Overflow] Wrote geo-layout graph: %s", geo_path)
+        return {"pdf_path": geo_path, "mode": mode, "cached": False}
+
+    # ------------------------------------------------------------------
     # Public entry points — two-step + legacy single-step.
     # ------------------------------------------------------------------
 
@@ -347,10 +417,28 @@ class AnalysisMixin:
             self._analysis_context, selected_overloads, all_overloads, monitor_deselected
         )
         analysis_start_time = time.time()
+        # Fresh Step-2: drop any cached overflow files from a previous
+        # contingency resolution. The library always produces the
+        # hierarchical layout (graphviz `dot`); the Geo toggle is
+        # handled by a pure SVG transform in the regen endpoint, NOT
+        # by re-invoking the library. That keeps the analysis step
+        # fast and deterministic regardless of layout-file state.
+        self._overflow_layout_cache = {}
+        self._overflow_layout_mode = "hierarchical"
         try:
-            # Part 1: graph generation + PDF
+            # Part 1: graph generation + HTML
             context = run_analysis_step2_graph(context)
-            yield {"type": "pdf", "pdf_path": self._get_latest_pdf_path(analysis_start_time)}
+            produced_pdf = self._get_latest_pdf_path(analysis_start_time)
+            if produced_pdf:
+                # Step-2 always produces the hierarchical layout — the
+                # regen endpoint transforms it into the geo layout on
+                # demand without re-invoking graphviz.
+                self._overflow_layout_cache["hierarchical"] = produced_pdf
+            # Preserve the enriched context (kept for future features
+            # that might need to re-run graph generation). The Geo
+            # toggle itself no longer uses this.
+            self._last_step2_context = context
+            yield {"type": "pdf", "pdf_path": produced_pdf}
 
             # Part 2: action discovery
             results = run_analysis_step2_discovery(context)

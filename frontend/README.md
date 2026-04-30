@@ -1,73 +1,127 @@
-# React + TypeScript + Vite
+# Co-Study4Grid — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + TypeScript 5.9 + Vite 7 single-page app for the
+Co-Study4Grid contingency-analysis UI. Talks to the FastAPI backend
+at `http://localhost:8000` (hardcoded in `src/api.ts`) and renders
+pypowsybl NAD / SLD diagrams with pan / zoom.
 
-Currently, two official plugins are available:
+This file is a quick orientation. For the full guide — hook split,
+data flow, SVG performance levers, detached / tied tabs, interaction
+logger contract — see [`CLAUDE.md`](./CLAUDE.md).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Scripts
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install                 # install dependencies
+npm run dev                 # Vite dev server with HMR (default port 5173)
+npm run build               # tsc -b && vite build → dist/
+npm run build:standalone    # tsc -b && vite build --config vite.config.standalone.ts
+                            #   → dist-standalone/standalone.html (single-file bundle)
+npm run preview             # preview the production build
+npm run lint                # eslint . (flat config, v9+)
+npm run test                # vitest run (~1000 specs)
+npm run test:watch          # vitest in watch mode
+npm run quality:report      # run the backend code-quality reporter on the whole repo
+npm run quality:check       # gate — exits non-zero on threshold violation
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The backend must be running on `http://localhost:8000` for the dev
+server to serve anything useful. Start it with:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+# from project root
+uvicorn expert_backend.main:app --host 0.0.0.0 --port 8000
 ```
+
+## Source layout
+
+```
+src/
+├── main.tsx                     # React entry (StrictMode)
+├── App.tsx                      # State orchestration hub (~1150 lines)
+├── App.*.test.tsx               # App-level integration tests by domain
+├── api.ts                       # Axios HTTP client
+├── types.ts                     # All TypeScript interfaces
+├── hooks/
+│   ├── useSettings.ts           # Settings state + SettingsState interface
+│   ├── useActions.ts            # Action selection / favorite / reject
+│   ├── useAnalysis.ts           # Two-step analysis pipeline (step1 / step2)
+│   ├── useDiagrams.ts           # NAD fetching + tab management
+│   ├── useN1Fetch.ts            # svgPatch fast-path + /api/n1-diagram fallback
+│   ├── useDiagramHighlights.ts  # Per-tab SVG highlight pipeline + Flow/Impacts view-mode
+│   ├── useSession.ts            # Session save / reload
+│   ├── useDetachedTabs.ts       # Detached visualization windows
+│   ├── useTiedTabsSync.ts       # Mirror viewBox between detached + main
+│   ├── useSldOverlay.ts         # SLD overlay state
+│   └── usePanZoom.ts            # Per-tab viewBox, zoom-to-element
+├── components/                  # Presentational components (no API calls)
+│   ├── Header, ActionFeed, ActionCard, ActionCardPopover,
+│   ├── ActionOverviewDiagram, ActionSearchDropdown,
+│   ├── ActionTypeFilterChips,                              # Shared chip row
+│   ├── AppSidebar, SidebarSummary, StatusToasts,           # Sidebar layout
+│   ├── VisualizationPanel, OverloadPanel, CombinedActionsModal,
+│   ├── ComputedPairsTable, ExplorePairsTab,
+│   ├── DetachableTabHost, MemoizedSvgContainer, SldOverlay,
+│   ├── ErrorBoundary
+│   └── modals/
+│       ├── SettingsModal, ReloadSessionModal, ConfirmationDialog
+└── utils/
+    ├── svgUtils.ts              # Barrel re-exporting every utils/svg/* module
+    ├── svg/                     # PR #104 decomposition of the old svgUtils
+    │   ├── idMap, metadataIndex, svgBoost, fitRect,
+    │   ├── deltaVisuals, actionPinData, actionPinRender,
+    │   └── highlights
+    ├── svgPatch.ts              # SVG DOM recycling (PR #108)
+    ├── actionTypes.ts           # Action-type classification + filter helpers
+    ├── overloadHighlights.ts    # N-1 overload classification
+    ├── sessionUtils.ts          # buildSessionResult snapshot
+    ├── interactionLogger.ts     # Singleton replay-ready event log
+    ├── mergeAnalysisResult.ts   # Step1 + step2 field merge
+    ├── popoverPlacement.ts      # Pin-popover positioning
+    └── fileRegistry.ts          # Structure regression guard
+```
+
+## Standalone bundle
+
+`npm run build:standalone` produces
+`frontend/dist-standalone/standalone.html` — a single-file HTML with
+React + CSS inlined via `vite-plugin-singlefile`. This is the
+canonical distribution artifact; the legacy hand-maintained
+`standalone_interface.html` has been decommissioned and frozen as
+`standalone_interface_legacy.html` at the project root. UI changes
+should land only in `frontend/src/` — the bundle inherits them on
+the next build. See [`CLAUDE.md`](./CLAUDE.md) for the parity story.
+
+## Testing
+
+Tests live next to their source file as `*.test.ts` / `*.test.tsx`.
+The suite uses Vitest with `jsdom`, `@testing-library/react`, and
+`@testing-library/jest-dom`. Heavy mocking is the norm (`vi.mock`
+for `../api` and SVG utilities) so component tests never hit the
+backend.
+
+Run a single file:
+
+```bash
+npx vitest run src/components/ActionFeed.test.tsx
+```
+
+Test patterns and the full inventory are documented in
+[`../expert_backend/tests/CLAUDE.md`](../expert_backend/tests/CLAUDE.md).
+
+## ESLint
+
+Flat config (v9+) in `eslint.config.js` with `typescript-eslint`,
+`react-hooks`, and `react-refresh`. The code-quality gate
+(`python scripts/check_code_quality.py`, CI-enforced) rejects `any`
+and `@ts-ignore` in source files — see
+[`../CONTRIBUTING.md`](../CONTRIBUTING.md).
+
+## Further reading
+
+- [`CLAUDE.md`](./CLAUDE.md) — architecture deep dive
+- [`../CLAUDE.md`](../CLAUDE.md) — project-wide overview + API table
+- [`../docs/README.md`](../docs/README.md) — design, feature and
+  performance docs index
+- [`PARITY_AUDIT.md`](./PARITY_AUDIT.md) — standalone-bundle parity
+  audit (Layer 1–4 conformity, regression matrix)

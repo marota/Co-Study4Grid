@@ -63,6 +63,7 @@ folder's index for the full list.
 | [`app-refactoring-plan.md`](architecture/app-refactoring-plan.md) | Extract custom hooks from `App.tsx` (in progress). |
 | [`phase2-state-management-optimization.md`](architecture/phase2-state-management-optimization.md) | Memoize wrapper functions with `useCallback` (proposed). |
 | [`code-quality-analysis.md`](architecture/code-quality-analysis.md) | 2026-04 codebase audit: TS A, tests A+, Python type hints C−. |
+| [`development-cycle.md`](architecture/development-cycle.md) | Chronological retrospective of the 4 development phases (minimal end-to-end → features → consolidation → PyPSA-EUR dataset). |
 
 ## Proposals (`proposals/`)
 

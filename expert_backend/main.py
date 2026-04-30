@@ -261,6 +261,9 @@ class AnalysisStep2Request(BaseModel):
     all_overloads: list[str] = []
     monitor_deselected: bool = False
 
+class RegenerateOverflowGraphRequest(BaseModel):
+    mode: str  # "hierarchical" or "geo"
+
 class FocusedDiagramRequest(BaseModel):
     element_id: str
     depth: int = 1
@@ -529,17 +532,29 @@ def load_session(folder_path: str = Body(...), session_name: str = Body(...)):
         with open(json_path, "r", encoding="utf-8") as f:
             content = json_module.load(f)
 
-        # Restore overflow PDF: if the original pdf_path is gone, copy from session folder
+        # Restore overflow graph file: if the original pdf_path is gone, copy
+        # from the session folder. The file may be .html (current
+        # interactive viewer) or .pdf (legacy sessions saved before the
+        # VISUALIZATION_FORMAT switch). `pdf_url` / `pdf_path` field names
+        # are preserved for backward compatibility.
         overflow = content.get("overflow_graph")
         if overflow and overflow.get("pdf_url"):
             pdf_filename = os.path.basename(overflow["pdf_url"])
             target_path = os.path.join("Overflow_Graph", pdf_filename)
             if not os.path.isfile(target_path):
-                # Look for PDF in session folder
-                session_pdfs = glob.glob(os.path.join(session_dir, "*.pdf"))
-                if session_pdfs:
+                session_files = (
+                    glob.glob(os.path.join(session_dir, "*.html"))
+                    + glob.glob(os.path.join(session_dir, "*.pdf"))
+                )
+                if session_files:
                     os.makedirs("Overflow_Graph", exist_ok=True)
-                    shutil.copy2(session_pdfs[0], target_path)
+                    # Prefer the file whose basename matches the stored
+                    # pdf_url; otherwise fall back to the newest file.
+                    picked = next(
+                        (f for f in session_files if os.path.basename(f) == pdf_filename),
+                        max(session_files, key=os.path.getmtime),
+                    )
+                    shutil.copy2(picked, target_path)
 
         return content
     except Exception as e:
@@ -610,6 +625,25 @@ async def run_analysis_step2(request: AnalysisStep2Request):
             yield json.dumps({"type": "error", "message": str(e)}) + "\n"
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+
+@app.post("/api/regenerate-overflow-graph")
+def regenerate_overflow_graph(request: RegenerateOverflowGraphRequest):
+    """Regenerate (or serve from cache) the overflow graph in the
+    requested layout mode (hierarchical / geo). Returns
+    ``{pdf_url, pdf_path, mode, cached}``. Intended to be called after
+    Step 2 has run at least once — reuses the preserved Step-2 context
+    so no graphviz re-run is needed for cached modes."""
+    try:
+        result = recommender_service.regenerate_overflow_graph(request.mode)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Backend error in /api/regenerate-overflow-graph")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if result.get("pdf_path"):
+        result["pdf_url"] = f"/results/pdf/{os.path.basename(result['pdf_path'])}"
+    return result
 
 @app.get("/api/network-diagram")
 def get_network_diagram(http_request: Request, format: str = Query("json")):

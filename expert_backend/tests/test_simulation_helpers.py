@@ -384,6 +384,27 @@ class TestComputeActionMetrics:
         assert metrics["disconnected_mw"] == 200.0
         assert metrics["n_components_after"] == 2
 
+    def test_islanding_below_mw_threshold_is_filtered(self):
+        """Sub-1 MW disconnected load is treated as a numerical artefact:
+        n_components increases but is_islanded stays False."""
+        metrics = compute_action_metrics(
+            obs=self._obs([0.5], n_comp=1, mw=1000.0),
+            obs_simu_defaut=self._obs([0.5], n_comp=1, mw=1000.0),
+            # Loadless extra component (e.g. extreme PST tap, fast-mode
+            # local AC non-convergence on a transit branch).
+            obs_simu_action=self._obs([0.4], n_comp=2, mw=1000.0),
+            info_action={"exception": None},
+            lines_overloaded_ids=[],
+            lines_we_care_about={"L1"},
+            branches_with_limits={"L1"},
+            monitoring_factor=0.95,
+            worsening_threshold=0.02,
+        )
+        assert metrics["is_islanded"] is False
+        assert metrics["disconnected_mw"] == 0.0
+        # The bare topology counter is still surfaced for diagnostics.
+        assert metrics["n_components_after"] == 2
+
     def test_rho_reduction_detected(self):
         metrics = compute_action_metrics(
             obs=self._obs([0.5, 0.5, 0.5]),

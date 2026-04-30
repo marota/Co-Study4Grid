@@ -86,6 +86,19 @@ export interface DiagramsState {
   showVoltageLevelNames: boolean;
   setShowVoltageLevelNames: (v: boolean) => void;
 
+  // Overflow-graph layout toggle (Hierarchical / Geo).
+  // Per-session state; the backend keeps a cache keyed by mode so
+  // subsequent toggles are instant.
+  overflowLayoutMode: 'hierarchical' | 'geo';
+  setOverflowLayoutMode: (v: 'hierarchical' | 'geo') => void;
+  overflowLayoutLoading: boolean;
+  handleOverflowLayoutChange: (
+    mode: 'hierarchical' | 'geo',
+    setResult: Dispatch<SetStateAction<AnalysisResult | null>>,
+    setError: (v: string) => void,
+  ) => Promise<void>;
+
+
   // ViewBox
   originalViewBox: ViewBox | null;
   setOriginalViewBox: (v: ViewBox | null) => void;
@@ -227,7 +240,55 @@ export function useDiagrams(
     setActionViewMode(mode);
   }, []);
 
+
   const [showVoltageLevelNames, setShowVoltageLevelNames] = useState<boolean>(true);
+
+  // Overflow-graph layout toggle state. `overflowLayoutLoading` is
+  // true only during a cache-miss regeneration (graphviz re-run);
+  // cache hits resolve synchronously so the UI doesn't flash a
+  // spinner for instant switches.
+  const [overflowLayoutMode, setOverflowLayoutMode] =
+    useState<'hierarchical' | 'geo'>('hierarchical');
+  const [overflowLayoutLoading, setOverflowLayoutLoading] = useState(false);
+  const handleOverflowLayoutChange = useCallback(async (
+    mode: 'hierarchical' | 'geo',
+    setResult: Dispatch<SetStateAction<AnalysisResult | null>>,
+    setError: (v: string) => void,
+  ) => {
+    // Consult the latest state from React — bail out if the user
+    // clicked the currently-active button (prevents a pointless
+    // backend round-trip).
+    setOverflowLayoutMode((current) => {
+      if (current === mode) return current;
+      return current;  // actual change happens after the request resolves
+    });
+    const correlationId = interactionLogger.record('overflow_layout_mode_toggled', {
+      to: mode,
+    });
+    const startTs = new Date().toISOString();
+    setOverflowLayoutLoading(true);
+    try {
+      const response = await api.regenerateOverflowGraph(mode);
+      setResult((prev) => {
+        if (!prev) return prev;
+        return { ...prev, pdf_url: response.pdf_url, pdf_path: response.pdf_path };
+      });
+      setOverflowLayoutMode(mode);
+      interactionLogger.recordCompletion('overflow_layout_mode_toggled', correlationId, {
+        to: mode,
+        cached: response.cached,
+      }, startTs);
+    } catch (e) {
+      const msg = (e instanceof Error) ? e.message : String(e);
+      setError(`Failed to regenerate overflow graph in ${mode} mode: ${msg}`);
+      interactionLogger.recordCompletion('overflow_layout_mode_toggled', correlationId, {
+        to: mode,
+        error: msg,
+      }, startTs);
+    } finally {
+      setOverflowLayoutLoading(false);
+    }
+  }, []);
 
   // ViewBox
   const [originalViewBox, setOriginalViewBox] = useState<ViewBox | null>(null);
@@ -913,13 +974,26 @@ export function useDiagrams(
   // ===== Voltage Range Filter =====
   const staleVoltageFilter = useRef<Set<TabId>>(new Set());
   const prevVFTabRef = useRef<TabId>(activeTab);
+  // Track, per tab, whether the last applied filter actually hid
+  // something. We can only safely skip the filter loop on a
+  // fully-open range when the previous range was ALSO fully open —
+  // otherwise we'd leave previously-hidden elements (e.g. all 400 kV
+  // nodes/edges when the user was pinned to 225 kV) invisible after
+  // the user expands the range back out.
+  const prevFilterHadHidden = useRef<Record<TabId, boolean>>({
+    n: false,
+    'n-1': false,
+    action: false,
+    overflow: false,
+  });
 
-  const applyVoltageFilter = useCallback((container: HTMLElement | null, metaIndex: MetadataIndex | null) => {
+  const applyVoltageFilter = useCallback((tab: TabId, container: HTMLElement | null, metaIndex: MetadataIndex | null) => {
     if (!container || !metaIndex) return;
     if (uniqueVoltages.length === 0 || Object.keys(nominalVoltageMap).length === 0) return;
 
     const [minKv, maxKv] = voltageRange;
-    if (minKv <= uniqueVoltages[0] && maxKv >= uniqueVoltages[uniqueVoltages.length - 1]) return;
+    const fullyOpen = minKv <= uniqueVoltages[0] && maxKv >= uniqueVoltages[uniqueVoltages.length - 1];
+    if (fullyOpen && !prevFilterHadHidden.current[tab]) return;
 
     const isInRange = (vlId: string) => {
       const kv = nominalVoltageMap[vlId];
@@ -928,9 +1002,11 @@ export function useDiagrams(
 
     const { nodesByEquipmentId, nodesBySvgId, edgesByEquipmentId } = metaIndex;
     const idMap = getIdMap(container);
+    let anyHidden = false;
 
     for (const [vlId, node] of nodesByEquipmentId) {
       const visible = isInRange(vlId);
+      if (!visible) anyHidden = true;
       const show = visible ? '' : 'none';
       const el = idMap.get(node.svgId) as HTMLElement | undefined;
       if (el) el.style.display = show;
@@ -950,6 +1026,7 @@ export function useDiagrams(
       const vl1InRange = node1 ? isInRange(node1.equipmentId) : true;
       const vl2InRange = node2 ? isInRange(node2.equipmentId) : true;
       const edgeVisible = vl1InRange || vl2InRange;
+      if (!edgeVisible) anyHidden = true;
       const show = edgeVisible ? '' : 'none';
 
       const el = idMap.get(edge.svgId) as HTMLElement | undefined;
@@ -963,6 +1040,8 @@ export function useDiagrams(
         if (ei) ei.style.display = show;
       }
     }
+
+    prevFilterHadHidden.current[tab] = anyHidden;
   }, [voltageRange, nominalVoltageMap, uniqueVoltages]);
 
   useEffect(() => {
@@ -973,17 +1052,17 @@ export function useDiagrams(
 
     const runFilter = () => {
       if (activeTab === 'n' || activeTab === 'overflow') {
-        applyVoltageFilter(nSvgContainerRef.current, nMetaIndex);
+        applyVoltageFilter('n', nSvgContainerRef.current, nMetaIndex);
         staleVoltageFilter.current.delete('n');
         staleVoltageFilter.current.add('n-1');
         staleVoltageFilter.current.add('action');
       } else if (activeTab === 'n-1') {
-        applyVoltageFilter(n1SvgContainerRef.current, n1MetaIndex);
+        applyVoltageFilter('n-1', n1SvgContainerRef.current, n1MetaIndex);
         staleVoltageFilter.current.delete('n-1');
         staleVoltageFilter.current.add('n');
         staleVoltageFilter.current.add('action');
       } else if (activeTab === 'action') {
-        applyVoltageFilter(actionSvgContainerRef.current, actionMetaIndex);
+        applyVoltageFilter('action', actionSvgContainerRef.current, actionMetaIndex);
         staleVoltageFilter.current.delete('action');
         staleVoltageFilter.current.add('n');
         staleVoltageFilter.current.add('n-1');
@@ -1061,6 +1140,9 @@ export function useDiagrams(
     actionViewMode, setActionViewMode,
     handleViewModeChange,
     showVoltageLevelNames, setShowVoltageLevelNames,
+    overflowLayoutMode, setOverflowLayoutMode,
+    overflowLayoutLoading,
+    handleOverflowLayoutChange,
     originalViewBox, setOriginalViewBox,
     inspectQuery, setInspectQuery,
     setInspectQueryForTab,
@@ -1092,6 +1174,7 @@ export function useDiagrams(
     activeTab, nDiagram, n1Diagram, n1Loading,
     selectedActionId, actionDiagram, actionDiagramLoading, actionViewMode, handleViewModeChange,
     showVoltageLevelNames,
+    overflowLayoutMode, overflowLayoutLoading, handleOverflowLayoutChange,
     originalViewBox, inspectQuery,
     nPZ, n1PZ, actionPZ,
     nMetaIndex, n1MetaIndex, actionMetaIndex,

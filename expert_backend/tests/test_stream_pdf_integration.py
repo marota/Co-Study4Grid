@@ -78,14 +78,16 @@ def test_stream_pdf_integration(client, service):
     assert "pdf_url" in events[0]
     assert "pdf_path" in events[0]
     
-    # Verify PDF existence
+    # Verify overflow file existence. The backend now requests an HTML
+    # viewer (VISUALIZATION_FORMAT="html"); .pdf remains acceptable for
+    # environments with older expert_op4grid_recommender installs.
     pdf_path = events[0]["pdf_path"]
     assert pdf_path is not None
     assert os.path.exists(pdf_path)
-    assert pdf_path.endswith(".pdf")
-    
+    assert pdf_path.endswith((".html", ".pdf"))
+
     # Verify last event is result
     assert events[-1]["type"] == "result"
     assert "actions" in events[-1]
-    
-    print(f"Integration test passed! PDF generated at: {pdf_path}")
+
+    print(f"Integration test passed! Overflow file generated at: {pdf_path}")

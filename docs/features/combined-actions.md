@@ -52,12 +52,14 @@ Both approaches are exposed through a two-tab modal ("Computed Pairs" and "Explo
 | File | Role |
 |------|------|
 | `frontend/src/components/CombinedActionsModal.tsx` | Modal UI: two tabs, estimation preview, simulation feedback |
+| `frontend/src/components/ComputedPairsTable.tsx` | Computed-pairs table (PR #103 split) |
+| `frontend/src/components/ExplorePairsTab.tsx` | Explore-pairs panel (PR #103 split) |
 | `frontend/src/components/ActionFeed.tsx` | Opens modal, passes `onManualActionAdded` as callback |
+| `frontend/src/components/ActionCard.tsx` | Renders clickable sub-action badges for every member of a combined pair (PR #114, `7e68ef3`) |
 | `frontend/src/api.ts` | `simulateManualAction()`, `computeSuperposition()` |
 | `frontend/src/types.ts` | `CombinedAction`, `ActionDetail` interfaces |
 | `expert_backend/main.py` | `/api/simulate-manual-action`, `/api/compute-superposition` endpoints |
-| `expert_backend/services/recommender_service.py` | `simulate_manual_action()`, `compute_superposition()` methods |
-| `standalone_interface.html` | Self-contained equivalent (state, handlers, rendering) |
+| `expert_backend/services/simulation_mixin.py` | `simulate_manual_action()`, `compute_superposition()` orchestrators (helpers in `simulation_helpers.py`, PR #104) |
 
 ---
 
@@ -215,41 +217,58 @@ State cleanup:
 
 ---
 
-## Standalone Interface
+## Standalone distribution
 
-The standalone interface (`standalone_interface.html`) mirrors the modal logic with equivalent state and handlers:
+No separate hand-maintained mirror exists any more. The single-file
+distribution is `frontend/dist-standalone/standalone.html`,
+auto-generated from the same React source via `npm run build:standalone`
+(PR #101); it inherits the `CombinedActionsModal` component, its
+state, and every handler byte-for-byte. The legacy
+`standalone_interface.html` — which used a separate
+`isSimulatingCombined` / `combinedSimulationFeedback` state machine
+and an explicit "Estimate Combination effect" button — has been
+decommissioned and frozen as `standalone_interface_legacy.html`.
 
-| React app | Standalone equivalent |
-|-----------|-----------------------|
-| `CombinedActionsModal` component | Inline JSX within `App` component |
-| `simulating` / `simulationFeedback` | `isSimulatingCombined` / `combinedSimulationFeedback` |
-| `preview` (auto-fetched) | `superpositionResult` (manual "Estimate Combination effect" button) |
-| `handleSimulate()` | `handleSimulateCombined()` |
-| `computeSuperposition` via useEffect | `handleComputeSuperposition()` (explicit button click) |
+---
 
-Key difference: the standalone uses an explicit "Estimate Combination effect" button rather than auto-fetching on selection.
+## Recent updates (PR #114, release 0.6.5)
 
-### Important: onClick handler pattern
+PR #114 extended the combined-actions workflow in four user-visible
+ways:
 
-`handleSimulateCombined` uses a default parameter:
+- **Load-shedding and curtailment are now allowed in combined pairs**
+  (commit `a019555`). Previously restricted to topology actions, the
+  Explore Pairs tab now accepts LS / curtailment on either side as
+  long as the pair is simulated (the superposition-estimation path
+  still requires both actions to have a pre-computed beta, which only
+  exists for topology actions).
+- **"Simulate Combined" moved out of the action card** (commit
+  `e871006`). The trigger now lives in the modal footer. After a
+  simulate-only pair lands, the resulting card is shown in the main
+  feed with all sub-action badges clickable
+  (`ActionCard.tsx`, commit `7e68ef3`) so the operator can inspect
+  each constituent in isolation.
+- **`target_max_rho` on the user-selected overload set** (commit
+  `a5d34da`). Superposition + simulation both now compute the max rho
+  restricted to the lines the operator explicitly flagged as
+  "resolve" in step-1. It is reported alongside the unrestricted
+  `max_rho` so the operator can tell whether a pair actually solves
+  their scenario or merely shifts the hot spot elsewhere.
+- **Explore-Pairs re-estimation aligned with pre-computed betas**
+  (commit `fd34eeb`). When a pair already has a `combined_actions`
+  entry from the analysis phase, the Explore tab now reuses those
+  betas instead of re-fetching — eliminating a subtle drift where
+  the re-estimate could disagree with the Computed Pairs row.
 
-```javascript
-const handleSimulateCombined = async (actionIds = selectedCombineActionIds) => {
-    if (actionIds.length !== 2) return;
-    ...
-};
-```
+Backend correctness fixes in the same release that the doc must be
+read against:
 
-When used as an `onClick` handler, it **must** be wrapped in an arrow function:
-
-```jsx
-// CORRECT -- default parameter applies
-onClick={() => handleSimulateCombined()}
-
-// WRONG -- React passes the SyntheticEvent as first argument,
-// overriding the default parameter, and actionIds.length !== 2
-onClick={handleSimulateCombined}
-```
+- `simulate_manual_action` now reuses the step-1 observation as the
+  simulation baseline (commit `198c0ed`), and `run_analysis_step2`
+  restores `enriched_actions` after the streaming pass
+  (`a0bc1a3`). The N-1 variant is pinned right before `obs.simulate`
+  on the combined-pair code path (`2ef61d5`) so residual state from
+  a previous action cannot leak into the combined observation.
 
 ---
 
@@ -297,7 +316,9 @@ During `run_analysis()` (line 475-482), the recommender library identifies promi
 
 When modifying combined actions logic:
 
-- [ ] Keep `CombinedActionsModal.tsx` and `standalone_interface.html` in sync
+- [ ] Edit `CombinedActionsModal.tsx` / `ComputedPairsTable.tsx` /
+      `ExplorePairsTab.tsx` only — the auto-generated standalone
+      bundle inherits the change via `npm run build:standalone`.
 - [ ] The `is_estimated` flag must be `false` only when results come from `simulate_manual_action`
 - [ ] Combined action IDs use `+` as separator -- never sort or reorder the parts
 - [ ] `onClick` handlers for functions with default parameters must use arrow wrappers
@@ -305,3 +326,5 @@ When modifying combined actions logic:
 - [ ] `simulationFeedback` state must be cleared when the selected pair changes
 - [ ] The modal must stay open during simulation so the user sees feedback
 - [ ] Test both tabs: Computed Pairs uses `handleSimulate(pairId)`, Explore uses `handleSimulate()` (no args)
+- [ ] Load-shedding / curtailment pairs work via simulate-only; the
+      estimation preview path is still topology-only.

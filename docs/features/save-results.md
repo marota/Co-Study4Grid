@@ -11,7 +11,7 @@ Co-Study4Grid supports **saving** and **reloading** full analysis sessions:
 
 - **`session.json`** — all inputs, outputs, user decisions, combined action pairs, per-action enrichment details (`load_shedding_details` / `curtailment_details` / `pst_details` / `lines_overloaded_after`) and, when available, the per-element sidebar sticky-header loading ratios (`n_overloads_rho` / `n1_overloads_rho`)
 - **`interaction_log.json`** — timestamped log of every user interaction, suitable for automated session replay (see [docs/features/interaction-logging.md](interaction-logging.md))
-- **`<overflow>.pdf`** — a copy of the overflow graph PDF (when an analysis has been run)
+- **`<overflow>.html`** — a copy of the interactive overflow graph viewer (when an analysis has been run). Legacy sessions saved before the HTML switch contain `<overflow>.pdf` instead; reload handles both transparently.
 
 All files are written to a **session folder** named `costudy4grid_session_<contingency>_<timestamp>/` inside the configured **Output Folder Path**.
 
@@ -55,7 +55,9 @@ Settings → gear icon → Paths tab → Output Folder Path
   costudy4grid_session_LINE_XYZ_2026-03-11T14-23-05/
     session.json
     interaction_log.json   <- replay-ready event log
-    overflow_abc123.pdf    <- copy of the overflow graph
+    overflow_abc123.html   <- copy of the interactive overflow graph
+                              (.pdf on legacy sessions saved before
+                              the HTML switch; both are reloadable)
 ```
 
 ---
@@ -444,6 +446,7 @@ A `makeCtx()` / `makeSession()` fixture pair makes each test self-contained:
 - The context push is **skipped** for legacy sessions that predate `lines_we_care_about`
 - Backend-offline failures on `restoreAnalysisContext` are swallowed so the reload still completes
 - **`restoringSessionRef.current` flips to `true` BEFORE `setSelectedBranch` is called** — regression guard for the N-1-diagram-not-fetched / overloads-not-populated / stale-Overflow-PDF trio that regressed when the App-level N-1 effect short-circuited on restored analysis state
+- **Mixed-extension overflow restore (`/api/load-session`):** a session folder that contains either `<overflow>.html` (current interactive viewer) or `<overflow>.pdf` (legacy) must copy the matching file into `Overflow_Graph/` so `pdf_url` resolves. Guard: `find_latest_pdf` (`expert_backend/services/analysis/pdf_watcher.py`) globs both `*.html` and `*.pdf`; the load-session glob in `main.py` does the same and prefers the basename that matches the stored `pdf_url`. Added when switching `VISUALIZATION_FORMAT` to `"html"`.
 
 ### `frontend/src/components/ActionFeed.test.tsx` (re-simulation logging)
 

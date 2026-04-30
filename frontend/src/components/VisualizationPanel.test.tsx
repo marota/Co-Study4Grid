@@ -890,4 +890,158 @@ describe('VisualizationPanel', () => {
             document.body.removeChild(mountNode);
         });
     });
+
+    describe('Overflow Analysis tab — Hierarchical / Geo toggle', () => {
+        const propsWithOverflow = (overrides: Record<string, unknown> = {}) =>
+            createDefaultProps({
+                activeTab: 'overflow',
+                result: {
+                    pdf_url: '/results/pdf/overflow_hierarchi.html',
+                    pdf_path: '/tmp/Overflow_Graph/overflow_hierarchi.html',
+                    actions: {},
+                    action_scores: null,
+                    lines_overloaded: [],
+                    message: '',
+                    dc_fallback: false,
+                } as AnalysisResult,
+                ...overrides,
+            });
+
+        it('renders the segmented pill when pdf_url is set and handler provided', () => {
+            const onOverflowLayoutChange = vi.fn();
+            render(<VisualizationPanel {...propsWithOverflow({
+                overflowLayoutMode: 'hierarchical',
+                overflowLayoutLoading: false,
+                onOverflowLayoutChange,
+                layoutPath: '/tmp/grid_layout.json',
+            })} />);
+            expect(screen.getByRole('button', { name: 'Hierarchical' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Geo' })).toBeInTheDocument();
+        });
+
+        it('disables Geo button when no layoutPath is configured', () => {
+            render(<VisualizationPanel {...propsWithOverflow({
+                overflowLayoutMode: 'hierarchical',
+                overflowLayoutLoading: false,
+                onOverflowLayoutChange: vi.fn(),
+                layoutPath: '',
+            })} />);
+            const geoBtn = screen.getByRole('button', { name: 'Geo' });
+            expect(geoBtn).toBeDisabled();
+            expect(geoBtn).toHaveAttribute(
+                'title',
+                expect.stringContaining('grid_layout.json') as unknown as string,
+            );
+        });
+
+        it('calls onOverflowLayoutChange with the target mode on click', () => {
+            const onOverflowLayoutChange = vi.fn();
+            render(<VisualizationPanel {...propsWithOverflow({
+                overflowLayoutMode: 'hierarchical',
+                overflowLayoutLoading: false,
+                onOverflowLayoutChange,
+                layoutPath: '/tmp/grid_layout.json',
+            })} />);
+            fireEvent.click(screen.getByRole('button', { name: 'Geo' }));
+            expect(onOverflowLayoutChange).toHaveBeenCalledWith('geo');
+            fireEvent.click(screen.getByRole('button', { name: 'Hierarchical' }));
+            expect(onOverflowLayoutChange).toHaveBeenCalledWith('hierarchical');
+        });
+
+        it('marks the active mode via aria-pressed', () => {
+            const { rerender } = render(<VisualizationPanel {...propsWithOverflow({
+                overflowLayoutMode: 'geo',
+                overflowLayoutLoading: false,
+                onOverflowLayoutChange: vi.fn(),
+                layoutPath: '/tmp/grid_layout.json',
+            })} />);
+            expect(screen.getByRole('button', { name: 'Geo' })).toHaveAttribute('aria-pressed', 'true');
+            expect(screen.getByRole('button', { name: 'Hierarchical' })).toHaveAttribute('aria-pressed', 'false');
+            rerender(<VisualizationPanel {...propsWithOverflow({
+                overflowLayoutMode: 'hierarchical',
+                overflowLayoutLoading: false,
+                onOverflowLayoutChange: vi.fn(),
+                layoutPath: '/tmp/grid_layout.json',
+            })} />);
+            expect(screen.getByRole('button', { name: 'Hierarchical' })).toHaveAttribute('aria-pressed', 'true');
+        });
+
+        it('disables both buttons while loading (cache-miss regeneration)', () => {
+            render(<VisualizationPanel {...propsWithOverflow({
+                overflowLayoutMode: 'hierarchical',
+                overflowLayoutLoading: true,
+                onOverflowLayoutChange: vi.fn(),
+                layoutPath: '/tmp/grid_layout.json',
+            })} />);
+            expect(screen.getByRole('button', { name: 'Hierarchical' })).toBeDisabled();
+            expect(screen.getByRole('button', { name: 'Geo' })).toBeDisabled();
+        });
+
+        it('does not render the pill on other tabs', () => {
+            render(<VisualizationPanel {...createDefaultProps({
+                activeTab: 'n',
+                result: {
+                    pdf_url: '/results/pdf/overflow.html',
+                    pdf_path: '/tmp/overflow.html',
+                    actions: {},
+                    action_scores: null,
+                    lines_overloaded: [],
+                    message: '',
+                    dc_fallback: false,
+                } as AnalysisResult,
+                overflowLayoutMode: 'hierarchical',
+                overflowLayoutLoading: false,
+                onOverflowLayoutChange: vi.fn(),
+                layoutPath: '/tmp/grid_layout.json',
+            })} />);
+            // The pill is rendered inside the overflow tab only, so
+            // Hierarchical / Geo buttons must not be queryable when
+            // another tab is active.
+            expect(screen.queryByRole('button', { name: 'Hierarchical' })).toBeNull();
+            expect(screen.queryByRole('button', { name: 'Geo' })).toBeNull();
+        });
+    });
+
+    describe('kV voltage filter', () => {
+        // Regression guard for the collapse-at-max bug: when the user pulled
+        // both handles together to maxV, the default z-order pinned the high
+        // handle (it cannot move beyond maxV) and hid the low handle beneath
+        // it, so the range could no longer be expanded.
+        const openFilter = async () => {
+            const toggle = screen.getByTitle('Show voltage filter');
+            await userEvent.click(toggle);
+        };
+        const sliders = () =>
+            document.querySelectorAll<HTMLInputElement>('.voltage-slider-container input[type=range]');
+
+        it('puts the high handle on top by default when the range is not collapsed at maxV', async () => {
+            render(<VisualizationPanel {...createDefaultProps({
+                uniqueVoltages: [25, 225, 400],
+                voltageRange: [25, 400] as [number, number],
+            })} />);
+            await openFilter();
+            const [low, high] = sliders();
+            expect(parseInt(low.style.zIndex, 10)).toBeLessThan(parseInt(high.style.zIndex, 10));
+        });
+
+        it('raises the low handle above the high handle when both are collapsed at maxV', async () => {
+            render(<VisualizationPanel {...createDefaultProps({
+                uniqueVoltages: [25, 225, 400],
+                voltageRange: [400, 400] as [number, number],
+            })} />);
+            await openFilter();
+            const [low, high] = sliders();
+            expect(parseInt(low.style.zIndex, 10)).toBeGreaterThan(parseInt(high.style.zIndex, 10));
+        });
+
+        it('keeps the high handle on top when both are collapsed at minV (high can still move up)', async () => {
+            render(<VisualizationPanel {...createDefaultProps({
+                uniqueVoltages: [25, 225, 400],
+                voltageRange: [25, 25] as [number, number],
+            })} />);
+            await openFilter();
+            const [low, high] = sliders();
+            expect(parseInt(low.style.zIndex, 10)).toBeLessThan(parseInt(high.style.zIndex, 10));
+        });
+    });
 });

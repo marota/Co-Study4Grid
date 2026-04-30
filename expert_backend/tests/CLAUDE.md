@@ -44,7 +44,7 @@ Configuration in `frontend/vite.config.ts` (Vitest plugin).
 #### API & Service Layer
 | File | Description |
 |------|-------------|
-| `test_api_endpoints.py` | FastAPI endpoint testing with TestClient and mocked services |
+| `test_api_endpoints.py` | FastAPI endpoint testing with TestClient and mocked services (covers the patch endpoints `/api/n1-diagram-patch`, `/api/action-variant-diagram-patch`, `/api/simulate-and-variant-diagram`). |
 | `test_recommender_service.py` | RecommenderService config updates and action enrichment |
 | `test_network_service.py` | NetworkService initialization, loading, and element lookup |
 
@@ -53,18 +53,22 @@ Configuration in `frontend/vite.config.ts` (Vitest plugin).
 |------|-------------|
 | `test_recommender_simulation.py` | Real data simulation with small test grid |
 | `test_split_analysis.py` | Two-step analysis workflow (step1 overload detect, step2 resolve) |
-| `test_combined_actions_integration.py` | Combined action workflow integration |
+| `test_combined_actions_integration.py` | Combined action workflow integration (incl. PR #114 LS/curtailment in combined pairs) |
 | `test_combined_actions_scenario.py` | Real-world combined action scenarios |
 | `test_stream_pdf_integration.py` | Streaming NDJSON + PDF event integration |
+| `test_resimulate_regression.py` | Re-simulation correctness after action state changes |
+| `test_second_contingency_reset.py` | Guards that switching contingency clears the prior N-1 variant cleanly |
+| `test_get_n1_variant_clones_from_n_state.py` | `_get_n1_variant()` clones from the clean N baseline, never from a leftover action variant |
 
-#### Load Shedding & Curtailment
+#### Load Shedding, Curtailment, PST
 | File | Description |
 |------|-------------|
 | `test_power_reduction_format.py` | New `loads_p`/`gens_p` power reduction format + legacy `bus=-1` compat |
 | `test_renewable_curtailment.py` | Curtailment detail computation and config updates |
 | `test_manual_action_enrichment.py` | Manual action enrichment (topology, description, details) |
-| `test_dynamic_actions.py` | On-the-fly action creation for `load_shedding_*`, `curtail_*`, `pst_*` |
+| `test_dynamic_actions.py` | On-the-fly action creation for `load_shedding_*`, `curtail_*`, `pst_*`, `reco_*` (PR #110) |
 | `test_mw_start.py` | MW Start computation for scoring (line disco, PST, load shedding, open coupling) |
+| `test_configurable_mw.py` | Configurable MW reduction thresholds |
 
 #### Core Computation
 | File | Description |
@@ -87,8 +91,18 @@ Configuration in `frontend/vite.config.ts` (Vitest plugin).
 | `test_superposition_accuracy.py` | Superposition vs simulation discrepancy detection |
 | `test_superposition_filtering_regression.py` | Max rho filtering for heavily loaded lines |
 | `test_superposition_service.py` | On-demand superposition computation |
-| `test_superposition_monitoring_consistency.py` | Monitoring alignment between estimation and simulation (11 tests) |
+| `test_superposition_monitoring_consistency.py` | Monitoring alignment between estimation and simulation |
 | `test_pst_combined_actions.py` | PST tap + combined action simulation, topology preservation, fast_mode protection |
+
+#### PR #104 decomposition — extracted helper packages
+| File | Description |
+|------|-------------|
+| `test_simulation_helpers.py` | 66 tests for the stateless helpers extracted from `simulate_manual_action` + `compute_superposition` |
+| `test_analysis_helpers.py` | 68 tests for `services/analysis/` (MW-start, action enrichment, PDF watcher, analysis runner) |
+| `test_diagram_helpers.py` | 39 tests for `services/diagram/` (layout cache, NAD params, NAD render, SLD render, overloads, flows, deltas) |
+| `test_diagram_mixin.py` | Orchestrator-level coverage for `DiagramMixin` after the decomposition |
+| `test_diagram_patch_helpers.py` | Patch-endpoint delta math (`/api/n1-diagram-patch`, `/api/action-variant-diagram-patch`) — PR #108 |
+| `test_n1_diagram_fast_path.py` | Fast-path guards for the N-1 diagram pipeline |
 
 #### Performance & Regression
 | File | Description |
@@ -96,7 +110,6 @@ Configuration in `frontend/vite.config.ts` (Vitest plugin).
 | `test_performance_budgets.py` | Benchmarks for large observations (2000+ lines) |
 | `test_recommender_regressions.py` | MW calculation and curtailment robustness |
 | `test_recommender_non_convergence.py` | Power flow convergence failure handling |
-| `test_ui_regressions.py` | Critical UI string and class presence |
 
 #### Infrastructure
 | File | Description |
@@ -110,44 +123,50 @@ Configuration in `frontend/vite.config.ts` (Vitest plugin).
 
 ## Frontend Test Structure
 
-### Test Files by Domain
+Tests live next to their source file as `*.test.ts` / `*.test.tsx`.
+Run `cd frontend && npm run test` for the full suite (~1000 specs as
+of 0.6.5). Key test groups:
 
-#### App Integration
+### App-level integration (`frontend/src/App.*.test.tsx`)
+
+Six app-integration files split by domain: `App.contingency` (step1 →
+step2 flow), `App.session` (save/reload), `App.settings`,
+`App.stateManagement`, `App.datalist`, `App.import` (module-import
+sanity).
+
+### Components (`frontend/src/components/**/*.test.tsx`)
+
+Every presentational component has a colocated test file —
+`ActionCard`, `ActionCardPopover`, `ActionFeed`, `ActionOverviewDiagram`,
+`ActionSearchDropdown`, `ActionTypeFilterChips`, `CombinedActionsModal`,
+`ComputedPairsTable`, `DetachableTabHost`, `ErrorBoundary`,
+`ExplorePairsTab`, `Header`, `MemoizedSvgContainer`, `OverloadPanel`,
+`SldOverlay`, `VisualizationPanel`, plus the three modals
+(`SettingsModal`, `ReloadSessionModal`, `ConfirmationDialog`).
+
+### Hooks (`frontend/src/hooks/*.test.ts[x]`)
+
+One test file per hook — `useActions`, `useAnalysis`, `useDetachedTabs`,
+`useDiagramHighlights`, `useDiagrams`, `usePanZoom`, `useSession`,
+`useSettings`, `useSldOverlay`, `useTiedTabsSync`. `useN1Fetch` is
+covered transitively by `useDiagrams` + the App-integration suite.
+
+### Utilities (`frontend/src/utils/**/*.test.ts`)
+
 | File | Description |
 |------|-------------|
-| `App.contingency.test.tsx` | Contingency analysis workflow (step1 -> step2) |
-| `App.session.test.tsx` | Session save/load and interaction |
-| `App.settings.test.tsx` | Settings panel and configuration |
-| `App.import.test.tsx` | Module import sanity check |
-
-#### Components
-| File | Description |
-|------|-------------|
-| `ActionFeed.test.tsx` | Action card rendering, filtering, load shedding/curtailment details, MW Start, badges |
-| `CombinedActionsModal.test.tsx` | Combined action pair computation modal |
-| `OverloadPanel.test.tsx` | Two-step overload analysis panel |
-| `VisualizationPanel.test.tsx` | SVG diagram rendering and pan/zoom |
-
-#### Hooks
-| File | Description |
-|------|-------------|
-| `useActions.test.ts` | Action state management and manual action handling |
-| `useAnalysis.test.ts` | Analysis streaming (step1/step2) |
-| `useDiagrams.test.ts` | Diagram fetching and variant management |
-| `usePanZoom.test.tsx` | Pan/zoom viewBox optimization |
-| `useSession.test.ts` | Session persistence and restoration |
-| `useSettings.test.ts` | Settings state and interaction logging |
-
-#### Utilities
-| File | Description |
-|------|-------------|
-| `svgUtils.test.ts` | SVG processing, target detection, highlights, metadata indexing |
-| `sessionUtils.test.ts` | Session snapshot building and serialization |
-| `interactionLogger.test.ts` | Interaction event logger |
-| `standaloneInterface.test.ts` | Standalone HTML interface serialization |
-| `mergeAnalysisResult.test.ts` | Analysis result field merging |
-| `fileRegistry.test.ts` | Project structure regression (removed workers) |
-| `cssRegression.test.ts` | Critical CSS property guards |
+| `svgUtils.test.ts` | Barrel-level regression guards (halo layering, composite target detection, highlight ordering) |
+| `svg/*.test.ts` | Unit tests for each PR #104 submodule (`idMap`, `metadataIndex`, `svgBoost`, `fitRect`, `actionPinData`, `actionPinRender`) |
+| `svgPatch.test.ts` | DOM-recycling patch applier (PR #108): clone, dashed-class toggling, VL-subtree splicing, stale-response guard |
+| `actionTypes.test.ts` | `classifyActionType` + `matchesActionTypeFilter` coverage |
+| `sessionUtils.test.ts` | Session snapshot building + interaction-log serialization |
+| `interactionLogger.test.ts` | Singleton event-log contract (sequence numbers, correlation IDs) |
+| `mergeAnalysisResult.test.ts` | Step1+step2 field merging |
+| `overloadHighlights.test.ts` | N-1 overload classification |
+| `popoverPlacement.test.ts` | Pin-popover positioning |
+| `fileRegistry.test.ts` | Structure-regression guard — fails if an expected source file disappears |
+| `specConformance.test.ts` | Layer-4 spec contracts for interaction-log events |
+| `userObservableInvariants.test.ts` | Runtime Vitest twin of `scripts/check_invariants.py` |
 
 ## Common Testing Patterns
 
@@ -200,4 +219,15 @@ Configuration in `frontend/vite.config.ts` (Vitest plugin).
 - Backend tests run without `pypowsybl` or `expert_op4grid_recommender` installed — `conftest.py` stubs them
 - Some integration tests (e.g., `test_recommender_simulation.py`, `test_stream_pdf_integration.py`) use real test data from the `expert_op4grid_recommender` package when available
 - Frontend tests require `npm install` in the `frontend/` directory
-- Root-level `test_*.py` files (`test_backend.py`, `test_api_stream.py`, etc.) are ad-hoc integration scripts that require a running backend — they are not part of the pytest suite
+- `expert_backend/test_backend.py` is an ad-hoc integration script that requires a running backend — it is NOT part of the pytest suite. Invoke directly with `python expert_backend/test_backend.py`.
+- `scripts/pypsa_eur/` carries its own pytest coverage for the
+  PyPSA-EUR → XIIDM pipeline (`test_build_pipeline.py`,
+  `test_calibrate_thermal_limits.py`, `test_generate_n1_overloads.py`,
+  `test_regenerate_grid_layout.py`). Run with `pytest scripts/pypsa_eur`.
+- **Removed** (by PR #103 / PR #104): `test_ui_regressions.py` (its
+  assertions targeted strings in the decommissioned
+  `standalone_interface.html`; equivalent coverage now lives in the
+  four parity scripts under `scripts/` and in the Vitest
+  `userObservableInvariants.test.ts` + `specConformance.test.ts`
+  files), and the frontend `standaloneInterface.test.ts` /
+  `cssRegression.test.ts` files.

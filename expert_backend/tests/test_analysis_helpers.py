@@ -67,6 +67,43 @@ class TestFindLatestPdf:
         os.utime(p, (99.5, 99.5))
         assert pdf_watcher.find_latest_pdf(str(tmp_path), analysis_start_time=100.0) == str(p)
 
+    def test_picks_html_only(self, tmp_path):
+        # VISUALIZATION_FORMAT="html" is now the default — interactive
+        # overflow viewer lands as .html in SAVE_FOLDER_VISUALIZATION.
+        html = tmp_path / "overflow.html"
+        html.write_text("<html></html>")
+        os.utime(html, (200, 200))
+        assert pdf_watcher.find_latest_pdf(str(tmp_path)) == str(html)
+
+    def test_picks_pdf_when_no_html(self, tmp_path):
+        # Legacy fallback: if only a .pdf is present (e.g. older
+        # expert_op4grid_recommender without HTML export), return it.
+        pdf = tmp_path / "overflow.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        os.utime(pdf, (200, 200))
+        assert pdf_watcher.find_latest_pdf(str(tmp_path)) == str(pdf)
+
+    def test_picks_newest_html_over_older_pdf(self, tmp_path):
+        # Mixed folder (e.g. a previous PDF-era run left a .pdf behind):
+        # pick whichever is newest, regardless of extension.
+        old_pdf = tmp_path / "old.pdf"
+        new_html = tmp_path / "new.html"
+        old_pdf.write_bytes(b"%PDF-1.4")
+        new_html.write_text("<html></html>")
+        os.utime(old_pdf, (100, 100))
+        os.utime(new_html, (200, 200))
+        assert pdf_watcher.find_latest_pdf(str(tmp_path)) == str(new_html)
+
+    def test_mixed_start_time_filter(self, tmp_path):
+        # Start-time filter applies uniformly to both extensions.
+        stale_html = tmp_path / "stale.html"
+        fresh_pdf = tmp_path / "fresh.pdf"
+        stale_html.write_text("<html></html>")
+        fresh_pdf.write_bytes(b"%PDF-1.4")
+        os.utime(stale_html, (100, 100))
+        os.utime(fresh_pdf, (500, 500))
+        assert pdf_watcher.find_latest_pdf(str(tmp_path), analysis_start_time=400) == str(fresh_pdf)
+
 
 # ----------------------------------------------------------------------
 # action_enrichment

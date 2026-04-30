@@ -169,6 +169,15 @@ interface VisualizationPanelProps {
      * is currently detached.
      */
     onViewModeChangeForTab?: (tab: TabId, mode: 'network' | 'delta') => void;
+    /**
+     * Overflow Analysis tab layout toggle (Hierarchical / Geo). Only
+     * rendered on the overflow tab when an overflow file is present.
+     * Cache-backed on the backend — switching between modes is
+     * instant after the first regeneration.
+     */
+    overflowLayoutMode?: 'hierarchical' | 'geo';
+    overflowLayoutLoading?: boolean;
+    onOverflowLayoutChange?: (mode: 'hierarchical' | 'geo') => void;
     inspectQuery: string;
     onInspectQueryChange: (query: string) => void;
     /**
@@ -305,6 +314,9 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onInspectQueryChangeFor,
     viewModeForTab,
     onViewModeChangeForTab,
+    overflowLayoutMode,
+    overflowLayoutLoading,
+    onOverflowLayoutChange,
     isTabTied,
     onToggleTabTie,
     n1MetaIndex,
@@ -915,6 +927,68 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         backgroundColor: 'white',
                     }}>
                         {detachedTabs['overflow'] && renderDetachedHeader('overflow', 'Overflow Analysis', '#27ae60')}
+                        {/* Hierarchical / Geo layout toggle — mirrors the
+                            Flows/Impacts segmented pill used on the N, N-1
+                            and Remedial Action tabs. Only visible when an
+                            overflow file is present. Geo is disabled when
+                            no grid_layout.json is configured because the
+                            backend would silently fall back to
+                            hierarchical rendering. */}
+                        {result?.pdf_url && onOverflowLayoutChange && (() => {
+                            const mode = overflowLayoutMode ?? 'hierarchical';
+                            const loading = !!overflowLayoutLoading;
+                            const hasLayout = !!layoutPath;
+                            return (
+                                <div style={{
+                                    position: 'absolute', top: '10px', right: '10px', zIndex: 100,
+                                    display: 'flex', alignItems: 'center', gap: '6px',
+                                }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        borderRadius: '6px',
+                                        overflow: 'hidden',
+                                        border: '1px solid #ccc',
+                                        boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
+                                        fontSize: '12px',
+                                        fontWeight: 600,
+                                        backgroundColor: '#fff',
+                                        opacity: loading ? 0.7 : 1,
+                                    }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => onOverflowLayoutChange('hierarchical')}
+                                            disabled={loading}
+                                            aria-pressed={mode === 'hierarchical'}
+                                            style={{
+                                                padding: '4px 12px', border: 'none',
+                                                cursor: loading ? 'wait' : 'pointer',
+                                                backgroundColor: mode === 'hierarchical' ? '#007bff' : '#fff',
+                                                color: mode === 'hierarchical' ? '#fff' : '#555',
+                                                transition: 'all 0.15s ease',
+                                            }}
+                                        >
+                                            Hierarchical
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => onOverflowLayoutChange('geo')}
+                                            disabled={loading || !hasLayout}
+                                            aria-pressed={mode === 'geo'}
+                                            title={hasLayout ? '' : 'No grid_layout.json configured — set the Layout Path in Settings'}
+                                            style={{
+                                                padding: '4px 12px', border: 'none', borderLeft: '1px solid #ccc',
+                                                cursor: (loading || !hasLayout) ? 'not-allowed' : 'pointer',
+                                                backgroundColor: mode === 'geo' ? '#007bff' : '#fff',
+                                                color: mode === 'geo' ? '#fff' : (hasLayout ? '#555' : '#bbb'),
+                                                transition: 'all 0.15s ease',
+                                            }}
+                                        >
+                                            Geo
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
                         {result?.pdf_url ? (
                             <iframe
                                 src={`http://localhost:8000${result.pdf_url}`}
@@ -1162,30 +1236,43 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             <div className="voltage-slider-container">
                                 <div className="voltage-slider-track" />
                                 <div className="voltage-slider-range" style={{ bottom: pctLow + '%', top: (100 - pctHigh) + '%' }} />
-                                <input type="range"
-                                    min={logMin} max={logMax} step="any"
-                                    value={Math.log(voltageRange[0])}
-                                    onChange={e => {
-                                        const logV = parseFloat(e.target.value);
-                                        const snapped = uniqueVoltages.reduce((best, uv) =>
-                                            Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best
-                                        );
-                                        if (snapped <= voltageRange[1]) onVoltageRangeChange([snapped, voltageRange[1]]);
-                                    }}
-                                    style={{ zIndex: 3, height: '100%' }}
-                                />
-                                <input type="range"
-                                    min={logMin} max={logMax} step="any"
-                                    value={Math.log(voltageRange[1])}
-                                    onChange={e => {
-                                        const logV = parseFloat(e.target.value);
-                                        const snapped = uniqueVoltages.reduce((best, uv) =>
-                                            Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best
-                                        );
-                                        if (snapped >= voltageRange[0]) onVoltageRangeChange([voltageRange[0], snapped]);
-                                    }}
-                                    style={{ zIndex: 4, height: '100%' }}
-                                />
+                                {/* When both handles collapse at maxV, the default (high on
+                                    top) pins the range: the high handle can't move up
+                                    (already at max) and hides the low handle that could
+                                    still be dragged down. Raise the low handle so the user
+                                    can grab it to expand the range again. */}
+                                {(() => {
+                                    const collapsedAtMax = voltageRange[0] === voltageRange[1] && voltageRange[1] === maxV;
+                                    const lowZ = collapsedAtMax ? 5 : 3;
+                                    return (
+                                        <>
+                                            <input type="range"
+                                                min={logMin} max={logMax} step="any"
+                                                value={Math.log(voltageRange[0])}
+                                                onChange={e => {
+                                                    const logV = parseFloat(e.target.value);
+                                                    const snapped = uniqueVoltages.reduce((best, uv) =>
+                                                        Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best
+                                                    );
+                                                    if (snapped <= voltageRange[1]) onVoltageRangeChange([snapped, voltageRange[1]]);
+                                                }}
+                                                style={{ zIndex: lowZ, height: '100%' }}
+                                            />
+                                            <input type="range"
+                                                min={logMin} max={logMax} step="any"
+                                                value={Math.log(voltageRange[1])}
+                                                onChange={e => {
+                                                    const logV = parseFloat(e.target.value);
+                                                    const snapped = uniqueVoltages.reduce((best, uv) =>
+                                                        Math.abs(Math.log(uv) - logV) < Math.abs(Math.log(best) - logV) ? uv : best
+                                                    );
+                                                    if (snapped >= voltageRange[0]) onVoltageRangeChange([voltageRange[0], snapped]);
+                                                }}
+                                                style={{ zIndex: 4, height: '100%' }}
+                                            />
+                                        </>
+                                    );
+                                })()}
                                 <div className="voltage-slider-ticks">
                                     {uniqueVoltages.map(kv => (
                                         <span key={kv} style={{ bottom: logScale(kv) + '%' }}>

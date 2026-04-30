@@ -1,6 +1,33 @@
 # Phase 2: State Management Optimization
 
-## Status: Proposed
+## Status: Partially shipped
+
+**Shipped under PR #75** — memoization pass on the wrapper functions,
+`React.memo` on the three heaviest children, and the consolidated
+reset helpers. Released as part of 0.5.0 (see
+[`CHANGELOG.md`](../../CHANGELOG.md)).
+
+**Superseded in part by PR #109** — the "Phase 2 hook extraction"
+pushed two full cross-hook pipelines into their own hooks
+(`useN1Fetch`, `useDiagramHighlights`), which subsumes some of the
+wrapper-memoization discussion below because those wrappers no
+longer exist in `App.tsx` at all.
+
+**Still deferred** — the three orchestrator hooks called out in the
+[App.tsx refactor-history table in `frontend/CLAUDE.md`](../../frontend/CLAUDE.md)
+(`useSettingsOrchestration`, `useSaveLoadSession`,
+`useStateReset`), which would absorb the remaining
+`wrappedSaveResults` / `wrappedRestoreSession` / `resetAllState`
+complexity. See the "Deferred" section in that file for the
+tradeoff notes.
+
+> The sections below are preserved as the original design record
+> for Phase 1 (App.tsx ≈ 650 lines). Line numbers and the
+> wrapper-function inventory reflect that snapshot and are out of
+> date — `App.tsx` is now ≈ 1150 lines after PR #109. Start from
+> `frontend/CLAUDE.md` for the current shape.
+
+---
 
 **Scope:** `frontend/src/App.tsx` + hooks in `frontend/src/hooks/`
 **Risk:** Low — incremental changes, no new dependencies, each step independently shippable
