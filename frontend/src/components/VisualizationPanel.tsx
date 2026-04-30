@@ -260,6 +260,14 @@ interface VisualizationPanelProps {
     unsimulatedActionInfo?: Readonly<Record<string, UnsimulatedActionScoreInfo>>;
     /** Kick off a manual simulation when an un-simulated pin is double-clicked. */
     onSimulateUnsimulatedAction?: (actionId: string) => void;
+    /**
+     * When false, voltage-level labels rendered by pypowsybl inside the
+     * NAD's `<foreignObject class="nad-text-nodes">` are hidden via CSS.
+     * The VL name remains accessible as a native `<title>` tooltip on
+     * hover over each bus-node group. Default is true.
+     */
+    showVoltageLevelNames?: boolean;
+    onToggleVoltageLevelNames?: (show: boolean) => void;
 }
 
 
@@ -326,6 +334,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     unsimulatedActionIds,
     unsimulatedActionInfo,
     onSimulateUnsimulatedAction,
+    showVoltageLevelNames = true,
+    onToggleVoltageLevelNames,
 }) => {
     // No-op fallbacks so conditional branches don't need to guard.
     const detachTabCb = onDetachTab ?? (() => {});
@@ -568,6 +578,29 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                     onChangeQuery={inspectQueryChangeForCb}
                                     filteredInspectables={filteredInspectables}
                                 />
+                                {onToggleVoltageLevelNames && (
+                                    <button
+                                        onClick={() => onToggleVoltageLevelNames(!showVoltageLevelNames)}
+                                        title={showVoltageLevelNames
+                                            ? 'Hide voltage-level names on the diagram (hover bus circles to see them as tooltips)'
+                                            : 'Show voltage-level names on the diagram'}
+                                        aria-pressed={showVoltageLevelNames}
+                                        data-testid="toggle-vl-names"
+                                        style={{
+                                            background: showVoltageLevelNames ? '#e8f0fe' : '#fff',
+                                            color: showVoltageLevelNames ? '#2c7be5' : '#555',
+                                            border: `1px solid ${showVoltageLevelNames ? '#2c7be5' : '#ccc'}`,
+                                            borderRadius: '4px',
+                                            padding: '4px 8px',
+                                            cursor: 'pointer',
+                                            fontSize: '12px',
+                                            fontWeight: 600,
+                                            boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
+                                        }}
+                                    >
+                                        {'\u{1F3F7} VL'}
+                                    </button>
+                                )}
                                 {inspectQuery && voltageLevels.includes(inspectQuery) && (
                                     <button
                                         onClick={() => onVlOpen(inspectQuery)}
@@ -1008,7 +1041,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                     }}>
                         {detachedTabs['n'] && renderDetachedHeader('n', 'Network (N)', '#3498db')}
                         {/* Always mounted — see comment on N-1 container below. */}
-                        <MemoizedSvgContainer svg={nDiagram?.svg || ''} containerRef={nSvgContainerRef} display="block" tabId="n" />
+                        <MemoizedSvgContainer svg={nDiagram?.svg || ''} containerRef={nSvgContainerRef} display="block" tabId="n" hideVlLabels={!showVoltageLevelNames} />
                         {configLoading && (
                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>
                                 Loading configuration...
@@ -1058,7 +1091,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             would cause StrictMode to double-invoke its layout effect,
                             and the second DOM injection would overwrite the auto-zoom
                             viewBox that was applied between the two invocations. */}
-                        <MemoizedSvgContainer svg={n1Diagram?.svg || ''} containerRef={n1SvgContainerRef} display="block" tabId="n-1" />
+                        <MemoizedSvgContainer svg={n1Diagram?.svg || ''} containerRef={n1SvgContainerRef} display="block" tabId="n-1" hideVlLabels={!showVoltageLevelNames} />
                         {n1Loading && (
                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>
                                 Generating N-1 Diagram...
@@ -1109,7 +1142,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             </div>
                         )}
                         {/* Always mounted — see comment on N-1 container. */}
-                        <MemoizedSvgContainer svg={actionDiagram?.svg || ''} containerRef={actionSvgContainerRef} display="block" tabId="action" />
+                        <MemoizedSvgContainer svg={actionDiagram?.svg || ''} containerRef={actionSvgContainerRef} display="block" tabId="action" hideVlLabels={!showVoltageLevelNames} />
                         {/*
                           Action-overview layer: rendered on top of the
                           (hidden) action-diagram container when no card

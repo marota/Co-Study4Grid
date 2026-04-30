@@ -1,8 +1,8 @@
 """
 build_pipeline.py
 =================
-End-to-end orchestrator that reproduces a PyPSA-EUR France network dataset
-(e.g. ``data/pypsa_eur_fr225_400``) from the raw OSM CSV inputs.
+End-to-end orchestrator that reproduces a PyPSA-EUR network dataset
+(e.g. ``data/pypsa_eur_fr225_400`` or ``data/pypsa_eur_eur400``) from the raw OSM CSV inputs.
 
 The master pipeline chains the five domain-specific scripts in this folder:
 
@@ -22,6 +22,9 @@ Usage
 
     # Custom voltages / output
     python scripts/pypsa_eur/build_pipeline.py --voltages 400 --output data/pypsa_eur_fr400
+
+    # European 400 kV network (all countries, skip slow OSM fetch)
+    python scripts/pypsa_eur/build_pipeline.py --country "" --voltages 400 --skip-osm
 
     # Skip expensive OSM name lookup (uses cached osm_names.json if present)
     python scripts/pypsa_eur/build_pipeline.py --skip-osm
@@ -92,8 +95,15 @@ def main() -> None:
         help="Target voltage levels (comma-separated). Default: 225,400",
     )
     parser.add_argument(
+        "--country", type=str, default="FR",
+        help=(
+            "Country filter passed to step 2 (default: FR). "
+            "Pass '' or 'ALL' to include all countries (European network)."
+        ),
+    )
+    parser.add_argument(
         "--output", type=str, default=None,
-        help="Network output directory (default: data/pypsa_eur_fr{voltages}).",
+        help="Network output directory (default: data/pypsa_eur_{country}{voltages}).",
     )
     parser.add_argument(
         "--steps", type=str, default=None,
@@ -140,18 +150,22 @@ def main() -> None:
     voltages = args.voltages
     v_list = [v.strip() for v in voltages.split(",")]
     v_slug = "_".join(v_list)
+    country = args.country if args.country and args.country.upper() != "ALL" else None
+    country_slug = country.lower() if country else "eur"
     if args.output:
         out_dir = Path(args.output)
         if not out_dir.is_absolute():
             out_dir = BASE_DIR / out_dir
     else:
-        out_dir = BASE_DIR / "data" / f"pypsa_eur_fr{v_slug}"
+        out_dir = BASE_DIR / "data" / f"pypsa_eur_{country_slug}{v_slug}"
 
     # Path the subscripts expect (relative to repo root is OK).
     rel_out = os.path.relpath(out_dir, BASE_DIR)
 
+    country_label = country if country else "ALL countries"
     log.info("━" * 70)
     log.info("PyPSA-EUR → Co-Study4Grid pipeline")
+    log.info("  country:  %s", country_label)
     log.info("  voltages: %s", voltages)
     log.info("  output:   %s", rel_out)
     log.info("  steps:    %s", ", ".join(f"{s}.{STEP_NAMES[s]}" for s in steps))
@@ -166,11 +180,15 @@ def main() -> None:
         cmd = [
             py, str(SCRIPT_DIR / "fetch_osm_names.py"),
             "--voltages", voltages,
+            "--country", country if country else "ALL",
+            "--output-dir", str(out_dir),
         ]
         if args.osm_cache:
             cmd += ["--cache-from", args.osm_cache]
         else:
-            # Re-use the cache that ships with fr400 if present.
+            # Seed from the fr400 cache when available — entries are keyed by raw
+            # OSM id, so reusing them is safe even for a Europe-wide run; it just
+            # avoids re-fetching the French substations.
             default_cache = BASE_DIR / "data" / "pypsa_eur_fr400" / "osm_names.json"
             if default_cache.is_file():
                 cmd += ["--cache-from", str(default_cache)]
@@ -181,6 +199,7 @@ def main() -> None:
         cmd = [
             py, str(SCRIPT_DIR / "convert_pypsa_to_xiidm.py"),
             "--voltages", voltages,
+            "--country", country if country else "",
             "--output-dir", str(out_dir),
             "--skip-n1",
         ]

@@ -90,6 +90,7 @@ const SPEC: Record<string, SpecRow> = {
   zoom_out:                       { required: new Set(['tab']) },
   zoom_reset:                     { required: new Set(['tab']) },
   inspect_query_changed:          { required: new Set(['query']), optional: new Set(['target_tab']) },
+  vl_names_toggled:               { required: new Set(['show']) },
   // --- Action Overview Diagram ---
   overview_shown:                 { required: new Set(['has_pins', 'pin_count']) },
   overview_hidden:                { required: new Set() },

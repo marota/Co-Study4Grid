@@ -30,6 +30,7 @@ import { useN1Fetch } from './hooks/useN1Fetch';
 import { useDiagramHighlights } from './hooks/useDiagramHighlights';
 import { interactionLogger } from './utils/interactionLogger';
 import { DEFAULT_ACTION_OVERVIEW_FILTERS } from './utils/actionTypes';
+import { applyVlTitles } from './utils/svgUtils';
 
 function App() {
   // ===== Settings Hook =====
@@ -152,7 +153,8 @@ function App() {
     vlOverlay, handleViewModeChange, handleManualZoomIn, handleManualZoomOut,
     handleManualReset, handleVlDoubleClick, handleOverlaySldTabChange, handleOverlayClose,
     inspectableItems,
-    nSvgContainerRef, n1SvgContainerRef, actionSvgContainerRef
+    nSvgContainerRef, n1SvgContainerRef, actionSvgContainerRef,
+    showVoltageLevelNames, setShowVoltageLevelNames,
   } = diagrams;
 
   // When a pin on the overview is single-clicked we want the sidebar
@@ -372,6 +374,7 @@ function App() {
     diagrams.setN1Diagram(null);
     diagrams.setOriginalViewBox(null);
     diagrams.setActionViewMode('network');
+    diagrams.setShowVoltageLevelNames(true);
     diagrams.setN1Loading(false);
     diagrams.setActionDiagramLoading(false);
     diagrams.committedBranchRef.current = '';
@@ -886,6 +889,23 @@ function App() {
     diagrams.selectedBranchForSld.current = selectedBranch;
   }, [selectedBranch, diagrams.selectedBranchForSld]);
 
+  // Inject `<title>` elements into each voltage-level node group on every
+  // diagram refresh so the browser surfaces the VL name as a native
+  // tooltip when the user hovers a bus circle. This is the fallback path
+  // when the on-diagram label is hidden via the VL-names toggle (see
+  // `nad-hide-vl-labels`), but the titles are kept attached
+  // unconditionally — they're invisible until hover and cost effectively
+  // nothing.
+  useEffect(() => {
+    applyVlTitles(nSvgContainerRef.current, diagrams.nMetaIndex, displayName);
+  }, [nDiagram, diagrams.nMetaIndex, displayName, nSvgContainerRef]);
+  useEffect(() => {
+    applyVlTitles(n1SvgContainerRef.current, diagrams.n1MetaIndex, displayName);
+  }, [n1Diagram, diagrams.n1MetaIndex, displayName, n1SvgContainerRef]);
+  useEffect(() => {
+    applyVlTitles(actionSvgContainerRef.current, diagrams.actionMetaIndex, displayName);
+  }, [actionDiagram, diagrams.actionMetaIndex, displayName, actionSvgContainerRef]);
+
 
 
   useN1Fetch({
@@ -956,6 +976,11 @@ function App() {
     interactionLogger.record('inspect_query_changed', { query: q });
     diagrams.setInspectQuery(q);
   }, [diagrams]);
+
+  const handleToggleVoltageLevelNames = useCallback((show: boolean) => {
+    interactionLogger.record('vl_names_toggled', { show });
+    setShowVoltageLevelNames(show);
+  }, [setShowVoltageLevelNames]);
 
   // Per-tab inspect variant. Lets a detached tab's overlay zoom its
   // own tab rather than the main-window activeTab — see
@@ -1154,6 +1179,8 @@ function App() {
             unsimulatedActionIds={unsimulatedActionIds}
             unsimulatedActionInfo={unsimulatedActionInfo}
             onSimulateUnsimulatedAction={handleSimulateUnsimulatedAction}
+            showVoltageLevelNames={showVoltageLevelNames}
+            onToggleVoltageLevelNames={handleToggleVoltageLevelNames}
           />
         </div>
       </div>

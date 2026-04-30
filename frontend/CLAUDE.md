@@ -195,6 +195,20 @@ performance levers are applied today:
 - **`boostSvgForLargeGrid`** (`utils/svg/svgBoost.ts`): dynamic
   font/node-radius scaling for grids ≥ 500 voltage levels so labels
   stay readable at high zoom.
+ - **VL-names toggle** (`useDiagrams.showVoltageLevelNames`, default
+  on): a `🏷 VL` button next to the bottom-left Inspect field flips
+  the `nad-hide-vl-labels` class on each `MemoizedSvgContainer`. The
+  CSS rule (`App.css`) hides every shape pypowsybl uses for VL
+  labels — `foreignObject.nad-text-nodes`, inline `<text>` under
+  `.nad-vl-nodes` / `.nad-label-nodes`, and root-level
+  `.nad-label-box` divs — with `!important` to beat the inline
+  `<style>` block pypowsybl appends after App.css. When labels are
+  hidden the VL name is still reachable via a native `<title>`
+  tooltip on each bus circle: `applyVlTitles` (`utils/svg/vlTitles.ts`)
+  walks the metadata index after every diagram refresh and injects /
+  updates one `<title data-vl-title>` per node group, idempotently.
+  The toggle emits a `vl_names_toggled { show }` interaction event
+  (declared in both `spec
 - **SVG DOM recycling** (`utils/svgPatch.ts`, PR #108): on N-1 /
   action tab switches the N-state `SVGSVGElement` is cloned and
   patched with per-branch deltas from the new

@@ -79,6 +79,13 @@ export interface DiagramsState {
   setActionViewMode: (v: 'network' | 'delta') => void;
   handleViewModeChange: (mode: 'network' | 'delta') => void;
 
+  // Voltage-level name labels: when false, the per-node labels rendered
+  // by pypowsybl inside the NAD's `<foreignObject class="nad-text-nodes">`
+  // are hidden via CSS, and the equipment id is exposed as a native
+  // `<title>` tooltip on hover instead. Defaults to true.
+  showVoltageLevelNames: boolean;
+  setShowVoltageLevelNames: (v: boolean) => void;
+
   // Overflow-graph layout toggle (Hierarchical / Geo).
   // Per-session state; the backend keeps a cache keyed by mode so
   // subsequent toggles are instant.
@@ -90,6 +97,7 @@ export interface DiagramsState {
     setResult: Dispatch<SetStateAction<AnalysisResult | null>>,
     setError: (v: string) => void,
   ) => Promise<void>;
+
 
   // ViewBox
   originalViewBox: ViewBox | null;
@@ -231,6 +239,9 @@ export function useDiagrams(
   const handleViewModeChange = useCallback((mode: 'network' | 'delta') => {
     setActionViewMode(mode);
   }, []);
+
+
+  const [showVoltageLevelNames, setShowVoltageLevelNames] = useState<boolean>(true);
 
   // Overflow-graph layout toggle state. `overflowLayoutLoading` is
   // true only during a cache-miss regeneration (graphviz re-run);
@@ -1128,6 +1139,7 @@ export function useDiagrams(
     actionDiagramLoading, setActionDiagramLoading,
     actionViewMode, setActionViewMode,
     handleViewModeChange,
+    showVoltageLevelNames, setShowVoltageLevelNames,
     overflowLayoutMode, setOverflowLayoutMode,
     overflowLayoutLoading,
     handleOverflowLayoutChange,
@@ -1161,6 +1173,7 @@ export function useDiagrams(
   }), [
     activeTab, nDiagram, n1Diagram, n1Loading,
     selectedActionId, actionDiagram, actionDiagramLoading, actionViewMode, handleViewModeChange,
+    showVoltageLevelNames,
     overflowLayoutMode, overflowLayoutLoading, handleOverflowLayoutChange,
     originalViewBox, inspectQuery,
     nPZ, n1PZ, actionPZ,
