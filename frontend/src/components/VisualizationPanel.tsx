@@ -586,7 +586,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                             boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
                                         }}
                                     >
-                                        {showVoltageLevelNames ? '\u{1F3F7} VL names' : '\u{1F3F7} VL names off'}
+                                        {'\u{1F3F7} VL'}
                                     </button>
                                 )}
                                 {inspectQuery && voltageLevels.includes(inspectQuery) && (
