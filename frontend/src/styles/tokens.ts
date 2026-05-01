@@ -50,9 +50,17 @@ export const colors = {
   dangerText: 'var(--color-danger-text)',
 
   accent: 'var(--color-accent)',
+  accentSoft: 'var(--color-accent-soft)',
+  accentBorder: 'var(--color-accent-border)',
+  accentText: 'var(--color-accent-text)',
   chrome: 'var(--color-chrome)',
   chromeSoft: 'var(--color-chrome-soft)',
   disabled: 'var(--color-disabled)',
+
+  info: 'var(--color-info)',
+  infoSoft: 'var(--color-info-soft)',
+  infoBorder: 'var(--color-info-border)',
+  infoText: 'var(--color-info-text)',
 } as const;
 
 export const space = {

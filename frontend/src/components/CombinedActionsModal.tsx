@@ -11,6 +11,7 @@ import type { AnalysisResult, CombinedAction, ActionDetail } from '../types';
 import { interactionLogger } from '../utils/interactionLogger';
 import ComputedPairsTable, { type ComputedPairEntry } from './ComputedPairsTable';
 import ExplorePairsTab from './ExplorePairsTab';
+import { colors } from '../styles/tokens';
 
 interface SimulationFeedback {
     max_rho: number | null;
@@ -369,7 +370,7 @@ const CombinedActionsModal: React.FC<Props> = ({
             <div
                 data-testid="combine-modal-card"
                 style={{
-                    background: 'white',
+                    background: colors.surface,
                     borderRadius: '12px',
                     // Use (almost) the full viewport width instead of a
                     // fixed 950px so wide tables in the Computed / Explore
@@ -384,12 +385,12 @@ const CombinedActionsModal: React.FC<Props> = ({
                     overflow: 'hidden'
                 }}
             >
-                <div style={{ padding: '15px 24px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfcfc' }}>
+                <div style={{ padding: '15px 24px', borderBottom: `1px solid ${colors.borderSubtle}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colors.surfaceRaised }}>
                     <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Combine Actions</h2>
-                    <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: '24px', cursor: 'pointer', color: '#999' }}>&times;</button>
+                    <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: '24px', cursor: 'pointer', color: colors.textTertiary }}>&times;</button>
                 </div>
 
-                <div style={{ display: 'flex', borderBottom: '1px solid #ddd', background: '#fcfcfc', padding: '0 24px' }}>
+                <div style={{ display: 'flex', borderBottom: `1px solid ${colors.border}`, background: colors.surfaceRaised, padding: '0 24px' }}>
                     <div className={`modal-tab ${activeTab === 'computed' ? 'active' : ''}`} onClick={() => setActiveTab('computed')} data-testid="tab-computed">Computed Pairs</div>
                     <div className={`modal-tab ${activeTab === 'explore' ? 'active' : ''}`} onClick={() => setActiveTab('explore')} data-testid="tab-explore">Explore Pairs</div>
                 </div>
@@ -440,8 +441,8 @@ const CombinedActionsModal: React.FC<Props> = ({
                     )}
                 </div>
 
-                <div style={{ padding: '16px 24px', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: '#fcfcfc' }}>
-                    <button onClick={onClose} style={{ padding: '10px 20px', background: 'white', border: '1px solid #ccc', borderRadius: '6px', cursor: 'pointer', fontWeight: 500, color: '#666' }}>Close</button>
+                <div style={{ padding: '16px 24px', borderTop: `1px solid ${colors.borderSubtle}`, display: 'flex', justifyContent: 'flex-end', gap: '12px', background: colors.surfaceRaised }}>
+                    <button onClick={onClose} style={{ padding: '10px 20px', background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '6px', cursor: 'pointer', fontWeight: 500, color: colors.textTertiary }}>Close</button>
                 </div>
 
             </div>

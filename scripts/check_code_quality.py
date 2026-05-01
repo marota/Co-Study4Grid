@@ -22,13 +22,13 @@ Thresholds (see also CONTRIBUTING.md):
 | Frontend component size (lines)            | 1500|
 | `any` type annotations in frontend source  |  0  |
 | `@ts-ignore` directives in frontend source |  0  |
-| Hex color literals outside tokens.css      | 518 |
+| Hex color literals outside tokens.css      | 56  |
 
 `App.tsx` is exempt from the frontend size ceiling — it is the state
 orchestration hub by design.
 
 The hex-literal ceiling is a ratchet: it encodes the count after the
-Phase A token migration (see docs/proposals/ui-design-critique.md
+Phase A + B token migrations (see docs/proposals/ui-design-critique.md
 recommendation #1). Lowering it as more files migrate is welcome and
 required when the count drops; raising it is a regression — add the
 new color to `frontend/src/styles/tokens.css` and consume it via
@@ -47,10 +47,16 @@ FRONTEND_COMPONENT_MAX = 1500
 FRONTEND_UTIL_MAX = 2000
 # Ceiling on hex color literals in frontend source (excluding
 # `frontend/src/styles/tokens.css`, the token-definition file). Set to
-# the count after Phase A of the design-token migration. This is a
-# ratchet — lowering it as files migrate is welcome and required when
-# the count drops; raising it is a regression.
-FRONTEND_HEX_LITERAL_MAX = 518
+# the count after Phase A + B of the design-token migration. This is
+# a ratchet — lowering it as files migrate is welcome and required
+# when the count drops; raising it is a regression.
+#
+# The remaining 56 are concentrated in three SVG-emitting files
+# (utils/svg/actionPin{Data,Render}.ts and
+# components/ActionOverviewDiagram.tsx), pending a Phase C
+# pin-palette extension to tokens.css — see
+# docs/proposals/ui-design-critique.md.
+FRONTEND_HEX_LITERAL_MAX = 56
 # Files exempt from the component-size ceiling. `App.tsx` is the state
 # orchestration hub by design; `utils/svgUtils.ts` is a stable shared
 # util library (SVG helpers, highlight ops, metadata parsing) and is

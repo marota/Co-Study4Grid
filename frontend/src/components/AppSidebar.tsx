@@ -7,6 +7,7 @@
 
 import React from 'react';
 import SidebarSummary from './SidebarSummary';
+import { colors, radius, space } from '../styles/tokens';
 
 interface AppSidebarProps {
   selectedBranch: string;
@@ -54,7 +55,7 @@ export default function AppSidebar({
   children,
 }: AppSidebarProps) {
   return (
-    <div data-testid="sidebar" style={{ width: '25%', background: '#eee', borderRight: '1px solid #ccc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div data-testid="sidebar" style={{ width: '25%', background: colors.borderSubtle, borderRight: `1px solid ${colors.border}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <SidebarSummary
         selectedBranch={selectedBranch}
         n1LinesOverloaded={n1LinesOverloaded}
@@ -64,19 +65,19 @@ export default function AppSidebar({
         onContingencyZoom={onContingencyZoom}
         onOverloadClick={onOverloadClick}
       />
-      <div style={{ flex: 1, overflowY: 'auto', padding: '15px', minHeight: 0, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: space[4], minHeight: 0, display: 'flex', flexDirection: 'column', gap: space[4] }}>
         {branches.length > 0 && (
-          <div style={{ flexShrink: 0, padding: '10px 15px', background: 'white', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <div style={{ flexShrink: 0, padding: `${space[3]} ${space[4]}`, background: colors.surface, borderRadius: radius.lg, border: `1px solid ${colors.border}`, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
             <input
               list="contingencies"
               value={selectedBranch}
               onChange={onContingencyChange}
               placeholder="Search line/bus..."
-              style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', fontSize: '0.85rem' }}
+              style={{ width: '100%', padding: '7px 10px', border: `1px solid ${colors.border}`, borderRadius: radius.sm, boxSizing: 'border-box', fontSize: '0.85rem' }}
             />
             {selectedBranch && nameMap[selectedBranch] && (
-              <div style={{ fontSize: '0.78rem', color: '#4b5563', marginTop: '3px', fontStyle: 'italic', lineHeight: 1.3 }}>
+              <div style={{ fontSize: '0.78rem', color: colors.textSecondary, marginTop: '3px', fontStyle: 'italic', lineHeight: 1.3 }}>
                 {nameMap[selectedBranch]}
               </div>
             )}

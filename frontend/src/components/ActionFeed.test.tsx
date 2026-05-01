@@ -436,17 +436,17 @@ describe('ActionFeed', () => {
 
         const card = screen.getByTestId(`action-card-${actionId}`);
 
-        // 1. Check Divergent Badge (red)
+        // 1. Check Divergent Badge (danger token)
         const badge = screen.getByText('divergent');
-        expect(badge.style.background).toContain('rgb(220, 53, 69)'); // #dc3545
+        expect(badge.style.background).toContain('var(--color-danger)');
 
-        // 2. Check Warning Box (orange)
+        // 2. Check Warning Box (warning tokens)
         const warningBox = screen.getByText(/LoadFlow failure: Critical Error/);
-        expect(warningBox.style.color).toContain('rgb(154, 52, 18)'); // #9a3412
-        expect(warningBox.style.backgroundColor).toContain('rgb(255, 248, 241)'); // #fff8f1
+        expect(warningBox.style.color).toContain('var(--color-warning-text)');
+        expect(warningBox.style.backgroundColor).toContain('var(--color-warning-soft)');
 
-        // 3. Check Card Background (reddish)
-        expect(card.style.background).toContain('rgb(255, 245, 245)');
+        // 3. Check Card Background (danger-soft token)
+        expect(card.style.background).toContain('var(--color-danger-soft)');
     });
 
     it('ranks non-convergent actions at the bottom', () => {
@@ -652,12 +652,12 @@ describe('ActionFeed', () => {
         // Timing fix: it should appear at the same time as other user warnings (even during analysis)
         const warning = screen.getByText(/Action dictionary/);
         expect(warning).toBeInTheDocument();
-        // Check yellow theme
+        // Check warning theme via design tokens (jsdom returns the var() string for inline styles)
         const parent = warning.closest('div[style*="background"]') as HTMLDivElement;
         if (parent) {
-            expect(parent.style.background).toContain('rgb(255, 243, 205)'); // #fff3cd
-            expect(parent.style.border).toContain('rgb(255, 238, 186)'); // #ffeeba
-            expect(parent.style.color).toContain('rgb(133, 100, 4)'); // #856404
+            expect(parent.style.background).toContain('var(--color-warning-soft)');
+            expect(parent.style.border).toContain('var(--color-warning-border)');
+            expect(parent.style.color).toContain('var(--color-warning-text)');
         }
     });
 
@@ -670,8 +670,8 @@ describe('ActionFeed', () => {
 
         const banner = screen.getByText('⚙️ Analyzing…');
         expect(banner).toBeInTheDocument();
-        expect(banner.style.background).toContain('rgb(255, 243, 205)'); // #fff3cd
-        expect(banner.style.color).toContain('rgb(133, 100, 4)'); // #856404
+        expect(banner.style.background).toContain('var(--color-warning-soft)');
+        expect(banner.style.color).toContain('var(--color-warning-text)');
     });
 
     it('includes minPst in the recommender settings warning', () => {

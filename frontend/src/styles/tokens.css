@@ -67,9 +67,20 @@ remaining hex-literal count after each migration.
 
   /* ----- Color: accent + chrome ----- */
   --color-accent: #8e44ad;         /* save/secondary action */
+  --color-accent-soft: #f3e8ff;    /* PST tap-edit row bg */
+  --color-accent-border: #c084fc;  /* PST tap-edit row border */
+  --color-accent-text: #6b21a8;    /* PST tap-edit row text */
   --color-chrome: #2c3e50;         /* header / dark backgrounds */
   --color-chrome-soft: #7f8c8d;    /* settings cog, neutral chrome */
   --color-disabled: #95a5a6;       /* disabled buttons */
+
+  /* ----- Color: info (cyan — distinct from brand blue) -----
+     Used by curtailment edit rows and metric badges where the
+     intent is "informational" rather than "primary action". */
+  --color-info: #0284c7;
+  --color-info-soft: #e0f2fe;
+  --color-info-border: #7dd3fc;
+  --color-info-text: #075985;
 
   /* ----- Spacing (4 / 8 grid) ----- */
   --space-0: 0;
@@ -102,6 +113,9 @@ remaining hex-literal count after each migration.
   --signal-overload: #ff8c00;
   --signal-contingency: #ffe033;
   --signal-action-target: #ff4081;
+  --signal-action-target-strong: #ec407a;
+  --signal-action-target-darker: #ad1457;
+  --signal-action-target-soft: #fce4ec;
   --signal-breaker: #ce93d8;
   --signal-delta-positive: #ff9800;
   --signal-delta-negative: #2196f3;

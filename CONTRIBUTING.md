@@ -60,8 +60,9 @@ The gate enforces:
 - Frontend components stay under **1500 lines**
 - No `any` type annotations or `@ts-ignore` in frontend sources
 - **No new hex color literals** in frontend source. The current ceiling
-  (518) ratchets down as files migrate to design tokens. Define new
-  colors in [`frontend/src/styles/tokens.css`](./frontend/src/styles/tokens.css)
+  (56) covers a small queue of SVG-emitting files awaiting a Phase C
+  pin-palette extension. Define new colors in
+  [`frontend/src/styles/tokens.css`](./frontend/src/styles/tokens.css)
   and consume them via `var(--…)` (CSS) or the `colors` / `space` /
   `text` / `radius` exports from `frontend/src/styles/tokens.ts`
   (inline styles).

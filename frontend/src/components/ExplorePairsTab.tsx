@@ -9,6 +9,7 @@ import React, { useState } from 'react';
 import type { CombinedAction, AnalysisResult, ActionTypeFilterToken } from '../types';
 import ActionTypeFilterChips from './ActionTypeFilterChips';
 import { matchesActionTypeFilter } from '../utils/actionTypes';
+import { colors } from '../styles/tokens';
 
 interface SimulationFeedback {
     max_rho: number | null;
@@ -70,21 +71,21 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
             {/* Selection Chips Header */}
-            <div style={{ background: '#f8f9fa', padding: '10px 15px', borderRadius: '6px', marginBottom: '15px', border: '1px solid #e9ecef' }}>
+            <div style={{ background: colors.surfaceMuted, padding: '10px 15px', borderRadius: '6px', marginBottom: '15px', border: `1px solid ${colors.border}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#444' }}>Selected Actions ({selectedIds.size}/2)</div>
+                    <div style={{ fontSize: '12px', fontWeight: 'bold', color: colors.textSecondary }}>Selected Actions ({selectedIds.size}/2)</div>
                     <button
                         onClick={onClearSelection}
                         disabled={selectedIds.size === 0}
-                        style={{ background: 'none', border: 'none', color: '#007bff', fontSize: '11px', cursor: 'pointer', padding: 0 }}
+                        style={{ background: 'none', border: 'none', color: colors.brand, fontSize: '11px', cursor: 'pointer', padding: 0 }}
                     >Clear All</button>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', minHeight: '30px', flexWrap: 'wrap' }} data-testid="selection-chips">
                     {selectedIds.size === 0 ? (
-                        <div style={{ color: '#999', fontSize: '12px', fontStyle: 'italic', display: 'flex', alignItems: 'center' }}>Click rows in the table below to select...</div>
+                        <div style={{ color: colors.textTertiary, fontSize: '12px', fontStyle: 'italic', display: 'flex', alignItems: 'center' }}>Click rows in the table below to select...</div>
                     ) : (
                         Array.from(selectedIds).map(id => (
-                            <div key={id} data-testid={`chip-${id}`} style={{ background: '#e7f1ff', color: '#007bff', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', border: '1px solid #b3d7ff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div key={id} data-testid={`chip-${id}`} style={{ background: colors.brandSoft, color: colors.brand, padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', border: `1px solid ${colors.brand}`, display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 {id}
                                 <span onClick={(e) => { e.stopPropagation(); onToggle(id); }} style={{ cursor: 'pointer', fontSize: '14px', lineHeight: '10px' }}>&times;</span>
                             </div>
@@ -104,7 +105,7 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
             </div>
 
             {/* Grouped Table */}
-            <div style={{ flex: 1, maxHeight: '350px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '4px', marginBottom: '15px' }}>
+            <div style={{ flex: 1, maxHeight: '350px', overflowY: 'auto', border: `1px solid ${colors.borderSubtle}`, borderRadius: '4px', marginBottom: '15px' }}>
                 {(() => {
                     const filteredList = scoredActionsList.filter(item =>
                         matchesActionTypeFilter(actionTypeFilter, item.actionId, null, item.type),
@@ -114,7 +115,7 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
 
                     if (filteredList.length === 0) {
                         return (
-                            <div style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', padding: '40px 20px' }}>
+                            <div style={{ textAlign: 'center', color: colors.textTertiary, fontStyle: 'italic', padding: '40px 20px' }}>
                                 No scored actions available for this filter.
                             </div>
                         );
@@ -122,16 +123,16 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
 
                     return types.map(type => (
                         <div key={type} style={{ marginBottom: '1px' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 600, color: '#444', backgroundColor: '#f0f2f5', padding: '4px 10px', borderBottom: '1px solid #e1e4e8', display: 'flex', justifyContent: 'space-between' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 600, color: colors.textSecondary, backgroundColor: colors.surfaceMuted, padding: '4px 10px', borderBottom: `1px solid ${colors.border}`, display: 'flex', justifyContent: 'space-between' }}>
                                 <span>{type.replace(/_/g, ' ').toUpperCase()}</span>
                                 <span>{filteredList.filter(item => item.type === type).length} actions</span>
                             </div>
                             {(type === 'load_shedding' || type === 'ls') && (
                                 <div style={{
                                     padding: '6px 10px',
-                                    background: '#fff3cd',
-                                    color: '#856404',
-                                    borderBottom: '1px solid #ffeeba',
+                                    background: colors.warningSoft,
+                                    color: colors.warningText,
+                                    borderBottom: `1px solid ${colors.warningBorder}`,
                                     fontSize: '11px',
                                     fontWeight: 600,
                                     display: 'flex',
@@ -144,9 +145,9 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                             {(type === 'renewable_curtailment' || type === 'rc') && (
                                 <div style={{
                                     padding: '6px 10px',
-                                    background: '#e3f2fd',
-                                    color: '#0d47a1',
-                                    borderBottom: '1px solid #bbdefb',
+                                    background: colors.infoSoft,
+                                    color: colors.infoText,
+                                    borderBottom: `1px solid ${colors.infoBorder}`,
                                     fontSize: '11px',
                                     fontWeight: 600,
                                     display: 'flex',
@@ -169,13 +170,13 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                                                     key={actionId}
                                                     className={isSelected ? 'selected' : ''}
                                                     onClick={() => onToggle(actionId)}
-                                                    style={{ cursor: 'pointer', background: isSelected ? '#fff9db' : '#fdfdfd' }}
+                                                    style={{ cursor: 'pointer', background: isSelected ? colors.warningSoft : colors.surfaceRaised }}
                                                 >
                                                     <td style={{ width: '30px', padding: '8px 0 8px 12px' }}>
                                                         <input type="checkbox" checked={isSelected} readOnly style={{ cursor: 'pointer' }} />
                                                     </td>
                                                     <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{actionId}</td>
-                                                    <td style={{ width: '65px', textAlign: 'right', fontFamily: 'monospace', fontSize: '11px', color: mwStart == null ? '#aaa' : '#333' }}>
+                                                    <td style={{ width: '65px', textAlign: 'right', fontFamily: 'monospace', fontSize: '11px', color: mwStart == null ? colors.textTertiary : colors.textPrimary }}>
                                                         {mwStart != null ? `${mwStart.toFixed(1)}` : 'N/A'}
                                                     </td>
                                                     <td style={{ width: '60px', textAlign: 'right' }}>
@@ -188,14 +189,14 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                                                             <span className="metric-badge metric-rho" style={{
                                                                 transform: 'scale(0.9)',
                                                                 display: 'inline-block',
-                                                                background: (simResult.max_rho ?? 0) > monitoringFactor ? '#ffebee' : '#e8f5e9',
-                                                                color: (simResult.max_rho ?? 0) > monitoringFactor ? '#c62828' : '#2e7d32',
+                                                                background: (simResult.max_rho ?? 0) > monitoringFactor ? colors.dangerSoft : colors.successSoft,
+                                                                color: (simResult.max_rho ?? 0) > monitoringFactor ? colors.dangerText : colors.successStrong,
                                                                 border: '1px solid currentColor'
                                                             }}>
                                                                 {((simResult.max_rho ?? 0) * 100).toFixed(1)}%
                                                             </span>
                                                         ) : (
-                                                            <span style={{ color: '#aaa', fontStyle: 'italic', fontSize: '10px' }}>Untested</span>
+                                                            <span style={{ color: colors.textTertiary, fontStyle: 'italic', fontSize: '10px' }}>Untested</span>
                                                         )}
                                                     </td>
                                                     <td onClick={(e) => e.stopPropagation()} style={{ width: '100px', textAlign: 'right', paddingRight: '12px' }}>
@@ -204,8 +205,8 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                                                             disabled={simulating}
                                                             style={{
                                                                 padding: '3px 10px',
-                                                                background: simResult ? '#95a5a6' : '#2980b9',
-                                                                color: 'white',
+                                                                background: simResult ? colors.disabled : colors.brandStrong,
+                                                                color: colors.textOnBrand,
                                                                 border: 'none',
                                                                 borderRadius: '4px',
                                                                 cursor: simulating ? 'not-allowed' : 'pointer',
@@ -240,8 +241,8 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                             style={{
                                 width: '100%',
                                 padding: '12px',
-                                background: (selectedIds.size === 2 && !loading && !hasRestricted) ? '#3498db' : '#ecf0f1',
-                                color: (selectedIds.size === 2 && !loading && !hasRestricted) ? 'white' : '#bdc3c7',
+                                background: (selectedIds.size === 2 && !loading && !hasRestricted) ? colors.brand : colors.surfaceMuted,
+                                color: (selectedIds.size === 2 && !loading && !hasRestricted) ? colors.textOnBrand : colors.textTertiary,
                                 border: 'none',
                                 borderRadius: '6px',
                                 cursor: (selectedIds.size !== 2 || loading || hasRestricted) ? 'not-allowed' : 'pointer',
@@ -260,8 +261,8 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                             style={{
                                 width: '100%',
                                 padding: '10px',
-                                background: (selectedIds.size === 2 && !simulating) ? '#27ae60' : '#ecf0f1',
-                                color: (selectedIds.size === 2 && !simulating) ? 'white' : '#bdc3c7',
+                                background: (selectedIds.size === 2 && !simulating) ? colors.success : colors.surfaceMuted,
+                                color: (selectedIds.size === 2 && !simulating) ? colors.textOnBrand : colors.textTertiary,
                                 border: 'none',
                                 borderRadius: '6px',
                                 cursor: (selectedIds.size !== 2 || simulating) ? 'not-allowed' : 'pointer',
@@ -285,8 +286,8 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                             width: '100%',
                             padding: '10px',
                             marginBottom: '8px',
-                            background: simulating ? '#6c757d' : '#27ae60',
-                            color: 'white',
+                            background: simulating ? colors.textSecondary : colors.success,
+                            color: colors.textOnBrand,
                             border: 'none',
                             borderRadius: '6px',
                             cursor: simulating ? 'not-allowed' : 'pointer',
@@ -303,18 +304,18 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                 {(preview || simulationFeedback || simulating) && (
                     <div style={{
                         padding: '15px',
-                        background: error ? '#fff3cd' : '#e1f5fe',
+                        background: error ? colors.warningSoft : colors.infoSoft,
                         borderRadius: '8px',
-                        borderLeft: '5px solid ' + (error ? '#856404' : '#0288d1'),
+                        borderLeft: '5px solid ' + (error ? colors.warningText : colors.info),
                         boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
                     }} data-testid="comparison-card">
                         <div style={{ marginBottom: '10px' }}>
                             {preview?.betas && (
-                                <div style={{ marginBottom: '8px', fontSize: '11px', color: '#666', background: 'rgba(255,255,255,0.6)', padding: '2px 8px', borderRadius: '4px', display: 'inline-block', fontWeight: 600 }}>
+                                <div style={{ marginBottom: '8px', fontSize: '11px', color: colors.textTertiary, background: 'rgba(255,255,255,0.6)', padding: '2px 8px', borderRadius: '4px', display: 'inline-block', fontWeight: 600 }}>
                                     Betas: {preview.betas.map(b => b.toFixed(3)).join(', ')}
                                 </div>
                             )}
-                            <div style={{ fontWeight: 800, color: error ? '#856404' : '#01579b', fontSize: '15px' }}>
+                            <div style={{ fontWeight: 800, color: error ? colors.warningText : colors.infoText, fontSize: '15px' }}>
                                 {error ? '⚠️ Estimation Failed' : (preview ? 'Explore Pairs Comparison' : 'Simulation Result')}
                             </div>
                         </div>
@@ -323,58 +324,58 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                             <div style={{ display: 'flex', gap: '30px', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '12px' }}>
                                 {preview && (
                                     <div style={{ flex: 1, borderRight: '1px solid rgba(0,0,0,0.05)', paddingRight: '15px' }}>
-                                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Estimated Effect</div>
+                                        <div style={{ fontSize: '11px', fontWeight: 700, color: colors.textTertiary, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Estimated Effect</div>
                                         <div style={{ fontSize: '13px', marginBottom: '4px' }}>
-                                            Estimated Max Loading: <strong style={{ color: (preview.estimated_max_rho ?? preview.max_rho ?? 0) <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{((preview.estimated_max_rho ?? preview.max_rho ?? 0) * 100).toFixed(1)}%</strong>
+                                            Estimated Max Loading: <strong style={{ color: (preview.estimated_max_rho ?? preview.max_rho ?? 0) <= monitoringFactor ? colors.success : colors.warningStrong, fontSize: '16px' }}>{((preview.estimated_max_rho ?? preview.max_rho ?? 0) * 100).toFixed(1)}%</strong>
                                             {preview.is_islanded && (
                                                 <span style={{ marginLeft: '6px' }} title="Estimation suspect due to islanding">⚠️</span>
                                             )}
                                         </div>
-                                        <div style={{ fontSize: '12px', color: '#666' }}>
+                                        <div style={{ fontSize: '12px', color: colors.textTertiary }}>
                                             Line: {displayName(preview.estimated_max_rho_line ?? preview.max_rho_line)}
                                         </div>
                                         {preview.target_max_rho != null && preview.target_max_rho_line && preview.target_max_rho_line !== 'N/A' && preview.target_max_rho_line !== (preview.estimated_max_rho_line ?? preview.max_rho_line) && (
-                                            <div style={{ fontSize: '11px', color: '#555', marginTop: '6px', padding: '4px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '4px', display: 'inline-block' }} data-testid="target-max-rho">
-                                                Target overload: <strong style={{ color: (preview.target_max_rho ?? 0) <= monitoringFactor ? '#28a745' : '#d35400' }}>{((preview.target_max_rho ?? 0) * 100).toFixed(1)}%</strong> on {displayName(preview.target_max_rho_line)}
+                                            <div style={{ fontSize: '11px', color: colors.textSecondary, marginTop: '6px', padding: '4px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '4px', display: 'inline-block' }} data-testid="target-max-rho">
+                                                Target overload: <strong style={{ color: (preview.target_max_rho ?? 0) <= monitoringFactor ? colors.success : colors.warningStrong }}>{((preview.target_max_rho ?? 0) * 100).toFixed(1)}%</strong> on {displayName(preview.target_max_rho_line)}
                                             </div>
                                         )}
                                     </div>
                                 )}
                                 <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Simulation Result</div>
+                                    <div style={{ fontSize: '11px', fontWeight: 700, color: colors.textTertiary, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Simulation Result</div>
                                     {simulating && (
-                                        <div style={{ color: '#0056b3', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <div style={{ color: colors.brandStrong, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                             <span>⌛</span> Simulating combined action...
                                         </div>
                                     )}
                                     {!simulating && simulationFeedback && (
                                         <div data-testid="simulation-feedback">
                                             <div style={{ fontSize: '13px', marginBottom: '4px' }}>
-                                                Actual Max Loading: <strong style={{ color: (simulationFeedback.max_rho ?? 1) <= monitoringFactor ? '#28a745' : '#d35400', fontSize: '16px' }}>{simulationFeedback.max_rho != null ? `${(simulationFeedback.max_rho * 100).toFixed(1)}%` : 'N/A'}</strong>
+                                                Actual Max Loading: <strong style={{ color: (simulationFeedback.max_rho ?? 1) <= monitoringFactor ? colors.success : colors.warningStrong, fontSize: '16px' }}>{simulationFeedback.max_rho != null ? `${(simulationFeedback.max_rho * 100).toFixed(1)}%` : 'N/A'}</strong>
                                             </div>
-                                            <div style={{ fontSize: '12px', color: '#666' }}>
+                                            <div style={{ fontSize: '12px', color: colors.textTertiary }}>
                                                 Line: {displayName(simulationFeedback.max_rho_line)}
                                             </div>
                                             {simulationFeedback.is_islanded && (
-                                                <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                                                <div style={{ fontSize: '11px', color: colors.danger, marginTop: '6px', fontWeight: 600, background: colors.dangerSoft, padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
                                                     Islanding detected ({simulationFeedback.disconnected_mw?.toFixed(1)} MW disconnected)
                                                 </div>
                                             )}
                                             {simulationFeedback.non_convergence && (
-                                                <div style={{ fontSize: '11px', color: '#dc3545', marginTop: '6px', fontWeight: 600, background: '#fff5f5', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                                                <div style={{ fontSize: '11px', color: colors.danger, marginTop: '6px', fontWeight: 600, background: colors.dangerSoft, padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
                                                     Non-convergence: {simulationFeedback.non_convergence}
                                                 </div>
                                             )}
                                         </div>
                                     )}
                                     {!simulating && !simulationFeedback && (
-                                        <div style={{ color: '#aaa', fontSize: '12px', fontStyle: 'italic', marginTop: '5px' }}>Click "Simulate Combined" above to run</div>
+                                        <div style={{ color: colors.textTertiary, fontSize: '12px', fontStyle: 'italic', marginTop: '5px' }}>Click "Simulate Combined" above to run</div>
                                     )}
                                 </div>
                             </div>
                         )}
                         {error && (
-                            <div style={{ fontSize: '13px', color: '#856404' }}>{error}</div>
+                            <div style={{ fontSize: '13px', color: colors.warningText }}>{error}</div>
                         )}
                     </div>
                 )}

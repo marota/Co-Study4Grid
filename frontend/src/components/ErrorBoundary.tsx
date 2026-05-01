@@ -6,6 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { colors } from '../styles/tokens';
 
 interface ErrorBoundaryProps {
     children: ReactNode;
@@ -69,10 +70,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                         margin: '2rem auto',
                         maxWidth: '720px',
                         fontFamily: 'system-ui, -apple-system, sans-serif',
-                        background: '#fff5f5',
-                        border: '1px solid #feb2b2',
+                        background: colors.dangerSoft,
+                        border: `1px solid ${colors.danger}`,
                         borderRadius: '8px',
-                        color: '#742a2a',
+                        color: colors.dangerText,
                     }}
                 >
                     <h1 style={{ marginTop: 0, fontSize: '1.5rem' }}>
@@ -88,8 +89,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                             style={{
                                 marginTop: '1rem',
                                 padding: '0.75rem',
-                                background: '#fff',
-                                border: '1px solid #fed7d7',
+                                background: colors.surface,
+                                border: `1px solid ${colors.dangerSoft}`,
                                 borderRadius: '4px',
                                 whiteSpace: 'pre-wrap',
                                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -120,8 +121,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                             onClick={this.handleReset}
                             style={{
                                 padding: '0.5rem 1rem',
-                                background: '#3182ce',
-                                color: '#fff',
+                                background: colors.brand,
+                                color: colors.textOnBrand,
                                 border: 'none',
                                 borderRadius: '4px',
                                 cursor: 'pointer',
@@ -135,9 +136,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                             onClick={this.handleReload}
                             style={{
                                 padding: '0.5rem 1rem',
-                                background: '#fff',
-                                color: '#3182ce',
-                                border: '1px solid #3182ce',
+                                background: colors.surface,
+                                color: colors.brand,
+                                border: `1px solid ${colors.brand}`,
                                 borderRadius: '4px',
                                 cursor: 'pointer',
                                 fontWeight: 600,

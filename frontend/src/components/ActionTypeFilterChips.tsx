@@ -7,6 +7,7 @@
 
 import React from 'react';
 import { ACTION_TYPE_FILTER_TOKENS, type ActionTypeFilterToken } from '../utils/actionTypes';
+import { colors, text } from '../styles/tokens';
 
 /**
  * Single-select action-type chip row shared by ExplorePairsTab,
@@ -52,10 +53,10 @@ const ActionTypeFilterChips: React.FC<ActionTypeFilterChipsProps> = ({
                         padding: '4px 12px',
                         borderRadius: '15px',
                         border: '1px solid',
-                        borderColor: active ? '#007bff' : '#ddd',
-                        background: active ? '#007bff' : 'white',
-                        color: active ? 'white' : '#666',
-                        fontSize: '11px',
+                        borderColor: active ? colors.brand : colors.border,
+                        background: active ? colors.brand : colors.surface,
+                        color: active ? colors.textOnBrand : colors.textTertiary,
+                        fontSize: text.xs,
                         cursor: 'pointer',
                         fontWeight: active ? 'bold' : 'normal',
                         transition: 'all 0.2s',

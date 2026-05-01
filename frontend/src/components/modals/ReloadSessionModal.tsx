@@ -5,6 +5,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
+import { colors } from '../../styles/tokens';
+
 interface ReloadSessionModalProps {
   showReloadModal: boolean;
   setShowReloadModal: (v: boolean) => void;
@@ -33,19 +35,19 @@ const ReloadSessionModal: React.FC<ReloadSessionModalProps> = ({
       display: 'flex', justifyContent: 'center', alignItems: 'center'
     }}>
       <div style={{
-        background: 'white', borderRadius: '10px',
+        background: colors.surface, borderRadius: '10px',
         width: '500px', maxWidth: '95vw', maxHeight: '70vh',
         display: 'flex', flexDirection: 'column',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.3)', color: 'black'
+        boxShadow: '0 8px 32px rgba(0,0,0,0.3)', color: colors.textPrimary
       }}>
         <div style={{
-          padding: '15px 20px', borderBottom: '1px solid #eee',
+          padding: '15px 20px', borderBottom: `1px solid ${colors.borderSubtle}`,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center'
         }}>
           <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Reload Session</h3>
           <button
             onClick={() => setShowReloadModal(false)}
-            style={{ border: 'none', background: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}
+            style={{ border: 'none', background: 'none', fontSize: '20px', cursor: 'pointer', color: colors.textTertiary }}
           >
             &times;
           </button>
@@ -53,18 +55,18 @@ const ReloadSessionModal: React.FC<ReloadSessionModalProps> = ({
 
         <div style={{
           padding: '15px 20px', fontSize: '0.8rem',
-          color: '#666', borderBottom: '1px solid #f0f0f0'
+          color: colors.textTertiary, borderBottom: `1px solid ${colors.borderSubtle}`
         }}>
           From: {outputFolderPath}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px 20px' }}>
           {sessionListLoading ? (
-            <div style={{ padding: '30px', textAlign: 'center', color: '#999' }}>
+            <div style={{ padding: '30px', textAlign: 'center', color: colors.textTertiary }}>
               Loading sessions...
             </div>
           ) : sessionList.length === 0 ? (
-            <div style={{ padding: '30px', textAlign: 'center', color: '#999' }}>
+            <div style={{ padding: '30px', textAlign: 'center', color: colors.textTertiary }}>
               No saved sessions found in this folder.
             </div>
           ) : (
@@ -74,13 +76,13 @@ const ReloadSessionModal: React.FC<ReloadSessionModalProps> = ({
                 onClick={() => !sessionRestoring && onRestoreSession(name)}
                 style={{
                   padding: '10px 12px', margin: '4px 0',
-                  border: '1px solid #eee', borderRadius: '6px',
+                  border: `1px solid ${colors.borderSubtle}`, borderRadius: '6px',
                   cursor: sessionRestoring ? 'not-allowed' : 'pointer',
                   fontSize: '0.85rem', fontFamily: 'monospace',
                   transition: 'background 0.15s',
                   opacity: sessionRestoring ? 0.5 : 1,
                 }}
-                onMouseOver={e => { if (!sessionRestoring) (e.currentTarget as HTMLElement).style.background = '#e7f1ff'; }}
+                onMouseOver={e => { if (!sessionRestoring) (e.currentTarget as HTMLElement).style.background = colors.brandSoft; }}
                 onMouseOut={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
               >
                 {name}
@@ -89,11 +91,11 @@ const ReloadSessionModal: React.FC<ReloadSessionModalProps> = ({
           )}
         </div>
 
-        <div style={{ padding: '12px 20px', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ padding: '12px 20px', borderTop: `1px solid ${colors.borderSubtle}`, display: 'flex', justifyContent: 'flex-end' }}>
           <button
             onClick={() => setShowReloadModal(false)}
             style={{
-              padding: '8px 20px', background: '#95a5a6', color: 'white',
+              padding: '8px 20px', background: colors.disabled, color: colors.textOnBrand,
               border: 'none', borderRadius: '5px', cursor: 'pointer',
               fontWeight: 'bold', fontSize: '0.85rem'
             }}

@@ -8,6 +8,7 @@
 import React, { type RefObject } from 'react';
 import type { ActionDetail, ActionTypeFilterToken, AvailableAction } from '../types';
 import ActionTypeFilterChips from './ActionTypeFilterChips';
+import { colors } from '../styles/tokens';
 
 export interface ScoredActionItem {
     type: string;
@@ -76,8 +77,8 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                 right: 0,
                 left: 0,
                 zIndex: 100,
-                backgroundColor: 'white',
-                border: '1px solid #ccc',
+                backgroundColor: colors.surface,
+                border: `1px solid ${colors.border}`,
                 borderRadius: '8px',
                 boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
                 marginTop: '4px',
@@ -94,14 +95,14 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                     style={{
                         width: '100%',
                         padding: '6px 10px',
-                        border: '1px solid #ccc',
+                        border: `1px solid ${colors.border}`,
                         borderRadius: '4px',
                         fontSize: '13px',
                         boxSizing: 'border-box',
                     }}
                 />
             </div>
-            <div style={{ padding: '4px 8px', borderTop: '1px solid #eee' }}>
+            <div style={{ padding: '4px 8px', borderTop: `1px solid ${colors.borderSubtle}` }}>
                 <ActionTypeFilterChips
                     testIdPrefix="search-dropdown-filter"
                     value={actionTypeFilter}
@@ -112,15 +113,15 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                 <div style={{
                     padding: '6px 8px',
                     fontSize: '12px',
-                    color: '#dc3545',
-                    borderTop: '1px solid #eee',
+                    color: colors.danger,
+                    borderTop: `1px solid ${colors.borderSubtle}`,
                 }}>
                     {error}
                 </div>
             )}
             <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
                 {loadingActions ? (
-                    <div style={{ padding: '10px', textAlign: 'center', color: '#888', fontSize: '13px' }}>
+                    <div style={{ padding: '10px', textAlign: 'center', color: colors.textTertiary, fontSize: '13px' }}>
                         Loading actions...
                     </div>
                 ) : (
@@ -164,10 +165,10 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                                 style={{
                                     margin: '6px 8px',
                                     padding: '6px 8px',
-                                    background: '#fff3cd',
-                                    border: '1px solid #ffeeba',
+                                    background: colors.warningSoft,
+                                    border: `1px solid ${colors.warningBorder}`,
                                     borderRadius: 4,
-                                    color: '#856404',
+                                    color: colors.warningText,
                                     fontSize: 12,
                                     lineHeight: 1.35,
                                 }}
@@ -178,7 +179,7 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
 
                         {/* Search Results */}
                         {(!searchQuery && scoredActionsList.length === 0 && filteredActions.length === 0) && (
-                            <div style={{ padding: '10px', textAlign: 'center', color: '#888', fontSize: '13px' }}>
+                            <div style={{ padding: '10px', textAlign: 'center', color: colors.textTertiary, fontSize: '13px' }}>
                                 All actions already added
                             </div>
                         )}
@@ -189,20 +190,20 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                                 style={{
                                     padding: '8px 10px',
                                     cursor: simulating ? 'wait' : 'pointer',
-                                    borderTop: '1px solid #eee',
-                                    backgroundColor: '#f8f9fa',
-                                    color: '#007bff',
+                                    borderTop: `1px solid ${colors.borderSubtle}`,
+                                    backgroundColor: colors.surfaceMuted,
+                                    color: colors.brand,
                                     fontSize: '12px',
                                     fontWeight: 600,
                                 }}
-                                onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = '#eef6ff'}
-                                onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = '#f8f9fa'}
+                                onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = colors.brandSoft}
+                                onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = colors.surfaceMuted}
                             >
                                 ✨ Simulate manual ID: <strong>{searchQuery}</strong>
                             </div>
                         )}
                         {(searchQuery && filteredActions.length === 0 && searchQuery !== (filteredActions[0]?.id)) && (
-                            <div style={{ padding: '10px', textAlign: 'center', color: '#888', fontSize: '13px' }}>
+                            <div style={{ padding: '10px', textAlign: 'center', color: colors.textTertiary, fontSize: '13px' }}>
                                 No other matching actions
                             </div>
                         )}
@@ -214,18 +215,18 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                                 style={{
                                     padding: '6px 10px',
                                     cursor: simulating ? 'wait' : 'pointer',
-                                    borderTop: '1px solid #eee',
-                                    backgroundColor: simulating === a.id ? '#e7f1ff' : 'transparent',
+                                    borderTop: `1px solid ${colors.borderSubtle}`,
+                                    backgroundColor: simulating === a.id ? colors.brandSoft : 'transparent',
                                     opacity: simulating && simulating !== a.id ? 0.5 : 1,
                                 }}
-                                onMouseEnter={(e) => { if (!simulating) (e.currentTarget as HTMLDivElement).style.backgroundColor = '#f0f0f0'; }}
+                                onMouseEnter={(e) => { if (!simulating) (e.currentTarget as HTMLDivElement).style.backgroundColor = colors.surfaceMuted; }}
                                 onMouseLeave={(e) => { if (simulating !== a.id) (e.currentTarget as HTMLDivElement).style.backgroundColor = 'transparent'; }}
                             >
-                                <div style={{ fontWeight: 600, fontSize: '12px', color: '#333' }}>
+                                <div style={{ fontWeight: 600, fontSize: '12px', color: colors.textPrimary }}>
                                     {simulating === a.id ? 'Simulating...' : a.id}
                                 </div>
                                 {a.description && (
-                                    <div style={{ fontSize: '11px', color: '#777', marginTop: '2px' }}>
+                                    <div style={{ fontSize: '11px', color: colors.textTertiary, marginTop: '2px' }}>
                                         {a.description}
                                     </div>
                                 )}
@@ -275,7 +276,7 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
 }) => {
     return (
         <div style={{ padding: '0 8px', marginBottom: '8px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: '#555', marginBottom: '4px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: colors.textSecondary, marginBottom: '4px' }}>
                 Scored Actions
             </div>
             {Array.from(new Set(scoredActionsList.map(item => item.type))).map(type => {
@@ -295,17 +296,17 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                 const tapStartMap = isPstType ? (typeData as { tap_start?: Record<string, { pst_name: string; tap: number; low_tap: number | null; high_tap: number | null } | null> }).tap_start : undefined;
                 return (
                     <div key={type} style={{ marginBottom: '8px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#0056b3', backgroundColor: '#e9ecef', padding: '2px 6px', borderRadius: '4px 4px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 600, color: colors.brandStrong, backgroundColor: colors.surfaceMuted, padding: '2px 6px', borderRadius: '4px 4px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span>{type.replace('_', ' ').toUpperCase()}</span>
                             {globalParams && (
                                 <span
-                                    style={{ color: '#6c757d', fontSize: '12px', cursor: 'help', marginLeft: '6px' }}
+                                    style={{ color: colors.textSecondary, fontSize: '12px', cursor: 'help', marginLeft: '6px' }}
                                     onMouseEnter={(e) => onShowTooltip(e, (
                                         <>
-                                            <div style={{ fontWeight: 700, marginBottom: '2px', borderBottom: '1px solid #555', paddingBottom: '2px' }}>Scoring Parameters</div>
+                                            <div style={{ fontWeight: 700, marginBottom: '2px', borderBottom: `1px solid ${colors.textSecondary}`, paddingBottom: '2px' }}>Scoring Parameters</div>
                                             {Object.entries(globalParams).map(([k, v]) => (
                                                 <div key={k}>
-                                                    <span style={{ color: '#adb5bd' }}>{k}:</span> {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                                                    <span style={{ color: colors.textTertiary }}>{k}:</span> {typeof v === 'object' ? JSON.stringify(v) : String(v)}
                                                 </div>
                                             ))}
                                         </>
@@ -314,9 +315,9 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                                 >i</span>
                             )}
                         </div>
-                        <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', border: '1px solid #e9ecef', borderTop: 'none' }}>
+                        <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', border: `1px solid ${colors.border}`, borderTop: 'none' }}>
                             <thead>
-                                <tr style={{ background: '#f8f9fa', borderBottom: '1px solid #ddd' }}>
+                                <tr style={{ background: colors.surfaceMuted, borderBottom: `1px solid ${colors.border}` }}>
                                     <th style={{ textAlign: 'left', padding: '4px 6px', width: hasEditableColumn ? '40%' : '55%' }}>Action</th>
                                     <th style={{ textAlign: 'right', padding: '4px 6px', width: '15%' }}>{isPstType ? 'Tap Start' : 'MW Start'}</th>
                                     {isLsOrRcType && <th style={{ textAlign: 'right', padding: '4px 6px', width: '20%' }}>Target MW</th>}
@@ -389,37 +390,37 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                                                 onAddAction(item.actionId, mw, tap);
                                             }}
                                             style={{
-                                                borderBottom: '1px solid #eee',
+                                                borderBottom: `1px solid ${colors.borderSubtle}`,
                                                 cursor: (simulating || resimulating) ? 'wait' : (isComputed && !canResimulate && !canResimTap) ? 'not-allowed' : 'pointer',
-                                                color: (isComputed && !canResimulate && !canResimTap) ? '#888' : 'inherit',
+                                                color: (isComputed && !canResimulate && !canResimTap) ? colors.textTertiary : 'inherit',
                                                 opacity: (simulating === item.actionId || resimulating === item.actionId) ? 0.7 : 1,
-                                                background: (simulating === item.actionId || resimulating === item.actionId) ? '#e7f1ff' : 'transparent',
+                                                background: (simulating === item.actionId || resimulating === item.actionId) ? colors.brandSoft : 'transparent',
                                             }}>
                                             <td style={{ padding: '4px 6px', fontWeight: 600, display: 'flex', alignItems: 'center' }}>
                                                 {item.actionId}
                                                 {isComputed && (
                                                     actions[item.actionId]?.non_convergence ? (
-                                                        <span data-testid={`badge-divergent-${item.actionId}`} style={{ marginLeft: '4px', background: '#dc3545', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }} title={actions[item.actionId].non_convergence || undefined}>divergent</span>
+                                                        <span data-testid={`badge-divergent-${item.actionId}`} style={{ marginLeft: '4px', background: colors.danger, color: colors.textOnBrand, padding: '2px 4px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }} title={actions[item.actionId].non_convergence || undefined}>divergent</span>
                                                     ) : actions[item.actionId]?.is_islanded ? (
-                                                        <span data-testid={`badge-islanded-${item.actionId}`} style={{ marginLeft: '4px', background: '#dc3545', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }} title={`Islanding detected: ${actions[item.actionId].disconnected_mw?.toFixed(1)} MW disconnected`}>islanded</span>
+                                                        <span data-testid={`badge-islanded-${item.actionId}`} style={{ marginLeft: '4px', background: colors.danger, color: colors.textOnBrand, padding: '2px 4px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }} title={`Islanding detected: ${actions[item.actionId].disconnected_mw?.toFixed(1)} MW disconnected`}>islanded</span>
                                                     ) : (
-                                                        <span data-testid={`badge-computed-${item.actionId}`} style={{ marginLeft: '4px', background: '#28a745', color: '#fff', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', opacity: 0.8 }}>computed</span>
+                                                        <span data-testid={`badge-computed-${item.actionId}`} style={{ marginLeft: '4px', background: colors.success, color: colors.textOnBrand, padding: '2px 4px', borderRadius: '4px', fontSize: '9px', opacity: 0.8 }}>computed</span>
                                                     )
                                                 )}
                                                 {isPerActionParams && typeData.params?.[item.actionId] && (
                                                     <span
-                                                        style={{ color: '#6c757d', fontSize: '12px', cursor: 'help', marginLeft: '6px' }}
+                                                        style={{ color: colors.textSecondary, fontSize: '12px', cursor: 'help', marginLeft: '6px' }}
                                                         onClick={(e) => e.stopPropagation()}
                                                         onMouseEnter={(e) => onShowTooltip(e, (
                                                             <>
-                                                                <div style={{ fontWeight: 700, marginBottom: '2px', borderBottom: '1px solid #555', paddingBottom: '2px' }}>Parameters</div>
+                                                                <div style={{ fontWeight: 700, marginBottom: '2px', borderBottom: `1px solid ${colors.textSecondary}`, paddingBottom: '2px' }}>Parameters</div>
                                                                 {typeData.non_convergence?.[item.actionId] && (
-                                                                    <div style={{ fontSize: '10px', color: '#dc3545' }}>
+                                                                    <div style={{ fontSize: '10px', color: colors.danger }}>
                                                                         Non-convergence: {typeData.non_convergence[item.actionId]}
                                                                     </div>
                                                                 )}
                                                                 {(actions[item.actionId]?.is_islanded) && (
-                                                                    <div style={{ fontSize: '10px', color: '#c2410c' }}>
+                                                                    <div style={{ fontSize: '10px', color: colors.warningText }}>
                                                                         Islanding: {actions[item.actionId].n_components} components
                                                                     </div>
                                                                 )}
@@ -428,7 +429,7 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                                                                     const displayVal = isTargetTapKey && effectiveTap !== undefined ? effectiveTap : (typeof v === 'object' ? JSON.stringify(v) : String(v));
                                                                     return (
                                                                         <div key={k}>
-                                                                            <span style={{ color: '#adb5bd' }}>{k}:</span> {displayVal}
+                                                                            <span style={{ color: colors.textTertiary }}>{k}:</span> {displayVal}
                                                                         </div>
                                                                     );
                                                                 })}
@@ -438,13 +439,13 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                                                     >i</span>
                                                 )}
                                             </td>
-                                            <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: (isPstType ? tapInfo == null : item.mwStart == null) ? '#aaa' : '#333' }}>
+                                            <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: (isPstType ? tapInfo == null : item.mwStart == null) ? colors.textTertiary : colors.textPrimary }}>
                                                 {isPstType
                                                     ? (tapInfo != null ? `${tapInfo.tap}` : 'N/A')
                                                     : (item.mwStart != null ? item.mwStart.toFixed(1) : 'N/A')
                                                 }
                                                 {isPstType && tapInfo?.low_tap != null && tapInfo?.high_tap != null && (
-                                                    <span style={{ fontSize: '9px', color: '#7c3aed', marginLeft: '2px' }}>
+                                                    <span style={{ fontSize: '9px', color: colors.accent, marginLeft: '2px' }}>
                                                         [{tapInfo.low_tap}..{tapInfo.high_tap}]
                                                     </span>
                                                 )}
@@ -465,7 +466,7 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                                                             fontSize: '11px',
                                                             fontFamily: 'monospace',
                                                             padding: '2px 4px',
-                                                            border: '1px solid #ccc',
+                                                            border: `1px solid ${colors.border}`,
                                                             borderRadius: '3px',
                                                             textAlign: 'right',
                                                         }}
@@ -487,7 +488,7 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                                                             fontSize: '11px',
                                                             fontFamily: 'monospace',
                                                             padding: '2px 4px',
-                                                            border: '1px solid #9333ea',
+                                                            border: `1px solid ${colors.accent}`,
                                                             borderRadius: '3px',
                                                             textAlign: 'right',
                                                         }}

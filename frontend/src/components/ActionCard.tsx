@@ -8,6 +8,7 @@
 import React from 'react';
 import type { ActionDetail, NodeMeta, EdgeMeta } from '../types';
 import { getActionTargetVoltageLevels, getActionTargetLines, isCouplingAction } from '../utils/svgUtils';
+import { colors } from '../styles/tokens';
 
 interface ActionCardProps {
     id: string;
@@ -42,7 +43,7 @@ const clickableLinkStyle: React.CSSProperties = {
     cursor: 'pointer',
     padding: 0,
     fontSize: 'inherit',
-    color: '#1e40af',
+    color: colors.brand,
     fontWeight: 600,
     textDecoration: 'underline dotted',
 };
@@ -77,14 +78,14 @@ const ActionCard: React.FC<ActionCardProps> = ({
         ? (details.max_rho > monitoringFactor ? 'red' as const : details.max_rho > (monitoringFactor - 0.05) ? 'orange' as const : 'green' as const)
         : (details.is_rho_reduction ? 'green' as const : 'red' as const);
     const severityColors = {
-        green: { border: '#28a745', badgeBg: '#d4edda', badgeText: '#155724', label: 'Solves overload' },
-        orange: { border: '#f0ad4e', badgeBg: '#fff3cd', badgeText: '#856404', label: 'Solved \u2014 low margin' },
-        red: { border: '#dc3545', badgeBg: '#f8d7da', badgeText: '#721c24', label: details.is_rho_reduction ? 'Still overloaded' : 'No reduction' },
+        green: { border: colors.success, badgeBg: colors.successSoft, badgeText: colors.successText, label: 'Solves overload' },
+        orange: { border: colors.warningStrong, badgeBg: colors.warningSoft, badgeText: colors.warningText, label: 'Solved \u2014 low margin' },
+        red: { border: colors.danger, badgeBg: colors.dangerSoft, badgeText: colors.dangerText, label: details.is_rho_reduction ? 'Still overloaded' : 'No reduction' },
     };
     const sc = details.non_convergence
-        ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'divergent' }
+        ? { border: colors.danger, badgeBg: colors.danger, badgeText: colors.textOnBrand, label: 'divergent' }
         : details.is_islanded
-            ? { border: '#dc3545', badgeBg: '#dc3545', badgeText: '#fff', label: 'islanded' }
+            ? { border: colors.danger, badgeBg: colors.danger, badgeText: colors.textOnBrand, label: 'islanded' }
             : severityColors[severity];
 
     const renderRho = (arr: number[] | null, actionId: string, tab: 'action' | 'n-1' = 'action'): React.ReactNode => {
@@ -127,7 +128,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
         details.load_shedding_details?.forEach(ls => {
             if (ls.voltage_level_id && !vlSet.has(ls.voltage_level_id)) {
                 vlSet.add(ls.voltage_level_id);
-                badges.push(badgeBtn(ls.voltage_level_id, '#d1fae5', '#065f46', `Click: zoom to ${ls.voltage_level_id} | Double-click: open SLD`, (e) => {
+                badges.push(badgeBtn(ls.voltage_level_id, colors.successSoft, colors.successText, `Click: zoom to ${ls.voltage_level_id} | Double-click: open SLD`, (e) => {
                     e.stopPropagation();
                     onVlDoubleClick?.(id, ls.voltage_level_id!);
                 }));
@@ -137,7 +138,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
         details.curtailment_details?.forEach(rc => {
             if (rc.voltage_level_id && !vlSet.has(rc.voltage_level_id)) {
                 vlSet.add(rc.voltage_level_id);
-                badges.push(badgeBtn(rc.voltage_level_id, '#d1fae5', '#065f46', `Click: zoom to ${rc.voltage_level_id} | Double-click: open SLD`, (e) => {
+                badges.push(badgeBtn(rc.voltage_level_id, colors.successSoft, colors.successText, `Click: zoom to ${rc.voltage_level_id} | Double-click: open SLD`, (e) => {
                     e.stopPropagation();
                     onVlDoubleClick?.(id, rc.voltage_level_id!);
                 }));
@@ -149,7 +150,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
             vlNames.forEach(vlName => {
                 if (vlSet.has(vlName)) return;
                 vlSet.add(vlName);
-                badges.push(badgeBtn(vlName, '#d1fae5', '#065f46', `Click: zoom to ${vlName} | Double-click: open SLD`, (e) => {
+                badges.push(badgeBtn(vlName, colors.successSoft, colors.successText, `Click: zoom to ${vlName} | Double-click: open SLD`, (e) => {
                     e.stopPropagation();
                     onVlDoubleClick?.(id, vlName);
                 }));
@@ -167,7 +168,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
 
         lineNames.forEach(name => {
             if (badges.some(b => React.isValidElement(b) && b.key === name)) return;
-            badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
+            badges.push(badgeBtn(name, colors.brandSoft, colors.brand, `Zoom to ${name}`));
         });
 
         if (badges.length === 0) {
@@ -179,7 +180,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                 ...Object.keys(topo?.gens_p || {}),
             ]));
             equipNames.forEach(name => {
-                badges.push(badgeBtn(name, '#dbeafe', '#1e40af', `Zoom to ${name}`));
+                badges.push(badgeBtn(name, colors.brandSoft, colors.brand, `Zoom to ${name}`));
             });
         }
 
@@ -194,12 +195,12 @@ const ActionCard: React.FC<ActionCardProps> = ({
         <div
             data-testid={`action-card-${id}`}
             style={{
-                background: (details.non_convergence || details.is_islanded) ? '#fff5f5' : (isViewing ? '#e7f1ff' : 'white'),
-                border: (details.non_convergence || details.is_islanded) ? '1px solid #dc3545' : '1px solid #ddd',
+                background: (details.non_convergence || details.is_islanded) ? colors.dangerSoft : (isViewing ? colors.brandSoft : colors.surface),
+                border: (details.non_convergence || details.is_islanded) ? `1px solid ${colors.danger}` : `1px solid ${colors.border}`,
                 borderRadius: '8px',
                 marginBottom: '10px',
                 boxShadow: isViewing ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
-                borderLeft: `5px solid ${isViewing ? '#007bff' : sc.border}`,
+                borderLeft: `5px solid ${isViewing ? colors.brand : sc.border}`,
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
                 display: 'flex',
@@ -227,8 +228,8 @@ const ActionCard: React.FC<ActionCardProps> = ({
                     style={{
                         writingMode: 'vertical-rl',
                         transform: 'rotate(180deg)',
-                        background: '#007bff',
-                        color: 'white',
+                        background: colors.brand,
+                        color: colors.textOnBrand,
                         fontSize: '10px',
                         fontWeight: 700,
                         letterSpacing: '1.5px',
@@ -247,7 +248,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                 <h4 style={{
                     margin: 0,
                     fontSize: '12px',
-                    color: isViewing ? '#0056b3' : undefined,
+                    color: isViewing ? colors.brandStrong : undefined,
                     flex: 1,
                     minWidth: 0,
                     overflowWrap: 'anywhere'
@@ -264,7 +265,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                 <div style={{ flex: 1 }}>
                     <p style={{ fontSize: '12px', margin: 0 }}>{details.description_unitaire}</p>
                     {details.load_shedding_details && details.load_shedding_details.length > 0 && (
-                        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: '#fef3c7', color: '#92400e', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #fcd34d', fontWeight: 500 }}>
+                        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: colors.warningSoft, color: colors.warningText, padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: `1px solid ${colors.warningBorder}`, fontWeight: 500 }}>
                             {details.load_shedding_details.map((ls, i) => (
                                 <div key={ls.load_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
                                     <span>Shedding on <strong>{ls.load_name}</strong> in MW:</span>
@@ -275,7 +276,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                                         step={0.1}
                                         value={cardEditMw[id] ?? ls.shedded_mw.toFixed(1)}
                                         onChange={(e) => onCardEditMwChange(id, e.target.value)}
-                                        style={{ width: '65px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #d97706', borderRadius: '3px', textAlign: 'right' }}
+                                        style={{ width: '65px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: `1px solid ${colors.warningStrong}`, borderRadius: '3px', textAlign: 'right' }}
                                     />
                                     <button
                                         data-testid={`resimulate-${id}`}
@@ -284,7 +285,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                                             if (!isNaN(mwVal) && mwVal >= 0) onResimulate(id, mwVal);
                                         }}
                                         disabled={resimulating === id}
-                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #d97706', background: '#fbbf24', color: '#78350f', cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: `1px solid ${colors.warningStrong}`, background: colors.warning, color: colors.warningText, cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
                                     >
                                         {resimulating === id ? 'Simulating...' : 'Re-simulate'}
                                     </button>
@@ -293,7 +294,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                         </div>
                     )}
                     {details.curtailment_details && details.curtailment_details.length > 0 && (
-                        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: '#e0f2fe', color: '#075985', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #7dd3fc', fontWeight: 500 }}>
+                        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: colors.infoSoft, color: colors.infoText, padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: `1px solid ${colors.infoBorder}`, fontWeight: 500 }}>
                             {details.curtailment_details.map((rc, i) => (
                                 <div key={rc.gen_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
                                     <span>Curtailment on <strong>{rc.gen_name}</strong> in MW:</span>
@@ -304,7 +305,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                                         step={0.1}
                                         value={cardEditMw[id] ?? rc.curtailed_mw.toFixed(1)}
                                         onChange={(e) => onCardEditMwChange(id, e.target.value)}
-                                        style={{ width: '65px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #0284c7', borderRadius: '3px', textAlign: 'right' }}
+                                        style={{ width: '65px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: `1px solid ${colors.info}`, borderRadius: '3px', textAlign: 'right' }}
                                     />
                                     <button
                                         data-testid={`resimulate-${id}`}
@@ -313,7 +314,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                                             if (!isNaN(mwVal) && mwVal >= 0) onResimulate(id, mwVal);
                                         }}
                                         disabled={resimulating === id}
-                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #0284c7', background: '#38bdf8', color: '#0c4a6e', cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: `1px solid ${colors.info}`, background: colors.infoBorder, color: colors.infoText, cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
                                     >
                                         {resimulating === id ? 'Simulating...' : 'Re-simulate'}
                                     </button>
@@ -322,7 +323,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                         </div>
                     )}
                     {details.pst_details && details.pst_details.length > 0 && (
-                        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: '#f3e8ff', color: '#6b21a8', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #c084fc', fontWeight: 500 }}>
+                        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: colors.accentSoft, color: colors.accentText, padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: `1px solid ${colors.accentBorder}`, fontWeight: 500 }}>
                             {details.pst_details.map((pst, i) => (
                                 <div key={pst.pst_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
                                     <span>PST <strong>{pst.pst_name}</strong> tap:</span>
@@ -334,10 +335,10 @@ const ActionCard: React.FC<ActionCardProps> = ({
                                         step={1}
                                         value={cardEditTap[id] ?? pst.tap_position}
                                         onChange={(e) => onCardEditTapChange(id, e.target.value)}
-                                        style={{ width: '55px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: '1px solid #9333ea', borderRadius: '3px', textAlign: 'right' }}
+                                        style={{ width: '55px', fontSize: '11px', fontFamily: 'monospace', padding: '2px 4px', border: `1px solid ${colors.accent}`, borderRadius: '3px', textAlign: 'right' }}
                                     />
                                     {pst.low_tap != null && pst.high_tap != null && (
-                                        <span style={{ fontSize: '10px', color: '#7c3aed' }}>
+                                        <span style={{ fontSize: '10px', color: colors.accent }}>
                                             [{pst.low_tap}..{pst.high_tap}]
                                         </span>
                                     )}
@@ -348,7 +349,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                                             if (!isNaN(tapVal)) onResimulateTap(id, tapVal);
                                         }}
                                         disabled={resimulating === id}
-                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: '1px solid #9333ea', background: '#c084fc', color: '#3b0764', cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '3px', border: `1px solid ${colors.accent}`, background: colors.accentBorder, color: colors.accentText, cursor: resimulating === id ? 'wait' : 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
                                     >
                                         {resimulating === id ? 'Simulating...' : 'Re-simulate'}
                                     </button>
@@ -357,19 +358,19 @@ const ActionCard: React.FC<ActionCardProps> = ({
                         </div>
                     )}
                     {details.non_convergence && (
-                        <div style={{ fontSize: '11px', color: '#9a3412', backgroundColor: '#fff8f1', padding: '2px 6px', borderRadius: '4px', marginTop: '4px', border: '1px solid #ffedd5', display: 'inline-block' }}>
+                        <div style={{ fontSize: '11px', color: colors.warningText, backgroundColor: colors.warningSoft, padding: '2px 6px', borderRadius: '4px', marginTop: '4px', border: `1px solid ${colors.warningBorder}`, display: 'inline-block' }}>
                             ⚠️ LoadFlow failure: {details.non_convergence}
                         </div>
                     )}
                     {details.is_islanded && (
-                        <div style={{ fontSize: '12px', background: '#fff5f5', color: '#dc3545', padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #dc3545', fontWeight: 500 }}>
+                        <div style={{ fontSize: '12px', background: colors.dangerSoft, color: colors.danger, padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: `1px solid ${colors.danger}`, fontWeight: 500 }}>
                             🏝️ Islanding detected ({details.disconnected_mw?.toFixed(1)} MW disconnected)
                         </div>
                     )}
                 </div>
                 {renderBadges()}
             </div>
-            <div style={{ fontSize: '12px', background: isViewing ? '#dce8f7' : '#f8f9fa', padding: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ fontSize: '12px', background: isViewing ? colors.brandSoft : colors.surfaceMuted, padding: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
                     {/*
                       "Loading before" removed — the N-1 pre-action loading
@@ -382,8 +383,8 @@ const ActionCard: React.FC<ActionCardProps> = ({
                         <div style={{ marginTop: '3px' }}>
                             Max loading: <strong style={{ color: sc.border }}>{maxRhoPct}%</strong>
                             {details.max_rho_line && (
-                                <span style={{ color: '#888' }}> on <button
-                                    style={{ ...clickableLinkStyle, color: '#888' }}
+                                <span style={{ color: colors.textTertiary }}> on <button
+                                    style={{ ...clickableLinkStyle, color: colors.textTertiary }}
                                     title={`Zoom to ${details.max_rho_line}`}
                                     onClick={(e) => { e.stopPropagation(); onAssetClick(id, details.max_rho_line, 'action'); }}
                                 >{displayName(details.max_rho_line)}</button></span>
@@ -395,14 +396,14 @@ const ActionCard: React.FC<ActionCardProps> = ({
                     {!isSelected && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onActionFavorite(id); }}
-                            style={{ background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            style={{ background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             title="Select this action"
                         ><span style={{ fontSize: '14px' }}>⭐</span></button>
                     )}
                     {!isRejected && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onActionReject(id); }}
-                            style={{ background: 'white', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            style={{ background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             title={isSelected ? "Remove from selected" : "Reject this action"}
                         ><span style={{ fontSize: '14px' }}>❌</span></button>
                     )}
