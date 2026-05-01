@@ -6,6 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import type { AnalysisResult } from '../types';
+import { colors, radius, space } from '../styles/tokens';
 
 type SettingsTab = 'paths' | 'recommender' | 'configurations';
 
@@ -48,15 +49,15 @@ const Header: React.FC<HeaderProps> = ({
 
   return (
     <header style={{
-      background: '#2c3e50', color: 'white', padding: '8px 20px',
+      background: colors.chrome, color: colors.textOnBrand, padding: `${space[2]} ${space[5]}`,
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      gap: '15px', flexWrap: 'wrap'
+      gap: space[4], flexWrap: 'wrap'
     }}>
       <h2 style={{ margin: 0, fontSize: '1.1rem', whiteSpace: 'nowrap' }}>⚡ Co-Study4Grid</h2>
 
-      <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+      <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: space.half }}>
         <label style={{ fontSize: '0.7rem', opacity: 0.8, whiteSpace: 'nowrap' }}>Network Path</label>
-        <div style={{ display: 'flex', gap: '4px' }}>
+        <div style={{ display: 'flex', gap: space[1] }}>
           <input
             data-testid="header-network-path-input"
             type="text"
@@ -69,9 +70,9 @@ const Header: React.FC<HeaderProps> = ({
             onBlur={e => onCommitNetworkPath(e.target.value)}
             placeholder="load your grid xiidm file path"
             style={{
-              flex: 1, minWidth: 0, padding: '5px 8px',
-              border: '1px solid rgba(255,255,255,0.3)', borderRadius: '4px',
-              background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '0.8rem'
+              flex: 1, minWidth: 0, padding: `5px ${space[2]}`,
+              border: '1px solid rgba(255,255,255,0.3)', borderRadius: radius.sm,
+              background: 'rgba(255,255,255,0.1)', color: colors.textOnBrand, fontSize: '0.8rem'
             }}
           />
           <button
@@ -81,9 +82,9 @@ const Header: React.FC<HeaderProps> = ({
             // overwrite an active study.
             onClick={() => onPickSettingsPath('file', onCommitNetworkPath)}
             style={{
-              padding: '4px 8px', background: 'rgba(255,255,255,0.15)',
-              border: '1px solid rgba(255,255,255,0.25)', borderRadius: '4px',
-              color: 'white', cursor: 'pointer', fontSize: '0.8rem'
+              padding: `${space[1]} ${space[2]}`, background: 'rgba(255,255,255,0.15)',
+              border: '1px solid rgba(255,255,255,0.25)', borderRadius: radius.sm,
+              color: colors.textOnBrand, cursor: 'pointer', fontSize: '0.8rem'
             }}
           >
             📄
@@ -95,9 +96,9 @@ const Header: React.FC<HeaderProps> = ({
         onClick={onLoadStudy}
         disabled={configLoading}
         style={{
-          padding: '6px 14px',
-          background: configLoading ? '#95a5a6' : '#3498db',
-          color: 'white', border: 'none', borderRadius: '4px',
+          padding: `${space[2]} 14px`,
+          background: configLoading ? colors.disabled : colors.brand,
+          color: colors.textOnBrand, border: 'none', borderRadius: radius.sm,
           cursor: configLoading ? 'not-allowed' : 'pointer',
           fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap'
         }}
@@ -109,9 +110,9 @@ const Header: React.FC<HeaderProps> = ({
         onClick={onSaveResults}
         disabled={saveDisabled}
         style={{
-          padding: '6px 14px',
-          background: saveDisabled ? '#95a5a6' : '#8e44ad',
-          color: 'white', border: 'none', borderRadius: '4px',
+          padding: `${space[2]} 14px`,
+          background: saveDisabled ? colors.disabled : colors.accent,
+          color: colors.textOnBrand, border: 'none', borderRadius: radius.sm,
           cursor: saveDisabled ? 'not-allowed' : 'pointer',
           fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap'
         }}
@@ -124,9 +125,9 @@ const Header: React.FC<HeaderProps> = ({
         onClick={onOpenReloadModal}
         disabled={sessionRestoring}
         style={{
-          padding: '6px 14px',
-          background: sessionRestoring ? '#95a5a6' : '#2980b9',
-          color: 'white', border: 'none', borderRadius: '4px',
+          padding: `${space[2]} 14px`,
+          background: sessionRestoring ? colors.disabled : colors.brandStrong,
+          color: colors.textOnBrand, border: 'none', borderRadius: radius.sm,
           cursor: sessionRestoring ? 'not-allowed' : 'pointer',
           fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap'
         }}
@@ -138,9 +139,9 @@ const Header: React.FC<HeaderProps> = ({
       <button
         onClick={() => onOpenSettings('paths')}
         style={{
-          background: '#7f8c8d', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', padding: '6px 8px', fontSize: '1rem',
-          color: 'white', border: 'none', borderRadius: '4px',
+          background: colors.chromeSoft, display: 'flex', alignItems: 'center',
+          justifyContent: 'center', padding: `${space[2]} ${space[2]}`, fontSize: '1rem',
+          color: colors.textOnBrand, border: 'none', borderRadius: radius.sm,
           cursor: 'pointer', fontWeight: 'bold'
         }}
         title="Settings"

@@ -3,9 +3,10 @@
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
 // you can obtain one at http://mozilla.org/MPL/2.0/.
 // SPDX-License-Identifier: MPL-2.0
-// This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
+// This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import React from 'react';
+import { colors, radius, space, text } from '../styles/tokens';
 
 interface OverloadPanelProps {
     nOverloads: string[];
@@ -68,7 +69,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
         cursor: 'pointer',
         padding: 0,
         fontSize: 'inherit',
-        color: '#1e40af',
+        color: colors.brand,
         fontWeight: 600,
         textDecoration: 'underline dotted',
         textAlign: 'left',
@@ -79,7 +80,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
         v == null || Number.isNaN(v) ? null : `${(v * 100).toFixed(1)}%`;
 
     const renderLinks = (lines: string[], rhos: number[] | undefined, tab: 'n' | 'n-1') => {
-        if (!lines || lines.length === 0) return <span style={{ color: '#888', fontStyle: 'italic' }}>None</span>;
+        if (!lines || lines.length === 0) return <span style={{ color: colors.textTertiary, fontStyle: 'italic' }}>None</span>;
         return lines.map((lineName, i) => {
             const isSelected = tab === 'n-1' ? (selectedOverloads?.has(lineName) ?? true) : true;
             const rhoPct = formatRho(rhos?.[i]);
@@ -89,7 +90,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                     <button
                         style={{
                             ...clickableLinkStyle,
-                            color: isSelected ? '#1e40af' : '#bdc3c7',
+                            color: isSelected ? colors.brand : colors.borderStrong,
                             fontWeight: isSelected ? 600 : 400,
                             textDecoration: isSelected ? 'underline dotted' : 'none'
                         }}
@@ -109,9 +110,9 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                     {rhoPct && (
                         <span
                             style={{
-                                color: isSelected ? '#374151' : '#bdc3c7',
+                                color: isSelected ? colors.textPrimary : colors.borderStrong,
                                 fontWeight: 500,
-                                marginLeft: '2px',
+                                marginLeft: space.half,
                             }}
                         >
                             ({rhoPct})
@@ -127,38 +128,38 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
 
     return (
         <div style={{
-            background: 'white',
-            borderBottom: '1px solid #ccc',
-            padding: '8px 12px',
+            background: colors.surface,
+            borderBottom: `1px solid ${colors.border}`,
+            padding: `${space[2]} ${space[3]}`,
             boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
             zIndex: 10
         }}>
-            <h3 style={{ margin: '0 0 6px 0', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ color: '#e74c3c' }}>⚠️</span> Overloads
+            <h3 style={{ margin: `0 0 6px 0`, fontSize: text.md, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: colors.danger }}>⚠️</span> Overloads
             </h3>
 
             {showMonitoringWarning && totalLinesCount && totalLinesCount > 0 && (
                 <div style={{
-                    marginBottom: '8px',
-                    padding: '8px 12px',
-                    background: '#fff3cd',
-                    border: '1px solid #ffeeba',
-                    borderRadius: '4px',
-                    color: '#856404',
+                    marginBottom: space[2],
+                    padding: `${space[2]} ${space[3]}`,
+                    background: colors.warningSoft,
+                    border: `1px solid ${colors.warningBorder}`,
+                    borderRadius: radius.sm,
+                    color: colors.warningText,
                     fontSize: '0.8rem',
                     position: 'relative'
                 }}>
                     ⚠️ <strong>{monitorDeselected ? (monitoredLinesCount || 0) : (monitoredLinesCount || 0) - (hasDeselected ? deselectedCount : 0)}</strong> out of <strong>{totalLinesCount}</strong> lines monitored ({totalLinesCount - (monitoredLinesCount || 0)} without permanent limits{hasDeselected && !monitorDeselected ? `, and ${deselectedCount} deselected` : ''}). Monitoring factor: {Math.round((monitoringFactor || 0.95) * 100)}%. {Math.round((preExistingOverloadThreshold || 0.02) * 100)}% loading increase threshold for considering worsened overload in N.
                     <button
                         onClick={onOpenSettings}
-                        style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: '0 0 0 5px', fontSize: 'inherit' }}
+                        style={{ background: 'none', border: 'none', color: colors.brandStrong, textDecoration: 'underline', cursor: 'pointer', padding: `0 0 0 5px`, fontSize: 'inherit' }}
                     >
                         Change in settings
                     </button>
                     {onDismissWarning && (
                         <button
                             onClick={onDismissWarning}
-                            style={{ float: 'right', background: 'none', border: 'none', fontSize: '16px', lineHeight: 1, color: '#856404', cursor: 'pointer' }}
+                            style={{ float: 'right', background: 'none', border: 'none', fontSize: text.lg, lineHeight: 1, color: colors.warningText, cursor: 'pointer' }}
                             title="Dismiss"
                         >
                             &times;
@@ -167,15 +168,15 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                 </div>
             )}
 
-            <div style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ fontSize: text.sm, display: 'flex', flexDirection: 'column', gap: space[1] }}>
                 <div style={{
                     display: 'flex',
                     alignItems: 'baseline',
-                    gap: '8px',
-                    padding: '4px 6px',
-                    background: nOverloads.length > 0 ? '#fff3cd' : 'transparent',
-                    borderLeft: nOverloads.length > 0 ? '3px solid #ffc107' : '3px solid transparent',
-                    borderBottom: '1px solid #eee'
+                    gap: space[2],
+                    padding: `${space[1]} 6px`,
+                    background: nOverloads.length > 0 ? colors.warningSoft : 'transparent',
+                    borderLeft: `3px solid ${nOverloads.length > 0 ? 'var(--color-warning)' : 'transparent'}`,
+                    borderBottom: `1px solid ${colors.borderSubtle}`
                 }}>
                     <strong style={{ whiteSpace: 'nowrap' }}>N Overloads:</strong>
                     <div style={{ display: 'inline', wordBreak: 'break-word' }}>
@@ -184,28 +185,28 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                 </div>
 
                 <div style={{
-                    padding: '4px 6px',
-                    background: n1Overloads.length > 0 ? '#f8d7da' : 'transparent',
-                    borderLeft: n1Overloads.length > 0 ? '3px solid #dc3545' : '3px solid transparent',
-                    borderBottom: '1px solid #eee',
+                    padding: `${space[1]} 6px`,
+                    background: n1Overloads.length > 0 ? colors.dangerSoft : 'transparent',
+                    borderLeft: `3px solid ${n1Overloads.length > 0 ? 'var(--color-danger)' : 'transparent'}`,
+                    borderBottom: `1px solid ${colors.borderSubtle}`,
                     lineHeight: '1.6',
                 }}>
-                    <strong style={{ whiteSpace: 'nowrap', marginRight: '4px' }}>N-1 Overloads:</strong>
-                    <span 
-                        title="Double-click on an overload name to toggle its inclusion in the analysis. Selected overloads are blue; unselected are light grey." 
-                        style={{ 
-                            display: 'inline-flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center', 
-                            width: '14px', 
-                            height: '14px', 
-                            borderRadius: '50%', 
-                            background: '#6c757d', 
-                            color: 'white', 
-                            fontSize: '10px', 
+                    <strong style={{ whiteSpace: 'nowrap', marginRight: space[1] }}>N-1 Overloads:</strong>
+                    <span
+                        title="Double-click on an overload name to toggle its inclusion in the analysis. Selected overloads are blue; unselected are light grey."
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '14px',
+                            height: '14px',
+                            borderRadius: '50%',
+                            background: colors.chromeSoft,
+                            color: colors.textOnBrand,
+                            fontSize: '10px',
                             cursor: 'help',
                             verticalAlign: 'middle',
-                            marginRight: '4px',
+                            marginRight: space[1],
                         }}
                     >
                         ?
@@ -218,7 +219,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                                 gap: '3px',
                                 cursor: 'pointer',
                                 fontSize: '10px',
-                                color: monitorDeselected ? '#0056b3' : '#6c757d',
+                                color: monitorDeselected ? colors.brandStrong : colors.chromeSoft,
                                 fontWeight: monitorDeselected ? 600 : 400,
                                 whiteSpace: 'nowrap',
                                 marginRight: '6px',

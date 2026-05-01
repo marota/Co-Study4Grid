@@ -296,6 +296,13 @@ npm run test:watch   # watch mode
   unbearable.
 - **Inline `style` objects** are the convention here (no CSS modules
   or utility-class framework). Match the surrounding component.
+- **Design tokens** — use `colors` / `space` / `text` / `radius` from
+  `src/styles/tokens.ts` for inline styles, and `var(--…)` from
+  `src/styles/tokens.css` for stylesheet rules. Do not introduce new
+  hex literals; add a token instead. The code-quality gate
+  (`scripts/check_code_quality.py`) ratchets the hex-literal count
+  down as files migrate. See `docs/proposals/ui-design-critique.md`
+  recommendation #1 for the migration plan.
 - **Memoize at the right level**: `useCallback` for handlers passed
   as props, `useMemo` for derived data passed to large children.
   Don't memoize cheap inline objects on small leaf components.

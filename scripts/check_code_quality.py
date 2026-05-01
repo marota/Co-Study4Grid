@@ -22,9 +22,17 @@ Thresholds (see also CONTRIBUTING.md):
 | Frontend component size (lines)            | 1500|
 | `any` type annotations in frontend source  |  0  |
 | `@ts-ignore` directives in frontend source |  0  |
+| Hex color literals outside tokens.css      | 518 |
 
 `App.tsx` is exempt from the frontend size ceiling — it is the state
 orchestration hub by design.
+
+The hex-literal ceiling is a ratchet: it encodes the count after the
+Phase A token migration (see docs/proposals/ui-design-critique.md
+recommendation #1). Lowering it as more files migrate is welcome and
+required when the count drops; raising it is a regression — add the
+new color to `frontend/src/styles/tokens.css` and consume it via
+`var(--…)` instead of inlining a hex.
 """
 from __future__ import annotations
 
@@ -37,6 +45,12 @@ from code_quality_report import build_report  # type: ignore[import-not-found]
 BACKEND_MODULE_MAX = 1200
 FRONTEND_COMPONENT_MAX = 1500
 FRONTEND_UTIL_MAX = 2000
+# Ceiling on hex color literals in frontend source (excluding
+# `frontend/src/styles/tokens.css`, the token-definition file). Set to
+# the count after Phase A of the design-token migration. This is a
+# ratchet — lowering it as files migrate is welcome and required when
+# the count drops; raising it is a regression.
+FRONTEND_HEX_LITERAL_MAX = 518
 # Files exempt from the component-size ceiling. `App.tsx` is the state
 # orchestration hub by design; `utils/svgUtils.ts` is a stable shared
 # util library (SVG helpers, highlight ops, metadata parsing) and is
@@ -77,6 +91,15 @@ def main() -> int:
         )
     if fe.ts_ignores:
         errors.append(f"frontend: {fe.ts_ignores} `@ts-ignore` directives")
+    if fe.hex_literals > FRONTEND_HEX_LITERAL_MAX:
+        worst = ", ".join(
+            f"{fm.path}({fm.lines})" for fm in fe.hex_literals_by_file[:3]
+        )
+        errors.append(
+            f"frontend: {fe.hex_literals} hex color literals "
+            f"(ceiling {FRONTEND_HEX_LITERAL_MAX}) — replace with tokens "
+            f"from `frontend/src/styles/tokens.css`. Worst offenders: {worst}"
+        )
     for comp in fe.components:
         if comp.path in FRONTEND_SIZE_EXEMPTIONS:
             continue

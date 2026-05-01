@@ -59,6 +59,12 @@ The gate enforces:
 - Backend modules stay under **1200 lines** (the "god-object" ceiling)
 - Frontend components stay under **1500 lines**
 - No `any` type annotations or `@ts-ignore` in frontend sources
+- **No new hex color literals** in frontend source. The current ceiling
+  (518) ratchets down as files migrate to design tokens. Define new
+  colors in [`frontend/src/styles/tokens.css`](./frontend/src/styles/tokens.css)
+  and consume them via `var(--…)` (CSS) or the `colors` / `space` /
+  `text` / `radius` exports from `frontend/src/styles/tokens.ts`
+  (inline styles).
 
 Lower the thresholds — don't raise them. Tightening the gate
 is how we protect the hard-won reductions documented in

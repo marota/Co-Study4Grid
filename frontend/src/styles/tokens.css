@@ -1,0 +1,109 @@
+/*
+Copyright (c) 2025-2026, RTE (https://www.rte-france.com)
+This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+you can obtain one at http://mozilla.org/MPL/2.0/.
+SPDX-License-Identifier: MPL-2.0
+
+Design tokens — single source of truth for color, spacing, type, radius.
+
+Why this file exists: docs/proposals/ui-design-critique.md flagged 273
+hex literals across 24 files (three competing palettes: Flat UI,
+Bootstrap, Tailwind). All blues consolidate onto the Tailwind blue
+ramp (closest fit to existing values — #1e40af and #dbeafe are
+already on it).
+
+How to consume:
+  - Inside .css files:    color: var(--color-brand);
+  - Inside inline styles: color: 'var(--color-brand)'
+                          (or import { colors } from 'styles/tokens')
+
+How to extend: add a NEW token here before introducing a new hex
+in a component. The check_code_quality.py gate ratchets down the
+remaining hex-literal count after each migration.
+*/
+
+:root {
+  /* ----- Color: surfaces ----- */
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8f9fa;
+  --color-surface-raised: #fcfcfc;
+
+  /* ----- Color: borders ----- */
+  --color-border: #cccccc;
+  --color-border-subtle: #eeeeee;
+  --color-border-strong: #999999;
+
+  /* ----- Color: text ----- */
+  --color-text-primary: #1f2937;
+  --color-text-secondary: #555555;
+  --color-text-tertiary: #888888;
+  --color-text-on-brand: #ffffff;
+
+  /* ----- Color: brand (Tailwind blue ramp) ----- */
+  --color-brand: #1e40af;          /* blue-800 — primary links + active CTAs */
+  --color-brand-strong: #1d4ed8;   /* blue-700 — hover / pressed */
+  --color-brand-soft: #dbeafe;     /* blue-100 — selection bg, hint pills */
+  --color-brand-mid: #3b82f6;      /* blue-500 — fills (slider, range bar) */
+
+  /* ----- Color: state — success ----- */
+  --color-success: #28a745;
+  --color-success-strong: #2e7d32;
+  --color-success-soft: #d1fae5;
+  --color-success-text: #065f46;
+
+  /* ----- Color: state — warning ----- */
+  --color-warning: #ffc107;
+  --color-warning-strong: #f0ad4e;
+  --color-warning-soft: #fff3cd;
+  --color-warning-border: #ffeeba;
+  --color-warning-text: #856404;
+
+  /* ----- Color: state — danger ----- */
+  --color-danger: #dc3545;
+  --color-danger-strong: #b91c1c;
+  --color-danger-soft: #f8d7da;
+  --color-danger-text: #c62828;
+
+  /* ----- Color: accent + chrome ----- */
+  --color-accent: #8e44ad;         /* save/secondary action */
+  --color-chrome: #2c3e50;         /* header / dark backgrounds */
+  --color-chrome-soft: #7f8c8d;    /* settings cog, neutral chrome */
+  --color-disabled: #95a5a6;       /* disabled buttons */
+
+  /* ----- Spacing (4 / 8 grid) ----- */
+  --space-0: 0;
+  --space-half: 2px;               /* tight cases (badge padding, inline gaps) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+
+  /* ----- Type sizes ----- */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-xxl: 24px;
+
+  /* ----- Radii ----- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* ----- Diagram-signal colors (domain-specific, not semantic state) -----
+     Used by NAD/SLD highlight CSS in App.css. These are visual signals
+     for grid concepts (contingency, action target, overload, breaker)
+     and intentionally bright/saturated to read on top of the diagram. */
+  --signal-overload: #ff8c00;
+  --signal-contingency: #ffe033;
+  --signal-action-target: #ff4081;
+  --signal-breaker: #ce93d8;
+  --signal-delta-positive: #ff9800;
+  --signal-delta-negative: #2196f3;
+  --signal-delta-neutral: #999999;
+}
