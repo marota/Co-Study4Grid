@@ -350,6 +350,146 @@ INVARIANTS: list[Invariant] = [
             "pattern": r"clone\.style\.opacity\s*=\s*['\"](0\.(?:[7-9]\d?|6[5-9]))['\"]",
         },
     ),
+    # ===== UX-design-critique invariants =====
+    # The five recommendations from
+    # `docs/proposals/ui-design-critique.md` landed on top of an
+    # already-shipped UI. Each invariant below guards the UX
+    # contract a recommendation introduced so a future refactor
+    # can't silently revert it. The standalone side carries an
+    # empty spec (file-existence-only) because the contracts are
+    # React-source-level — the auto-generated bundle inherits them
+    # on its next build, and the legacy hand-maintained file
+    # predates the recommendations.
+
+    Invariant(
+        name="notices_panel_in_sidebar",
+        description=(
+            "Recommendation #4 (tier the warning system): the "
+            "sidebar must surface a single `<NoticesPanel>` pill "
+            "above the rest of the sidebar so persistent warnings "
+            "live in one entry point instead of stacking up to five "
+            "concurrent yellow banners. AppSidebar.tsx is the "
+            "canonical mount point."
+        ),
+        react={
+            "file_hint": "frontend/src/components/AppSidebar.tsx",
+            "pattern": r"<NoticesPanel\s",
+        },
+        standalone={"file_hint": "standalone_interface.html"},
+    ),
+    Invariant(
+        name="action_feed_no_dismissable_warning_state",
+        description=(
+            "Recommendation #4: ActionFeed.tsx must not own "
+            "`showActionDictWarning` / `showRecommenderWarning` "
+            "local state — both warnings moved into NoticesPanel. "
+            "Re-introducing a `setShow*Warning` setter inside the "
+            "feed would silently bring back the yellow banners."
+        ),
+        react={
+            "file_hint": "frontend/src/components/ActionFeed.tsx",
+            # Sanity anchor — the file must exist and parse.
+            "pattern": r"const\s+ActionFeed\b",
+            # Forbid the dismissable-banner state from sneaking back.
+            "must_not": r"setShow(?:ActionDict|Recommender)Warning",
+        },
+        standalone={"file_hint": "standalone_interface.html"},
+    ),
+    Invariant(
+        name="overload_panel_uses_monitoring_hint",
+        description=(
+            "Recommendation #4: OverloadPanel.tsx renders the "
+            "monitoring-coverage warning as a one-line grey hint "
+            "(`monitoringHint` prop) — the full notice lives in "
+            "NoticesPanel. `showMonitoringWarning` / "
+            "`onDismissWarning` props on this component would mean "
+            "the inline yellow banner has been re-introduced."
+        ),
+        react={
+            "file_hint": "frontend/src/components/OverloadPanel.tsx",
+            "pattern": r"monitoringHint\?\:\s*string\s*\|\s*null",
+            "must_not": r"showMonitoringWarning|onDismissWarning",
+        },
+        standalone={"file_hint": "standalone_interface.html"},
+    ),
+    Invariant(
+        name="diagram_legend_on_each_diagram_tab",
+        description=(
+            "Recommendation #5 (add a diagram legend): "
+            "VisualizationPanel.tsx must render a `<DiagramLegend>` "
+            "for the N, N-1 and Action tabs so the operator can read "
+            "halo / disconnection / voltage-level conventions on-"
+            "screen. Removing any of the three would re-open the "
+            "onboarding gap the recommendation closed."
+        ),
+        react={
+            "file_hint": "frontend/src/components/VisualizationPanel.tsx",
+            # Each tabId must be wired explicitly. `[\s\S]*?` chains
+            # the three matches in source order.
+            "pattern": (
+                r"<DiagramLegend\b[^>]*?tabId=\"n\""
+                r"[\s\S]*?<DiagramLegend\b[^>]*?tabId=\"n-1\""
+                r"[\s\S]*?<DiagramLegend\b[^>]*?tabId=\"action\""
+            ),
+        },
+        standalone={"file_hint": "standalone_interface.html"},
+    ),
+    Invariant(
+        name="nad_overload_halo_capped_at_zoom",
+        description=(
+            "Recommendation #3 (cap NAD overload halo): at the "
+            "`region` and `detail` zoom tiers the halo strokes must "
+            "switch to a screen-space `vector-effect: non-scaling-"
+            "stroke` capped at 24px. Without the cap the grid-unit "
+            "stroke (120-150px in user space) covers ~8-10× the "
+            "line it identifies and obscures the network."
+        ),
+        react={
+            "file_hint": "frontend/src/App.css",
+            "pattern": (
+                r"\[data-zoom-tier=\"detail\"\]\s+\.nad-overloaded[\s\S]*?"
+                r"stroke-width:\s*24px[\s\S]*?vector-effect:\s*non-scaling-stroke"
+            ),
+        },
+        standalone={"file_hint": "standalone_interface.html"},
+    ),
+    Invariant(
+        name="design_token_gate_blocks_inline_hex",
+        description=(
+            "Recommendation #1 (design-token layer): the code-"
+            "quality gate must keep the inline-hex ceiling at zero "
+            "outside `tokens.{css,ts}`. Loosening the gate would "
+            "let the three competing palettes (Flat UI / Bootstrap /"
+            " Tailwind) creep back in component-by-component."
+        ),
+        react={
+            "file_hint": "scripts/check_code_quality.py",
+            # The named ceiling constant must stay at 0. We assert
+            # both the constant declaration and the comparison that
+            # consumes it so a renamed-but-unbound copy can't slip
+            # through.
+            "pattern": r"FRONTEND_HEX_LITERAL_MAX\s*=\s*0\b",
+        },
+        standalone={"file_hint": "standalone_interface.html"},
+    ),
+    Invariant(
+        name="action_card_progressive_disclosure_gated_by_isViewing",
+        description=(
+            "Recommendation #2 (progressive disclosure): the "
+            "ActionCard component must gate its editable detail "
+            "rows (`isViewing && …`) so at-rest cards stay terse. "
+            "Without the gate the load-shedding / curtailment / "
+            "PST-tap rows render on every card and the feed becomes "
+            "unscan­nable on a 25 %-width sidebar."
+        ),
+        react={
+            "file_hint": "frontend/src/components/ActionCard.tsx",
+            # The component receives an `isViewing` prop AND uses
+            # it to gate at least one subtree (PR #121 disclosure).
+            "pattern": r"isViewing:\s*boolean[\s\S]*?\{isViewing\s*&&",
+        },
+        standalone={"file_hint": "standalone_interface.html"},
+    ),
 ]
 
 
