@@ -214,8 +214,10 @@ describe('ActionFeed', () => {
             },
         };
         render(<ActionFeed {...props} />);
-        // Selected Actions section still shows the card.
-        expect(screen.getByText('Shared action')).toBeInTheDocument();
+        // Selected Actions section still shows the card. (The
+        // description is now progressive-disclosure, so we assert on
+        // the card root by testId rather than its description text.)
+        expect(screen.getByTestId(`action-card-${actionId}`)).toBeInTheDocument();
         // Overlap warning is visible and mentions the overlapping id.
         const warning = screen.getByText(/also recommended by the recent analysis run/);
         expect(warning).toBeInTheDocument();
@@ -307,7 +309,8 @@ describe('ActionFeed', () => {
         };
         render(<ActionFeed {...props} />);
 
-        expect(screen.getByText('Manual Action')).toBeInTheDocument();
+        // Card is rendered (description is progressive-disclosure).
+        expect(screen.getByTestId(`action-card-${actionId}`)).toBeInTheDocument();
         // Processing indicator is visible even when viewing selected actions
         expect(screen.getByText('⚙️ Analyzing…')).toBeInTheDocument();
     });
@@ -460,11 +463,15 @@ describe('ActionFeed', () => {
         };
         render(<ActionFeed {...props} />);
 
-        const cards = screen.getAllByTestId(/action-card-/);
-        const cardTexts = cards.map(el => el.textContent);
+        // Cards are referenced by their testIds — the description text
+        // is hidden at-rest under progressive disclosure, so the
+        // ordering check has to walk the action-card-${id} test IDs in
+        // DOM order instead of scanning rendered text.
+        const cards = screen.getAllByTestId(/^action-card-(act_good|act_bad)$/);
+        const cardIds = cards.map(el => el.getAttribute('data-testid'));
 
-        const goodIndex = cardTexts.findIndex(t => t?.includes('Good Action'));
-        const badIndex = cardTexts.findIndex(t => t?.includes('Bad Action'));
+        const goodIndex = cardIds.indexOf('action-card-act_good');
+        const badIndex = cardIds.indexOf('action-card-act_bad');
 
         expect(goodIndex).toBeLessThan(badIndex);
     });
@@ -815,7 +822,8 @@ describe('ActionFeed', () => {
         };
         render(<ActionFeed {...props} />);
 
-        expect(screen.getByText('Simulated Combined Action')).toBeInTheDocument();
+        // Card is rendered (description is progressive-disclosure).
+        expect(screen.getByTestId(`action-card-${combinedId}`)).toBeInTheDocument();
     });
 
     it('renders multiple asset badges for combined actions', () => {
@@ -908,6 +916,11 @@ describe('ActionFeed', () => {
         const actionId = 'load_shed_1';
         const props = {
             ...defaultProps,
+            // Editor disclosure is gated on the viewing state — set
+            // selectedActionId so the load-shedding details panel
+            // (which carries the LOAD_1 / Shedding-on copy this test
+            // checks for) actually renders.
+            selectedActionId: actionId,
             actions: {
                 [actionId]: {
                     description_unitaire: 'Shedding action on load',
@@ -969,6 +982,7 @@ describe('ActionFeed', () => {
         const actionId = 'load_shed_multi';
         const props = {
             ...defaultProps,
+            selectedActionId: actionId,
             actions: {
                 [actionId]: {
                     description_unitaire: 'Multi-load shedding',
@@ -1116,6 +1130,7 @@ describe('ActionFeed', () => {
         const actionId = 'load_shed_new_format';
         const props = {
             ...defaultProps,
+            selectedActionId: actionId,
             actions: {
                 [actionId]: {
                     description_unitaire: 'Load shedding (power reduction)',
@@ -1146,6 +1161,7 @@ describe('ActionFeed', () => {
         const actionId = 'curtail_new_format';
         const props = {
             ...defaultProps,
+            selectedActionId: actionId,
             actions: {
                 [actionId]: {
                     description_unitaire: 'Curtailment (power reduction)',
@@ -1173,6 +1189,9 @@ describe('ActionFeed', () => {
     });
 
     it('displays load shedding with loads_p and curtailment with gens_p in same action list', () => {
+        // Only one card can be the viewing card at a time, so we
+        // assert each editor through a focused rerender rather than
+        // expecting both editor panels open simultaneously.
         const lsId = 'ls_new_1';
         const rcId = 'rc_new_1';
         const props = {
@@ -1205,13 +1224,18 @@ describe('ActionFeed', () => {
             },
             selectedActionIds: new Set([lsId, rcId]),
         };
-        render(<ActionFeed {...props} />);
 
-        // Load shedding details with new format
+        // Both cards must be in the list regardless of viewing state.
+        const { rerender } = render(<ActionFeed {...props} selectedActionId={lsId} />);
+        expect(screen.getByTestId(`action-card-${lsId}`)).toBeInTheDocument();
+        expect(screen.getByTestId(`action-card-${rcId}`)).toBeInTheDocument();
+
+        // Viewing the LS card discloses the load-shedding editor.
         expect(screen.getByText(/Shedding on/)).toBeInTheDocument();
         expect(screen.getByText('LOAD_NEW')).toBeInTheDocument();
 
-        // Curtailment details with new format
+        // Viewing the RC card discloses the curtailment editor.
+        rerender(<ActionFeed {...props} selectedActionId={rcId} />);
         expect(screen.getByText(/Curtailment on/)).toBeInTheDocument();
         expect(screen.getByText('GEN_NEW')).toBeInTheDocument();
     });
@@ -1268,9 +1292,14 @@ describe('ActionFeed', () => {
     });
 
     it('shows editable MW and re-simulate button on load shedding action card', () => {
+        // Parameter editors are progressive-disclosure (PR
+        // claude/redesign-actioncard-…): they only render on the
+        // currently-viewed card to keep at-rest cards to five
+        // fields. Set `selectedActionId` so the editor is visible.
         const actionId = 'load_shedding_LOAD_X';
         const props = {
             ...defaultProps,
+            selectedActionId: actionId,
             actions: {
                 [actionId]: {
                     description_unitaire: 'Load shedding on LOAD_X',
@@ -1295,6 +1324,7 @@ describe('ActionFeed', () => {
         const actionId = 'curtail_GEN_Y';
         const props = {
             ...defaultProps,
+            selectedActionId: actionId,
             actions: {
                 [actionId]: {
                     description_unitaire: 'Curtailment on GEN_Y',
@@ -1332,6 +1362,7 @@ describe('ActionFeed', () => {
 
         const props = {
             ...defaultProps,
+            selectedActionId: actionId,
             actions: {
                 [actionId]: {
                     description_unitaire: 'Load shedding on LOAD_X',
@@ -1375,6 +1406,7 @@ describe('ActionFeed', () => {
             const actionId = 'load_shedding_LOAD_B5';
             const props = {
                 ...defaultProps,
+                selectedActionId: actionId,
                 onManualActionAdded: vi.fn(),
                 onActionResimulated: vi.fn(),
                 actions: {
@@ -1439,6 +1471,7 @@ describe('ActionFeed', () => {
             const pstActionId = 'pst_B5';
             const props = {
                 ...defaultProps,
+                selectedActionId: pstActionId,
                 onManualActionAdded: vi.fn(),
                 onActionResimulated: vi.fn(),
                 actions: {
@@ -1505,6 +1538,7 @@ describe('ActionFeed', () => {
             const actionId = 'load_shedding_LOG_A1';
             const props = {
                 ...defaultProps,
+                selectedActionId: actionId,
                 onActionResimulated: vi.fn(),
                 actions: {
                     [actionId]: {
@@ -1587,6 +1621,7 @@ describe('ActionFeed', () => {
             const pstActionId = 'pst_A1';
             const props = {
                 ...defaultProps,
+                selectedActionId: pstActionId,
                 onActionResimulated: vi.fn(),
                 actions: {
                     [pstActionId]: {
@@ -2190,6 +2225,7 @@ describe('ActionFeed', () => {
             const onUpdateCombinedEstimation = vi.fn();
             const props = {
                 ...defaultProps,
+                selectedActionId: actionId,
                 actions: {
                     [actionId]: {
                         description_unitaire: 'Load shedding on LOAD_X',
@@ -2260,6 +2296,7 @@ describe('ActionFeed', () => {
             };
             const props = {
                 ...defaultProps,
+                selectedActionId: pstActionId,
                 actions: {
                     [pstActionId]: {
                         description_unitaire: 'Variation PST ARKA TD 661',
@@ -2314,6 +2351,7 @@ describe('ActionFeed', () => {
             const onUpdateCombinedEstimation = vi.fn();
             const props = {
                 ...defaultProps,
+                selectedActionId: actionId,
                 actions: {
                     [actionId]: {
                         description_unitaire: 'Load shedding on LOAD_X',
@@ -2370,6 +2408,7 @@ describe('ActionFeed', () => {
             const onUpdateCombinedEstimation = vi.fn();
             const props = {
                 ...defaultProps,
+                selectedActionId: actionId,
                 actions: {
                     [actionId]: {
                         description_unitaire: 'Load shedding on LOAD_X',
@@ -2428,6 +2467,7 @@ describe('ActionFeed', () => {
             const combined2: CombinedAction = { ...baseCombined, action2_id: thirdActionId };
             const props = {
                 ...defaultProps,
+                selectedActionId: actionId,
                 actions: {
                     [actionId]: {
                         description_unitaire: 'Load shedding on LOAD_X',

@@ -48,6 +48,36 @@ const clickableLinkStyle: React.CSSProperties = {
     textDecoration: 'underline dotted',
 };
 
+type SeverityKind = 'solves' | 'lowMargin' | 'unsolved' | 'divergent' | 'islanded';
+
+const SeverityIcon: React.FC<{ kind: SeverityKind }> = ({ kind }) => {
+    const common = { width: 11, height: 11, viewBox: '0 0 16 16', 'aria-hidden': true } as const;
+    if (kind === 'solves') {
+        return (
+            <svg {...common}>
+                <circle cx="8" cy="8" r="7" fill="currentColor" fillOpacity="0.18" />
+                <path d="M4.5 8.2 L7 10.5 L11.5 5.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        );
+    }
+    if (kind === 'lowMargin') {
+        return (
+            <svg {...common}>
+                <path d="M8 1.6 L15 13.5 L1 13.5 Z" fill="currentColor" fillOpacity="0.18" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                <path d="M8 6 L8 9.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                <circle cx="8" cy="11.5" r="0.9" fill="currentColor" />
+            </svg>
+        );
+    }
+    // unsolved / divergent / islanded → X-circle
+    return (
+        <svg {...common}>
+            <circle cx="8" cy="8" r="7" fill="currentColor" fillOpacity="0.18" />
+            <path d="M5 5 L11 11 M11 5 L5 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+    );
+};
+
 const ActionCard: React.FC<ActionCardProps> = ({
     id,
     details,
@@ -78,18 +108,18 @@ const ActionCard: React.FC<ActionCardProps> = ({
         ? (details.max_rho > monitoringFactor ? 'red' as const : details.max_rho > (monitoringFactor - 0.05) ? 'orange' as const : 'green' as const)
         : (details.is_rho_reduction ? 'green' as const : 'red' as const);
     const severityColors = {
-        green: { border: colors.success, badgeBg: colors.successSoft, badgeText: colors.successText, label: 'Solves overload' },
-        orange: { border: colors.warningStrong, badgeBg: colors.warningSoft, badgeText: colors.warningText, label: 'Solved \u2014 low margin' },
-        red: { border: colors.danger, badgeBg: colors.dangerSoft, badgeText: colors.dangerText, label: details.is_rho_reduction ? 'Still overloaded' : 'No reduction' },
+        green: { border: colors.success, badgeBg: colors.successSoft, badgeText: colors.successText, label: 'Solves overload', kind: 'solves' as SeverityKind },
+        orange: { border: colors.warningStrong, badgeBg: colors.warningSoft, badgeText: colors.warningText, label: 'Solved — low margin', kind: 'lowMargin' as SeverityKind },
+        red: { border: colors.danger, badgeBg: colors.dangerSoft, badgeText: colors.dangerText, label: details.is_rho_reduction ? 'Still overloaded' : 'No reduction', kind: 'unsolved' as SeverityKind },
     };
     const sc = details.non_convergence
-        ? { border: colors.danger, badgeBg: colors.danger, badgeText: colors.textOnBrand, label: 'divergent' }
+        ? { border: colors.danger, badgeBg: colors.danger, badgeText: colors.textOnBrand, label: 'divergent', kind: 'divergent' as SeverityKind }
         : details.is_islanded
-            ? { border: colors.danger, badgeBg: colors.danger, badgeText: colors.textOnBrand, label: 'islanded' }
+            ? { border: colors.danger, badgeBg: colors.danger, badgeText: colors.textOnBrand, label: 'islanded', kind: 'islanded' as SeverityKind }
             : severityColors[severity];
 
     const renderRho = (arr: number[] | null, actionId: string, tab: 'action' | 'n-1' = 'action'): React.ReactNode => {
-        if (!arr || arr.length === 0) return '\u2014';
+        if (!arr || arr.length === 0) return '—';
         return arr.map((v, i) => {
             const lineName = linesOverloaded[i] || `line ${i}`;
             return (
@@ -185,87 +215,143 @@ const ActionCard: React.FC<ActionCardProps> = ({
         }
 
         return (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0, maxWidth: '180px', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0, justifyContent: 'flex-end' }}>
                 {badges}
             </div>
         );
     };
 
+    const isFault = !!(details.non_convergence || details.is_islanded);
+    // Higher-saturation accent stripe for the viewing card — replaces
+    // the old vertical "VIEWING" ribbon with a quieter signal that
+    // doesn't steal a column of horizontal space inside the card.
+    const accentColor = isViewing ? colors.brandStrong : sc.border;
+
+    const editorRowStyle: React.CSSProperties = {
+        fontSize: '12px',
+        padding: '6px 10px',
+        marginTop: '5px',
+        borderRadius: '4px',
+        fontWeight: 500,
+    };
+
     return (
         <div
             data-testid={`action-card-${id}`}
+            data-viewing={isViewing ? 'true' : 'false'}
+            className={`action-card${isViewing ? ' is-viewing' : ''}`}
             style={{
-                background: (details.non_convergence || details.is_islanded) ? colors.dangerSoft : (isViewing ? colors.brandSoft : colors.surface),
-                border: (details.non_convergence || details.is_islanded) ? `1px solid ${colors.danger}` : `1px solid ${colors.border}`,
+                background: isFault ? colors.dangerSoft : (isViewing ? colors.brandSoft : colors.surface),
+                border: isFault ? `1px solid ${colors.danger}` : `1px solid ${colors.border}`,
                 borderRadius: '8px',
                 marginBottom: '10px',
-                boxShadow: isViewing ? '0 0 0 2px rgba(0,123,255,0.3), 0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
-                borderLeft: `5px solid ${isViewing ? colors.brand : sc.border}`,
+                boxShadow: isViewing ? '0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
+                borderLeft: `5px solid ${accentColor}`,
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
-                display: 'flex',
-                alignItems: 'stretch',
                 overflow: 'hidden',
+                padding: '10px',
+                position: 'relative',
             }} onClick={() => onActionSelect(id)}>
-            {/*
-              When the card is the currently-viewed action, the
-              VIEWING marker is rendered as a vertical ribbon flush
-              against the left edge (between the colored border and
-              the content) — this frees up a full line of horizontal
-              space inside the header, which matters on a narrow
-              sidebar with long equipment IDs.
-
-              Implementation note: `writing-mode: vertical-rl` +
-              `transform: rotate(180deg)` yields bottom-to-top text
-              with letters rotated the "book-spine" way — the
-              cross-browser combination that works consistently on
-              Chromium / Firefox / Safari (unlike the newer
-              `sideways-lr`, which is still WebKit-patchy).
-            */}
-            {isViewing && (
-                <div
-                    data-testid={`action-card-${id}-viewing-ribbon`}
-                    style={{
-                        writingMode: 'vertical-rl',
-                        transform: 'rotate(180deg)',
-                        background: colors.brand,
-                        color: colors.textOnBrand,
-                        fontSize: '10px',
-                        fontWeight: 700,
-                        letterSpacing: '1.5px',
-                        padding: '8px 3px',
-                        textAlign: 'center',
-                        flexShrink: 0,
-                        userSelect: 'none',
-                    }}
-                    aria-label="Currently viewing this action"
-                >
-                    VIEWING
-                </div>
-            )}
-            <div style={{ flex: 1, padding: '10px', minWidth: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
                 <h4 style={{
                     margin: 0,
                     fontSize: '12px',
                     color: isViewing ? colors.brandStrong : undefined,
                     flex: 1,
                     minWidth: 0,
-                    overflowWrap: 'anywhere'
+                    overflowWrap: 'anywhere',
+                    fontWeight: 700,
                 }}>
-                    #{index + 1} {'\u2014'} {id}
+                    #{index + 1} {'—'} {id}
                 </h4>
-                <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '12px', background: sc.badgeBg, color: sc.badgeText }}>
-                        {sc.label}
-                    </span>
+                <span
+                    data-testid={`action-card-${id}-severity`}
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        background: sc.badgeBg,
+                        color: sc.badgeText,
+                        flexShrink: 0,
+                    }}
+                >
+                    <SeverityIcon kind={sc.kind} />
+                    {sc.label}
+                </span>
+            </div>
+
+            {/* Compact at-rest body: max loading + target badges. The
+                rail (⭐ / ❌) sits to the right and fades in on
+                hover or when this card is being viewed. */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '8px', marginTop: '6px' }}>
+                <div style={{ flex: 1, fontSize: '12px', minWidth: 0 }}>
+                    {maxRhoPct != null ? (
+                        <div>
+                            Max loading: <strong style={{ color: sc.border }}>{maxRhoPct}%</strong>
+                            {details.max_rho_line && (
+                                <span style={{ color: colors.textTertiary }}> on <button
+                                    style={{ ...clickableLinkStyle, color: colors.textTertiary }}
+                                    title={`Zoom to ${details.max_rho_line}`}
+                                    onClick={(e) => { e.stopPropagation(); onAssetClick(id, details.max_rho_line, 'action'); }}
+                                >{displayName(details.max_rho_line)}</button></span>
+                            )}
+                        </div>
+                    ) : (
+                        <div style={{ color: colors.textTertiary }}>No loading metric</div>
+                    )}
+                </div>
+                {renderBadges()}
+                <div className="action-card-rail" style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                    {!isSelected && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onActionFavorite(id); }}
+                            style={{ background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            title="Select this action"
+                        ><span style={{ fontSize: '14px' }}>⭐</span></button>
+                    )}
+                    {!isRejected && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onActionReject(id); }}
+                            style={{ background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            title={isSelected ? "Remove from selected" : "Reject this action"}
+                        ><span style={{ fontSize: '14px' }}>❌</span></button>
+                    )}
                 </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', margin: '4px 0 5px' }}>
-                <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: '12px', margin: 0 }}>{details.description_unitaire}</p>
+
+            {/* Fault states (divergent / islanded) are primary signals
+                and stay visible regardless of the viewing-state — they
+                replace the missing max-loading indicator. */}
+            {details.non_convergence && (
+                <div style={{ fontSize: '11px', color: colors.warningText, backgroundColor: colors.warningSoft, padding: '2px 6px', borderRadius: '4px', marginTop: '6px', border: `1px solid ${colors.warningBorder}`, display: 'inline-block' }}>
+                    ⚠️ LoadFlow failure: {details.non_convergence}
+                </div>
+            )}
+            {details.is_islanded && (
+                <div style={{ fontSize: '12px', background: colors.dangerSoft, color: colors.danger, padding: '6px 10px', marginTop: '6px', borderRadius: '4px', border: `1px solid ${colors.danger}`, fontWeight: 500 }}>
+                    🏝️ Islanding detected ({details.disconnected_mw?.toFixed(1)} MW disconnected)
+                </div>
+            )}
+
+            {/* Progressive disclosure: description, parameter editors,
+                and per-line "Loading after" only render on the viewing
+                card. Keeps non-viewing cards to five fields each. */}
+            {isViewing && (
+                <div
+                    data-testid={`action-card-${id}-disclosure`}
+                    style={{ marginTop: '8px', borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: '8px' }}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    <p style={{ fontSize: '12px', margin: 0, color: colors.textPrimary }}>{details.description_unitaire}</p>
+
                     {details.load_shedding_details && details.load_shedding_details.length > 0 && (
-                        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: colors.warningSoft, color: colors.warningText, padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: `1px solid ${colors.warningBorder}`, fontWeight: 500 }}>
+                        <div style={{ ...editorRowStyle, background: colors.warningSoft, color: colors.warningText, border: `1px solid ${colors.warningBorder}` }}>
                             {details.load_shedding_details.map((ls, i) => (
                                 <div key={ls.load_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
                                     <span>Shedding on <strong>{ls.load_name}</strong> in MW:</span>
@@ -293,8 +379,9 @@ const ActionCard: React.FC<ActionCardProps> = ({
                             ))}
                         </div>
                     )}
+
                     {details.curtailment_details && details.curtailment_details.length > 0 && (
-                        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: colors.infoSoft, color: colors.infoText, padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: `1px solid ${colors.infoBorder}`, fontWeight: 500 }}>
+                        <div style={{ ...editorRowStyle, background: colors.infoSoft, color: colors.infoText, border: `1px solid ${colors.infoBorder}` }}>
                             {details.curtailment_details.map((rc, i) => (
                                 <div key={rc.gen_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
                                     <span>Curtailment on <strong>{rc.gen_name}</strong> in MW:</span>
@@ -322,8 +409,9 @@ const ActionCard: React.FC<ActionCardProps> = ({
                             ))}
                         </div>
                     )}
+
                     {details.pst_details && details.pst_details.length > 0 && (
-                        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ fontSize: '12px', background: colors.accentSoft, color: colors.accentText, padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: `1px solid ${colors.accentBorder}`, fontWeight: 500 }}>
+                        <div style={{ ...editorRowStyle, background: colors.accentSoft, color: colors.accentText, border: `1px solid ${colors.accentBorder}` }}>
                             {details.pst_details.map((pst, i) => (
                                 <div key={pst.pst_name} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: i > 0 ? '4px' : 0 }}>
                                     <span>PST <strong>{pst.pst_name}</strong> tap:</span>
@@ -357,59 +445,16 @@ const ActionCard: React.FC<ActionCardProps> = ({
                             ))}
                         </div>
                     )}
-                    {details.non_convergence && (
-                        <div style={{ fontSize: '11px', color: colors.warningText, backgroundColor: colors.warningSoft, padding: '2px 6px', borderRadius: '4px', marginTop: '4px', border: `1px solid ${colors.warningBorder}`, display: 'inline-block' }}>
-                            ⚠️ LoadFlow failure: {details.non_convergence}
-                        </div>
-                    )}
-                    {details.is_islanded && (
-                        <div style={{ fontSize: '12px', background: colors.dangerSoft, color: colors.danger, padding: '6px 10px', marginTop: '5px', borderRadius: '4px', border: `1px solid ${colors.danger}`, fontWeight: 500 }}>
-                            🏝️ Islanding detected ({details.disconnected_mw?.toFixed(1)} MW disconnected)
-                        </div>
-                    )}
+
+                    {/* "Loading before" stays in the sticky Overloads N-1
+                        section of the left feed — no need to duplicate
+                        it per card (see git blame for the original
+                        rationale). */}
+                    <div style={{ fontSize: '12px', background: colors.brandSoft, padding: '5px', marginTop: '8px', borderRadius: '4px' }}>
+                        Loading after: {renderRho(details.rho_after, id, 'action')}
+                    </div>
                 </div>
-                {renderBadges()}
-            </div>
-            <div style={{ fontSize: '12px', background: isViewing ? colors.brandSoft : colors.surfaceMuted, padding: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                <div>
-                    {/*
-                      "Loading before" removed — the N-1 pre-action loading
-                      is already shown in the sticky Overloads N-1 section
-                      of the left feed, with percentages next to each
-                      overloaded line. No need to duplicate it per card.
-                    */}
-                    <div>Loading after: {renderRho(details.rho_after, id, 'action')}</div>
-                    {maxRhoPct != null && (
-                        <div style={{ marginTop: '3px' }}>
-                            Max loading: <strong style={{ color: sc.border }}>{maxRhoPct}%</strong>
-                            {details.max_rho_line && (
-                                <span style={{ color: colors.textTertiary }}> on <button
-                                    style={{ ...clickableLinkStyle, color: colors.textTertiary }}
-                                    title={`Zoom to ${details.max_rho_line}`}
-                                    onClick={(e) => { e.stopPropagation(); onAssetClick(id, details.max_rho_line, 'action'); }}
-                                >{displayName(details.max_rho_line)}</button></span>
-                            )}
-                        </div>
-                    )}
-                </div>
-                <div style={{ display: 'flex', gap: '4px', flexShrink: 0, paddingBottom: '2px' }}>
-                    {!isSelected && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onActionFavorite(id); }}
-                            style={{ background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                            title="Select this action"
-                        ><span style={{ fontSize: '14px' }}>⭐</span></button>
-                    )}
-                    {!isRejected && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onActionReject(id); }}
-                            style={{ background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '4px', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                            title={isSelected ? "Remove from selected" : "Reject this action"}
-                        ><span style={{ fontSize: '14px' }}>❌</span></button>
-                    )}
-                </div>
-            </div>
-            </div>{/* /content column */}
+            )}
         </div>
     );
 };
