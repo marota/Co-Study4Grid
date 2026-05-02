@@ -296,6 +296,17 @@ npm run test:watch   # watch mode
   unbearable.
 - **Inline `style` objects** are the convention here (no CSS modules
   or utility-class framework). Match the surrounding component.
+- **Design tokens** — use `colors` / `space` / `text` / `radius` from
+  `src/styles/tokens.ts` for inline styles, and `var(--…)` from
+  `src/styles/tokens.css` for stylesheet rules. For raw SVG attribute
+  values (`element.setAttribute('fill', …)`), import the hex-valued
+  `pinColors` / `pinColorsDimmed` / `pinColorsHighlighted` /
+  `pinChrome` constants from `tokens.ts` — browsers don't reliably
+  resolve `var(--…)` inside SVG presentation attributes, and a few
+  unit tests assert on the resolved hex via `getAttribute('fill')`.
+  Do not introduce hex literals anywhere outside the token files; the
+  code-quality gate enforces zero. See
+  `docs/proposals/ui-design-critique.md` recommendation #1.
 - **Memoize at the right level**: `useCallback` for handlers passed
   as props, `useMemo` for derived data passed to large children.
   Don't memoize cheap inline objects on small leaf components.

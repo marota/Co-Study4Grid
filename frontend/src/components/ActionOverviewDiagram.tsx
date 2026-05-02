@@ -8,6 +8,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ActionDetail, ActionOverviewFilters, ActionSeverityCategory, ActionTypeFilterToken, DiagramData, MetadataIndex, UnsimulatedActionScoreInfo, ViewBox } from '../types';
 import { DEFAULT_ACTION_OVERVIEW_FILTERS, matchesActionTypeFilter } from '../utils/actionTypes';
+import { colors, pinColors } from '../styles/tokens';
 import ActionTypeFilterChips from './ActionTypeFilterChips';
 import {
     actionPassesOverviewFilter,
@@ -863,9 +864,9 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                     flexWrap: 'nowrap',
                     gap: '6px',
                     fontSize: '12px',
-                    background: '#f8fafc',
-                    borderBottom: '1px solid #e2e8f0',
-                    color: '#334155',
+                    background: colors.surfaceMuted,
+                    borderBottom: `1px solid ${colors.borderSubtle}`,
+                    color: colors.textPrimary,
                     overflowX: 'auto',
                     whiteSpace: 'nowrap',
                 }}
@@ -874,7 +875,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                     <span
                         data-testid="overview-pin-counter"
                         title={`${pins.length} pin${pins.length === 1 ? '' : 's'} on the N-1 network${unsimulatedPins.length > 0 ? ` (+ ${unsimulatedPins.length} un-simulated)` : ''}`}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600, color: '#1f2937', flexShrink: 0 }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600, color: colors.textPrimary, flexShrink: 0 }}
                     >
                         <span aria-hidden>{'\uD83D\uDCCD'}</span>
                         <span style={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -885,25 +886,25 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                 )}
                 <CategoryToggle
                     testId="filter-category-green"
-                    color="#28a745" label="Solves overload"
+                    color={pinColors.green} label="Solves overload"
                     enabled={activeFilters.categories.green}
                     onToggle={() => toggleCategory('green')}
                 />
                 <CategoryToggle
                     testId="filter-category-orange"
-                    color="#f0ad4e" label="Low margin"
+                    color={pinColors.orange} label="Low margin"
                     enabled={activeFilters.categories.orange}
                     onToggle={() => toggleCategory('orange')}
                 />
                 <CategoryToggle
                     testId="filter-category-red"
-                    color="#dc3545" label="Still overloaded"
+                    color={pinColors.red} label="Still overloaded"
                     enabled={activeFilters.categories.red}
                     onToggle={() => toggleCategory('red')}
                 />
                 <CategoryToggle
                     testId="filter-category-grey"
-                    color="#9ca3af" label="Divergent / islanded"
+                    color={pinColors.grey} label="Divergent / islanded"
                     enabled={activeFilters.categories.grey}
                     onToggle={() => toggleCategory('grey')}
                 />
@@ -930,7 +931,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
                     title="Hide actions whose max loading rate (%) exceeds this threshold"
                 >
-                    <span style={{ color: '#475569' }}>Max loading</span>
+                    <span style={{ color: colors.textSecondary }}>Max loading</span>
                     <input
                         data-testid="filter-threshold-input"
                         type="number"
@@ -949,12 +950,12 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                             padding: '2px 4px',
                             fontSize: 12,
                             fontVariantNumeric: 'tabular-nums',
-                            border: '1px solid #cbd5e1',
+                            border: `1px solid ${colors.border}`,
                             borderRadius: 4,
                             textAlign: 'right',
                         }}
                     />
-                    <span style={{ color: '#475569' }}>%</span>
+                    <span style={{ color: colors.textSecondary }}>%</span>
                 </label>
                 <label
                     data-testid="filter-show-unsimulated"
@@ -966,7 +967,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                         checked={activeFilters.showUnsimulated}
                         onChange={toggleUnsimulated}
                     />
-                    <span style={{ color: '#475569' }}>Show unsimulated</span>
+                    <span style={{ color: colors.textSecondary }}>Show unsimulated</span>
                 </label>
                 <span
                     aria-hidden
@@ -974,7 +975,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                         display: 'inline-block',
                         width: 1,
                         height: 18,
-                        background: '#cbd5e1',
+                        background: colors.border,
                         margin: '0 2px',
                         flexShrink: 0,
                     }}
@@ -1029,9 +1030,9 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                                     ...controlButtonStyle,
                                     padding: '4px 10px',
                                     fontSize: 12,
-                                    border: `1px solid ${isTied ? '#2c7be5' : '#ccc'}`,
-                                    backgroundColor: isTied ? '#e8f0fe' : '#fff',
-                                    color: isTied ? '#2c7be5' : '#555',
+                                    border: `1px solid ${isTied ? colors.brand : colors.border}`,
+                                    backgroundColor: isTied ? colors.brandSoft : colors.surface,
+                                    color: isTied ? colors.brand : colors.textSecondary,
                                 }}
                             >
                                 {isTied ? '\u{1F517} Tied' : '\u{26D3} Tie'}
@@ -1083,7 +1084,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                                 placeholder="🔍 Focus asset..."
                                 style={{
                                     padding: '5px 10px',
-                                    border: inspectQuery ? '2px solid #3498db' : '1px solid #ccc',
+                                    border: inspectQuery ? `2px solid ${colors.brand}` : `1px solid ${colors.border}`,
                                     borderRadius: 4,
                                     fontSize: 12,
                                     width: 180,
@@ -1102,7 +1103,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                                         maxHeight: 220,
                                         overflowY: 'auto',
                                         background: 'white',
-                                        border: '1px solid #3498db',
+                                        border: `1px solid ${colors.brand}`,
                                         borderRadius: 4,
                                         boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
                                         zIndex: 200,
@@ -1120,13 +1121,13 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                                             style={{
                                                 padding: '5px 10px',
                                                 cursor: 'pointer',
-                                                borderBottom: '1px solid #eee',
+                                                borderBottom: `1px solid ${colors.borderSubtle}`,
                                                 whiteSpace: 'nowrap',
                                                 overflow: 'hidden',
                                                 textOverflow: 'ellipsis',
                                             }}
-                                            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = '#f0f8ff'; }}
-                                            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = 'white'; }}
+                                            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = colors.brandSoft; }}
+                                            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = colors.surface; }}
                                         >
                                             {item}
                                         </div>
@@ -1138,7 +1139,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                             <button
                                 onClick={() => setInspectQuery('')}
                                 style={{
-                                    background: '#e74c3c', color: 'white', border: 'none',
+                                    background: colors.danger, color: colors.textOnBrand, border: 'none',
                                     borderRadius: 4, padding: '4px 8px', cursor: 'pointer',
                                     fontSize: 12, boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
                                 }}
@@ -1155,7 +1156,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                 <div style={{
                     position: 'absolute', inset: 0, top: 40,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: '#999', fontStyle: 'italic', textAlign: 'center', padding: '40px',
+                    color: colors.textTertiary, fontStyle: 'italic', textAlign: 'center', padding: '40px',
                     pointerEvents: 'none',
                 }}>
                     Load a contingency first, then run the analysis to populate this overview.
@@ -1165,7 +1166,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                 <div style={{
                     position: 'absolute', inset: 0, top: 40,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: '#999', fontStyle: 'italic', textAlign: 'center', padding: '40px',
+                    color: colors.textTertiary, fontStyle: 'italic', textAlign: 'center', padding: '40px',
                     pointerEvents: 'none',
                 }}>
                     Run &ldquo;Analyze &amp; Suggest&rdquo; to see prioritised remedial actions as pins on the network.
@@ -1232,9 +1233,9 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
 };
 
 const controlButtonStyle: React.CSSProperties = {
-    background: 'white',
-    color: '#333',
-    border: '1px solid #ccc',
+    background: colors.surface,
+    color: colors.textPrimary,
+    border: `1px solid ${colors.border}`,
     borderRadius: 4,
     padding: '5px 12px',
     cursor: 'pointer',
@@ -1244,9 +1245,9 @@ const controlButtonStyle: React.CSSProperties = {
 };
 
 const filterChipButtonStyle: React.CSSProperties = {
-    background: 'white',
-    color: '#334155',
-    border: '1px solid #cbd5e1',
+    background: colors.surface,
+    color: colors.textPrimary,
+    border: `1px solid ${colors.border}`,
     borderRadius: 4,
     padding: '3px 8px',
     cursor: 'pointer',
@@ -1279,12 +1280,12 @@ const CategoryToggle: React.FC<{
             alignItems: 'center',
             gap: 4,
             cursor: 'pointer',
-            background: enabled ? 'white' : '#eef2f7',
-            border: `1px solid ${enabled ? color : '#cbd5e1'}`,
+            background: enabled ? colors.surface : colors.surfaceMuted,
+            border: `1px solid ${enabled ? color : colors.border}`,
             borderRadius: 12,
             padding: '2px 8px',
             fontSize: 12,
-            color: enabled ? '#1f2937' : '#94a3b8',
+            color: enabled ? colors.textPrimary : colors.textTertiary,
             opacity: enabled ? 1 : 0.65,
             flexShrink: 0,
         }}

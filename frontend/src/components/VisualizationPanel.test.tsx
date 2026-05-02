@@ -477,8 +477,11 @@ describe('VisualizationPanel', () => {
         expect(screen.getByText('Processing Analysis...')).toBeInTheDocument();
         const placeholder = screen.getByText('Processing Analysis...').parentElement;
         if (placeholder) {
-            expect(placeholder.style.backgroundColor).toBe('rgb(255, 243, 205)'); // #fff3cd
-            expect(placeholder.style.color).toBe('rgb(133, 100, 4)'); // #856404
+            // jsdom doesn't expand the `background:` shorthand into
+            // `backgroundColor` longhand for var(--…) values, so read
+            // the shorthand directly.
+            expect(placeholder.style.background).toContain('var(--color-warning-soft)');
+            expect(placeholder.style.color).toContain('var(--color-warning-text)');
         }
     });
 

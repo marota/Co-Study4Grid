@@ -6,6 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import React from 'react';
+import { colors, space, text } from '../styles/tokens';
 
 interface SidebarSummaryProps {
   selectedBranch: string;
@@ -42,17 +43,17 @@ export default function SidebarSummary({
       data-testid="sticky-feed-summary"
       style={{
         flexShrink: 0,
-        padding: '6px 12px',
-        background: '#f8f9fa',
-        borderBottom: '1px solid #ccc',
-        fontSize: '11px',
+        padding: `6px ${space[3]}`,
+        background: colors.surfaceMuted,
+        borderBottom: `1px solid ${colors.border}`,
+        fontSize: text.xs,
         lineHeight: 1.5,
         boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
       }}
     >
       {selectedBranch && (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-          <span style={{ color: '#555', fontWeight: 600, whiteSpace: 'nowrap' }}>🎯 Contingency:</span>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: space[1] }}>
+          <span style={{ color: colors.textSecondary, fontWeight: 600, whiteSpace: 'nowrap' }}>🎯 Contingency:</span>
           <button
             onClick={(e) => { e.stopPropagation(); onContingencyZoom(selectedBranch); }}
             title={`Zoom to ${selectedBranch} in the current diagram`}
@@ -61,8 +62,8 @@ export default function SidebarSummary({
               border: 'none',
               cursor: 'pointer',
               padding: 0,
-              fontSize: '11px',
-              color: '#1e40af',
+              fontSize: text.xs,
+              color: colors.brand,
               fontWeight: 600,
               textDecoration: 'underline dotted',
               wordBreak: 'break-word',
@@ -74,8 +75,8 @@ export default function SidebarSummary({
         </div>
       )}
       {hasOverloads && (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-          <span style={{ color: '#b91c1c', fontWeight: 600, whiteSpace: 'nowrap' }}>⚠️ N-1:</span>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: space[1] }}>
+          <span style={{ color: colors.dangerStrong, fontWeight: 600, whiteSpace: 'nowrap' }}>⚠️ N-1:</span>
           <span style={{ wordBreak: 'break-word' }}>
             {n1LinesOverloaded!.map((name, i) => {
               const rho = n1LinesOverloadedRho?.[i];
@@ -92,8 +93,8 @@ export default function SidebarSummary({
                       border: 'none',
                       cursor: 'pointer',
                       padding: 0,
-                      fontSize: '11px',
-                      color: isSelected ? '#1e40af' : '#bdc3c7',
+                      fontSize: text.xs,
+                      color: isSelected ? colors.brand : colors.borderStrong,
                       fontWeight: isSelected ? 600 : 400,
                       textDecoration: isSelected ? 'underline dotted' : 'none',
                     }}
@@ -101,7 +102,7 @@ export default function SidebarSummary({
                     {displayName(name)}
                   </button>
                   {rhoPct && (
-                    <span style={{ color: isSelected ? '#374151' : '#bdc3c7', marginLeft: '2px' }}>
+                    <span style={{ color: isSelected ? colors.textPrimary : colors.borderStrong, marginLeft: space.half }}>
                       ({rhoPct})
                     </span>
                   )}

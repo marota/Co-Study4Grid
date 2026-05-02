@@ -14,6 +14,7 @@ import { interactionLogger } from '../utils/interactionLogger';
 import CombinedActionsModal from './CombinedActionsModal';
 import ActionCard from './ActionCard';
 import ActionSearchDropdown from './ActionSearchDropdown';
+import { colors } from '../styles/tokens';
 
 interface ActionFeedProps {
     actions: Record<string, ActionDetail>;
@@ -699,8 +700,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 <button
                     onClick={handleOpenSearch}
                     style={{
-                        background: searchOpen ? '#007bff' : '#e9ecef',
-                        color: searchOpen ? 'white' : '#333',
+                        background: searchOpen ? colors.brand : colors.surfaceMuted,
+                        color: searchOpen ? colors.textOnBrand : colors.textPrimary,
                         border: 'none',
                         borderRadius: '6px',
                         padding: '4px 10px',
@@ -715,8 +716,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 <button
                     onClick={() => setCombineModalOpen(true)}
                     style={{
-                        background: combineModalOpen ? '#007bff' : '#e9ecef',
-                        color: combineModalOpen ? 'white' : '#333',
+                        background: combineModalOpen ? colors.brand : colors.surfaceMuted,
+                        color: combineModalOpen ? colors.textOnBrand : colors.textPrimary,
                         border: 'none',
                         borderRadius: '6px',
                         padding: '4px 10px',
@@ -762,11 +763,11 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 <div style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
                     gap: '8px', padding: '8px 10px',
-                    background: '#fff3cd', border: '1px solid #ffeeba',
-                    borderRadius: '6px', marginBottom: '10px', fontSize: '12px', color: '#856404'
+                    background: colors.warningSoft, border: `1px solid ${colors.warningBorder}`,
+                    borderRadius: '6px', marginBottom: '10px', fontSize: '12px', color: colors.warningText
                 }}>
                     <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>ℹ️ Action dictionary: <code style={{ fontFamily: 'monospace', background: '#fcf3cf', padding: '1px 4px', borderRadius: '3px', border: '1px solid #f9e79f' }}>{actionDictFileName}</code></div>
+                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>ℹ️ Action dictionary: <code style={{ fontFamily: 'monospace', background: colors.warningSoft, padding: '1px 4px', borderRadius: '3px', border: `1px solid ${colors.warningBorder}` }}>{actionDictFileName}</code></div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '4px' }}>
                             <span>🔄 Reco: <strong>{actionDictStats.reco}</strong></span>
                             <span>⛔ Disco: <strong>{actionDictStats.disco}</strong></span>
@@ -775,25 +776,25 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                             <span>🔒 Close coupling: <strong>{actionDictStats.close_coupling}</strong></span>
                         </div>
                         {onOpenSettings && (
-                            <button onClick={() => onOpenSettings('paths')} style={{ background: 'none', border: 'none', color: '#0056b3', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '12px' }}>Change in settings</button>
+                            <button onClick={() => onOpenSettings('paths')} style={{ background: 'none', border: 'none', color: colors.brandStrong, textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '12px' }}>Change in settings</button>
                         )}
                     </div>
-                    <button onClick={() => setShowActionDictWarning(false)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: '#856404' }} title="Dismiss">✕</button>
+                    <button onClick={() => setShowActionDictWarning(false)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: colors.warningText }} title="Dismiss">✕</button>
                 </div>
             )}
             <div style={{ marginBottom: '15px' }}>
-                <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#333', borderBottom: '1px solid #eee', paddingBottom: '4px', display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '8px' }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: colors.textPrimary, borderBottom: `1px solid ${colors.borderSubtle}`, paddingBottom: '4px', display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '8px' }}>
                     Selected Actions
-                    {selectedEntries.length > 0 && <span style={{ background: '#e9ecef', color: '#495057', fontSize: '11px', padding: '2px 6px', borderRadius: '10px' }}>{selectedEntries.length}</span>}
+                    {selectedEntries.length > 0 && <span style={{ background: colors.surfaceMuted, color: colors.textSecondary, fontSize: '11px', padding: '2px 6px', borderRadius: '10px' }}>{selectedEntries.length}</span>}
                 </h4>
                 {selectedEntries.length > 0 ? (
                     <>
                         {!dismissedSelectedWarning && selectedEntries.some(([id]) => manuallyAddedIds.has(id) && analysisActionIds.has(id)) && (() => {
                             const overlapIds = selectedEntries.filter(([id]) => manuallyAddedIds.has(id) && analysisActionIds.has(id)).map(([id]) => id).join(', ');
                             return (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', padding: '8px 10px', background: '#fff3cd', border: '1px solid #ffeeba', borderRadius: '6px', marginBottom: '10px', fontSize: '13px', color: '#856404' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', padding: '8px 10px', background: colors.warningSoft, border: `1px solid ${colors.warningBorder}`, borderRadius: '6px', marginBottom: '10px', fontSize: '13px', color: colors.warningText }}>
                                     <div>⚠️ User warning: The following manually selected actions are also recommended by the recent analysis run: {overlapIds}</div>
-                                    <button onClick={() => setDismissedSelectedWarning(true)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '0', fontSize: '16px', lineHeight: 1, color: '#856404' }} title="Dismiss">&times;</button>
+                                    <button onClick={() => setDismissedSelectedWarning(true)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '0', fontSize: '16px', lineHeight: 1, color: colors.warningText }} title="Dismiss">&times;</button>
                                 </div>
                             );
                         })()}
@@ -801,7 +802,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     </>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '5px 0 15px 0' }}>
-                        <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: 0 }}>Select an action manually or from suggested ones.</p>
+                        <p style={{ color: colors.textTertiary, fontStyle: 'italic', fontSize: '13px', margin: 0 }}>Select an action manually or from suggested ones.</p>
                         {/* "Make a first guess" is a pre-analysis shortcut.
                             Once the operator has launched "Analyze & Suggest"
                             (or the analysis has completed / is pending
@@ -821,9 +822,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                 data-testid="make-first-guess-button"
                                 style={{
                                     padding: '10px',
-                                    backgroundColor: '#f8f9fa',
-                                    border: '1px dashed #007bff',
-                                    color: '#007bff',
+                                    backgroundColor: colors.surfaceMuted,
+                                    border: `1px dashed ${colors.brand}`,
+                                    color: colors.brand,
                                     borderRadius: '8px',
                                     cursor: 'pointer',
                                     fontWeight: 600,
@@ -834,8 +835,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                     justifyContent: 'center',
                                     gap: '8px',
                                 }}
-                                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#e7f1ff'; }}
-                                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#f8f9fa'; }}
+                                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = colors.brandSoft; }}
+                                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = colors.surfaceMuted; }}
                             >
                                 <span style={{ fontSize: '16px' }}>💡</span> Make a first guess
                             </button>
@@ -845,15 +846,15 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-                <div style={{ display: 'flex', borderBottom: '1px solid #eee', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', borderBottom: `1px solid ${colors.borderSubtle}`, marginBottom: '10px' }}>
                     <button
                         onClick={() => setSuggestedTab('prioritized')}
-                        style={{ flex: 1, padding: '8px', cursor: 'pointer', border: 'none', background: 'none', borderBottom: suggestedTab === 'prioritized' ? '2px solid #007bff' : 'none', fontWeight: suggestedTab === 'prioritized' ? 'bold' : 'normal', color: suggestedTab === 'prioritized' ? '#007bff' : '#666', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
-                    >Suggested Actions {prioritizedEntries.length > 0 && <span style={{ background: suggestedTab === 'prioritized' ? '#e7f1ff' : '#f8f9fa', color: suggestedTab === 'prioritized' ? '#007bff' : '#6c757d', fontSize: '11px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>{prioritizedEntries.length}</span>}</button>
+                        style={{ flex: 1, padding: '8px', cursor: 'pointer', border: 'none', background: 'none', borderBottom: suggestedTab === 'prioritized' ? `2px solid ${colors.brand}` : 'none', fontWeight: suggestedTab === 'prioritized' ? 'bold' : 'normal', color: suggestedTab === 'prioritized' ? colors.brand : colors.textTertiary, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
+                    >Suggested Actions {prioritizedEntries.length > 0 && <span style={{ background: suggestedTab === 'prioritized' ? colors.brandSoft : colors.surfaceMuted, color: suggestedTab === 'prioritized' ? colors.brand : colors.textSecondary, fontSize: '11px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>{prioritizedEntries.length}</span>}</button>
                     <button
                         onClick={() => setSuggestedTab('rejected')}
-                        style={{ flex: 1, padding: '8px', cursor: 'pointer', border: 'none', background: 'none', borderBottom: suggestedTab === 'rejected' ? '2px solid #e74c3c' : 'none', fontWeight: suggestedTab === 'rejected' ? 'bold' : 'normal', color: suggestedTab === 'rejected' ? '#e74c3c' : '#666', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
-                    >Rejected Actions {rejectedEntries.length > 0 && <span style={{ background: suggestedTab === 'rejected' ? '#fdecea' : '#f8f9fa', color: suggestedTab === 'rejected' ? '#e74c3c' : '#6c757d', fontSize: '11px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>{rejectedEntries.length}</span>}</button>
+                        style={{ flex: 1, padding: '8px', cursor: 'pointer', border: 'none', background: 'none', borderBottom: suggestedTab === 'rejected' ? `2px solid ${colors.danger}` : 'none', fontWeight: suggestedTab === 'rejected' ? 'bold' : 'normal', color: suggestedTab === 'rejected' ? colors.danger : colors.textTertiary, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
+                    >Rejected Actions {rejectedEntries.length > 0 && <span style={{ background: suggestedTab === 'rejected' ? colors.dangerSoft : colors.surfaceMuted, color: suggestedTab === 'rejected' ? colors.danger : colors.textSecondary, fontSize: '11px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>{rejectedEntries.length}</span>}</button>
                 </div>
 
 
@@ -863,8 +864,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         {analysisLoading ? (
                             <button disabled style={{
                                 width: '100%', padding: '10px 16px',
-                                background: '#fff3cd', color: '#856404',
-                                border: '1px solid #ffeeba', borderRadius: '8px',
+                                background: colors.warningSoft, color: colors.warningText,
+                                border: `1px solid ${colors.warningBorder}`, borderRadius: '8px',
                                 cursor: 'not-allowed', fontSize: '14px', fontWeight: 700,
                                 boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
                             }}>
@@ -875,8 +876,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                 onClick={onDisplayPrioritizedActions}
                                 style={{
                                     width: '100%', padding: '10px 16px',
-                                    background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
-                                    color: 'white', border: 'none', borderRadius: '8px',
+                                    background: colors.success,
+                                    color: colors.textOnBrand, border: 'none', borderRadius: '8px',
                                     cursor: 'pointer', fontSize: '14px', fontWeight: 700,
                                     boxShadow: '0 2px 8px rgba(39,174,96,0.3)', transition: 'transform 0.1s',
                                 }}
@@ -891,8 +892,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                 disabled={!canRunAnalysis}
                                 style={{
                                     width: '100%', padding: '10px 16px',
-                                    background: canRunAnalysis ? '#27ae60' : '#95a5a6',
-                                    color: 'white', border: 'none', borderRadius: '8px',
+                                    background: canRunAnalysis ? colors.success : colors.disabled,
+                                    color: colors.textOnBrand, border: 'none', borderRadius: '8px',
                                     cursor: canRunAnalysis ? 'pointer' : 'not-allowed',
                                     fontSize: '14px', fontWeight: 700,
                                     boxShadow: canRunAnalysis ? '0 2px 8px rgba(39,174,96,0.3)' : 'none',
@@ -911,18 +912,18 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     prioritizedEntries.length > 0 ? renderActionList(prioritizedEntries) : (
                         !analysisLoading ? (
                             <div style={{ textAlign: 'center' }}>
-                                <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0' }}>
+                                <p style={{ color: colors.textTertiary, fontStyle: 'italic', fontSize: '13px', margin: '5px 0' }}>
                                     {!pendingAnalysisResult ? 'Click \u201cAnalyze & Suggest\u201d above to get action suggestions.' : 'No suggested actions available.'}
                                 </p>
                                 {!pendingAnalysisResult && showRecommenderWarning && (
                                     <div style={{
                                         marginTop: '10px',
                                         padding: '10px',
-                                        background: '#fff3cd',
-                                        border: '1px solid #ffeeba',
+                                        background: colors.warningSoft,
+                                        border: `1px solid ${colors.warningBorder}`,
                                         borderRadius: '6px',
                                         fontSize: '12px',
-                                        color: '#856404',
+                                        color: colors.warningText,
                                         textAlign: 'left'
                                     }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
@@ -934,7 +935,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                         style={{
                                                             background: 'none',
                                                             border: 'none',
-                                                            color: '#0056b3',
+                                                            color: colors.brandStrong,
                                                             textDecoration: 'underline',
                                                             cursor: 'pointer',
                                                             padding: '0',
@@ -946,7 +947,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                                 )}
                                                 <button
                                                     onClick={() => setShowRecommenderWarning(false)}
-                                                    style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: '#856404' }}
+                                                    style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: colors.warningText }}
                                                     title="Dismiss"
                                                 >&times;</button>
                                             </div>
@@ -966,16 +967,16 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                             {!dismissedRejectedWarning && rejectedEntries.some(([id]) => analysisActionIds.has(id)) && (() => {
                                 const overlapIds = rejectedEntries.filter(([id]) => analysisActionIds.has(id)).map(([id]) => id).join(', ');
                                 return (
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', padding: '8px 10px', background: '#fff3cd', border: '1px solid #ffeeba', borderRadius: '6px', marginBottom: '10px', fontSize: '13px', color: '#856404' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', padding: '8px 10px', background: colors.warningSoft, border: `1px solid ${colors.warningBorder}`, borderRadius: '6px', marginBottom: '10px', fontSize: '13px', color: colors.warningText }}>
                                         <div>⚠️ User warning: The following manually rejected actions were recommended by the recent analysis run: {overlapIds}</div>
-                                        <button onClick={() => setDismissedRejectedWarning(true)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '0', fontSize: '16px', lineHeight: 1, color: '#856404' }} title="Dismiss">&times;</button>
+                                        <button onClick={() => setDismissedRejectedWarning(true)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '0', fontSize: '16px', lineHeight: 1, color: colors.warningText }} title="Dismiss">&times;</button>
                                     </div>
                                 );
                             })()}
                             {renderActionList(rejectedEntries)}
                         </>
                     ) : (
-                        <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', margin: '5px 0', textAlign: 'center' }}>No rejected actions.</p>
+                        <p style={{ color: colors.textTertiary, fontStyle: 'italic', fontSize: '13px', margin: '5px 0', textAlign: 'center' }}>No rejected actions.</p>
                     )
                 )}
             </div>
@@ -987,8 +988,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     top: tooltip.y,
                     left: tooltip.x,
                     zIndex: 99999,
-                    backgroundColor: '#343a40',
-                    color: '#fff',
+                    backgroundColor: colors.chrome,
+                    color: colors.textOnBrand,
                     textAlign: 'left',
                     borderRadius: '4px',
                     padding: '6px 8px',

@@ -8,6 +8,7 @@
 import React, { useCallback, type CSSProperties, type Ref } from 'react';
 import type { ActionDetail, MetadataIndex } from '../types';
 import ActionCard from './ActionCard';
+import { colors } from '../styles/tokens';
 
 /**
  * Floating ActionCard popover — shared between the action
@@ -121,8 +122,8 @@ const ActionCardPopover: React.FC<ActionCardPopoverProps> = ({
             {...(extraDataAttributes ?? {})}
             style={{
                 ...style,
-                background: 'white',
-                border: '1px solid #cbd5e1',
+                background: colors.surface,
+                border: `1px solid ${colors.border}`,
                 borderRadius: 8,
                 boxShadow: '0 10px 24px rgba(0, 0, 0, 0.25)',
                 zIndex: 300,
@@ -138,14 +139,14 @@ const ActionCardPopover: React.FC<ActionCardPopoverProps> = ({
                     top: 6,
                     right: 8,
                     zIndex: 2,
-                    background: 'white',
-                    border: '1px solid #cbd5e1',
+                    background: colors.surface,
+                    border: `1px solid ${colors.border}`,
                     borderRadius: '50%',
                     width: 22,
                     height: 22,
                     cursor: 'pointer',
                     fontSize: 12,
-                    color: '#475569',
+                    color: colors.textSecondary,
                     boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
                     lineHeight: 1,
                 }}

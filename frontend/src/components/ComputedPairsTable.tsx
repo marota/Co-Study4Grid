@@ -7,6 +7,7 @@
 
 import React from 'react';
 import type { ActionDetail } from '../types';
+import { colors } from '../styles/tokens';
 
 interface SimulationFeedback {
     max_rho: number | null;
@@ -66,7 +67,7 @@ const ComputedPairsTable: React.FC<ComputedPairsTableProps> = ({
                 <tbody>
                     {computedPairsList.length === 0 ? (
                         <tr>
-                            <td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#888', fontStyle: 'italic' }}>
+                            <td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: colors.textTertiary, fontStyle: 'italic' }}>
                                 No computed combinations found.<br />Go to <strong>Explore Pairs</strong> to create new ones.
                             </td>
                         </tr>
@@ -79,15 +80,15 @@ const ComputedPairsTable: React.FC<ComputedPairsTableProps> = ({
                             <tr key={p.id}>
                                 <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{p.action1}</td>
                                 <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{p.action2}</td>
-                                <td style={{ fontSize: '11px', fontFamily: 'monospace', color: '#666' }}>
+                                <td style={{ fontSize: '11px', fontFamily: 'monospace', color: colors.textTertiary }}>
                                     {p.betas ? p.betas.map(b => b.toFixed(2)).join(', ') : '-'}
                                 </td>
                                 <td>
                                     {estMaxRho != null && !isNaN(estMaxRho) ? (
                                         <span className="metric-badge metric-rho" style={{
-                                            background: estMaxRho > monitoringFactor ? '#ffebee' : estMaxRho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
-                                            color: estMaxRho > monitoringFactor ? '#c62828' : estMaxRho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32',
-                                            border: estMaxRho > monitoringFactor ? '1px solid #c62828' : estMaxRho > (monitoringFactor - 0.05) ? '1px solid #856404' : '1px dashed #2e7d32'
+                                            background: estMaxRho > monitoringFactor ? colors.dangerSoft : estMaxRho > (monitoringFactor - 0.05) ? colors.warningSoft : colors.successSoft,
+                                            color: estMaxRho > monitoringFactor ? colors.dangerText : estMaxRho > (monitoringFactor - 0.05) ? colors.warningText : colors.successStrong,
+                                            border: estMaxRho > monitoringFactor ? `1px solid ${colors.dangerText}` : estMaxRho > (monitoringFactor - 0.05) ? `1px solid ${colors.warningText}` : `1px dashed ${colors.successStrong}`
                                         }}>
                                             {(estMaxRho * 100).toFixed(1)}%
                                             {p.is_suspect && (
@@ -96,10 +97,10 @@ const ComputedPairsTable: React.FC<ComputedPairsTableProps> = ({
                                         </span>
                                     ) : '—'}
                                 </td>
-                                <td style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>
+                                <td style={{ fontSize: '11px', color: colors.textTertiary, fontStyle: 'italic' }}>
                                     {p.estimated_max_rho_line ? displayName(p.estimated_max_rho_line) : 'N/A'}
                                     {p.target_max_rho != null && p.target_max_rho_line && p.target_max_rho_line !== 'N/A' && p.target_max_rho_line !== p.estimated_max_rho_line && (
-                                        <div style={{ fontSize: '10px', color: '#888', marginTop: '2px', fontStyle: 'normal' }} title="Max on the lines this pair was selected to resolve">
+                                        <div style={{ fontSize: '10px', color: colors.textTertiary, marginTop: '2px', fontStyle: 'normal' }} title="Max on the lines this pair was selected to resolve">
                                             target: {(p.target_max_rho * 100).toFixed(1)}% on {displayName(p.target_max_rho_line)}
                                         </div>
                                     )}
@@ -108,8 +109,8 @@ const ComputedPairsTable: React.FC<ComputedPairsTableProps> = ({
                                 <td style={{ textAlign: 'center' }}>
                                     {isSimulated && simMaxRho != null ? (
                                         <span className="metric-badge metric-rho" style={{
-                                            background: simMaxRho > monitoringFactor ? '#ffebee' : simMaxRho > (monitoringFactor - 0.05) ? '#fff3cd' : '#e8f5e9',
-                                            color: simMaxRho > monitoringFactor ? '#c62828' : simMaxRho > (monitoringFactor - 0.05) ? '#856404' : '#2e7d32'
+                                            background: simMaxRho > monitoringFactor ? colors.dangerSoft : simMaxRho > (monitoringFactor - 0.05) ? colors.warningSoft : colors.successSoft,
+                                            color: simMaxRho > monitoringFactor ? colors.dangerText : simMaxRho > (monitoringFactor - 0.05) ? colors.warningText : colors.successStrong
                                         }}>
                                             {(simMaxRho * 100).toFixed(1)}%
                                             {(p.simData as ActionDetail | SimulationFeedback)?.is_islanded && (
@@ -117,10 +118,10 @@ const ComputedPairsTable: React.FC<ComputedPairsTableProps> = ({
                                             )}
                                         </span>
                                     ) : (
-                                        <span style={{ color: '#aaa', fontSize: '11px' }}>Not simulated</span>
+                                        <span style={{ color: colors.textTertiary, fontSize: '11px' }}>Not simulated</span>
                                     )}
                                 </td>
-                                <td style={{ fontSize: '11px', color: '#333', fontWeight: isSimulated ? 'bold' : 'normal' }}>
+                                <td style={{ fontSize: '11px', color: colors.textPrimary, fontWeight: isSimulated ? 'bold' : 'normal' }}>
                                     {isSimulated && p.simulated_max_rho_line ? displayName(p.simulated_max_rho_line) : '-'}
                                 </td>
 
@@ -130,8 +131,8 @@ const ComputedPairsTable: React.FC<ComputedPairsTableProps> = ({
                                         disabled={simulating}
                                         style={{
                                             padding: '6px 14px',
-                                            background: isSimulated ? '#007bff' : '#28a745',
-                                            color: 'white',
+                                            background: isSimulated ? colors.brand : colors.success,
+                                            color: colors.textOnBrand,
                                             border: 'none',
                                             borderRadius: '4px',
                                             cursor: simulating ? 'not-allowed' : 'pointer',

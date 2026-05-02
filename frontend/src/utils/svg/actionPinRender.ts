@@ -11,6 +11,7 @@
  */
 
 import type { MetadataIndex } from '../../types';
+import { pinChrome } from '../../styles/tokens';
 import { getIdMap } from './idMap';
 import {
     severityFill,
@@ -323,7 +324,7 @@ const buildPinGlyph = (
     inner.setAttribute('cx', '0');
     inner.setAttribute('cy', String(-R - tail));
     inner.setAttribute('r', String(R * 0.72));
-    inner.setAttribute('fill', '#ffffff');
+    inner.setAttribute('fill', pinChrome.glyphBg);
     inner.setAttribute('fill-opacity', '0.92');
     inner.setAttribute('pointer-events', 'none');
     body.appendChild(inner);
@@ -336,7 +337,7 @@ const buildPinGlyph = (
     text.setAttribute('font-size', String(labelFont));
     text.setAttribute('font-weight', '800');
     text.setAttribute('font-family', 'system-ui, -apple-system, Arial, sans-serif');
-    text.setAttribute('fill', '#1f2937');
+    text.setAttribute('fill', pinChrome.glyphText);
     text.setAttribute('pointer-events', 'none');
     text.textContent = label;
     body.appendChild(text);
@@ -348,7 +349,7 @@ const resolvePinFill = (
     isRejected: boolean,
     isDimmedByFilter: boolean = false,
 ): { fill: string; stroke?: string } => {
-    if (isSelected) return { fill: severityFillHighlighted[severity], stroke: '#eab308' };
+    if (isSelected) return { fill: severityFillHighlighted[severity], stroke: pinChrome.gold };
     // Filter-dimmed constituents reuse the same washed-out palette as
     // rejected pins so the operator reads them as "context, not a
     // first-class action" at a glance.
@@ -468,16 +469,16 @@ const renderUnitaryPin = (
     if (isSelected) {
         const starEl = document.createElementNS(SVG_NS, 'path');
         starEl.setAttribute('d', starPath(0, symbolCy, R * 0.45));
-        starEl.setAttribute('fill', '#eab308');
-        starEl.setAttribute('stroke', '#a16207');
+        starEl.setAttribute('fill', pinChrome.gold);
+        starEl.setAttribute('stroke', pinChrome.goldDark);
         starEl.setAttribute('stroke-width', String(R * 0.05));
         starEl.setAttribute('pointer-events', 'none');
         body.appendChild(starEl);
     } else if (isRejected) {
         const crossEl = document.createElementNS(SVG_NS, 'path');
         crossEl.setAttribute('d', crossPath(0, symbolCy, R * 0.35));
-        crossEl.setAttribute('fill', '#ef4444');
-        crossEl.setAttribute('stroke', '#b91c1c');
+        crossEl.setAttribute('fill', pinChrome.crossFill);
+        crossEl.setAttribute('stroke', pinChrome.crossStroke);
         crossEl.setAttribute('stroke-width', String(R * 0.05));
         crossEl.setAttribute('pointer-events', 'none');
         body.appendChild(crossEl);
@@ -526,7 +527,7 @@ const renderUnsimulatedPin = (
     g.appendChild(body);
 
     const fill = severityFillDimmed[pin.severity];
-    buildPinGlyph(body, r, labelFont, fill, pin.label, pin.title, '#6b7280', r * 0.08);
+    buildPinGlyph(body, r, labelFont, fill, pin.label, pin.title, pinChrome.strokeNeutral, r * 0.08);
 
     // Override the stroke with a dashed pattern to visually
     // distinguish un-simulated pins from the solid-outline simulated

@@ -5,6 +5,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
+import { colors, radius, space } from '../styles/tokens';
+
 interface StatusToastsProps {
   error: string;
   infoMessage: string;
@@ -22,8 +24,8 @@ export default function StatusToasts({ error, infoMessage }: StatusToastsProps) 
       {error && (
         <div style={{
           position: 'fixed', bottom: 20, right: 20,
-          background: '#e74c3c', color: 'white',
-          padding: '10px 20px', borderRadius: '4px',
+          background: colors.danger, color: colors.textOnBrand,
+          padding: `${space[3]} ${space[5]}`, borderRadius: radius.sm,
           boxShadow: '0 2px 10px rgba(0,0,0,0.2)', zIndex: 1000,
         }}>
           {error}
@@ -32,9 +34,9 @@ export default function StatusToasts({ error, infoMessage }: StatusToastsProps) 
       {infoMessage && (
         <div style={{
           position: 'fixed', bottom: 20, left: 20,
-          background: infoMessage.startsWith('SUCCESS') ? '#27ae60' : '#3498db',
-          color: 'white',
-          padding: '12px 24px', borderRadius: '4px',
+          background: infoMessage.startsWith('SUCCESS') ? colors.success : colors.brand,
+          color: colors.textOnBrand,
+          padding: `${space[3]} ${space[6]}`, borderRadius: radius.sm,
           boxShadow: '0 4px 15px rgba(0,0,0,0.3)', zIndex: 1000,
           fontWeight: 'bold',
           border: '1px solid rgba(255,255,255,0.2)'

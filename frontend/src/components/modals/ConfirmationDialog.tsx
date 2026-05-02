@@ -5,6 +5,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
+import { colors } from '../../styles/tokens';
+
 export type ConfirmDialogState = {
   type: 'contingency' | 'loadStudy' | 'applySettings' | 'changeNetwork';
   pendingBranch?: string;
@@ -49,16 +51,16 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
         role="dialog"
         data-testid={`confirm-dialog-${confirmDialog.type}`}
         style={{
-          background: 'white', padding: '25px', borderRadius: '10px',
+          background: colors.surface, padding: '25px', borderRadius: '10px',
           boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
           maxWidth: '450px', width: '90%', textAlign: 'center'
         }}
       >
         <div style={{ fontSize: '2rem', marginBottom: '12px' }}>&#9888;</div>
-        <h3 style={{ margin: '0 0 12px', color: '#2c3e50', fontSize: '1.1rem' }}>
+        <h3 style={{ margin: '0 0 12px', color: colors.chrome, fontSize: '1.1rem' }}>
           {title}
         </h3>
-        <p style={{ margin: '0 0 20px', color: '#555', fontSize: '0.9rem', lineHeight: '1.5' }}>
+        <p style={{ margin: '0 0 20px', color: colors.textSecondary, fontSize: '0.9rem', lineHeight: '1.5' }}>
           All previous analysis results, manual simulations, action selections, and diagrams will be cleared.
           {trailingMessage}
         </p>
@@ -66,7 +68,7 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
           <button
             onClick={onCancel}
             style={{
-              padding: '8px 20px', background: '#95a5a6', color: 'white',
+              padding: '8px 20px', background: colors.disabled, color: colors.textOnBrand,
               border: 'none', borderRadius: '5px', cursor: 'pointer',
               fontWeight: 'bold', fontSize: '0.85rem'
             }}
@@ -76,7 +78,7 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
           <button
             onClick={onConfirm}
             style={{
-              padding: '8px 20px', background: '#e67e22', color: 'white',
+              padding: '8px 20px', background: colors.warningStrong, color: colors.textOnBrand,
               border: 'none', borderRadius: '5px', cursor: 'pointer',
               fontWeight: 'bold', fontSize: '0.85rem'
             }}

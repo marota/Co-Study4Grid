@@ -13,6 +13,7 @@ import DetachableTabHost from './DetachableTabHost';
 import ActionOverviewDiagram from './ActionOverviewDiagram';
 import type { DetachedTabsMap } from '../hooks/useDetachedTabs';
 import type { PZInstance } from '../hooks/useTiedTabsSync';
+import { colors } from '../styles/tokens';
 
 /**
  * Inspect text field + custom suggestions dropdown.
@@ -73,7 +74,7 @@ const InspectSearchField: React.FC<{
                 placeholder="🔍 Inspect..."
                 style={{
                     padding: '5px 10px',
-                    border: inspectQuery ? '2px solid #3498db' : '1px solid #ccc',
+                    border: inspectQuery ? `2px solid ${colors.brand}` : `1px solid ${colors.border}`,
                     borderRadius: '4px',
                     fontSize: '12px',
                     width: '180px',
@@ -92,7 +93,7 @@ const InspectSearchField: React.FC<{
                         maxHeight: '220px',
                         overflowY: 'auto',
                         background: 'white',
-                        border: '1px solid #3498db',
+                        border: `1px solid ${colors.brand}`,
                         borderRadius: '4px',
                         boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
                         zIndex: 200,
@@ -113,12 +114,12 @@ const InspectSearchField: React.FC<{
                             style={{
                                 padding: '5px 10px',
                                 cursor: 'pointer',
-                                borderBottom: '1px solid #eee',
+                                borderBottom: `1px solid ${colors.borderSubtle}`,
                                 whiteSpace: 'nowrap',
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                             }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = '#f0f8ff'; }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = colors.brandSoft; }}
                             onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = 'white'; }}
                         >
                             {item}
@@ -383,7 +384,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
             padding: '4px 10px', background: 'rgba(255,255,255,0.95)',
             border: `1px solid ${accentColor}`, borderRadius: '14px',
             boxShadow: '0 2px 8px rgba(0,0,0,0.15)', fontSize: '12px', fontWeight: 600,
-            color: '#2c3e50', pointerEvents: 'auto',
+            color: colors.chrome, pointerEvents: 'auto',
         }}>
             <span style={{ color: accentColor }}>●</span>
             <span>{label}</span>
@@ -397,8 +398,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                     title="Return to the action overview"
                     style={{
                         display: 'inline-flex', alignItems: 'center', gap: 4,
-                        border: '1.5px solid #ec407a', background: '#fce4ec',
-                        color: '#ad1457', borderRadius: '10px',
+                        border: '1.5px solid var(--signal-action-target-strong)', background: 'var(--signal-action-target-soft)',
+                        color: 'var(--signal-action-target-darker)', borderRadius: '10px',
                         padding: '2px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer',
                     }}
                 >
@@ -461,18 +462,18 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             display: 'flex',
                             borderRadius: '6px',
                             overflow: 'hidden',
-                            border: '1px solid #ccc',
+                            border: `1px solid ${colors.border}`,
                             boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
                             fontSize: '12px',
                             fontWeight: 600,
-                            backgroundColor: '#fff',
+                            backgroundColor: colors.surface,
                         }}>
                             <button
                                 onClick={() => viewModeChangeForTabCb(tabId, 'network')}
                                 style={{
                                     padding: '4px 12px', border: 'none', cursor: 'pointer',
-                                    backgroundColor: tabViewMode === 'network' ? '#007bff' : '#fff',
-                                    color: tabViewMode === 'network' ? '#fff' : '#555',
+                                    backgroundColor: tabViewMode === 'network' ? colors.brand : colors.surface,
+                                    color: tabViewMode === 'network' ? colors.surface : colors.textSecondary,
                                     transition: 'all 0.15s ease'
                                 }}
                             >
@@ -481,9 +482,9 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             <button
                                 onClick={() => viewModeChangeForTabCb(tabId, 'delta')}
                                 style={{
-                                    padding: '4px 12px', border: 'none', borderLeft: '1px solid #ccc', cursor: 'pointer',
-                                    backgroundColor: tabViewMode === 'delta' ? '#007bff' : '#fff',
-                                    color: tabViewMode === 'delta' ? '#fff' : '#555',
+                                    padding: '4px 12px', border: 'none', borderLeft: `1px solid ${colors.border}`, cursor: 'pointer',
+                                    backgroundColor: tabViewMode === 'delta' ? colors.brand : colors.surface,
+                                    color: tabViewMode === 'delta' ? colors.surface : colors.textSecondary,
                                     transition: 'all 0.15s ease'
                                 }}
                             >
@@ -519,10 +520,10 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                     ? 'Untie: pan/zoom and asset focus no longer mirror between this window and the main window'
                                     : 'Tie: pan/zoom and asset focus will be mirrored between this window and the main window\'s active tab'}
                                 style={{
-                                    padding: '4px 10px', border: `1px solid ${tied ? '#2c7be5' : '#ccc'}`,
+                                    padding: '4px 10px', border: `1px solid ${tied ? colors.brand : colors.border}`,
                                     borderRadius: '6px', cursor: 'pointer',
-                                    backgroundColor: tied ? '#e8f0fe' : '#fff',
-                                    color: tied ? '#2c7be5' : '#555',
+                                    backgroundColor: tied ? colors.brandSoft : colors.surface,
+                                    color: tied ? colors.brand : colors.textSecondary,
                                     fontSize: '12px', fontWeight: 600,
                                     boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
                                 }}
@@ -534,8 +535,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             <button
                                 onClick={() => onZoomIn(tabId)}
                                 style={{
-                                    background: 'white', color: '#333',
-                                    border: '1px solid #ccc', borderRadius: '4px',
+                                    background: 'white', color: colors.textPrimary,
+                                    border: `1px solid ${colors.border}`, borderRadius: '4px',
                                     padding: '5px 12px', cursor: 'pointer',
                                     fontSize: '14px', fontWeight: 600,
                                     boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
@@ -547,8 +548,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             <button
                                 onClick={() => onResetView(tabId)}
                                 style={{
-                                    background: 'white', color: '#333',
-                                    border: '1px solid #ccc', borderRadius: '4px',
+                                    background: 'white', color: colors.textPrimary,
+                                    border: `1px solid ${colors.border}`, borderRadius: '4px',
                                     padding: '5px 14px', cursor: 'pointer',
                                     fontSize: '12px', fontWeight: 600,
                                     boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
@@ -559,8 +560,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             <button
                                 onClick={() => onZoomOut(tabId)}
                                 style={{
-                                    background: 'white', color: '#333',
-                                    border: '1px solid #ccc', borderRadius: '4px',
+                                    background: 'white', color: colors.textPrimary,
+                                    border: `1px solid ${colors.border}`, borderRadius: '4px',
                                     padding: '5px 12px', cursor: 'pointer',
                                     fontSize: '14px', fontWeight: 600,
                                     boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
@@ -587,9 +588,9 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                         aria-pressed={showVoltageLevelNames}
                                         data-testid="toggle-vl-names"
                                         style={{
-                                            background: showVoltageLevelNames ? '#e8f0fe' : '#fff',
-                                            color: showVoltageLevelNames ? '#2c7be5' : '#555',
-                                            border: `1px solid ${showVoltageLevelNames ? '#2c7be5' : '#ccc'}`,
+                                            background: showVoltageLevelNames ? colors.brandSoft : colors.surface,
+                                            color: showVoltageLevelNames ? colors.brand : colors.textSecondary,
+                                            border: `1px solid ${showVoltageLevelNames ? colors.brand : colors.border}`,
                                             borderRadius: '4px',
                                             padding: '4px 8px',
                                             cursor: 'pointer',
@@ -605,7 +606,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                     <button
                                         onClick={() => onVlOpen(inspectQuery)}
                                         style={{
-                                            background: '#d1fae5', color: '#065f46', border: 'none',
+                                            background: colors.successSoft, color: colors.successText, border: 'none',
                                             borderRadius: '4px', padding: '4px 8px', cursor: 'pointer',
                                             fontSize: '12px', boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
                                             fontWeight: 600
@@ -619,7 +620,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                     <button
                                         onClick={() => inspectQueryChangeForCb(tabId, '')}
                                         style={{
-                                            background: '#e74c3c', color: 'white', border: 'none',
+                                            background: colors.danger, color: 'white', border: 'none',
                                             borderRadius: '4px', padding: '4px 8px', cursor: 'pointer',
                                             fontSize: '12px', boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
                                         }}
@@ -643,7 +644,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
         <div style={{
             position: 'absolute', inset: 0,
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: '12px', background: '#f8fafc', color: '#475569', fontSize: '13px',
+            gap: '12px', background: colors.surfaceMuted, color: colors.textSecondary, fontSize: '13px',
         }}>
             <div style={{ fontSize: '32px', color: accentColor }}>{'\u21D7'}</div>
             <div style={{ fontWeight: 600 }}>"{label}" is open in a separate window</div>
@@ -661,7 +662,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                 <button
                     onClick={() => reattachTabCb(tabId)}
                     style={{
-                        border: '1px solid #cbd5e1', background: '#f1f5f9', color: '#475569',
+                        border: `1px solid ${colors.border}`, background: colors.surfaceMuted, color: colors.textSecondary,
                         borderRadius: '4px', padding: '6px 14px', fontSize: '12px',
                         fontWeight: 600, cursor: 'pointer',
                     }}
@@ -677,11 +678,11 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
             {/* Tab bar — all 4 tabs always visible; unavailable ones show placeholder.
                 Each tab exposes a small detach/reattach button so the user can move
                 its content into a secondary browser window and back. */}
-            <div style={{ display: 'flex', borderBottom: '1px solid #ccc', flexShrink: 0 }}>
+            <div style={{ display: 'flex', borderBottom: `1px solid ${colors.border}`, flexShrink: 0 }}>
                 {(
                     [
-                        { id: 'n' as TabId, label: 'Network (N)' as React.ReactNode, available: !!nDiagram?.svg, accentColor: '#3498db', dimColor: '#7f8c8d', placeholder: 'Configure a network path in Settings to load the base-case diagram.' },
-                        { id: 'n-1' as TabId, label: 'Contingency (N-1)' as React.ReactNode, available: !!n1Diagram?.svg, accentColor: '#e74c3c', dimColor: '#aab', placeholder: 'Select a contingency element from the dropdown to view the N-1 state.' },
+                        { id: 'n' as TabId, label: 'Network (N)' as React.ReactNode, available: !!nDiagram?.svg, accentColor: colors.brand, dimColor: colors.chromeSoft, placeholder: 'Configure a network path in Settings to load the base-case diagram.' },
+                        { id: 'n-1' as TabId, label: 'Contingency (N-1)' as React.ReactNode, available: !!n1Diagram?.svg, accentColor: colors.danger, dimColor: colors.borderStrong, placeholder: 'Select a contingency element from the dropdown to view the N-1 state.' },
                         // When no card is selected, the Remedial Action tab hosts the
                         // action-overview view (pins over the N-1 network). It is considered
                         // "available" as soon as the N-1 diagram has loaded, so the tab is no
@@ -734,9 +735,9 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                             gap: 6,
                                             padding: '2px 10px',
                                             borderRadius: 12,
-                                            background: '#fce4ec',
-                                            color: '#ad1457',
-                                            border: '1.5px solid #ec407a',
+                                            background: 'var(--signal-action-target-soft)',
+                                            color: 'var(--signal-action-target-darker)',
+                                            border: '1.5px solid var(--signal-action-target-strong)',
                                             cursor: 'pointer',
                                             fontWeight: 700,
                                             // Let the chip shrink before the "Remedial Action:" label does
@@ -766,7 +767,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                                 width: 14,
                                                 height: 14,
                                                 borderRadius: '50%',
-                                                background: '#ec407a',
+                                                background: 'var(--signal-action-target-strong)',
                                                 color: 'white',
                                                 fontSize: 10,
                                                 lineHeight: 1,
@@ -778,11 +779,11 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                 </span>
                             ) as React.ReactNode : 'Remedial action: overview' as React.ReactNode,
                             available: !!actionDiagram?.svg || !!n1Diagram?.svg,
-                            accentColor: '#ff4081',
-                            dimColor: '#aab',
+                            accentColor: 'var(--signal-action-target)',
+                            dimColor: colors.borderStrong,
                             placeholder: 'Select a contingency and run the analysis to see remedial actions.',
                         },
-                        { id: 'overflow' as TabId, label: 'Overflow Analysis' as React.ReactNode, available: !!result?.pdf_url, accentColor: '#27ae60', dimColor: '#aab', placeholder: 'Run \u201cAnalyze & Suggest\u201d to see the overflow graph.' },
+                        { id: 'overflow' as TabId, label: 'Overflow Analysis' as React.ReactNode, available: !!result?.pdf_url, accentColor: colors.success, dimColor: colors.borderStrong, placeholder: 'Run \u201cAnalyze & Suggest\u201d to see the overflow graph.' },
                     ] as const
                 ).map(tab => {
                     const isActive = activeTab === tab.id;
@@ -792,7 +793,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             key={tab.id}
                             style={{
                                 flex: 1, display: 'flex', alignItems: 'stretch',
-                                background: isActive && !isDetached ? 'white' : '#ecf0f1',
+                                background: isActive && !isDetached ? 'white' : colors.surfaceMuted,
                                 borderBottom: isActive && tab.available && !isDetached ? `3px solid ${tab.accentColor}` : 'none',
                                 minWidth: 0,
                             }}
@@ -812,7 +813,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                     fontWeight: isActive && tab.available && !isDetached ? 'bold' : 400,
                                     fontStyle: !tab.available || isDetached ? 'italic' : 'normal',
                                     background: 'transparent',
-                                    color: isDetached ? '#7c8894' : (tab.available ? (isActive ? '#2c3e50' : tab.dimColor) : '#bbb'),
+                                    color: isDetached ? colors.textTertiary : (tab.available ? (isActive ? colors.chrome : tab.dimColor) : colors.borderStrong),
                                     fontSize: tab.id === 'action' && selectedActionId ? '0.75rem' : '0.85rem',
                                     // The action tab with a selected card carries its
                                     // own flex label with internal ellipsis on the chip.
@@ -842,7 +843,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                     title={isDetached ? 'Reattach this tab to the main window' : 'Detach this tab into a separate window'}
                                     style={{
                                         border: 'none', background: 'transparent', cursor: 'pointer',
-                                        padding: '0 8px', color: isDetached ? tab.accentColor : '#7c8894',
+                                        padding: '0 8px', color: isDetached ? tab.accentColor : colors.textTertiary,
                                         fontSize: '13px', fontWeight: 700,
                                     }}
                                 >
@@ -869,11 +870,11 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         left: '50%',
                         transform: 'translateX(-50%)',
                         zIndex: 150,
-                        backgroundColor: '#fff3cd',
-                        color: '#856404',
+                        backgroundColor: colors.warningSoft,
+                        color: colors.warningText,
                         padding: '12px 20px',
                         borderRadius: '8px',
-                        border: '1px solid #ffeeba',
+                        border: `1px solid ${colors.warningBorder}`,
                         boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
                         display: 'flex',
                         flexDirection: 'column',
@@ -887,7 +888,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             </div>
                             <button
                                 onClick={() => setWarningDismissed(true)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', color: '#856404' }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', color: colors.warningText }}
                             >✕</button>
                         </div>
                         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -900,7 +901,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             <a
                                 href="#"
                                 onClick={(e) => { e.preventDefault(); onOpenSettings('paths'); }}
-                                style={{ color: '#0056b3', textDecoration: 'underline', fontWeight: 500 }}
+                                style={{ color: colors.brandStrong, textDecoration: 'underline', fontWeight: 500 }}
                             >
                                 Change in settings
                             </a>
@@ -926,7 +927,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         position: 'absolute', top: 0, left: 0,
                         backgroundColor: 'white',
                     }}>
-                        {detachedTabs['overflow'] && renderDetachedHeader('overflow', 'Overflow Analysis', '#27ae60')}
+                        {detachedTabs['overflow'] && renderDetachedHeader('overflow', 'Overflow Analysis', colors.success)}
                         {/* Hierarchical / Geo layout toggle — mirrors the
                             Flows/Impacts segmented pill used on the N, N-1
                             and Remedial Action tabs. Only visible when an
@@ -947,11 +948,11 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                         display: 'flex',
                                         borderRadius: '6px',
                                         overflow: 'hidden',
-                                        border: '1px solid #ccc',
+                                        border: `1px solid ${colors.border}`,
                                         boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
                                         fontSize: '12px',
                                         fontWeight: 600,
-                                        backgroundColor: '#fff',
+                                        backgroundColor: colors.surface,
                                         opacity: loading ? 0.7 : 1,
                                     }}>
                                         <button
@@ -962,8 +963,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                             style={{
                                                 padding: '4px 12px', border: 'none',
                                                 cursor: loading ? 'wait' : 'pointer',
-                                                backgroundColor: mode === 'hierarchical' ? '#007bff' : '#fff',
-                                                color: mode === 'hierarchical' ? '#fff' : '#555',
+                                                backgroundColor: mode === 'hierarchical' ? colors.brand : colors.surface,
+                                                color: mode === 'hierarchical' ? colors.surface : colors.textSecondary,
                                                 transition: 'all 0.15s ease',
                                             }}
                                         >
@@ -976,10 +977,10 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                             aria-pressed={mode === 'geo'}
                                             title={hasLayout ? '' : 'No grid_layout.json configured — set the Layout Path in Settings'}
                                             style={{
-                                                padding: '4px 12px', border: 'none', borderLeft: '1px solid #ccc',
+                                                padding: '4px 12px', border: 'none', borderLeft: `1px solid ${colors.border}`,
                                                 cursor: (loading || !hasLayout) ? 'not-allowed' : 'pointer',
-                                                backgroundColor: mode === 'geo' ? '#007bff' : '#fff',
-                                                color: mode === 'geo' ? '#fff' : (hasLayout ? '#555' : '#bbb'),
+                                                backgroundColor: mode === 'geo' ? colors.brand : colors.surface,
+                                                color: mode === 'geo' ? colors.surface : (hasLayout ? colors.textSecondary : colors.borderStrong),
                                                 transition: 'all 0.15s ease',
                                             }}
                                         >
@@ -999,8 +1000,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         ) : (
                             <div style={{
                                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%',
-                                color: analysisLoading ? '#856404' : '#999',
-                                background: analysisLoading ? '#fff3cd' : 'white',
+                                color: analysisLoading ? colors.warningText : colors.textTertiary,
+                                background: analysisLoading ? colors.warningSoft : 'white',
                                 fontWeight: analysisLoading ? 600 : 'normal',
                                 gap: '10px'
                             }}>
@@ -1009,12 +1010,12 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                         <span style={{ fontSize: '24px' }}>⚙️</span>
                                         <span>Processing Analysis...</span>
                                     </>
-                                ) : <span style={{ fontStyle: 'italic', color: '#999' }}>Run &ldquo;Analyze &amp; Suggest&rdquo; to see the overflow graph.</span>}
+                                ) : <span style={{ fontStyle: 'italic', color: colors.textTertiary }}>Run &ldquo;Analyze &amp; Suggest&rdquo; to see the overflow graph.</span>}
                             </div>
                         )}
                     </div>
                 </DetachableTabHost>
-                {activeTab === 'overflow' && detachedTabs['overflow'] && renderDetachedPlaceholder('overflow', 'Overflow Analysis', '#27ae60')}
+                {activeTab === 'overflow' && detachedTabs['overflow'] && renderDetachedPlaceholder('overflow', 'Overflow Analysis', colors.success)}
 
                 {/* Inactive, non-detached SVG tabs use `display: none` (not
                     `visibility: hidden`) so their tens-of-thousands-of-node
@@ -1039,23 +1040,23 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         width: '100%', height: '100%',
                         position: 'absolute', top: 0, left: 0,
                     }}>
-                        {detachedTabs['n'] && renderDetachedHeader('n', 'Network (N)', '#3498db')}
+                        {detachedTabs['n'] && renderDetachedHeader('n', 'Network (N)', colors.brand)}
                         {/* Always mounted — see comment on N-1 container below. */}
                         <MemoizedSvgContainer svg={nDiagram?.svg || ''} containerRef={nSvgContainerRef} display="block" tabId="n" hideVlLabels={!showVoltageLevelNames} />
                         {configLoading && (
-                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>
+                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.textTertiary, background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>
                                 Loading configuration...
                             </div>
                         )}
                         {!configLoading && !nDiagram?.svg && (
-                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', background: 'white' }}>
+                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.textTertiary, background: 'white' }}>
                                 Load configuration to see diagram
                             </div>
                         )}
                         {renderTabOverlay('n', true)}
                     </div>
                 </DetachableTabHost>
-                {activeTab === 'n' && detachedTabs['n'] && renderDetachedPlaceholder('n', 'Network (N)', '#3498db')}
+                {activeTab === 'n' && detachedTabs['n'] && renderDetachedPlaceholder('n', 'Network (N)', colors.brand)}
 
                 {/* N-1 Container — always mounted, but `display: none` when
                     inactive so its SVG does not enter Blink's layout tree.
@@ -1074,13 +1075,13 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         width: '100%', height: '100%',
                         position: 'absolute', top: 0, left: 0,
                     }}>
-                        {detachedTabs['n-1'] && renderDetachedHeader('n-1', 'Contingency (N-1)', '#e74c3c')}
+                        {detachedTabs['n-1'] && renderDetachedHeader('n-1', 'Contingency (N-1)', colors.danger)}
                         {/* Convergence warning banner */}
                         {n1Diagram && n1Diagram.lf_converged === false && (
                             <div style={{
                                 position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30,
-                                background: '#fff3cd', color: '#856404', padding: '6px 12px',
-                                fontSize: '0.8rem', borderBottom: '1px solid #ffc107',
+                                background: colors.warningSoft, color: colors.warningText, padding: '6px 12px',
+                                fontSize: '0.8rem', borderBottom: `1px solid ${colors.warning}`,
                                 textAlign: 'center', pointerEvents: 'none',
                             }}>
                                 AC load flow: {n1Diagram.lf_status || 'did not converge'} — voltage values may be missing or approximate
@@ -1093,19 +1094,19 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             viewBox that was applied between the two invocations. */}
                         <MemoizedSvgContainer svg={n1Diagram?.svg || ''} containerRef={n1SvgContainerRef} display="block" tabId="n-1" hideVlLabels={!showVoltageLevelNames} />
                         {n1Loading && (
-                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>
+                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.textTertiary, background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>
                                 Generating N-1 Diagram...
                             </div>
                         )}
                         {!n1Loading && !n1Diagram?.svg && (
-                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontStyle: 'italic', textAlign: 'center', padding: '40px', background: 'white' }}>
+                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.textTertiary, fontStyle: 'italic', textAlign: 'center', padding: '40px', background: 'white' }}>
                                 Select a contingency element from the dropdown to view the N-1 state.
                             </div>
                         )}
                         {renderTabOverlay('n-1', true)}
                     </div>
                 </DetachableTabHost>
-                {activeTab === 'n-1' && detachedTabs['n-1'] && renderDetachedPlaceholder('n-1', 'Contingency (N-1)', '#e74c3c')}
+                {activeTab === 'n-1' && detachedTabs['n-1'] && renderDetachedPlaceholder('n-1', 'Contingency (N-1)', colors.danger)}
 
                 {/* Action Variant Container — always mounted, but `display: none`
                     when inactive so its SVG does not enter Blink's layout tree.
@@ -1127,15 +1128,15 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         {detachedTabs['action'] && renderDetachedHeader(
     'action',
     selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial action: overview',
-    '#ff4081',
+    'var(--signal-action-target)',
     selectedActionId ? () => onActionSelect?.(null) : undefined,
 )}
                         {/* Convergence warning banner */}
                         {actionDiagram && actionDiagram.lf_converged === false && (
                             <div style={{
                                 position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30,
-                                background: '#fff3cd', color: '#856404', padding: '6px 12px',
-                                fontSize: '0.8rem', borderBottom: '1px solid #ffc107',
+                                background: colors.warningSoft, color: colors.warningText, padding: '6px 12px',
+                                fontSize: '0.8rem', borderBottom: `1px solid ${colors.warning}`,
                                 textAlign: 'center', pointerEvents: 'none',
                             }}>
                                 AC load flow: {actionDiagram.lf_status || 'did not converge'} — voltage values may be missing or approximate
@@ -1178,12 +1179,12 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             onSimulateUnsimulatedAction={onSimulateUnsimulatedAction}
                         />
                         {actionDiagramLoading && (
-                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>
+                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.textTertiary, background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>
                                 Generating Action Variant Diagram...
                             </div>
                         )}
                         {!actionDiagramLoading && !actionDiagram?.svg && selectedActionId && (
-                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', background: 'white' }}>
+                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.textTertiary, background: 'white' }}>
                                 Failed to load diagram for action {selectedActionId}
                             </div>
                         )}
@@ -1196,7 +1197,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         {renderTabOverlay('action', true)}
                     </div>
                 </DetachableTabHost>
-                {activeTab === 'action' && detachedTabs['action'] && renderDetachedPlaceholder('action', selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial action: overview', '#ff4081')}
+                {activeTab === 'action' && detachedTabs['action'] && renderDetachedPlaceholder('action', selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial action: overview', 'var(--signal-action-target)')}
 
                 {/* Voltage Range Sidebar — collapsed by default, toggle to expand */}
                 {uniqueVoltages.length > 1 && (() => {
@@ -1225,7 +1226,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                 title="Hide voltage filter"
                                 style={{
                                     alignSelf: 'flex-end', background: 'none', border: 'none',
-                                    cursor: 'pointer', fontSize: '14px', color: '#666',
+                                    cursor: 'pointer', fontSize: '14px', color: colors.textTertiary,
                                     padding: '0 4px', lineHeight: 1,
                                 }}
                             >✕</button>

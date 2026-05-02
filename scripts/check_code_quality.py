@@ -22,9 +22,18 @@ Thresholds (see also CONTRIBUTING.md):
 | Frontend component size (lines)            | 1500|
 | `any` type annotations in frontend source  |  0  |
 | `@ts-ignore` directives in frontend source |  0  |
+| Hex color literals outside tokens.{css,ts} |  0  |
 
 `App.tsx` is exempt from the frontend size ceiling — it is the state
-orchestration hub by design.
+orchestration hub by design. `tokens.css` and `tokens.ts` are the
+token-source-of-truth files and are exempt from the hex-literal
+count.
+
+The hex-literal ceiling is now zero — every colour in frontend
+source must come from a named token in
+`frontend/src/styles/tokens.{css,ts}`. Adding a new colour means
+defining it in tokens first, then importing it; raising this ceiling
+is a regression.
 """
 from __future__ import annotations
 
@@ -37,6 +46,13 @@ from code_quality_report import build_report  # type: ignore[import-not-found]
 BACKEND_MODULE_MAX = 1200
 FRONTEND_COMPONENT_MAX = 1500
 FRONTEND_UTIL_MAX = 2000
+# Ceiling on hex color literals in frontend source. The
+# token-source-of-truth files (`frontend/src/styles/tokens.css` and
+# `frontend/src/styles/tokens.ts`) are exempt — they ARE the named
+# palette every other file consumes. Phase A + B + C of the
+# design-token migration drove this to zero; new colours must be
+# added to the token files first, then imported.
+FRONTEND_HEX_LITERAL_MAX = 0
 # Files exempt from the component-size ceiling. `App.tsx` is the state
 # orchestration hub by design; `utils/svgUtils.ts` is a stable shared
 # util library (SVG helpers, highlight ops, metadata parsing) and is
@@ -77,6 +93,15 @@ def main() -> int:
         )
     if fe.ts_ignores:
         errors.append(f"frontend: {fe.ts_ignores} `@ts-ignore` directives")
+    if fe.hex_literals > FRONTEND_HEX_LITERAL_MAX:
+        worst = ", ".join(
+            f"{fm.path}({fm.lines})" for fm in fe.hex_literals_by_file[:3]
+        )
+        errors.append(
+            f"frontend: {fe.hex_literals} hex color literals "
+            f"(ceiling {FRONTEND_HEX_LITERAL_MAX}) — replace with tokens "
+            f"from `frontend/src/styles/tokens.css`. Worst offenders: {worst}"
+        )
     for comp in fe.components:
         if comp.path in FRONTEND_SIZE_EXEMPTIONS:
             continue

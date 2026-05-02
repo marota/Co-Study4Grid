@@ -87,13 +87,13 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 /* ===== Highlight styles ===== */
 
 .nad-highlight {
-    stroke: #e74c3c !important;
+    stroke: var(--color-danger) !important;
     stroke-width: 4px !important;
     opacity: 1;
 }
 
 circle.nad-highlight {
-    fill: #e74c3c !important;
+    fill: var(--color-danger) !important;
 }
 
 /* Highlight overloaded lines in orange (clone-based halo) */
@@ -106,7 +106,7 @@ circle.nad-highlight {
 .nad-overloaded polyline,
 .nad-overloaded rect,
 .nad-overloaded polygon {
-    stroke: #ff8c00 !important;
+    stroke: var(--signal-overload) !important;
     stroke-width: 120px !important;
     stroke-opacity: 1 !important;
     stroke-dasharray: none !important;
@@ -161,7 +161,7 @@ circle.nad-highlight {
 .nad-action-target polyline,
 .nad-action-target rect,
 .nad-action-target polygon {
-    stroke: #ff4081 !important;
+    stroke: var(--signal-action-target) !important;
     stroke-width: 150px !important;
     stroke-opacity: 1 !important;
     stroke-dasharray: none !important;
@@ -176,7 +176,7 @@ circle.nad-highlight {
 .nad-contingency-highlight polyline,
 .nad-contingency-highlight rect,
 .nad-contingency-highlight polygon {
-    stroke: #ffe033 !important;
+    stroke: var(--signal-contingency) !important;
     stroke-width: 150px !important;
     stroke-opacity: 1 !important;
     stroke-dasharray: none !important;
@@ -189,20 +189,20 @@ circle.nad-highlight {
    background halo that doesn't shrink into invisibility on large grids. */
 .nad-action-target circle,
 .nad-action-target rect {
-    stroke: #ff4081 !important;
+    stroke: var(--signal-action-target) !important;
     stroke-width: 45px !important;
     stroke-opacity: 1 !important;
-    fill: #ff4081 !important;
+    fill: var(--signal-action-target) !important;
     fill-opacity: 1 !important;
     vector-effect: non-scaling-stroke !important;
 }
 
 .nad-contingency-highlight circle,
 .nad-contingency-highlight rect {
-    stroke: #ffe033 !important;
+    stroke: var(--signal-contingency) !important;
     stroke-width: 45px !important;
     stroke-opacity: 1 !important;
-    fill: #ffe033 !important;
+    fill: var(--signal-contingency) !important;
     fill-opacity: 1 !important;
     opacity: 1 !important;
     vector-effect: non-scaling-stroke !important;
@@ -249,7 +249,7 @@ circle.nad-highlight {
 .nad-delta-positive path,
 .nad-delta-positive line,
 .nad-delta-positive polyline {
-    stroke: #ff9800 !important;
+    stroke: var(--signal-delta-positive) !important;
     stroke-width: 3px !important;
 }
 
@@ -257,7 +257,7 @@ circle.nad-highlight {
 .nad-delta-negative path,
 .nad-delta-negative line,
 .nad-delta-negative polyline {
-    stroke: #2196F3 !important;
+    stroke: var(--signal-delta-negative) !important;
     stroke-width: 3px !important;
 }
 
@@ -265,7 +265,7 @@ circle.nad-highlight {
 .nad-delta-grey path,
 .nad-delta-grey line,
 .nad-delta-grey polyline {
-    stroke: #999 !important;
+    stroke: var(--signal-delta-neutral) !important;
     stroke-opacity: 0.4 !important;
 }
 
@@ -279,7 +279,7 @@ circle.nad-highlight {
 .sld-delta-positive polyline,
 .sld-delta-positive rect,
 .sld-delta-positive circle {
-    stroke: #ff8c00 !important;
+    stroke: var(--signal-overload) !important;
     stroke-width: 2px !important;
 }
 
@@ -288,7 +288,7 @@ circle.nad-highlight {
 .sld-delta-negative polyline,
 .sld-delta-negative rect,
 .sld-delta-negative circle {
-    stroke: #2196F3 !important;
+    stroke: var(--signal-delta-negative) !important;
     stroke-width: 2px !important;
 }
 
@@ -297,21 +297,21 @@ circle.nad-highlight {
 .sld-delta-grey polyline,
 .sld-delta-grey rect,
 .sld-delta-grey circle {
-    stroke: #999 !important;
+    stroke: var(--signal-delta-neutral) !important;
     stroke-opacity: 0.5 !important;
 }
 
 /* Delta text label styling */
 .sld-delta-text-positive {
-    fill: #ff8c00 !important;
+    fill: var(--signal-overload) !important;
 }
 
 .sld-delta-text-negative {
-    fill: #2196F3 !important;
+    fill: var(--signal-delta-negative) !important;
 }
 
 .sld-delta-text-grey {
-    fill: #999 !important;
+    fill: var(--signal-delta-neutral) !important;
     fill-opacity: 0.5 !important;
 }
 
@@ -321,7 +321,7 @@ circle.nad-highlight {
 
 /* Contingency element on N-1 SLD (yellow glow behind) */
 .sld-highlight-clone.sld-highlight-contingency {
-    filter: drop-shadow(0 0 4px #ffe033) drop-shadow(0 0 8px #ffe033);
+    filter: drop-shadow(0 0 4px var(--signal-contingency)) drop-shadow(0 0 8px var(--signal-contingency));
 }
 
 .sld-highlight-clone.sld-highlight-contingency path,
@@ -329,7 +329,7 @@ circle.nad-highlight {
 .sld-highlight-clone.sld-highlight-contingency polyline,
 .sld-highlight-clone.sld-highlight-contingency rect,
 .sld-highlight-clone.sld-highlight-contingency circle {
-    stroke: #ffe033 !important;
+    stroke: var(--signal-contingency) !important;
     stroke-width: 6px !important;
     stroke-opacity: 1 !important;
     stroke-dasharray: none !important;
@@ -338,7 +338,7 @@ circle.nad-highlight {
 
 /* Action target on action SLD (purple-pink halo behind) */
 .sld-highlight-clone.sld-highlight-action {
-    filter: drop-shadow(0 0 4px #ff4081) drop-shadow(0 0 8px #ff4081);
+    filter: drop-shadow(0 0 4px var(--signal-action-target)) drop-shadow(0 0 8px var(--signal-action-target));
 }
 
 .sld-highlight-clone.sld-highlight-action path,
@@ -346,7 +346,7 @@ circle.nad-highlight {
 .sld-highlight-clone.sld-highlight-action polyline,
 .sld-highlight-clone.sld-highlight-action rect,
 .sld-highlight-clone.sld-highlight-action circle {
-    stroke: #ff4081 !important;
+    stroke: var(--signal-action-target) !important;
     stroke-width: 6px !important;
     stroke-opacity: 1 !important;
     fill: none !important;
@@ -354,7 +354,7 @@ circle.nad-highlight {
 
 /* Overloaded lines on SLD (orange halo, consistent with contingency style) */
 .sld-highlight-clone.sld-highlight-overloaded {
-    filter: drop-shadow(0 0 4px #ff8c00) drop-shadow(0 0 8px #ff8c00);
+    filter: drop-shadow(0 0 4px var(--signal-overload)) drop-shadow(0 0 8px var(--signal-overload));
 }
 
 .sld-highlight-clone.sld-highlight-overloaded path,
@@ -362,7 +362,7 @@ circle.nad-highlight {
 .sld-highlight-clone.sld-highlight-overloaded polyline,
 .sld-highlight-clone.sld-highlight-overloaded rect,
 .sld-highlight-clone.sld-highlight-overloaded circle {
-    stroke: #ff8c00 !important;
+    stroke: var(--signal-overload) !important;
     stroke-width: 6px !important;
     stroke-opacity: 1 !important;
     stroke-dasharray: none !important;
@@ -371,14 +371,14 @@ circle.nad-highlight {
 
 /* Affected breakers/switches on SLD (light purple halo behind) */
 .sld-highlight-clone.sld-highlight-breaker {
-    filter: drop-shadow(0 0 3px #ce93d8) drop-shadow(0 0 6px #ce93d8);
+    filter: drop-shadow(0 0 3px var(--signal-breaker)) drop-shadow(0 0 6px var(--signal-breaker));
 }
 
 .sld-highlight-clone.sld-highlight-breaker path,
 .sld-highlight-clone.sld-highlight-breaker line,
 .sld-highlight-clone.sld-highlight-breaker rect,
 .sld-highlight-clone.sld-highlight-breaker circle {
-    stroke: #ce93d8 !important;
+    stroke: var(--signal-breaker) !important;
     stroke-width: 6px !important;
     stroke-opacity: 1 !important;
     fill: none !important;
@@ -399,33 +399,33 @@ circle.nad-highlight {
     bottom: 0;
     width: 62px;
     background: rgba(244, 244, 244, 0.92);
-    border-left: 1px solid #ccc;
+    border-left: 1px solid var(--color-border);
     display: flex;
     flex-direction: column;
     align-items: center;
     z-index: 15;
-    padding: 8px 0;
+    padding: var(--space-2) 0;
     box-sizing: border-box;
 }
 
 .voltage-sidebar .vs-label {
     font-size: 0.65rem;
     font-weight: bold;
-    color: #2c3e50;
+    color: var(--color-chrome);
     writing-mode: vertical-rl;
     text-orientation: mixed;
     letter-spacing: 0.5px;
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
 }
 
 .voltage-sidebar .vs-range-label {
     font-size: 0.6rem;
     font-weight: bold;
-    color: #2c3e50;
-    background: #e8f0fe;
+    color: var(--color-chrome);
+    background: var(--color-brand-soft);
     border-radius: 3px;
-    padding: 2px 4px;
-    margin-bottom: 6px;
+    padding: var(--space-half) var(--space-1);
+    margin-bottom: var(--space-2);
     text-align: center;
     line-height: 1.2;
 }
@@ -443,7 +443,7 @@ circle.nad-highlight {
     top: 0;
     bottom: 0;
     width: 4px;
-    background: #ddd;
+    background: var(--color-border);
     border-radius: 2px;
 }
 
@@ -451,7 +451,7 @@ circle.nad-highlight {
     position: absolute;
     left: 12px;
     width: 4px;
-    background: #3498db;
+    background: var(--color-brand-mid);
     border-radius: 2px;
 }
 
@@ -473,7 +473,7 @@ circle.nad-highlight {
     height: 18px;
     width: 18px;
     border-radius: 50%;
-    background: #3498db;
+    background: var(--color-brand-mid);
     border: 2px solid white;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     cursor: pointer;
@@ -484,7 +484,7 @@ circle.nad-highlight {
     height: 18px;
     width: 18px;
     border-radius: 50%;
-    background: #3498db;
+    background: var(--color-brand-mid);
     border: 2px solid white;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     cursor: pointer;
@@ -502,7 +502,7 @@ circle.nad-highlight {
 .voltage-slider-ticks span {
     position: absolute;
     font-size: 0.58rem;
-    color: #666;
+    color: var(--color-text-tertiary);
     white-space: nowrap;
     transform: translateY(-50%);
     left: 2px;
@@ -517,20 +517,20 @@ circle.nad-highlight {
     width: 24px;
     background: rgba(244, 244, 244, 0.85);
     border: none;
-    border-left: 1px solid #ccc;
+    border-left: 1px solid var(--color-border);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 15;
-    color: #666;
-    font-size: 11px;
+    color: var(--color-text-tertiary);
+    font-size: var(--text-xs);
     padding: 0;
 }
 
 .voltage-sidebar-toggle:hover {
     background: rgba(220, 220, 220, 0.95);
-    color: #333;
+    color: var(--color-text-primary);
 }
 /* ============================================================
    Action-overview pins (Remedial Action tab, no card selected)

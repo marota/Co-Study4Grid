@@ -50,6 +50,21 @@ ANY_TYPE_RE = re.compile(r":\s*any\b|<\s*any\s*>|\bany\[\]")
 TS_IGNORE_RE = re.compile(r"@ts-ignore")
 AS_UNKNOWN_RE = re.compile(r"as\s+unknown\s+as\b")
 RECORD_STR_UNK_RE = re.compile(r"Record<string,\s*unknown>")
+# Hex color literals: #RGB, #RGBA, #RRGGBB, #RRGGBBAA. Excludes HTML
+# numeric entities like `&#9881;` via the negative lookbehind.
+# Token-source-of-truth files are exempt from the count (see
+# FRONTEND_HEX_EXEMPT_FILES).
+HEX_LITERAL_RE = re.compile(
+    r"(?<![\w&#])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b"
+)
+FRONTEND_HEX_EXEMPT_FILES = {
+    "frontend/src/styles/tokens.css",
+    # `tokens.ts` carries the raw-hex pin palette consumed by
+    # `setAttribute('fill', …)` calls in utils/svg/actionPin*.ts,
+    # which can't reliably resolve var() inside SVG presentation
+    # attributes. See the comment block in tokens.ts.
+    "frontend/src/styles/tokens.ts",
+}
 
 
 def _count_python_smells(tree: ast.AST) -> tuple[int, int, int]:
@@ -127,6 +142,8 @@ class FrontendReport:
     record_str_unknown: int = 0
     test_files: int = 0
     source_files: int = 0
+    hex_literals: int = 0
+    hex_literals_by_file: list[FileMetric] = field(default_factory=list)
 
 
 @dataclass
@@ -162,6 +179,20 @@ def iter_frontend_tests() -> list[Path]:
     if not FRONTEND_SRC_ROOT.is_dir():
         return []
     return sorted(p for p in FRONTEND_SRC_ROOT.rglob("*") if ".test." in p.name)
+
+
+def iter_frontend_styled_sources() -> list[Path]:
+    """Source files where hex-color literals can occur — .ts/.tsx/.css."""
+    if not FRONTEND_SRC_ROOT.is_dir():
+        return []
+    files = []
+    for p in FRONTEND_SRC_ROOT.rglob("*"):
+        if p.suffix not in {".ts", ".tsx", ".css"}:
+            continue
+        if ".test." in p.name:
+            continue
+        files.append(p)
+    return sorted(files)
 
 
 def extract_longest_functions(path: Path, top_n: int = 5) -> list[FunctionMetric]:
@@ -250,6 +281,22 @@ def scan_frontend() -> FrontendReport:
     if rep.components:
         rep.largest_component = rep.components[0]
     rep.test_files = len(iter_frontend_tests())
+
+    # Count hex literals across .ts/.tsx/.css sources, excluding the
+    # token-definition file (the source of truth for hex values).
+    for path in iter_frontend_styled_sources():
+        rel = str(path.relative_to(REPO_ROOT))
+        if rel in FRONTEND_HEX_EXEMPT_FILES:
+            continue
+        try:
+            src = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        hits = len(HEX_LITERAL_RE.findall(src))
+        if hits:
+            rep.hex_literals += hits
+            rep.hex_literals_by_file.append(FileMetric(path=rel, lines=hits))
+    rep.hex_literals_by_file.sort(key=lambda m: m.lines, reverse=True)
     return rep
 
 
@@ -310,9 +357,22 @@ def to_markdown(report: QualityReport) -> str:
             f"- `@ts-ignore` directives: **{fe.ts_ignores}**",
             f"- `as unknown as` casts: **{fe.weak_casts}**",
             f"- `Record<string, unknown>` usages: **{fe.record_str_unknown}**",
+            f"- Hex color literals (outside tokens.css): **{fe.hex_literals}**",
             "",
         ]
     )
+    if fe.hex_literals_by_file:
+        lines.extend(
+            [
+                "### Top files by hex-literal count",
+                "",
+                "| File | Hex literals |",
+                "|------|-------------:|",
+            ]
+        )
+        for fm in fe.hex_literals_by_file[:10]:
+            lines.append(f"| `{fm.path}` | {fm.lines} |")
+        lines.append("")
     return "\n".join(lines)
 
 

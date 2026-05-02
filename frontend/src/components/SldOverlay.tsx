@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import type { DiagramData, AnalysisResult, ActionDetail, VlOverlay, SldTab, SldFeederNode } from '../types';
 import { isCouplingAction } from '../utils/svgUtils';
+import { colors } from '../styles/tokens';
 
 export interface SldOverlayProps {
     vlOverlay: VlOverlay;
@@ -799,7 +800,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         <div style={{
             position: 'absolute', top: overlayPos.y + 'px', left: overlayPos.x + 'px',
             width: '440px', height: '420px', minWidth: '220px', minHeight: '150px',
-            background: 'white', border: '1px solid #ccc', borderRadius: '8px',
+            background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '8px',
             boxShadow: '0 4px 24px rgba(0,0,0,0.22)', zIndex: 45,
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
             resize: 'both', boxSizing: 'border-box',
@@ -807,16 +808,16 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             {/* Header — drag handle */}
             <div
                 onMouseDown={startOverlayDrag}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: '#f0faf4', borderBottom: '1px solid #d1fae5', flexShrink: 0, cursor: 'move', userSelect: 'none' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: colors.successSoft, borderBottom: `1px solid ${colors.successSoft}`, flexShrink: 0, cursor: 'move', userSelect: 'none' }}
             >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#065f46' }}>{vlOverlay.vlName}</span>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: colors.successText }}>{vlOverlay.vlName}</span>
                         {/* Mode indicator — shows which Flow vs Impact mode was active when overlay opened */}
                         <span style={{
                             fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px',
-                            background: actionViewMode === 'delta' ? '#dbeafe' : '#f3f4f6',
-                            color: actionViewMode === 'delta' ? '#1d4ed8' : '#374151',
+                            background: actionViewMode === 'delta' ? colors.brandSoft : colors.surfaceMuted,
+                            color: actionViewMode === 'delta' ? colors.brandStrong : colors.textPrimary,
                         }}>
                             {actionViewMode === 'delta' ? 'Impacts' : 'Flows'}
                         </span>
@@ -832,8 +833,8 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                                 onMouseDown={e => e.stopPropagation()}
                                 onClick={(e) => { e.stopPropagation(); onOverlaySldTabChange(tabMode); }}
                                 style={{
-                                    background: vlOverlay.tab === tabMode ? '#059669' : '#e5e7eb',
-                                    color: vlOverlay.tab === tabMode ? 'white' : '#374151',
+                                    background: vlOverlay.tab === tabMode ? colors.successStrong : colors.surfaceMuted,
+                                    color: vlOverlay.tab === tabMode ? colors.textOnBrand : colors.textPrimary,
                                     border: 'none', borderRadius: '4px', padding: '2px 8px',
                                     fontSize: '11px', fontWeight: vlOverlay.tab === tabMode ? 'bold' : 'normal',
                                     cursor: vlOverlay.loading ? 'wait' : 'pointer',
@@ -847,7 +848,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                 <button
                     onMouseDown={e => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); onOverlayClose(); }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#666', lineHeight: 1, padding: '0 2px' }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: colors.textTertiary, lineHeight: 1, padding: '0 2px' }}
                     title="Close"
                 >✕</button>
             </div>
@@ -858,12 +859,12 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                 onMouseDown={startOverlayPan}
             >
                 {vlOverlay.loading && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999', fontSize: '13px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: colors.textTertiary, fontSize: '13px' }}>
                         Generating diagram…
                     </div>
                 )}
                 {vlOverlay.error && (
-                    <div style={{ padding: '12px', color: '#dc3545', fontSize: '12px' }}>{vlOverlay.error}</div>
+                    <div style={{ padding: '12px', color: colors.danger, fontSize: '12px' }}>{vlOverlay.error}</div>
                 )}
                 {vlOverlay.svg && (
                     <div style={{
