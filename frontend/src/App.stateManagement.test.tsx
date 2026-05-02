@@ -175,7 +175,12 @@ describe('Phase 2: State Management Optimization', () => {
   });
 
   describe('RecommenderDisplayConfig grouped prop', () => {
-    it('passes recommenderConfig as a single grouped object to ActionFeed', async () => {
+    // tier-warning-system PR: the recommender threshold display moved from a yellow
+    // banner inside ActionFeed into a unified "Notices" pill in the
+    // sidebar header (`docs/proposals/ui-design-critique.md`
+    // recommendation #4). ActionFeed therefore no longer receives the
+    // grouped `recommenderConfig` prop.
+    it.skip('passes recommenderConfig as a single grouped object to ActionFeed', async () => {
       await renderAndLoadStudy();
 
       // ActionFeed should have been rendered at least once
@@ -245,12 +250,14 @@ describe('Phase 2: State Management Optimization', () => {
       expect(typeof lastRender.onManualActionAdded).toBe('function');
     });
 
-    it('provides stable onDismissWarning and onOpenSettings to OverloadPanel', async () => {
+    it('provides stable toggle callbacks to OverloadPanel', async () => {
+      // tier-warning-system PR retired the inline yellow monitoring banner —
+      // OverloadPanel now receives a one-line `monitoringHint` string
+      // and the dismiss/openSettings affordances live in NoticesPanel.
+      // What remains stable here are the overload-toggle callbacks.
       await renderAndLoadStudy();
 
       const lastRender = overloadPanelRenderLog[overloadPanelRenderLog.length - 1];
-      expect(typeof lastRender.onDismissWarning).toBe('function');
-      expect(typeof lastRender.onOpenSettings).toBe('function');
       expect(typeof lastRender.onToggleOverload).toBe('function');
       expect(typeof lastRender.onToggleMonitorDeselected).toBe('function');
     });
@@ -298,7 +305,10 @@ describe('Phase 2: State Management Optimization', () => {
   });
 
   describe('React.memo integration', () => {
-    it('renders ActionFeed with data-has-recommender-config attribute', async () => {
+    it.skip('renders ActionFeed with data-has-recommender-config attribute', async () => {
+      // tier-warning-system PR: the recommenderConfig prop was retired when the
+      // recommender-thresholds notice moved to NoticesPanel. The mock
+      // attribute it set is no longer meaningful.
       await renderAndLoadStudy();
 
       const actionFeed = screen.getByTestId('action-feed');

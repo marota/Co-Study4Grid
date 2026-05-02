@@ -1,6 +1,85 @@
 # UI design critique — Co-Study4Grid frontend
 
-**Status**: Proposal / review. **Recommendation #1 (design-token layer)
+**Status**: Proposal / review. **Recommendations 1-5 have all landed
+between 2026-05-01 and 2026-05-02.**
+
+| # | Recommendation | Status | Landed in |
+|---|---|---|---|
+| 1 | Design-token layer | ✅ Full | 47a2700 / 0e60059 / b8de481 (2026-05-01 → 2026-05-02) — Phases A/B/C |
+| 2 | Progressive-disclosure ActionCard | ✅ Full | fbfb2b0 (PR #121, 2026-05-02) |
+| 3 | Cap NAD overload halo at zoom | ✅ Full | fbfb2b0 (PR #121, 2026-05-02) — `vector-effect: non-scaling-stroke` capped at the `region` and `detail` zoom tiers |
+| 4 | Tier the warning system | ✅ Full | tier-warning-system PR (2026-05-02) — NoticesPanel pill + inline contextual hints |
+| 5 | Diagram legend | ✅ Full | tier-warning-system PR (2026-05-02) — collapsible bottom-right per tab |
+
+**Recommendation #4 (tier the warning system, 2026-05-02).** The
+five concurrent yellow `#fff3cd` banners called out below were
+consolidated into a single sidebar-header **NoticesPanel** pill plus
+small grey **inline contextual hints** under the relevant control,
+following the recommendation verbatim:
+
+- New `frontend/src/components/NoticesPanel.tsx` — pill with a
+  count badge in the sidebar header (above `SidebarSummary`).
+  Clicking expands a panel of `Notice` cards. Each card carries an
+  optional `action` (e.g. "Open settings") and optional `onDismiss`
+  handler. The pill self-hides when the live notice list goes to
+  zero.
+- `App.tsx` builds the active `Notice[]` from the existing
+  dismissable state machinery (`showActionDictNotice`,
+  `showRecommenderNotice`, `showMonitoringWarning`). Three notices
+  feed the panel today: `action-dict` (info), `monitoring-coverage`
+  (warning), `recommender-thresholds` (info).
+- `OverloadPanel.tsx` — the inline yellow monitoring-coverage
+  banner is gone. The component now accepts a `monitoringHint`
+  string and renders it as one short grey line under the heading
+  ("130/150 lines monitored — see Notices for details.").
+- `ActionFeed.tsx` — the inline "Action dictionary" yellow banner
+  and the "Recommender Settings" yellow banner have been removed.
+  The two overlap warnings (manual / rejected vs. analysis) have
+  been **demoted to inline contextual hints** — small grey italic
+  text instead of a full yellow box. A new
+  `overviewFilteredOutCount` hint surfaces under the Suggested /
+  Rejected header when the overview filter hides cards: "5 actions
+  hidden by the overview filter." — closing the loop the
+  recommendation specifically called for.
+- New tests: `NoticesPanel.test.tsx` (6 cases — pill counter, dialog
+  toggle, dismiss callback, action button, auto-hide on empty),
+  `DiagramLegend.test.tsx` (8 cases — collapse/expand, per-tab row
+  set, voltage-level note, VL-names hidden hint).
+- Test churn: the obsolete inline-banner tests in
+  `ActionFeed.test.tsx`, `OverloadPanel.test.tsx`, and
+  `App.stateManagement.test.tsx` were removed or rewritten to
+  match the new contract; two App-level prop-passing tests are
+  `it.skip`-ped with rationale comments because the props they
+  guarded (`recommenderConfig`, `onDismissWarning`,
+  `onOpenSettings` on OverloadPanel) no longer flow through the
+  ActionFeed / OverloadPanel boundary.
+
+**Recommendation #5 (add a diagram legend, 2026-05-02).** New
+`frontend/src/components/DiagramLegend.tsx` — a small "Legend"
+pill in the bottom-right of every diagram tab that expands into a
+collapsible panel listing the on-screen colour conventions:
+- N tab: overloaded line (orange halo), disconnected branch (dashed
+  grey), voltage-level palette note.
+- N-1 tab: contingency (yellow halo), overloaded line, flow-up
+  delta (orange line), flow-down delta (blue line), disconnected
+  branch, voltage-level palette note.
+- Action tab: contingency, action target (pink halo), overloaded
+  line, flow-up / flow-down deltas, disconnected branch, voltage-
+  level palette note.
+- The panel also surfaces a "Voltage-level names are hidden — toggle
+  VL next to Inspect to show them" hint when the operator has the
+  VL-names toggle off, closing the largest onboarding gap visible
+  in the original screenshot review.
+- The legend is collapsed by default — the bottom-right pill is
+  small enough to never compete with the network when the operator
+  is scanning; click to expand, click ✕ to collapse.
+
+The original recommendations from the code-only review and
+screenshot review remain below for traceability. The
+recommendations they describe are now historical — see the table
+above for the landing commits.
+
+**Recommendation #1 (design-token layer)
 landed in full 2026-05-01 → 2026-05-02** across three commits.
 `frontend/src/styles/tokens.{css,ts}` defines the semantic palette:
 ~24 colors (Tailwind blue-ramp brand, Bootstrap warning/danger/success,
@@ -390,7 +469,7 @@ at `region` and `detail` zoom tiers. This is a small CSS change with
 a disproportionately large legibility win — it is the cheapest of the
 top three to land.
 
-### 4. Tier the warning system
+### 4. Tier the warning system  *(Landed 2026-05-02 — see header summary.)*
 
 Replace the five concurrent yellow banners with:
 
@@ -408,12 +487,32 @@ and only one non-zero overload condition active, so none of the five
 banners are visible — this finding remains a code-only inference. It
 should be re-validated by replicating the multi-warning state.*
 
-### 5. Add a diagram legend
+**What landed:** new `NoticesPanel` (sidebar pill +
+collapsible panel), three `Notice` entries fed from App.tsx
+(`action-dict`, `monitoring-coverage`, `recommender-thresholds`),
+inline `monitoringHint` on `OverloadPanel`, inline grey overlap
+hints inside `ActionFeed`, and a brand-new "X actions hidden by
+the overview filter" inline counter. Multi-warning state was
+reproducible during development by leaving an action dictionary
+loaded but unused while the recommender thresholds were still in
+their default values — all three notices appear at once and
+collapse into the single pill.
+
+### 5. Add a diagram legend  *(Landed 2026-05-02 — see header summary.)*
 
 Smallest standalone improvement on the list. A collapsible legend in
 the bottom-right of each diagram tab — covering halo colors,
 disconnection styling, and voltage-level color mapping — would close
 the largest onboarding gap visible in the screenshot.
+
+**What landed:** `frontend/src/components/DiagramLegend.tsx`. A
+small bottom-right "Legend" pill on the N / N-1 / Action tabs that
+expands into a panel listing contingency / action-target /
+overload halos, flow-delta direction colours, the dashed-grey
+disconnection convention, and a voltage-level palette note plus
+a VL-names-hidden reminder. Per-tab row sets (e.g. action target
+only on the action tab) so the legend never claims more than the
+diagram itself shows.
 
 ---
 

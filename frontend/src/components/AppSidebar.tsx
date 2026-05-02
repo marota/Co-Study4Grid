@@ -7,6 +7,7 @@
 
 import React from 'react';
 import SidebarSummary from './SidebarSummary';
+import NoticesPanel, { type Notice } from './NoticesPanel';
 import { colors, radius, space } from '../styles/tokens';
 
 interface AppSidebarProps {
@@ -21,6 +22,10 @@ interface AppSidebarProps {
   displayName: (id: string) => string;
   onContingencyZoom: (assetName: string) => void;
   onOverloadClick: (actionId: string, assetName: string, tab: 'n' | 'n-1') => void;
+  /** Background notices surfaced in the tiered warning system (the
+   *  tier-warning-system PR — `docs/proposals/ui-design-critique.md` recommendation #4).
+   *  When the array is empty the pill self-hides. */
+  notices?: Notice[];
   children: React.ReactNode;
 }
 
@@ -52,10 +57,16 @@ export default function AppSidebar({
   displayName,
   onContingencyZoom,
   onOverloadClick,
+  notices,
   children,
 }: AppSidebarProps) {
   return (
     <div data-testid="sidebar" style={{ width: '25%', background: colors.borderSubtle, borderRight: `1px solid ${colors.border}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {notices && notices.length > 0 && (
+        <div style={{ flexShrink: 0, padding: `6px ${space[3]}`, background: colors.surfaceMuted, borderBottom: `1px solid ${colors.border}` }}>
+          <NoticesPanel notices={notices} />
+        </div>
+      )}
       <SidebarSummary
         selectedBranch={selectedBranch}
         n1LinesOverloaded={n1LinesOverloaded}

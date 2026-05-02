@@ -13,6 +13,7 @@ import OverloadPanel from './components/OverloadPanel';
 import Header from './components/Header';
 import AppSidebar from './components/AppSidebar';
 import StatusToasts from './components/StatusToasts';
+import type { Notice } from './components/NoticesPanel';
 import SettingsModal from './components/modals/SettingsModal';
 import ReloadSessionModal from './components/modals/ReloadSessionModal';
 import ConfirmationDialog from './components/modals/ConfirmationDialog';
@@ -1011,6 +1012,99 @@ function App() {
     setConfirmDialog(null);
   }, [confirmDialog, setNetworkPath]);
 
+  // ===== Tiered notice system =====
+  // The previous UI stacked up to five concurrent yellow banners in
+  // the sidebar. They now feed a single "Notices" pill at the top
+  // of the sidebar. Each notice owns its dismissal state via the
+  // existing showXxxWarning state (kept where it lived to preserve
+  // the reset-on-apply-settings behaviour).
+  const [showActionDictNotice, setShowActionDictNotice] = useState(true);
+  const [showRecommenderNotice, setShowRecommenderNotice] = useState(true);
+
+  // Re-arm the notices whenever a fresh study is loaded — same
+  // semantics as the local state ActionFeed used to own.
+  useEffect(() => {
+    setShowActionDictNotice(true);
+    setShowRecommenderNotice(true);
+  }, [networkPath, actionPath]);
+
+  const sidebarNotices = useMemo(() => {
+    const list: Notice[] = [];
+
+    // Action-dictionary info — shown until the operator simulates
+    // anything OR dismisses it.
+    if (showActionDictNotice && actionDictFileName && actionDictStats && Object.keys(result?.actions || {}).length === 0) {
+      list.push({
+        id: 'action-dict',
+        severity: 'info',
+        title: 'Action dictionary',
+        body: (
+          <>
+            <code style={{ fontFamily: 'monospace', padding: '0 4px' }}>{actionDictFileName}</code>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
+              <span>🔄 Reco: <strong>{actionDictStats.reco}</strong></span>
+              <span>⛔ Disco: <strong>{actionDictStats.disco}</strong></span>
+              <span>📐 PST: <strong>{actionDictStats.pst}</strong></span>
+              <span>🔓 Open coupling: <strong>{actionDictStats.open_coupling}</strong></span>
+              <span>🔒 Close coupling: <strong>{actionDictStats.close_coupling}</strong></span>
+            </div>
+          </>
+        ),
+        action: { label: 'Change in settings', onClick: () => handleOpenSettings('paths') },
+        onDismiss: () => setShowActionDictNotice(false),
+      });
+    }
+
+    // Monitoring coverage warning — surfaces the reduced monitoring
+    // scope before the operator runs an analysis.
+    if (showMonitoringWarning && totalLinesCount && totalLinesCount > 0) {
+      const monitored = monitoredLinesCount || 0;
+      list.push({
+        id: 'monitoring-coverage',
+        severity: 'warning',
+        title: 'Monitoring coverage',
+        body: (
+          <>
+            <strong>{monitored}</strong> of <strong>{totalLinesCount}</strong> lines monitored
+            {' '}({totalLinesCount - monitored} without permanent limits). Monitoring factor:
+            {' '}{Math.round((monitoringFactor || 0.95) * 100)}%, pre-existing overload threshold:
+            {' '}{Math.round((preExistingOverloadThreshold || 0.02) * 100)}%.
+          </>
+        ),
+        action: { label: 'Change in settings', onClick: handleOpenConfigSettings },
+        onDismiss: handleDismissWarning,
+      });
+    }
+
+    // Recommender thresholds — only relevant before an analysis has
+    // actually run, since once we have results the operator can read
+    // the values back from the actions themselves.
+    if (showRecommenderNotice && !pendingAnalysisResult && !result) {
+      list.push({
+        id: 'recommender-thresholds',
+        severity: 'info',
+        title: 'Recommender thresholds',
+        body: (
+          <>
+            <div>• Minimum actions: {recommenderConfig.minLineReconnections} reco, {recommenderConfig.minCloseCoupling} close, {recommenderConfig.minOpenCoupling} open, {recommenderConfig.minLineDisconnections} disco, {recommenderConfig.minPst} PST, {recommenderConfig.minLoadShedding} load shedding, {recommenderConfig.minRenewableCurtailmentActions} RC</div>
+            <div>• Maximum suggestions: {recommenderConfig.nPrioritizedActions}</div>
+            <div>• Ignore reconnections: {recommenderConfig.ignoreReconnections ? 'Yes' : 'No'}</div>
+          </>
+        ),
+        action: { label: 'Change in settings', onClick: () => handleOpenSettings('recommender') },
+        onDismiss: () => setShowRecommenderNotice(false),
+      });
+    }
+
+    return list;
+  }, [
+    showActionDictNotice, actionDictFileName, actionDictStats, result,
+    showMonitoringWarning, monitoredLinesCount, totalLinesCount,
+    monitoringFactor, preExistingOverloadThreshold,
+    showRecommenderNotice, pendingAnalysisResult, recommenderConfig,
+    handleOpenSettings, handleOpenConfigSettings, handleDismissWarning,
+  ]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <Header
@@ -1055,6 +1149,7 @@ function App() {
           displayName={displayName}
           onContingencyZoom={handleZoomOnActiveTab}
           onOverloadClick={wrappedAssetClick as (actionId: string, assetName: string, tab: 'n' | 'n-1') => void}
+          notices={sidebarNotices}
         >
           <div style={{ flexShrink: 0 }}>
             <OverloadPanel
@@ -1063,13 +1158,11 @@ function App() {
               nOverloadsRho={nDiagram?.lines_overloaded_rho}
               n1OverloadsRho={n1Diagram?.lines_overloaded_rho}
               onAssetClick={wrappedAssetClick as (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void}
-              showMonitoringWarning={showMonitoringWarning}
-              monitoredLinesCount={monitoredLinesCount}
-              totalLinesCount={totalLinesCount}
-              monitoringFactor={monitoringFactor}
-              preExistingOverloadThreshold={preExistingOverloadThreshold}
-              onDismissWarning={handleDismissWarning}
-              onOpenSettings={handleOpenConfigSettings}
+              monitoringHint={
+                showMonitoringWarning && totalLinesCount && totalLinesCount > 0
+                  ? `${monitoredLinesCount || 0}/${totalLinesCount} lines monitored — see Notices for details.`
+                  : null
+              }
               selectedOverloads={selectedOverloads}
               onToggleOverload={analysis.handleToggleOverload}
               monitorDeselected={monitorDeselected}
@@ -1103,10 +1196,6 @@ function App() {
             analysisLoading={analysisLoading}
             monitoringFactor={monitoringFactor}
             onVlDoubleClick={handleVlDoubleClick}
-            recommenderConfig={recommenderConfig}
-            actionDictFileName={actionDictFileName}
-            actionDictStats={actionDictStats}
-            onOpenSettings={handleOpenSettings}
             onUpdateCombinedEstimation={handleUpdateCombinedEstimation}
             displayName={displayName}
             onActionDiagramPrimed={diagrams.primeActionDiagram}

@@ -6,7 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { ActionDetail, ActionTypeFilterToken, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, RecommenderDisplayConfig, DiagramData, ActionOverviewFilters } from '../types';
+import type { ActionDetail, ActionTypeFilterToken, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, DiagramData, ActionOverviewFilters } from '../types';
 import { actionPassesOverviewFilter } from '../utils/svgUtils';
 import { classifyActionType, matchesActionTypeFilter } from '../utils/actionTypes';
 import { api } from '../api';
@@ -47,10 +47,6 @@ interface ActionFeedProps {
     monitoringFactor: number;
     manuallyAddedIds: Set<string>;
     onVlDoubleClick?: (actionId: string, vlName: string) => void;
-    recommenderConfig: RecommenderDisplayConfig;
-    onOpenSettings?: (tab?: 'recommender' | 'configurations' | 'paths') => void;
-    actionDictFileName?: string | null;
-    actionDictStats?: { reco: number; disco: number; pst: number; open_coupling: number; close_coupling: number; total: number } | null;
     combinedActions: Record<string, CombinedAction> | null;
     onUpdateCombinedEstimation?: (pairId: string, estimation: { estimated_max_rho: number; estimated_max_rho_line: string }) => void;
     /** Resolve an element/VL ID to its human-readable display name. Falls back to the ID. */
@@ -107,10 +103,6 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     monitoringFactor,
     manuallyAddedIds,
     onVlDoubleClick,
-    recommenderConfig,
-    onOpenSettings,
-    actionDictFileName,
-    actionDictStats,
     combinedActions,
     onUpdateCombinedEstimation,
     displayName = (id: string) => id,
@@ -138,8 +130,6 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     const [cardEditTap, setCardEditTap] = useState<Record<string, string>>({});
     const [resimulating, setResimulating] = useState<string | null>(null);
     const [dismissedRejectedWarning, setDismissedRejectedWarning] = useState(false);
-    const [showActionDictWarning, setShowActionDictWarning] = useState(true);
-    const [showRecommenderWarning, setShowRecommenderWarning] = useState(true);
 
     const showTooltip = (e: React.MouseEvent, content: React.ReactNode) => {
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -577,6 +567,45 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         return sortedActionEntries.filter(([id]) => !selectedActionIds.has(id) && !rejectedActionIds.has(id));
     }, [sortedActionEntries, selectedActionIds, rejectedActionIds, analysisLoading]);
 
+    // Inline contextual hint counter — "N actions hidden by the
+    // overview filter" — surfaces when the user has tightened the
+    // shared overview filters so action cards disappear from the feed.
+    // Implements the second half of recommendation #4 in
+    // `docs/proposals/ui-design-critique.md`: tier the warnings, drop
+    // the redundant yellow banner stack, and add small grey contextual
+    // hints under the relevant control. Only counts non-estimation,
+    // non-combined-incomplete entries so the hint matches what the
+    // operator would actually see if they cleared the filter.
+    const overviewFilteredOutCount = useMemo(() => {
+        if (!overviewFilters) return 0;
+        const typeFilter = overviewFilters.actionType ?? 'all';
+        let hidden = 0;
+        for (const [id, details] of Object.entries(actions)) {
+            if (id.includes('+')) {
+                if (details.is_estimated) continue;
+                if (!details.rho_after || details.rho_after.length === 0) continue;
+            }
+            const passesCategory = actionPassesOverviewFilter(
+                details, monitoringFactor,
+                overviewFilters.categories, overviewFilters.threshold,
+            );
+            let passesType = true;
+            if (typeFilter !== 'all') {
+                if (id.includes('+')) {
+                    const [id1, id2] = id.split('+');
+                    const d1 = actions[id1];
+                    const d2 = actions[id2];
+                    passesType = !!((d1 && matchesActionTypeFilter(typeFilter, id1, d1.description_unitaire, null))
+                        || (d2 && matchesActionTypeFilter(typeFilter, id2, d2.description_unitaire, null)));
+                } else {
+                    passesType = matchesActionTypeFilter(typeFilter, id, details.description_unitaire, null);
+                }
+            }
+            if (!passesCategory || !passesType) hidden += 1;
+        }
+        return hidden;
+    }, [actions, overviewFilters, monitoringFactor]);
+
     // When an action becomes the currently-viewed one (typically
     // after the user double-clicks a pin in the action overview
     // diagram, or clicks an action card body), scroll the
@@ -758,30 +787,12 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     />
                 )}
             </div>
-            {/* Action Dict Info Warning */}
-            {showActionDictWarning && !simulating && !pendingAnalysisResult && Object.keys(actions).length === 0 && actionDictFileName && actionDictStats && (
-                <div style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                    gap: '8px', padding: '8px 10px',
-                    background: colors.warningSoft, border: `1px solid ${colors.warningBorder}`,
-                    borderRadius: '6px', marginBottom: '10px', fontSize: '12px', color: colors.warningText
-                }}>
-                    <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>ℹ️ Action dictionary: <code style={{ fontFamily: 'monospace', background: colors.warningSoft, padding: '1px 4px', borderRadius: '3px', border: `1px solid ${colors.warningBorder}` }}>{actionDictFileName}</code></div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '4px' }}>
-                            <span>🔄 Reco: <strong>{actionDictStats.reco}</strong></span>
-                            <span>⛔ Disco: <strong>{actionDictStats.disco}</strong></span>
-                            <span>📐 PST: <strong>{actionDictStats.pst}</strong></span>
-                            <span>🔓 Open coupling: <strong>{actionDictStats.open_coupling}</strong></span>
-                            <span>🔒 Close coupling: <strong>{actionDictStats.close_coupling}</strong></span>
-                        </div>
-                        {onOpenSettings && (
-                            <button onClick={() => onOpenSettings('paths')} style={{ background: 'none', border: 'none', color: colors.brandStrong, textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '12px' }}>Change in settings</button>
-                        )}
-                    </div>
-                    <button onClick={() => setShowActionDictWarning(false)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: colors.warningText }} title="Dismiss">✕</button>
-                </div>
-            )}
+            {/* Action-dictionary info now lives in NoticesPanel
+                (tier-warning-system PR — see `docs/proposals/ui-design-critique.md`
+                recommendation #4). The inline yellow banner that
+                stacked here was retired so the sidebar header carries
+                a single dismissable pill instead of up to five
+                concurrent banners. */}
             <div style={{ marginBottom: '15px' }}>
                 <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: colors.textPrimary, borderBottom: `1px solid ${colors.borderSubtle}`, paddingBottom: '4px', display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '8px' }}>
                     Selected Actions
@@ -792,9 +803,16 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         {!dismissedSelectedWarning && selectedEntries.some(([id]) => manuallyAddedIds.has(id) && analysisActionIds.has(id)) && (() => {
                             const overlapIds = selectedEntries.filter(([id]) => manuallyAddedIds.has(id) && analysisActionIds.has(id)).map(([id]) => id).join(', ');
                             return (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', padding: '8px 10px', background: colors.warningSoft, border: `1px solid ${colors.warningBorder}`, borderRadius: '6px', marginBottom: '10px', fontSize: '13px', color: colors.warningText }}>
-                                    <div>⚠️ User warning: The following manually selected actions are also recommended by the recent analysis run: {overlapIds}</div>
-                                    <button onClick={() => setDismissedSelectedWarning(true)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '0', fontSize: '16px', lineHeight: 1, color: colors.warningText }} title="Dismiss">&times;</button>
+                                <div
+                                    data-testid="selected-overlap-hint"
+                                    style={{
+                                        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                                        gap: '6px', marginBottom: '8px',
+                                        fontSize: '11px', color: colors.textTertiary, fontStyle: 'italic',
+                                    }}
+                                >
+                                    <div>Also recommended by the recent analysis: {overlapIds}</div>
+                                    <button onClick={() => setDismissedSelectedWarning(true)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '0', fontSize: '14px', lineHeight: 1, color: colors.textTertiary }} title="Dismiss">&times;</button>
                                 </div>
                             );
                         })()}
@@ -846,6 +864,19 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             </div>
 
             <div style={{ marginBottom: '15px' }}>
+                {overviewFilteredOutCount > 0 && (
+                    <div
+                        data-testid="overview-filter-hint"
+                        style={{
+                            marginBottom: '6px',
+                            fontSize: '11px',
+                            color: colors.textTertiary,
+                            fontStyle: 'italic',
+                        }}
+                    >
+                        {overviewFilteredOutCount} action{overviewFilteredOutCount === 1 ? '' : 's'} hidden by the overview filter.
+                    </div>
+                )}
                 <div style={{ display: 'flex', borderBottom: `1px solid ${colors.borderSubtle}`, marginBottom: '10px' }}>
                     <button
                         onClick={() => setSuggestedTab('prioritized')}
@@ -915,48 +946,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                 <p style={{ color: colors.textTertiary, fontStyle: 'italic', fontSize: '13px', margin: '5px 0' }}>
                                     {!pendingAnalysisResult ? 'Click \u201cAnalyze & Suggest\u201d above to get action suggestions.' : 'No suggested actions available.'}
                                 </p>
-                                {!pendingAnalysisResult && showRecommenderWarning && (
-                                    <div style={{
-                                        marginTop: '10px',
-                                        padding: '10px',
-                                        background: colors.warningSoft,
-                                        border: `1px solid ${colors.warningBorder}`,
-                                        borderRadius: '6px',
-                                        fontSize: '12px',
-                                        color: colors.warningText,
-                                        textAlign: 'left'
-                                    }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
-                                            <div style={{ fontWeight: 'bold' }}>Recommender Settings:</div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                {onOpenSettings && (
-                                                    <button
-                                                        onClick={() => onOpenSettings('recommender')}
-                                                        style={{
-                                                            background: 'none',
-                                                            border: 'none',
-                                                            color: colors.brandStrong,
-                                                            textDecoration: 'underline',
-                                                            cursor: 'pointer',
-                                                            padding: '0',
-                                                            fontSize: '11px'
-                                                        }}
-                                                    >
-                                                        Change in settings
-                                                    </button>
-                                                )}
-                                                <button
-                                                    onClick={() => setShowRecommenderWarning(false)}
-                                                    style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', lineHeight: 1, color: colors.warningText }}
-                                                    title="Dismiss"
-                                                >&times;</button>
-                                            </div>
-                                        </div>
-                                        <div>• Minimum actions: {recommenderConfig.minLineReconnections} reco, {recommenderConfig.minCloseCoupling} close, {recommenderConfig.minOpenCoupling} open, {recommenderConfig.minLineDisconnections} disco, {recommenderConfig.minPst} PST, {recommenderConfig.minLoadShedding} load shedding, {recommenderConfig.minRenewableCurtailmentActions} RC</div>
-                                        <div>• Maximum suggestions: {recommenderConfig.nPrioritizedActions}</div>
-                                        <div>• Ignore reconnections: {recommenderConfig.ignoreReconnections ? 'Yes' : 'No'}</div>
-                                    </div>
-                                )}
+                                {/* Recommender thresholds banner moved into NoticesPanel
+                                    (tier-warning-system PR — see `docs/proposals/ui-design-critique.md`
+                                    recommendation #4). */}
                             </div>
                         ) : null
                     )
@@ -967,9 +959,16 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                             {!dismissedRejectedWarning && rejectedEntries.some(([id]) => analysisActionIds.has(id)) && (() => {
                                 const overlapIds = rejectedEntries.filter(([id]) => analysisActionIds.has(id)).map(([id]) => id).join(', ');
                                 return (
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', padding: '8px 10px', background: colors.warningSoft, border: `1px solid ${colors.warningBorder}`, borderRadius: '6px', marginBottom: '10px', fontSize: '13px', color: colors.warningText }}>
-                                        <div>⚠️ User warning: The following manually rejected actions were recommended by the recent analysis run: {overlapIds}</div>
-                                        <button onClick={() => setDismissedRejectedWarning(true)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '0', fontSize: '16px', lineHeight: 1, color: colors.warningText }} title="Dismiss">&times;</button>
+                                    <div
+                                        data-testid="rejected-overlap-hint"
+                                        style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                                            gap: '6px', marginBottom: '8px',
+                                            fontSize: '11px', color: colors.textTertiary, fontStyle: 'italic',
+                                        }}
+                                    >
+                                        <div>Recommended by the recent analysis: {overlapIds}</div>
+                                        <button onClick={() => setDismissedRejectedWarning(true)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '0', fontSize: '14px', lineHeight: 1, color: colors.textTertiary }} title="Dismiss">&times;</button>
                                     </div>
                                 );
                             })()}

@@ -6,7 +6,7 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import React from 'react';
-import { colors, radius, space, text } from '../styles/tokens';
+import { colors, space, text } from '../styles/tokens';
 
 interface OverloadPanelProps {
     nOverloads: string[];
@@ -29,13 +29,13 @@ interface OverloadPanelProps {
      * network state.
      */
     onAssetClick: (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void;
-    showMonitoringWarning?: boolean;
-    monitoredLinesCount?: number;
-    totalLinesCount?: number;
-    monitoringFactor?: number;
-    preExistingOverloadThreshold?: number;
-    onDismissWarning?: () => void;
-    onOpenSettings?: () => void;
+    /**
+     * Inline contextual hint shown beneath the heading. Replaces the
+     * previous full yellow banner — the full notice now lives in
+     * NoticesPanel (tier-warning-system PR). Pass a short string like "130/150 lines
+     * monitored — see Notices for details" or leave undefined.
+     */
+    monitoringHint?: string | null;
     selectedOverloads?: Set<string>;
     onToggleOverload?: (overload: string) => void;
     monitorDeselected?: boolean;
@@ -50,13 +50,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
     nOverloadsRho,
     n1OverloadsRho,
     onAssetClick,
-    showMonitoringWarning,
-    monitoredLinesCount,
-    totalLinesCount,
-    monitoringFactor,
-    preExistingOverloadThreshold,
-    onDismissWarning,
-    onOpenSettings,
+    monitoringHint,
     selectedOverloads,
     onToggleOverload,
     monitorDeselected = false,
@@ -124,7 +118,6 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
     };
 
     const hasDeselected = n1Overloads.some(name => !(selectedOverloads?.has(name) ?? true));
-    const deselectedCount = hasDeselected && selectedOverloads ? n1Overloads.filter(name => !selectedOverloads.has(name)).length : 0;
 
     return (
         <div style={{
@@ -138,33 +131,17 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                 <span style={{ color: colors.danger }}>⚠️</span> Overloads
             </h3>
 
-            {showMonitoringWarning && totalLinesCount && totalLinesCount > 0 && (
-                <div style={{
-                    marginBottom: space[2],
-                    padding: `${space[2]} ${space[3]}`,
-                    background: colors.warningSoft,
-                    border: `1px solid ${colors.warningBorder}`,
-                    borderRadius: radius.sm,
-                    color: colors.warningText,
-                    fontSize: '0.8rem',
-                    position: 'relative'
-                }}>
-                    ⚠️ <strong>{monitorDeselected ? (monitoredLinesCount || 0) : (monitoredLinesCount || 0) - (hasDeselected ? deselectedCount : 0)}</strong> out of <strong>{totalLinesCount}</strong> lines monitored ({totalLinesCount - (monitoredLinesCount || 0)} without permanent limits{hasDeselected && !monitorDeselected ? `, and ${deselectedCount} deselected` : ''}). Monitoring factor: {Math.round((monitoringFactor || 0.95) * 100)}%. {Math.round((preExistingOverloadThreshold || 0.02) * 100)}% loading increase threshold for considering worsened overload in N.
-                    <button
-                        onClick={onOpenSettings}
-                        style={{ background: 'none', border: 'none', color: colors.brandStrong, textDecoration: 'underline', cursor: 'pointer', padding: `0 0 0 5px`, fontSize: 'inherit' }}
-                    >
-                        Change in settings
-                    </button>
-                    {onDismissWarning && (
-                        <button
-                            onClick={onDismissWarning}
-                            style={{ float: 'right', background: 'none', border: 'none', fontSize: text.lg, lineHeight: 1, color: colors.warningText, cursor: 'pointer' }}
-                            title="Dismiss"
-                        >
-                            &times;
-                        </button>
-                    )}
+            {monitoringHint && (
+                <div
+                    data-testid="overload-monitoring-hint"
+                    style={{
+                        marginBottom: space[1],
+                        fontSize: text.xs,
+                        color: colors.textTertiary,
+                        fontStyle: 'italic',
+                    }}
+                >
+                    {monitoringHint}
                 </div>
             )}
 
