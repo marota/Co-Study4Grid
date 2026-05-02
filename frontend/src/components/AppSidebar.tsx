@@ -7,6 +7,7 @@
 
 import React from 'react';
 import SidebarSummary from './SidebarSummary';
+import { type Notice } from './NoticesPanel';
 import { colors, radius, space } from '../styles/tokens';
 
 interface AppSidebarProps {
@@ -21,6 +22,10 @@ interface AppSidebarProps {
   displayName: (id: string) => string;
   onContingencyZoom: (assetName: string) => void;
   onOverloadClick: (actionId: string, assetName: string, tab: 'n' | 'n-1') => void;
+  /** Background notices surfaced in the tiered warning system (the
+   *  tier-warning-system PR — `docs/proposals/ui-design-critique.md` recommendation #4).
+   *  When the array is empty the pill self-hides. */
+  notices?: Notice[];
   children: React.ReactNode;
 }
 
@@ -52,6 +57,7 @@ export default function AppSidebar({
   displayName,
   onContingencyZoom,
   onOverloadClick,
+  notices,
   children,
 }: AppSidebarProps) {
   return (
@@ -64,6 +70,7 @@ export default function AppSidebar({
         displayName={displayName}
         onContingencyZoom={onContingencyZoom}
         onOverloadClick={onOverloadClick}
+        notices={notices}
       />
       <div style={{ flex: 1, overflowY: 'auto', padding: space[4], minHeight: 0, display: 'flex', flexDirection: 'column', gap: space[4] }}>
         {branches.length > 0 && (

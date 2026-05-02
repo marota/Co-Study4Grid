@@ -11,6 +11,7 @@ import MemoizedSvgContainer from './MemoizedSvgContainer';
 import SldOverlay from './SldOverlay';
 import DetachableTabHost from './DetachableTabHost';
 import ActionOverviewDiagram from './ActionOverviewDiagram';
+import DiagramLegend from './DiagramLegend';
 import type { DetachedTabsMap } from '../hooks/useDetachedTabs';
 import type { PZInstance } from '../hooks/useTiedTabsSync';
 import { colors } from '../styles/tokens';
@@ -1054,6 +1055,9 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             </div>
                         )}
                         {renderTabOverlay('n', true)}
+                        {nDiagram?.svg && (
+                            <DiagramLegend tabId="n" uniqueVoltages={uniqueVoltages} vlNamesHidden={!showVoltageLevelNames} />
+                        )}
                     </div>
                 </DetachableTabHost>
                 {activeTab === 'n' && detachedTabs['n'] && renderDetachedPlaceholder('n', 'Network (N)', colors.brand)}
@@ -1104,6 +1108,9 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             </div>
                         )}
                         {renderTabOverlay('n-1', true)}
+                        {n1Diagram?.svg && (
+                            <DiagramLegend tabId="n-1" uniqueVoltages={uniqueVoltages} vlNamesHidden={!showVoltageLevelNames} />
+                        )}
                     </div>
                 </DetachableTabHost>
                 {activeTab === 'n-1' && detachedTabs['n-1'] && renderDetachedPlaceholder('n-1', 'Contingency (N-1)', colors.danger)}
@@ -1195,6 +1202,9 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                           when the N-1 background is missing).
                         */}
                         {renderTabOverlay('action', true)}
+                        {(actionDiagram?.svg || (n1Diagram?.svg && !selectedActionId)) && (
+                            <DiagramLegend tabId="action" uniqueVoltages={uniqueVoltages} vlNamesHidden={!showVoltageLevelNames} />
+                        )}
                     </div>
                 </DetachableTabHost>
                 {activeTab === 'action' && detachedTabs['action'] && renderDetachedPlaceholder('action', selectedActionId ? `Remedial Action: ${selectedActionId}` : 'Remedial action: overview', 'var(--signal-action-target)')}

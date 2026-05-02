@@ -66,21 +66,7 @@ describe('ActionFeed', () => {
         analysisLoading: false,
         monitoringFactor: 0.95,
         manuallyAddedIds: new Set<string>(),
-        recommenderConfig: {
-            minLineReconnections: 2,
-            minCloseCoupling: 3,
-            minOpenCoupling: 2,
-            minLineDisconnections: 3,
-            minPst: 1,
-            minLoadShedding: 0,
-            minRenewableCurtailmentActions: 0,
-            nPrioritizedActions: 10,
-            ignoreReconnections: false,
-        },
         pendingAnalysisResult: null as AnalysisResult | null,
-        onOpenSettings: vi.fn(),
-        actionDictFileName: null as string | null,
-        actionDictStats: null as { reco: number; disco: number; pst: number; open_coupling: number; close_coupling: number; total: number } | null,
         combinedActions: null as Record<string, CombinedAction> | null,
     };
 
@@ -218,10 +204,12 @@ describe('ActionFeed', () => {
         // description is now progressive-disclosure, so we assert on
         // the card root by testId rather than its description text.)
         expect(screen.getByTestId(`action-card-${actionId}`)).toBeInTheDocument();
-        // Overlap warning is visible and mentions the overlapping id.
-        const warning = screen.getByText(/also recommended by the recent analysis run/);
-        expect(warning).toBeInTheDocument();
-        expect(warning.textContent).toContain(actionId);
+        // Overlap is now an inline contextual hint (tier-warning-system PR — see
+        // `docs/proposals/ui-design-critique.md` recommendation #4).
+        const hint = screen.getByTestId('selected-overlap-hint');
+        expect(hint).toBeInTheDocument();
+        expect(hint.textContent).toMatch(/also recommended by the recent analysis/i);
+        expect(hint.textContent).toContain(actionId);
     });
 
     it('hides "Make a first guess" when there are already selected actions', () => {
@@ -616,57 +604,10 @@ describe('ActionFeed', () => {
         expect(screen.queryByText('disco_pst_branch')).not.toBeInTheDocument();
         expect(screen.getByText('All actions already added')).toBeInTheDocument();
     });
-    it('shows action dict stats warning when actionDictFileName and actionDictStats are provided', () => {
-        const props = {
-            ...defaultProps,
-            actionDictFileName: 'actions.json',
-            actionDictStats: { reco: 3, disco: 5, pst: 2, open_coupling: 1, close_coupling: 1, total: 12 },
-        };
-        render(<ActionFeed {...props} />);
-
-        expect(screen.getByText(/Action dictionary/)).toBeInTheDocument();
-        expect(screen.getByText(/actions.json/)).toBeInTheDocument();
-        expect(screen.getByText(/Reco:/)).toBeInTheDocument();
-        expect(screen.getByText(/Disco:/)).toBeInTheDocument();
-        expect(screen.getByText(/PST:/)).toBeInTheDocument();
-        expect(screen.getByText(/Open coupling:/)).toBeInTheDocument();
-        expect(screen.getByText(/Close coupling:/)).toBeInTheDocument();
-    });
-
-    it('dismisses action dict stats warning when close button is clicked', () => {
-        const props = {
-            ...defaultProps,
-            actionDictFileName: 'actions.json',
-            actionDictStats: { reco: 3, disco: 5, pst: 2, open_coupling: 1, close_coupling: 1, total: 12 },
-        };
-        render(<ActionFeed {...props} />);
-
-        expect(screen.getByText(/Action dictionary/)).toBeInTheDocument();
-        // Multiple dismiss buttons exist; action dict one renders first
-        const dismissBtns = screen.getAllByTitle('Dismiss');
-        fireEvent.click(dismissBtns[0]);
-        expect(screen.queryByText(/Action dictionary/)).not.toBeInTheDocument();
-    });
-
-    it('shows action dict warning while analysis is loading with yellow theme', () => {
-        const props = {
-            ...defaultProps,
-            actionDictFileName: 'actions.json',
-            actionDictStats: { reco: 3, disco: 5, pst: 2, open_coupling: 1, close_coupling: 1, total: 12 },
-            analysisLoading: true,
-        };
-        render(<ActionFeed {...props} />);
-        // Timing fix: it should appear at the same time as other user warnings (even during analysis)
-        const warning = screen.getByText(/Action dictionary/);
-        expect(warning).toBeInTheDocument();
-        // Check warning theme via design tokens (jsdom returns the var() string for inline styles)
-        const parent = warning.closest('div[style*="background"]') as HTMLDivElement;
-        if (parent) {
-            expect(parent.style.background).toContain('var(--color-warning-soft)');
-            expect(parent.style.border).toContain('var(--color-warning-border)');
-            expect(parent.style.color).toContain('var(--color-warning-text)');
-        }
-    });
+    // Action-dictionary stats and recommender thresholds were moved
+    // out of ActionFeed and into NoticesPanel (tier-warning-system PR — see
+    // `docs/proposals/ui-design-critique.md` recommendation #4). The
+    // matching coverage now lives in `NoticesPanel.test.tsx`.
 
     it('shows yellow processing button during analysisLoading', () => {
         const props = {
@@ -681,37 +622,9 @@ describe('ActionFeed', () => {
         expect(banner.style.color).toContain('var(--color-warning-text)');
     });
 
-    it('includes minPst in the recommender settings warning', () => {
-        const props = {
-            ...defaultProps,
-            recommenderConfig: {
-                ...defaultProps.recommenderConfig,
-                minPst: 2,
-                minLineReconnections: 3,
-                minLineDisconnections: 4,
-            },
-        };
-        render(<ActionFeed {...props} />);
-        // The recommender settings warning appears when no analysis has been run
-        expect(screen.getByText(/2 PST/)).toBeInTheDocument();
-    });
-
-    it('shows change in settings link in action dict warning calling paths tab', () => {
-        const onOpenSettings = vi.fn();
-        const props = {
-            ...defaultProps,
-            actionDictFileName: 'actions.json',
-            actionDictStats: { reco: 3, disco: 5, pst: 2, open_coupling: 1, close_coupling: 1, total: 12 },
-            onOpenSettings,
-        };
-        render(<ActionFeed {...props} />);
-
-        // "Change in settings" button in the action dict warning
-        const changeLinks = screen.getAllByText('Change in settings');
-        // Click the first one (action dict warning)
-        fireEvent.click(changeLinks[0]);
-        expect(onOpenSettings).toHaveBeenCalledWith('paths');
-    });
+    // The recommender-settings hint and the action-dict "Change in
+    // settings" affordance live in NoticesPanel after tier-warning-system PR. See
+    // `NoticesPanel.test.tsx` for the moved coverage.
     it('awaits simulation before calling onManualActionAdded to prevent race conditions', async () => {
         const actionId = 'act1';
         const mockResult = {
