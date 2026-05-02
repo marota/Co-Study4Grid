@@ -1,45 +1,55 @@
 # UI design critique — Co-Study4Grid frontend
 
 **Status**: Proposal / review. **Recommendation #1 (design-token layer)
-Phase A + Phase B landed 2026-05-01** — `frontend/src/styles/tokens.{css,ts}`
-defines the semantic palette: ~24 colors (Tailwind blue-ramp brand,
-Bootstrap warning/danger/success, info-cyan family for curtailment,
-accent-purple family for PST tap edits), 4/8 spacing scale, 6 type
-sizes, 3 radii, plus diagram-signal colors (overload, contingency,
-action-target soft/strong/darker, breaker, deltas). All 18
-inline-style components are migrated; ActionFeed and VisualizationPanel
-test assertions now read the `var(--…)` strings instead of resolved
-RGB. The `scripts/check_code_quality.py` gate ratchets the
-hex-literal count (currently **56**, down from ~654 pre-Phase A,
-518 after Phase A) and refuses to let it grow.
+landed in full 2026-05-01 → 2026-05-02** across three commits.
+`frontend/src/styles/tokens.{css,ts}` defines the semantic palette:
+~24 colors (Tailwind blue-ramp brand, Bootstrap warning/danger/success,
+info-cyan family for curtailment, accent-purple family for PST tap
+edits), 4/8 spacing scale, 6 type sizes, 3 radii, diagram-signal
+colors (overload, contingency, action-target soft/strong/darker,
+breaker, deltas), and the action-overview pin palette
+(severity green/orange/red/grey × base/dimmed/highlighted, plus pin
+chrome — glyph background, label text, gold star, rejected cross,
+neutral stroke). All inline-style components AND the SVG-emitting
+pin renderer are migrated; ActionFeed / VisualizationPanel test
+assertions read the `var(--…)` strings. The
+`scripts/check_code_quality.py` gate now requires **zero** hex
+literals outside the token files (down from ~654 pre-migration,
+518 after Phase A, 56 after Phase B).
 
-**Phase C — remaining 56 hex literals** are concentrated in three
-SVG-emitting files that need a different migration treatment because
-they use `setAttribute('fill', '#…')` to set raw SVG attribute values
-(which don't reliably resolve `var(--…)` across browsers):
-- `frontend/src/utils/svg/actionPinData.ts` (12) — severity palette
-  for the Remedial Action overview pins (green/orange/red/grey
-  triplets: base, faded for unsimulated, highlighted on hover).
-- `frontend/src/utils/svg/actionPinRender.ts` (8) — pin glyph
-  fills (white inner, dark text, gold star, red cross).
-- `frontend/src/components/ActionOverviewDiagram.tsx` (35) — legend
-  swatches that pass `color="#…"` props into pin children, plus
-  inspect-input chrome.
+**Phase A** (commit 47a2700, 2026-05-01) — token scaffold + global
+CSS + 4 representative components (Header, StatusToasts,
+SidebarSummary, OverloadPanel) + ratcheting gate.
 
-The clean migration is to (a) extend `tokens.css` with a
-`--pin-{severity}-{base,faded,highlighted}` family, (b) switch the
-SVG attribute setters to inline `style.fill = 'var(--…)'`, and
-(c) update the `'#28a745'` / `'#dc3545'` / `'#eab308'` test
-assertions in `ActionOverviewDiagram.test.tsx` to read the resolved
-attribute string. Worth a dedicated follow-up so the pin-palette
-extension can be reviewed on its own.
+**Phase B** (commit 0e60059, 2026-05-01) — 14 inline-style
+components (ActionTypeFilterChips, ConfirmationDialog, AppSidebar,
+ActionCardPopover, ErrorBoundary, ReloadSessionModal,
+CombinedActionsModal, SldOverlay, ComputedPairsTable, SettingsModal,
+ActionSearchDropdown, ActionCard, ExplorePairsTab, ActionFeed,
+VisualizationPanel) + test-assertion updates.
 
-`frontend/src/index.css` carries one remaining literal — the
-`#242424` dark-mode placeholder background that the Vite template
-sets before the `prefers-color-scheme: light` override kicks in. It
-stays because the app does not yet support dark mode and adding a
-single `--color-surface-dark` token for one use site is overkill;
-re-evaluate if/when dark mode lands.
+**Phase C** (2026-05-02) — the three SVG-emitting files that use
+`setAttribute('fill', …)` for raw SVG presentation attributes:
+- `frontend/src/utils/svg/actionPinData.ts` — severity triplets
+  (green/orange/red/grey × base/dimmed/highlighted) now alias the
+  `pinColors` / `pinColorsDimmed` / `pinColorsHighlighted` exports
+  from `tokens.ts`.
+- `frontend/src/utils/svg/actionPinRender.ts` — pin glyph fills
+  (white inner, dark text, gold star, red cross, neutral stroke)
+  now read from `pinChrome`.
+- `frontend/src/components/ActionOverviewDiagram.tsx` — legend
+  swatch `color={pinColors.green}` etc., plus all the inline-style
+  chrome migrated to `colors.*` var() refs.
+- `frontend/src/index.css` — the `#242424` dark-mode placeholder
+  now uses `var(--color-surface-dark)`.
+
+The Phase C compromise: `tokens.ts` is the runtime source of truth
+for pin colours (raw hex strings) because browsers don't reliably
+resolve `var(--…)` inside SVG presentation attributes set via
+`setAttribute`, and unit tests assert on the resolved hex via
+`getAttribute('fill')`. `tokens.css` mirrors the same values for
+future CSS-only consumers. Both `tokens.css` and `tokens.ts` are
+exempt from the hex-literal gate. Nothing else is.
 **Date**: 2026-05-01 (updated same day with screenshot review)
 **Method**: Initial pass was a code-only review of `frontend/src/`.
 A second pass cross-checked the findings against a screenshot of the

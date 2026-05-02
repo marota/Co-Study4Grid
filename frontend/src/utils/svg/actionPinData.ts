@@ -19,6 +19,7 @@ import type {
     NodeMeta,
     UnsimulatedActionScoreInfo,
 } from '../../types';
+import { pinColors, pinColorsDimmed, pinColorsHighlighted } from '../../styles/tokens';
 import { getActionTargetLines, getActionTargetVoltageLevels } from './highlights';
 
 export interface ActionPinInfo {
@@ -66,35 +67,20 @@ export interface CombinedPinInfo {
     severity: ActionPinInfo['severity'];
 }
 
-export const severityFill: Record<ActionPinInfo['severity'], string> = {
-    green: '#28a745',
-    orange: '#f0ad4e',
-    red: '#dc3545',
-    grey: '#9ca3af',
-};
+export const severityFill: Record<ActionPinInfo['severity'], string> = pinColors;
 
 /**
  * Dimmed fill colours for rejected actions — each severity hue is
  * shifted toward grey and lowered in saturation so the pin recedes
  * visually while still being colour-identifiable.
  */
-export const severityFillDimmed: Record<ActionPinInfo['severity'], string> = {
-    green: '#a3c9ab',
-    orange: '#dcd0b8',
-    red: '#d4a5ab',
-    grey: '#c8cdd2',
-};
+export const severityFillDimmed: Record<ActionPinInfo['severity'], string> = pinColorsDimmed;
 
 /**
  * Highlighted (selected) fill colours — slightly more vivid/brighter
  * versions of the severity palette so the pin stands out.
  */
-export const severityFillHighlighted: Record<ActionPinInfo['severity'], string> = {
-    green: '#1e9e3a',
-    orange: '#e89e20',
-    red: '#c82333',
-    grey: '#7b8a96',
-};
+export const severityFillHighlighted: Record<ActionPinInfo['severity'], string> = pinColorsHighlighted;
 
 export const computeActionSeverity = (
     details: ActionDetail,

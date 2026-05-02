@@ -14,7 +14,7 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
 
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #242424; /* dark-mode placeholder; overridden below */
+  background-color: var(--color-surface-dark);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;

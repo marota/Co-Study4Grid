@@ -52,12 +52,19 @@ AS_UNKNOWN_RE = re.compile(r"as\s+unknown\s+as\b")
 RECORD_STR_UNK_RE = re.compile(r"Record<string,\s*unknown>")
 # Hex color literals: #RGB, #RGBA, #RRGGBB, #RRGGBBAA. Excludes HTML
 # numeric entities like `&#9881;` via the negative lookbehind.
-# `frontend/src/styles/tokens.css` is the source of truth and is
-# exempt from the count (see FRONTEND_HEX_EXEMPT_FILES).
+# Token-source-of-truth files are exempt from the count (see
+# FRONTEND_HEX_EXEMPT_FILES).
 HEX_LITERAL_RE = re.compile(
     r"(?<![\w&#])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b"
 )
-FRONTEND_HEX_EXEMPT_FILES = {"frontend/src/styles/tokens.css"}
+FRONTEND_HEX_EXEMPT_FILES = {
+    "frontend/src/styles/tokens.css",
+    # `tokens.ts` carries the raw-hex pin palette consumed by
+    # `setAttribute('fill', …)` calls in utils/svg/actionPin*.ts,
+    # which can't reliably resolve var() inside SVG presentation
+    # attributes. See the comment block in tokens.ts.
+    "frontend/src/styles/tokens.ts",
+}
 
 
 def _count_python_smells(tree: ast.AST) -> tuple[int, int, int]:

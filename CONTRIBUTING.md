@@ -59,13 +59,14 @@ The gate enforces:
 - Backend modules stay under **1200 lines** (the "god-object" ceiling)
 - Frontend components stay under **1500 lines**
 - No `any` type annotations or `@ts-ignore` in frontend sources
-- **No new hex color literals** in frontend source. The current ceiling
-  (56) covers a small queue of SVG-emitting files awaiting a Phase C
-  pin-palette extension. Define new colors in
+- **No hex color literals** in frontend source. The ceiling is zero —
+  every colour must come from a named token. Define new colours in
   [`frontend/src/styles/tokens.css`](./frontend/src/styles/tokens.css)
-  and consume them via `var(--…)` (CSS) or the `colors` / `space` /
-  `text` / `radius` exports from `frontend/src/styles/tokens.ts`
-  (inline styles).
+  (the canonical CSS variables) and re-export them from
+  [`frontend/src/styles/tokens.ts`](./frontend/src/styles/tokens.ts)
+  for inline-style consumers (`colors` / `space` / `text` / `radius`,
+  plus `pinColors` / `pinChrome` for SVG-attribute use cases). Both
+  token files are exempt from the gate; nothing else is.
 
 Lower the thresholds — don't raise them. Tightening the gate
 is how we protect the hard-won reductions documented in

@@ -120,4 +120,38 @@ remaining hex-literal count after each migration.
   --signal-delta-positive: #ff9800;
   --signal-delta-negative: #2196f3;
   --signal-delta-neutral: #999999;
+
+  /* ----- Action-overview pin palette -----
+     Severity buckets for Remedial Action overview pins
+     (utils/svg/actionPin{Data,Render}.ts + ActionOverviewDiagram.tsx).
+     Three triplets per bucket: base, dimmed (rejected / filtered-out),
+     highlighted (selected on hover). The TS mirror in tokens.ts is the
+     runtime source of truth because pin fills are written to raw SVG
+     `fill="…"` attributes via setAttribute, which doesn't reliably
+     resolve var() across older browsers. CSS variables here are kept
+     in sync for any future CSS-only consumers. */
+  --pin-green: #28a745;
+  --pin-orange: #f0ad4e;
+  --pin-red: #dc3545;
+  --pin-grey: #9ca3af;
+  --pin-green-dimmed: #a3c9ab;
+  --pin-orange-dimmed: #dcd0b8;
+  --pin-red-dimmed: #d4a5ab;
+  --pin-grey-dimmed: #c8cdd2;
+  --pin-green-highlighted: #1e9e3a;
+  --pin-orange-highlighted: #e89e20;
+  --pin-red-highlighted: #c82333;
+  --pin-grey-highlighted: #7b8a96;
+  --pin-glyph-bg: #ffffff;            /* white inner circle behind label */
+  --pin-glyph-text: #1f2937;          /* label text (= text-primary) */
+  --pin-stroke-neutral: #6b7280;      /* unsimulated pin outline */
+  --pin-gold: #eab308;                /* selected-pin star fill + outline */
+  --pin-gold-dark: #a16207;           /* selected-pin star stroke */
+  --pin-cross-fill: #ef4444;          /* rejected-pin cross fill */
+  --pin-cross-stroke: #b91c1c;        /* rejected-pin cross stroke */
+
+  /* Vite template carryover — visible only during the first paint
+     before body { background-color: var(--color-surface) } takes over.
+     Kept as a token so the dark-mode initial-paint color has a name. */
+  --color-surface-dark: #242424;
 }

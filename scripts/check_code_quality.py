@@ -22,17 +22,18 @@ Thresholds (see also CONTRIBUTING.md):
 | Frontend component size (lines)            | 1500|
 | `any` type annotations in frontend source  |  0  |
 | `@ts-ignore` directives in frontend source |  0  |
-| Hex color literals outside tokens.css      | 56  |
+| Hex color literals outside tokens.{css,ts} |  0  |
 
 `App.tsx` is exempt from the frontend size ceiling — it is the state
-orchestration hub by design.
+orchestration hub by design. `tokens.css` and `tokens.ts` are the
+token-source-of-truth files and are exempt from the hex-literal
+count.
 
-The hex-literal ceiling is a ratchet: it encodes the count after the
-Phase A + B token migrations (see docs/proposals/ui-design-critique.md
-recommendation #1). Lowering it as more files migrate is welcome and
-required when the count drops; raising it is a regression — add the
-new color to `frontend/src/styles/tokens.css` and consume it via
-`var(--…)` instead of inlining a hex.
+The hex-literal ceiling is now zero — every colour in frontend
+source must come from a named token in
+`frontend/src/styles/tokens.{css,ts}`. Adding a new colour means
+defining it in tokens first, then importing it; raising this ceiling
+is a regression.
 """
 from __future__ import annotations
 
@@ -45,18 +46,13 @@ from code_quality_report import build_report  # type: ignore[import-not-found]
 BACKEND_MODULE_MAX = 1200
 FRONTEND_COMPONENT_MAX = 1500
 FRONTEND_UTIL_MAX = 2000
-# Ceiling on hex color literals in frontend source (excluding
-# `frontend/src/styles/tokens.css`, the token-definition file). Set to
-# the count after Phase A + B of the design-token migration. This is
-# a ratchet — lowering it as files migrate is welcome and required
-# when the count drops; raising it is a regression.
-#
-# The remaining 56 are concentrated in three SVG-emitting files
-# (utils/svg/actionPin{Data,Render}.ts and
-# components/ActionOverviewDiagram.tsx), pending a Phase C
-# pin-palette extension to tokens.css — see
-# docs/proposals/ui-design-critique.md.
-FRONTEND_HEX_LITERAL_MAX = 56
+# Ceiling on hex color literals in frontend source. The
+# token-source-of-truth files (`frontend/src/styles/tokens.css` and
+# `frontend/src/styles/tokens.ts`) are exempt — they ARE the named
+# palette every other file consumes. Phase A + B + C of the
+# design-token migration drove this to zero; new colours must be
+# added to the token files first, then imported.
+FRONTEND_HEX_LITERAL_MAX = 0
 # Files exempt from the component-size ceiling. `App.tsx` is the state
 # orchestration hub by design; `utils/svgUtils.ts` is a stable shared
 # util library (SVG helpers, highlight ops, metadata parsing) and is

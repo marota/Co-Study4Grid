@@ -89,3 +89,49 @@ export const radius = {
   md: 'var(--radius-md)',
   lg: 'var(--radius-lg)',
 } as const;
+
+// Action-overview pin palette — RAW HEX VALUES (not var() refs).
+//
+// The pin renderer (utils/svg/actionPinRender.ts) writes these into
+// raw SVG `fill="…"` attributes via setAttribute. Browsers don't
+// reliably resolve `var(--…)` inside SVG presentation attributes
+// (only via CSS), and the unit tests in
+// `ActionOverviewDiagram.test.tsx` assert on the resolved hex value
+// (`getAttribute('fill') === '#28a745'`). So this file IS the
+// source-of-truth for pin colours; `tokens.css` mirrors them only
+// for future CSS consumers.
+//
+// Adding a hex literal here is permitted (`tokens.ts` is exempt from
+// the hex-literal gate alongside `tokens.css`). Anywhere else,
+// import and reuse these constants instead of inlining the hex.
+
+export const pinColors = {
+  green: '#28a745',
+  orange: '#f0ad4e',
+  red: '#dc3545',
+  grey: '#9ca3af',
+} as const;
+
+export const pinColorsDimmed = {
+  green: '#a3c9ab',
+  orange: '#dcd0b8',
+  red: '#d4a5ab',
+  grey: '#c8cdd2',
+} as const;
+
+export const pinColorsHighlighted = {
+  green: '#1e9e3a',
+  orange: '#e89e20',
+  red: '#c82333',
+  grey: '#7b8a96',
+} as const;
+
+export const pinChrome = {
+  glyphBg: '#ffffff',
+  glyphText: '#1f2937',
+  strokeNeutral: '#6b7280',
+  gold: '#eab308',
+  goldDark: '#a16207',
+  crossFill: '#ef4444',
+  crossStroke: '#b91c1c',
+} as const;
