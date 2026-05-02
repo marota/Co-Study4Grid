@@ -185,6 +185,58 @@ circle.nad-highlight {
     stroke-linejoin: round !important;
 }
 
+/* At zoomed-in tiers (region + detail) the grid-unit halo strokes
+   above (120 / 150 px in user-space coordinates) cover so much of
+   the network they obscure the very lines they identify. Switch
+   to a screen-space stroke capped at 24px so the halo stays a
+   reading aid instead of a smear. The base
+   `.svg-container svg path { vector-effect: non-scaling-stroke }`
+   rule does NOT apply here because pypowsybl appends its own
+   inline `<style>` block AFTER App.css that re-asserts the
+   default `vector-effect: none` on equipment paths — so we set
+   it !important on the halos themselves. */
+[data-zoom-tier="region"] .nad-overloaded path,
+[data-zoom-tier="region"] .nad-overloaded line,
+[data-zoom-tier="region"] .nad-overloaded polyline,
+[data-zoom-tier="region"] .nad-overloaded rect,
+[data-zoom-tier="region"] .nad-overloaded polygon,
+[data-zoom-tier="detail"] .nad-overloaded path,
+[data-zoom-tier="detail"] .nad-overloaded line,
+[data-zoom-tier="detail"] .nad-overloaded polyline,
+[data-zoom-tier="detail"] .nad-overloaded rect,
+[data-zoom-tier="detail"] .nad-overloaded polygon {
+    stroke-width: 24px !important;
+    vector-effect: non-scaling-stroke !important;
+}
+
+[data-zoom-tier="region"] .nad-action-target path,
+[data-zoom-tier="region"] .nad-action-target line,
+[data-zoom-tier="region"] .nad-action-target polyline,
+[data-zoom-tier="region"] .nad-action-target rect,
+[data-zoom-tier="region"] .nad-action-target polygon,
+[data-zoom-tier="detail"] .nad-action-target path,
+[data-zoom-tier="detail"] .nad-action-target line,
+[data-zoom-tier="detail"] .nad-action-target polyline,
+[data-zoom-tier="detail"] .nad-action-target rect,
+[data-zoom-tier="detail"] .nad-action-target polygon {
+    stroke-width: 24px !important;
+    vector-effect: non-scaling-stroke !important;
+}
+
+[data-zoom-tier="region"] .nad-contingency-highlight path,
+[data-zoom-tier="region"] .nad-contingency-highlight line,
+[data-zoom-tier="region"] .nad-contingency-highlight polyline,
+[data-zoom-tier="region"] .nad-contingency-highlight rect,
+[data-zoom-tier="region"] .nad-contingency-highlight polygon,
+[data-zoom-tier="detail"] .nad-contingency-highlight path,
+[data-zoom-tier="detail"] .nad-contingency-highlight line,
+[data-zoom-tier="detail"] .nad-contingency-highlight polyline,
+[data-zoom-tier="detail"] .nad-contingency-highlight rect,
+[data-zoom-tier="detail"] .nad-contingency-highlight polygon {
+    stroke-width: 24px !important;
+    vector-effect: non-scaling-stroke !important;
+}
+
 /* For nodes (circles and rects), add a screen-space stroke to create a glowing
    background halo that doesn't shrink into invisibility on large grids. */
 .nad-action-target circle,
@@ -532,6 +584,29 @@ circle.nad-highlight {
     background: rgba(220, 220, 220, 0.95);
     color: var(--color-text-primary);
 }
+/* ============================================================
+   ActionCard progressive disclosure
+   ============================================================
+   The star (⭐) and reject (✕) controls live in a "rail" that
+   fades in on hover, on focus, and whenever the card is the
+   currently-viewed action. This trims the at-rest visual load
+   to five fields (rank, ID, severity, max ρ, primary target)
+   while keeping the controls a single mouse-move away.
+
+   Implemented in CSS (not React state) so hover doesn't trigger
+   a re-render on every card. */
+.action-card-rail {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+}
+.action-card:hover .action-card-rail,
+.action-card:focus-within .action-card-rail,
+.action-card.is-viewing .action-card-rail {
+    opacity: 1;
+    pointer-events: auto;
+}
+
 /* ============================================================
    Action-overview pins (Remedial Action tab, no card selected)
    ============================================================ */

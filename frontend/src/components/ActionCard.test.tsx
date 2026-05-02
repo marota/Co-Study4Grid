@@ -56,10 +56,21 @@ describe('ActionCard', () => {
         onResimulateTap: vi.fn(),
     };
 
-    it('renders action card with description and id', () => {
+    it('renders the action card with index and id in the header', () => {
         render(<ActionCard {...defaultProps} />);
-        expect(screen.getByText('Open line L1')).toBeInTheDocument();
         expect(screen.getByTestId('action-card-act_1')).toBeInTheDocument();
+        expect(screen.getByText(/^#1/)).toBeInTheDocument();
+    });
+
+    it('hides the description at rest (progressive disclosure)', () => {
+        render(<ActionCard {...defaultProps} />);
+        expect(screen.queryByText('Open line L1')).not.toBeInTheDocument();
+    });
+
+    it('reveals the description and disclosure region when viewing', () => {
+        render(<ActionCard {...defaultProps} isViewing={true} />);
+        expect(screen.getByText('Open line L1')).toBeInTheDocument();
+        expect(screen.getByTestId('action-card-act_1-disclosure')).toBeInTheDocument();
     });
 
     it('displays action index and id in header', () => {
@@ -98,42 +109,38 @@ describe('ActionCard', () => {
         expect(screen.getByText(/12\.5 MW disconnected/)).toBeInTheDocument();
     });
 
-    it('shows VIEWING indicator when isViewing is true', () => {
+    it('marks the card with data-viewing="true" when isViewing is true', () => {
+        // The viewing-state signal is now a higher-saturation left-edge
+        // accent stripe + a `data-viewing` attribute on the card root,
+        // not the old vertical "VIEWING" ribbon.  Replacing the ribbon
+        // was the largest scannability win in the progressive-disclosure
+        // pass (docs/proposals/ui-design-critique.md, recommendation 2).
         render(<ActionCard {...defaultProps} isViewing={true} />);
-        expect(screen.getByText('VIEWING')).toBeInTheDocument();
-    });
-
-    it('does not show VIEWING indicator when isViewing is false', () => {
-        render(<ActionCard {...defaultProps} isViewing={false} />);
+        expect(screen.getByTestId('action-card-act_1')).toHaveAttribute('data-viewing', 'true');
         expect(screen.queryByText('VIEWING')).not.toBeInTheDocument();
     });
 
-    it('renders the VIEWING marker as a vertical ribbon on the left edge', () => {
-        // The ribbon sits flush against the left border to free a full
-        // row of horizontal space inside the card header (long action
-        // IDs on a narrow sidebar).  It must be a sibling of the
-        // content column — not inside the header — and must use
-        // vertical writing mode.
-        render(<ActionCard {...defaultProps} isViewing={true} />);
-        const ribbon = screen.getByTestId('action-card-act_1-viewing-ribbon');
-        expect(ribbon).toBeInTheDocument();
-        expect(ribbon).toHaveTextContent('VIEWING');
-        expect(ribbon).toHaveStyle({ writingMode: 'vertical-rl' });
-
-        // And the inline top-right VIEWING pill is gone (the severity
-        // badge — "Solves overload" — is still rendered next to the
-        // title, but not the old rectangular "VIEWING" pill).
-        const card = screen.getByTestId('action-card-act_1');
-        const inlinePill = card.querySelectorAll('span');
-        const pillTexts = Array.from(inlinePill).map(el => el.textContent);
-        // The vertical ribbon is a <div>, not a <span>, so no <span>
-        // should contain exactly "VIEWING".
-        expect(pillTexts).not.toContain('VIEWING');
+    it('marks the card with data-viewing="false" when isViewing is false', () => {
+        render(<ActionCard {...defaultProps} isViewing={false} />);
+        expect(screen.getByTestId('action-card-act_1')).toHaveAttribute('data-viewing', 'false');
+        expect(screen.queryByText('VIEWING')).not.toBeInTheDocument();
     });
 
-    it('does not render the vertical ribbon when isViewing is false', () => {
+    it('does not render the disclosure region when isViewing is false', () => {
         render(<ActionCard {...defaultProps} isViewing={false} />);
-        expect(screen.queryByTestId('action-card-act_1-viewing-ribbon')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('action-card-act_1-disclosure')).not.toBeInTheDocument();
+    });
+
+    it('hosts the star/reject buttons in a hover-revealed rail (always present in DOM)', () => {
+        // The rail's visibility is controlled by CSS (`.action-card-rail`
+        // → opacity 0/1 driven by :hover and .is-viewing on the card).
+        // The buttons remain in the DOM at all times so keyboard /
+        // automation users can reach them.
+        const { container } = render(<ActionCard {...defaultProps} />);
+        const rail = container.querySelector('.action-card-rail');
+        expect(rail).not.toBeNull();
+        expect(screen.getByTitle('Select this action')).toBeInTheDocument();
+        expect(screen.getByTitle('Reject this action')).toBeInTheDocument();
     });
 
     it('calls onActionSelect when card is clicked', () => {
@@ -180,7 +187,6 @@ describe('ActionCard', () => {
     it('displays max loading percentage and line name', () => {
         render(<ActionCard {...defaultProps} />);
         expect(screen.getByText('Max loading:')).toBeInTheDocument();
-        // Multiple elements contain 85.0% (rho_after + max_rho); check at least one is present
         expect(screen.getAllByText(/85\.0%/).length).toBeGreaterThan(0);
         expect(screen.getAllByTitle('Zoom to LINE_A').length).toBeGreaterThan(0);
     });
@@ -222,47 +228,67 @@ describe('ActionCard', () => {
         expect(onAssetClick).toHaveBeenCalledWith('act_1', 'LINE_B', 'action');
     });
 
-    it('renders loading after rho section (loading before is shown in the sticky Overloads panel)', () => {
-        render(<ActionCard {...defaultProps} />);
+    it('renders loading after only inside the viewing disclosure', () => {
+        // At rest the "Loading after" detail is hidden — the per-card
+        // max ρ% summary above replaces it.  Only the viewing card
+        // expands the per-line breakdown.  "Loading before" remains in
+        // the sticky Overloads panel and never appears on the card.
+        const { rerender } = render(<ActionCard {...defaultProps} />);
+        expect(screen.queryByText(/Loading after/)).not.toBeInTheDocument();
         expect(screen.queryByText(/Loading before/)).not.toBeInTheDocument();
+
+        rerender(<ActionCard {...defaultProps} isViewing={true} />);
         expect(screen.getByText(/Loading after/)).toBeInTheDocument();
+        expect(screen.queryByText(/Loading before/)).not.toBeInTheDocument();
     });
 
-    it('renders load shedding details with MW input and re-simulate button', () => {
+    it('renders load shedding details with MW input and re-simulate button when viewing', () => {
         const details: ActionDetail = {
             ...baseDetails,
             load_shedding_details: [
                 { load_name: 'LOAD_X', voltage_level_id: 'VL1', shedded_mw: 5.0 }
             ],
         };
-        render(<ActionCard {...defaultProps} details={details} />);
+        render(<ActionCard {...defaultProps} details={details} isViewing={true} />);
         expect(screen.getByText(/Shedding on/)).toBeInTheDocument();
         expect(screen.getByText('LOAD_X')).toBeInTheDocument();
         expect(screen.getByTestId('edit-mw-act_1')).toBeInTheDocument();
         expect(screen.getByTestId('resimulate-act_1')).toBeInTheDocument();
     });
 
-    it('renders curtailment details with MW input and re-simulate button', () => {
+    it('hides the load shedding editor at rest (progressive disclosure)', () => {
+        const details: ActionDetail = {
+            ...baseDetails,
+            load_shedding_details: [
+                { load_name: 'LOAD_X', voltage_level_id: 'VL1', shedded_mw: 5.0 }
+            ],
+        };
+        render(<ActionCard {...defaultProps} details={details} isViewing={false} />);
+        expect(screen.queryByText(/Shedding on/)).not.toBeInTheDocument();
+        expect(screen.queryByTestId('edit-mw-act_1')).not.toBeInTheDocument();
+    });
+
+    it('renders curtailment details with MW input and re-simulate button when viewing', () => {
         const details: ActionDetail = {
             ...baseDetails,
             curtailment_details: [
                 { gen_name: 'GEN_Y', voltage_level_id: 'VL2', curtailed_mw: 3.0 }
             ],
         };
-        render(<ActionCard {...defaultProps} details={details} />);
+        render(<ActionCard {...defaultProps} details={details} isViewing={true} />);
         expect(screen.getByText(/Curtailment on/)).toBeInTheDocument();
         expect(screen.getByText('GEN_Y')).toBeInTheDocument();
         expect(screen.getByTestId('edit-mw-act_1')).toBeInTheDocument();
     });
 
-    it('renders PST details with tap input and re-simulate button', () => {
+    it('renders PST details with tap input and re-simulate button when viewing', () => {
         const details: ActionDetail = {
             ...baseDetails,
             pst_details: [
                 { pst_name: 'PST_Z', tap_position: 5, low_tap: -10, high_tap: 10 }
             ],
         };
-        render(<ActionCard {...defaultProps} details={details} />);
+        render(<ActionCard {...defaultProps} details={details} isViewing={true} />);
         expect(screen.getByText('PST_Z')).toBeInTheDocument();
         expect(screen.getByTestId('edit-tap-act_1')).toBeInTheDocument();
         expect(screen.getByText('[-10..10]')).toBeInTheDocument();
@@ -276,7 +302,7 @@ describe('ActionCard', () => {
                 { load_name: 'LOAD_X', voltage_level_id: 'VL1', shedded_mw: 5.0 }
             ],
         };
-        render(<ActionCard {...defaultProps} details={details} onResimulate={onResimulate} />);
+        render(<ActionCard {...defaultProps} details={details} isViewing={true} onResimulate={onResimulate} />);
         fireEvent.click(screen.getByTestId('resimulate-act_1'));
         expect(onResimulate).toHaveBeenCalledWith('act_1', 5.0);
     });
@@ -289,7 +315,7 @@ describe('ActionCard', () => {
                 { pst_name: 'PST_Z', tap_position: 5, low_tap: -10, high_tap: 10 }
             ],
         };
-        render(<ActionCard {...defaultProps} details={details} onResimulateTap={onResimulateTap} />);
+        render(<ActionCard {...defaultProps} details={details} isViewing={true} onResimulateTap={onResimulateTap} />);
         fireEvent.click(screen.getByTestId('resimulate-tap-act_1'));
         expect(onResimulateTap).toHaveBeenCalledWith('act_1', 5);
     });
@@ -301,7 +327,7 @@ describe('ActionCard', () => {
                 { load_name: 'LOAD_X', voltage_level_id: 'VL1', shedded_mw: 5.0 }
             ],
         };
-        render(<ActionCard {...defaultProps} details={details} resimulating="act_1" />);
+        render(<ActionCard {...defaultProps} details={details} isViewing={true} resimulating="act_1" />);
         expect(screen.getByText('Simulating...')).toBeInTheDocument();
     });
 
@@ -313,7 +339,7 @@ describe('ActionCard', () => {
                 { load_name: 'LOAD_X', voltage_level_id: 'VL1', shedded_mw: 5.0 }
             ],
         };
-        render(<ActionCard {...defaultProps} details={details} onCardEditMwChange={onCardEditMwChange} />);
+        render(<ActionCard {...defaultProps} details={details} isViewing={true} onCardEditMwChange={onCardEditMwChange} />);
         fireEvent.change(screen.getByTestId('edit-mw-act_1'), { target: { value: '7.5' } });
         expect(onCardEditMwChange).toHaveBeenCalledWith('act_1', '7.5');
     });
