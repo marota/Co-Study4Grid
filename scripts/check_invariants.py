@@ -366,13 +366,14 @@ INVARIANTS: list[Invariant] = [
         description=(
             "Recommendation #4 (tier the warning system): the "
             "sidebar must surface a single `<NoticesPanel>` pill "
-            "above the rest of the sidebar so persistent warnings "
-            "live in one entry point instead of stacking up to five "
-            "concurrent yellow banners. AppSidebar.tsx is the "
-            "canonical mount point."
+            "as the entry point for persistent warnings instead of "
+            "stacking up to five concurrent yellow banners. The "
+            "pill lives inside SidebarSummary so it shares one "
+            "horizontal band with the contingency / N-1 strip; "
+            "AppSidebar forwards the notices array down."
         ),
         react={
-            "file_hint": "frontend/src/components/AppSidebar.tsx",
+            "file_hint": "frontend/src/components/SidebarSummary.tsx",
             "pattern": r"<NoticesPanel\s",
         },
         standalone={"file_hint": "standalone_interface.html"},

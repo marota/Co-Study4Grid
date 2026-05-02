@@ -329,6 +329,43 @@ describe('UX consistency — Recommendation #4 (tier the warning system)', () =>
         expect(pill).toHaveTextContent('2');
     });
 
+    it('Notices pill sits on the same row as the contingency / N-1 strip', () => {
+        // Space-saving layout: the pill lives INSIDE the
+        // sticky-feed-summary strip (one horizontal band) rather
+        // than above it as a separate block. Regression guard
+        // against splitting them onto two rows.
+        const notices: Notice[] = [
+            { id: 'a', title: 'Monitoring', body: 'body', severity: 'warning' },
+        ];
+        render(
+            <AppSidebar
+                selectedBranch="LINE_A"
+                branches={[]}
+                nameMap={{}}
+                n1LinesOverloaded={['LINE_X']}
+                n1LinesOverloadedRho={[1.05]}
+                selectedOverloads={undefined}
+                contingencyOptions={null}
+                onContingencyChange={vi.fn()}
+                displayName={(id) => id}
+                onContingencyZoom={vi.fn()}
+                onOverloadClick={vi.fn()}
+                notices={notices}
+            >
+                <div data-testid="sidebar-children" />
+            </AppSidebar>,
+        );
+        const summary = screen.getByTestId('sticky-feed-summary');
+        // Both the contingency-zoom button and the notices pill are
+        // descendants of the same strip.
+        expect(within(summary).getByTestId('notices-pill')).toBeInTheDocument();
+        expect(within(summary).getByText(/Contingency:/i)).toBeInTheDocument();
+        // The strip is laid out as a flex row so the two cluster
+        // horizontally rather than stacking.
+        expect(summary.style.display).toBe('flex');
+        expect(summary.style.justifyContent).toBe('space-between');
+    });
+
     it('AppSidebar omits the NoticesPanel entirely when no notices are active', () => {
         render(
             <AppSidebar
@@ -450,9 +487,14 @@ describe('UX consistency — source-text invariants', () => {
         expect(src).not.toMatch(/onDismissWarning/);
     });
 
-    it('AppSidebar.tsx wires <NoticesPanel /> as the single warning entry point', () => {
-        const src = readSource('components/AppSidebar.tsx');
-        expect(src).toMatch(/<NoticesPanel\s/);
+    it('AppSidebar.tsx forwards `notices` into SidebarSummary as the single warning entry point', () => {
+        // The NoticesPanel pill now sits on the same row as the
+        // contingency / N-1 strip (SidebarSummary owns the layout).
+        // AppSidebar just forwards the notices array.
+        const sidebarSrc = readSource('components/AppSidebar.tsx');
+        expect(sidebarSrc).toMatch(/notices=\{notices\}/);
+        const summarySrc = readSource('components/SidebarSummary.tsx');
+        expect(summarySrc).toMatch(/<NoticesPanel\s/);
     });
 
     it('VisualizationPanel.tsx wires <DiagramLegend /> for n / n-1 / action', () => {
@@ -488,7 +530,8 @@ describe('UX consistency — component import smoke', () => {
             </AppSidebar>,
         );
         // The children slot must keep rendering — the notices pill
-        // sits ABOVE the rest of the sidebar, never replacing it.
+        // sits inside the sticky-feed-summary strip, never replacing
+        // the rest of the sidebar.
         const slot = screen.getByTestId('children-slot');
         expect(slot).toHaveTextContent('payload');
         // Sanity — both elements live inside the sidebar shell.

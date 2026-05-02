@@ -7,6 +7,7 @@
 
 import React from 'react';
 import { colors, space, text } from '../styles/tokens';
+import NoticesPanel, { type Notice } from './NoticesPanel';
 
 interface SidebarSummaryProps {
   selectedBranch: string;
@@ -16,6 +17,10 @@ interface SidebarSummaryProps {
   displayName: (id: string) => string;
   onContingencyZoom: (assetName: string) => void;
   onOverloadClick: (actionId: string, assetName: string, tab: 'n' | 'n-1') => void;
+  /** Background notices; rendered as a NoticesPanel pill anchored
+   *  top-right of the strip so the contingency / N-1 lines and the
+   *  notices share one horizontal band rather than stacking. */
+  notices?: Notice[];
 }
 
 /**
@@ -34,9 +39,11 @@ export default function SidebarSummary({
   displayName,
   onContingencyZoom,
   onOverloadClick,
+  notices,
 }: SidebarSummaryProps) {
   const hasOverloads = (n1LinesOverloaded?.length ?? 0) > 0;
-  if (!selectedBranch && !hasOverloads) return null;
+  const hasNotices = (notices?.length ?? 0) > 0;
+  if (!selectedBranch && !hasOverloads && !hasNotices) return null;
 
   return (
     <div
@@ -49,8 +56,13 @@ export default function SidebarSummary({
         fontSize: text.xs,
         lineHeight: 1.5,
         boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: space[2],
       }}
     >
+      <div style={{ flex: 1, minWidth: 0 }}>
       {selectedBranch && (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: space[1] }}>
           <span style={{ color: colors.textSecondary, fontWeight: 600, whiteSpace: 'nowrap' }}>🎯 Contingency:</span>
@@ -110,6 +122,12 @@ export default function SidebarSummary({
               );
             })}
           </span>
+        </div>
+      )}
+      </div>
+      {hasNotices && (
+        <div style={{ flexShrink: 0, marginTop: 1 }}>
+          <NoticesPanel notices={notices!} />
         </div>
       )}
     </div>

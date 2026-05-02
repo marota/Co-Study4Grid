@@ -7,7 +7,7 @@
 
 import React from 'react';
 import SidebarSummary from './SidebarSummary';
-import NoticesPanel, { type Notice } from './NoticesPanel';
+import { type Notice } from './NoticesPanel';
 import { colors, radius, space } from '../styles/tokens';
 
 interface AppSidebarProps {
@@ -62,11 +62,6 @@ export default function AppSidebar({
 }: AppSidebarProps) {
   return (
     <div data-testid="sidebar" style={{ width: '25%', background: colors.borderSubtle, borderRight: `1px solid ${colors.border}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {notices && notices.length > 0 && (
-        <div style={{ flexShrink: 0, padding: `6px ${space[3]}`, background: colors.surfaceMuted, borderBottom: `1px solid ${colors.border}` }}>
-          <NoticesPanel notices={notices} />
-        </div>
-      )}
       <SidebarSummary
         selectedBranch={selectedBranch}
         n1LinesOverloaded={n1LinesOverloaded}
@@ -75,6 +70,7 @@ export default function AppSidebar({
         displayName={displayName}
         onContingencyZoom={onContingencyZoom}
         onOverloadClick={onOverloadClick}
+        notices={notices}
       />
       <div style={{ flex: 1, overflowY: 'auto', padding: space[4], minHeight: 0, display: 'flex', flexDirection: 'column', gap: space[4] }}>
         {branches.length > 0 && (
