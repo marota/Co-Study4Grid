@@ -70,6 +70,24 @@ describe('NoticesPanel', () => {
         expect(onClick).toHaveBeenCalledTimes(1);
     });
 
+    it('renders the popover via a portal so it escapes ancestor overflow:hidden clipping', async () => {
+        const user = userEvent.setup();
+        render(
+            <div data-testid="clipping-parent" style={{ overflow: 'hidden', position: 'relative', width: 200, height: 50 }}>
+                <NoticesPanel notices={baseNotices} />
+            </div>,
+        );
+        await user.click(screen.getByTestId('notices-pill'));
+        const list = screen.getByTestId('notices-list');
+        const clippingParent = screen.getByTestId('clipping-parent');
+        // The portal target is document.body, so the popover must NOT
+        // be a DOM descendant of the clipping container — that's how
+        // it escapes the sidebar's `overflow: hidden`.
+        expect(clippingParent.contains(list)).toBe(false);
+        expect(document.body.contains(list)).toBe(true);
+        expect(list).toHaveStyle({ position: 'fixed' });
+    });
+
     it('hides the panel when the underlying notice list becomes empty', async () => {
         const user = userEvent.setup();
         const { rerender } = render(<NoticesPanel notices={baseNotices} />);

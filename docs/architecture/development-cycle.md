@@ -45,6 +45,10 @@ gantt
     section 4. PyPSA-EUR
     Pipeline + datasets (#112)         :done, p4,  2026-04-16, 2026-04-24
     Post-merge (overflow viewer)       :done, p4b, 2026-04-24, 2026-04-30
+
+    section 5. UX iterations
+    Design tokens + ActionCard         :done, p5a, 2026-04-26, 2026-04-29
+    Tier warning system + popover fix  :done, p5b, 2026-04-29, 2026-05-03
 ```
 
 ### Architecture d'ensemble
@@ -639,3 +643,115 @@ itérations *Overflow HTML viewer* (PR #116, toggle Hierarchical/Geo,
 mise à l'échelle des canvas géographiques), un fix d'islanding
 (`d9b1652`, 29/04) et le rafraîchissement des `CLAUDE.md` /
 `README.md` en 0.6.5.
+
+## 5. Itérations UX post-0.6.5 (26/04 → 03/05/2026, PRs #118 → #122 + suivis)
+
+Une fois la base PyPSA-EUR stabilisée, le travail bascule sur la
+critique UX consolidée dans
+[`docs/proposals/ui-design-critique.md`](../proposals/ui-design-critique.md).
+Quatre PRs successives — plus le suivi de surface qui les
+accompagne — refondent l'apparence et la lisibilité de l'app sans
+toucher au moteur d'analyse.
+
+### 5.1. Toggle des noms de voltage levels (PR #118, 24-26/04)
+
+- Bouton **🏷 VL** ajouté à côté du champ Inspect (`72d65ad`,
+  `5871b59`) : flippe la classe `nad-hide-vl-labels` sur chaque
+  `MemoizedSvgContainer` pour cacher / réafficher les étiquettes VL
+  sur les diagrammes NAD.
+- La règle CSS associée (`App.css`) cible toutes les formes
+  pypowsybl (`foreignObject.nad-text-nodes`, `<text>` sous
+  `.nad-vl-nodes` / `.nad-label-nodes`, et `.nad-label-box` au
+  niveau racine) avec `!important` pour battre l'inline style block
+  injecté par pypowsybl après App.css.
+- Quand les labels sont cachés, le nom du VL reste accessible via
+  un `<title>` natif sur chaque cercle de bus
+  (`utils/svg/vlTitles.ts:applyVlTitles`).
+- Nouvel évènement `vl_names_toggled { show }` dans le journal
+  d'interactions (`4ed9bdb`).
+
+### 5.2. Migration vers les design tokens (PR #120, 26/04)
+
+Trois phases livrées en cascade :
+
+- **Phase A** (`47a2700`) — introduction de `src/styles/tokens.ts`
+  (palette de couleurs, espaces, rayons, échelle typographique) et
+  `src/styles/tokens.css` (variables CSS associées). Les composants
+  consomment `colors.brand`, `space[2]`, `radius.lg`, `text.xs`…
+  au lieu de littéraux.
+- **Phase B** (`0e60059`) — migration des composants un par un
+  vers les tokens. Côté SVG, les attributs de présentation ne
+  passent pas par les variables CSS (Chrome ne les résout pas
+  toujours dans les attributs SVG) : `pinColors`, `pinColorsDimmed`,
+  `pinColorsHighlighted`, `pinChrome` exposent les hex pour les
+  appels `setAttribute('fill', …)`.
+- **Phase C** (`b8de481`) — fin de la migration ; le code-quality
+  gate refuse désormais tout littéral hex hors de `tokens.ts`.
+
+### 5.3. Refonte progressive-disclosure des ActionCard (PR #121, 28/04)
+
+- `fbfb2b0` — refonte des cartes d'action en *progressive disclosure* :
+  une vue compacte (titre + score résumé) pour la liste, expansion
+  *on demand* avec les détails de simulation, le delta MW et les
+  badges d'équipement.
+- Même PR : **plafond du halo NAD** quand on zoome très près. Le
+  halo des cibles d'action ne doit pas envahir tout l'écran à fort
+  niveau de zoom — un cap calculé sur la taille du viewBox borne le
+  rayon visuel.
+
+### 5.4. Tier warning system, NoticesPanel et legend de diagramme (PR #122, 29/04 → 03/05)
+
+C'est la PR qui materialise la *recommandation #4* de la critique UX
+(« remplacer la pile de bannières jaunes par un point d'entrée
+unique »).
+
+- `9a354f2` — **`NoticesPanel.tsx`** : composant pill ⚠️
+  *Notices N* qui s'ancre dans le header de la sidebar et déroule
+  une liste consolidée des avertissements de fond (couverture
+  monitoring, seuils recommender, action dictionary). Chaque notice
+  porte sa propre `severity`, `onDismiss` et bouton d'action
+  optionnel. Le pill se cache de lui-même à zéro notice. Une
+  **legend de diagramme** unifiée est ajoutée au bas-droit du panneau
+  de visualisation.
+- `4458d48` — **landing du pill sur la ligne contingence / N-1** :
+  `SidebarSummary` passe en `display:flex` + `justifyContent:
+  space-between` pour héberger le pill dans la même bande
+  horizontale que les liens contingence et surcharges N-1.
+- `37f3e98` — `uxConsistency.test.tsx` : suite de garde-fous qui
+  vérifie que les recommandations de la critique UX restent
+  appliquées (palette unique, un seul header, action panel
+  consolidé, etc.).
+
+### 5.5. Suivi : NoticesPanel popover en portail (`claude/fix-notice-panel-overlap-UVYra`, 03/05)
+
+Suivi UX rapporté pendant la session de validation : sur les écrans
+où le sidebar fait 25% de la largeur, le popover des notices
+(largeur 320 px ancré à gauche du pill) débordait dans la zone du
+diagramme et se faisait **clipper** par le `overflow: hidden` du
+`AppSidebar`, donnant l'impression que la visualisation passait
+au-dessus.
+
+Correctif :
+
+- `NoticesPanel.tsx` rend désormais le panneau via
+  `ReactDOM.createPortal(…, document.body)` avec `position: fixed`
+  et des coordonnées calculées à partir du `getBoundingClientRect()`
+  du pill. Ré-aligné sur le bord droit du pill pour pousser le
+  panneau vers la sidebar plutôt que vers la zone diagramme. Recalcul
+  sur `resize` et `scroll` (capture).
+- `zIndex: 1000` pour battre toute hiérarchie de stacking context
+  ascendante. Le clic à l'extérieur exempte le contenu du portail.
+- Test ajouté (`NoticesPanel.test.tsx`) : monte le composant à
+  l'intérieur d'un parent `overflow:hidden` et vérifie que la liste
+  ouverte n'est PAS un descendant du parent — elle vit sous
+  `document.body`. Garantit que l'échappement portail ne régressera pas.
+
+### 5.6. Récapitulatif des PRs UX 0.6.5+
+
+| Feature                                           | PR                  | Date       |
+|---------------------------------------------------|---------------------|------------|
+| Toggle VL-names sur les NAD                       | #118                | 24-26/04   |
+| Design tokens (palette + espaces + typo)          | #120                | 26/04      |
+| ActionCard progressive disclosure + cap halo      | #121                | 28/04      |
+| Tier warning system + NoticesPanel + legend       | #122                | 29/04-03/05|
+| Fix occlusion popover Notices (portal)            | `fix-notice-panel-…`| 03/05      |

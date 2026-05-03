@@ -117,11 +117,53 @@ Flat config (v9+) in `eslint.config.js` with `typescript-eslint`,
 and `@ts-ignore` in source files — see
 [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
 
+## Recent UX iterations (post-0.6.5)
+
+The following PRs reshaped the look-and-feel of the app without
+touching the analysis pipeline. The full retrospective lives in
+[`../docs/architecture/development-cycle.md`](../docs/architecture/development-cycle.md)
+section 5; design rationale comes from
+[`../docs/proposals/ui-design-critique.md`](../docs/proposals/ui-design-critique.md).
+
+- **PR #118 — VL-names toggle.** A `🏷 VL` button next to the
+  Inspect field hides / shows the voltage-level labels on NAD
+  diagrams. Hidden labels remain reachable via a native `<title>`
+  tooltip on each bus circle. New `vl_names_toggled { show }`
+  interaction event.
+- **PR #120 — Design tokens (Phases A → C).** Palette / space /
+  radius / typography moved into `src/styles/tokens.{ts,css}`.
+  Components consume `colors.brand`, `space[2]`, `text.xs`…
+  Hex literals are forbidden outside the token files; SVG
+  presentation attributes use the `pinColors` family for
+  Chrome-safe `setAttribute` calls.
+- **PR #121 — Progressive-disclosure ActionCard + halo cap.** Action
+  cards default to a compact summary and expand on demand. The NAD
+  highlight halo radius is now capped relative to the viewBox so it
+  cannot swamp the screen at high zoom.
+- **PR #122 — Tier warning system + NoticesPanel + diagram legend.**
+  Replaces the stack of yellow banners with a single `⚠️ Notices N`
+  pill in the sidebar header that opens a consolidated list (one
+  entry, one place to dismiss). A unified diagram legend lands at
+  the bottom-right of the visualization panel.
+  `uxConsistency.test.tsx` enforces the recommendations going
+  forward.
+- **`fix-notice-panel-overlap` follow-up.** The Notices popover now
+  renders via `ReactDOM.createPortal(…, document.body)` with
+  `position: fixed` so it escapes the sidebar's `overflow: hidden`
+  clip and any ancestor stacking context — the visualization panel
+  no longer paints over it on narrow sidebars. Right-aligned to the
+  pill so it grows leftward into the sidebar rather than bleeding
+  into the diagram. Regression test in `NoticesPanel.test.tsx`
+  asserts the popover is NOT a descendant of an `overflow:hidden`
+  ancestor.
+
 ## Further reading
 
 - [`CLAUDE.md`](./CLAUDE.md) — architecture deep dive
 - [`../CLAUDE.md`](../CLAUDE.md) — project-wide overview + API table
 - [`../docs/README.md`](../docs/README.md) — design, feature and
   performance docs index
+- [`../docs/architecture/development-cycle.md`](../docs/architecture/development-cycle.md)
+  — chronological retrospective of all five development phases
 - [`PARITY_AUDIT.md`](./PARITY_AUDIT.md) — standalone-bundle parity
   audit (Layer 1–4 conformity, regression matrix)

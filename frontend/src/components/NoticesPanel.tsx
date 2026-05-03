@@ -5,7 +5,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { colors, radius, space, text } from '../styles/tokens';
 
 export interface Notice {
@@ -47,17 +48,64 @@ interface NoticesPanelProps {
  * sidebar header stays clean once the operator has dismissed
  * everything they wanted to dismiss.
  */
+const PANEL_WIDTH = 320;
+const PANEL_GAP = 4;
+const VIEWPORT_MARGIN = 8;
+
 export default function NoticesPanel({ notices }: NoticesPanelProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number } | null>(null);
+
+  // Anchor the floating panel to the pill button using viewport
+  // coordinates. We render it in a portal so it escapes the sidebar's
+  // `overflow: hidden` clip and any ancestor stacking contexts that
+  // would otherwise let the visualization panel paint over it.
+  const recomputePosition = useCallback(() => {
+    const btn = buttonRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const viewportW = window.innerWidth;
+    const top = rect.bottom + PANEL_GAP;
+    // Right-align the panel with the pill so it grows leftward into
+    // the sidebar instead of bleeding into the visualization area.
+    let left = rect.right - PANEL_WIDTH;
+    if (left < VIEWPORT_MARGIN) left = VIEWPORT_MARGIN;
+    if (left + PANEL_WIDTH > viewportW - VIEWPORT_MARGIN) {
+      left = viewportW - VIEWPORT_MARGIN - PANEL_WIDTH;
+    }
+    setPanelPos({ top, left });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    recomputePosition();
+  }, [open, recomputePosition, notices.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handle = () => recomputePosition();
+    window.addEventListener('resize', handle);
+    window.addEventListener('scroll', handle, true);
+    return () => {
+      window.removeEventListener('resize', handle);
+      window.removeEventListener('scroll', handle, true);
+    };
+  }, [open, recomputePosition]);
 
   // Close-on-outside-click — keeps the panel modal-light without
   // requiring a backdrop layer that would compete with the rest of
-  // the chrome.
+  // the chrome. The panel itself lives in a portal, so we also have
+  // to exempt clicks that land inside it.
   useEffect(() => {
     if (!open) return;
     const handleClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const insidePill = containerRef.current?.contains(target);
+      const insidePanel = panelRef.current?.contains(target);
+      if (!insidePill && !insidePanel) {
         setOpen(false);
       }
     };
@@ -80,6 +128,7 @@ export default function NoticesPanel({ notices }: NoticesPanelProps) {
       style={{ position: 'relative', flexShrink: 0 }}
     >
       <button
+        ref={buttonRef}
         type="button"
         data-testid="notices-pill"
         onClick={() => setOpen(prev => !prev)}
@@ -121,18 +170,18 @@ export default function NoticesPanel({ notices }: NoticesPanelProps) {
         </span>
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
+          ref={panelRef}
           data-testid="notices-list"
           role="dialog"
           aria-label="Active notices"
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            left: 0,
-            right: 'auto',
-            zIndex: 50,
-            width: '320px',
+            position: 'fixed',
+            top: panelPos?.top ?? -9999,
+            left: panelPos?.left ?? -9999,
+            zIndex: 1000,
+            width: `${PANEL_WIDTH}px`,
             maxHeight: '60vh',
             overflowY: 'auto',
             background: colors.surface,
@@ -143,6 +192,7 @@ export default function NoticesPanel({ notices }: NoticesPanelProps) {
             display: 'flex',
             flexDirection: 'column',
             gap: space[2],
+            visibility: panelPos ? 'visible' : 'hidden',
           }}
         >
           {notices.map(notice => {
@@ -210,7 +260,8 @@ export default function NoticesPanel({ notices }: NoticesPanelProps) {
               </div>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
