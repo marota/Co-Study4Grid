@@ -213,9 +213,12 @@ export default function NoticesPanel({ notices }: NoticesPanelProps) {
                   fontSize: text.sm,
                   color: isInfo ? colors.infoText : colors.warningText,
                   lineHeight: 1.45,
+                  overflow: 'hidden',
+                  overflowWrap: 'anywhere',
+                  wordBreak: 'break-word',
                 }}
               >
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                   <div style={{ fontWeight: 700, marginBottom: space[1] }}>{notice.title}</div>
                   <div>{notice.body}</div>
                   {notice.action && (

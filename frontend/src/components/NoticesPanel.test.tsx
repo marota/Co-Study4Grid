@@ -88,6 +88,28 @@ describe('NoticesPanel', () => {
         expect(list).toHaveStyle({ position: 'fixed' });
     });
 
+    it('wraps long unbreakable strings inside the notice card so they cannot bleed out', async () => {
+        const user = userEvent.setup();
+        render(
+            <NoticesPanel
+                notices={[{
+                    id: 'long-path',
+                    title: 'Action dictionary',
+                    body: <code>feature_actions_from_REPAS.2024.12.10_withPSTs.json</code>,
+                    severity: 'info',
+                }]}
+            />,
+        );
+        await user.click(screen.getByTestId('notices-pill'));
+        const card = screen.getByTestId('notice-long-path');
+        // overflowWrap: anywhere + wordBreak: break-word are what allow
+        // a long filename or path to break inside the 320 px panel
+        // instead of pushing past the card edges.
+        expect(card).toHaveStyle({ overflow: 'hidden' });
+        expect(card).toHaveStyle({ overflowWrap: 'anywhere' });
+        expect(card).toHaveStyle({ wordBreak: 'break-word' });
+    });
+
     it('hides the panel when the underlying notice list becomes empty', async () => {
         const user = userEvent.setup();
         const { rerender } = render(<NoticesPanel notices={baseNotices} />);
