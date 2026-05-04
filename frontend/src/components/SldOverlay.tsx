@@ -825,7 +825,18 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                     <div style={{ display: 'flex', gap: '4px' }}>
                         {(['n', 'n-1', 'action'] as SldTab[]).filter(tabMode => {
                             if (tabMode === 'n-1') return !!n1Diagram;
-                            if (tabMode === 'action') return !!actionDiagram;
+                            // The SLD's "action" sub-tab depends on the
+                            // overlay being scoped to an action — NOT on
+                            // the main-window NAD already being on the
+                            // action variant. The overflow-graph pin
+                            // double-click opens the SLD overlay with
+                            // ``vlOverlay.actionId`` set BEFORE any
+                            // top-level action diagram has been loaded;
+                            // hiding the tab in that case would strand
+                            // the operator on a card-less variant view.
+                            if (tabMode === 'action') {
+                                return !!actionDiagram || !!vlOverlay.actionId;
+                            }
                             return true; // always show N
                         }).map(tabMode => (
                             <button

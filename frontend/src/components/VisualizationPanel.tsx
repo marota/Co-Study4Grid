@@ -11,10 +11,18 @@ import MemoizedSvgContainer from './MemoizedSvgContainer';
 import SldOverlay from './SldOverlay';
 import DetachableTabHost from './DetachableTabHost';
 import ActionOverviewDiagram from './ActionOverviewDiagram';
+import ActionCardPopover from './ActionCardPopover';
 import DiagramLegend from './DiagramLegend';
 import type { DetachedTabsMap } from '../hooks/useDetachedTabs';
 import type { PZInstance } from '../hooks/useTiedTabsSync';
 import { colors } from '../styles/tokens';
+import { interactionLogger } from '../utils/interactionLogger';
+import {
+    decidePopoverPlacement,
+    computePopoverStyle,
+    POPOVER_WIDTH,
+    POPOVER_MAX_HEIGHT,
+} from '../utils/popoverPlacement';
 
 /**
  * Inspect text field + custom suggestions dropdown.
@@ -200,6 +208,20 @@ interface VisualizationPanelProps {
     onOverlaySldTabChange: (tab: SldTab) => void;
     voltageLevels: string[];
     onVlOpen: (vlName: string) => void;
+    /**
+     * Single click on an overflow-graph action pin. Should focus the
+     * feed card for that action (same as clicking an Action-Overview
+     * pin) — NOT switch tabs. Optional so call sites that don't
+     * surface the overflow viewer can omit it.
+     */
+    onOverflowPinPreview?: (actionId: string) => void;
+    /**
+     * Double-click on an action pin in the overflow graph. Routes the
+     * user to the SLD overlay opened on the post-action ('action')
+     * sub-tab for that substation. Optional so call sites that don't
+     * surface the overflow viewer can omit it.
+     */
+    onOverflowPinDoubleClick?: (actionId: string, substation: string) => void;
     networkPath: string;
     layoutPath: string;
     onOpenSettings: (tab?: 'recommender' | 'configurations' | 'paths') => void;
@@ -270,6 +292,20 @@ interface VisualizationPanelProps {
      */
     showVoltageLevelNames?: boolean;
     onToggleVoltageLevelNames?: (show: boolean) => void;
+    /**
+     * Pre-computed pin descriptors posted to the overflow-graph
+     * iframe when `overflowPinsEnabled` is true. Built upstream by
+     * `buildOverflowPinPayload` from `actions`, `monitoringFactor`,
+     * and the VL→substation map. Re-posted whenever the array
+     * reference changes.
+     */
+    overflowPins?: ReadonlyArray<import('../utils/svg/overflowPinPayload').OverflowPin>;
+    /** Toggle state — controlled by App.tsx so it survives tab swaps. */
+    overflowPinsEnabled?: boolean;
+    /** Whether the toggle is allowed to be enabled at all (Step 2 done). */
+    overflowPinsAvailable?: boolean;
+    /** Setter for `overflowPinsEnabled` — wired to interactionLogger. */
+    onOverflowPinsToggle?: (enabled: boolean) => void;
 }
 
 
@@ -306,6 +342,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onOverlaySldTabChange,
     voltageLevels,
     onVlOpen,
+    onOverflowPinPreview,
+    onOverflowPinDoubleClick,
     networkPath,
     layoutPath,
     onOpenSettings,
@@ -338,6 +376,10 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onSimulateUnsimulatedAction,
     showVoltageLevelNames = true,
     onToggleVoltageLevelNames,
+    overflowPins,
+    overflowPinsEnabled = false,
+    overflowPinsAvailable = false,
+    onOverflowPinsToggle,
 }) => {
     // No-op fallbacks so conditional branches don't need to guard.
     const detachTabCb = onDetachTab ?? (() => {});
@@ -365,6 +407,203 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
 
     const hasAnyDiagram = !!(nDiagram?.svg || n1Diagram?.svg || actionDiagram?.svg);
     const showPathWarning = !warningDismissed && !hasAnyDiagram;
+
+    // Iframe + pin overlay wiring. The iframe is same-origin
+    // (localhost:8000), so postMessage is safe. We track readiness via
+    // the `cs4g:overlay-ready` handshake so the very first pin payload
+    // doesn't arrive before the iframe's load event has fired.
+    const overflowIframeRef = React.useRef<HTMLIFrameElement | null>(null);
+    const [overlayReady, setOverlayReady] = React.useState(false);
+    // Popover state — same shape ActionOverviewDiagram uses for its
+    // single-click pin preview, so we can reuse `decidePopoverPlacement`
+    // / `computePopoverStyle` / `ActionCardPopover` verbatim.
+    const [overflowPopoverPin, setOverflowPopoverPin] = React.useState<{
+        id: string;
+        screenX: number;
+        screenY: number;
+        placeAbove: boolean;
+        horizontalAlign: 'start' | 'center' | 'end';
+    } | null>(null);
+    const [overflowPopoverViewport, setOverflowPopoverViewport] = React.useState<{
+        width: number; height: number;
+    } | null>(null);
+    const overflowPopoverRef = React.useRef<HTMLDivElement | null>(null);
+    React.useEffect(() => {
+        // Reset readiness on URL change (a new file means a fresh load).
+        setOverlayReady(false);
+        // A fresh iframe means any old popover is referencing a pin
+        // that no longer exists. Drop it on URL change.
+        setOverflowPopoverPin(null);
+        setOverflowPopoverViewport(null);
+    }, [result?.pdf_url]);
+    React.useEffect(() => {
+        const onMessage = (ev: MessageEvent) => {
+            const msg = ev?.data;
+            if (!msg || typeof msg !== 'object') return;
+            if (msg.type === 'cs4g:overlay-ready') {
+                setOverlayReady(true);
+            } else if (msg.type === 'cs4g:pin-clicked' && typeof msg.actionId === 'string') {
+                // Single click on an overflow pin mirrors the
+                // Action-Overview pin: focus the feed card on the
+                // matching action (`onOverflowPinPreview`) AND show
+                // a floating ActionCardPopover anchored on the pin.
+                // It must NOT call `onActionSelect`, which would
+                // switch the active tab to the action variant diagram
+                // and stop the operator from completing a double-click
+                // drill into the SLD overlay.
+                if (onOverflowPinPreview) onOverflowPinPreview(msg.actionId);
+                interactionLogger.record('overflow_pin_clicked', { actionId: msg.actionId });
+                // The pin's bounding rect is in iframe-screen pixels;
+                // translate to parent-screen pixels by adding the
+                // iframe's own offset so the popover lands on the
+                // correct spot in the parent document.
+                const iframeEl = overflowIframeRef.current;
+                const rect = msg.screenRect;
+                if (iframeEl && rect && typeof rect === 'object') {
+                    const ifRect = iframeEl.getBoundingClientRect();
+                    const cx = ifRect.left + (rect.left ?? 0) + (rect.width ?? 0) / 2;
+                    const cy = ifRect.top + (rect.top ?? 0) + (rect.height ?? 0) / 2;
+                    const viewport = {
+                        width: window.innerWidth,
+                        height: window.innerHeight,
+                    };
+                    const placement = decidePopoverPlacement(cx, cy, viewport);
+                    setOverflowPopoverPin({
+                        id: msg.actionId,
+                        screenX: cx,
+                        screenY: cy,
+                        ...placement,
+                    });
+                    setOverflowPopoverViewport(viewport);
+                }
+            } else if (msg.type === 'cs4g:pin-double-clicked'
+                && typeof msg.actionId === 'string'
+                && typeof msg.substation === 'string') {
+                // Drill into the SLD on the action sub-tab for that
+                // substation. Logging happens in the parent handler so
+                // the event is suppressed when the action is not
+                // actually known to the result.
+                // Double click cancels any open preview popover so the
+                // SLD overlay takes the focus on the way in.
+                setOverflowPopoverPin(null);
+                setOverflowPopoverViewport(null);
+                if (onOverflowPinDoubleClick) {
+                    onOverflowPinDoubleClick(msg.actionId, msg.substation);
+                }
+            } else if (msg.type === 'cs4g:overflow-unsimulated-pin-double-clicked'
+                && typeof msg.actionId === 'string') {
+                // Double-click on an un-simulated overflow pin kicks
+                // off a manual simulation — same path the Action
+                // Overview's renderUnsimulatedPin double-click takes
+                // through ``handleSimulateUnsimulatedAction``. Drop
+                // any popover open over the previous pin first; the
+                // simulation will replace this pin with a real one.
+                setOverflowPopoverPin(null);
+                setOverflowPopoverViewport(null);
+                if (onSimulateUnsimulatedAction) {
+                    onSimulateUnsimulatedAction(msg.actionId);
+                }
+                interactionLogger.record('overview_unsimulated_pin_simulated', {
+                    action_id: msg.actionId,
+                });
+            } else if (msg.type === 'cs4g:overflow-filter-changed'
+                && msg.filters && typeof msg.filters === 'object') {
+                // The iframe sidebar carries a copy of the Action-
+                // Overview filter chips. When the operator changes
+                // one there we forward the new state up so the
+                // parent's shared ``overviewFilters`` (which also
+                // drives the Action Feed and the Action Overview
+                // NAD pins) stays in lock-step with the iframe's UI.
+                if (onOverviewFiltersChange) {
+                    onOverviewFiltersChange(msg.filters);
+                }
+                interactionLogger.record('overview_filter_changed', {
+                    kind: 'overflow_iframe',
+                });
+            } else if (msg.type === 'cs4g:overflow-layer-toggled') {
+                interactionLogger.record('overflow_layer_toggled', {
+                    key: msg.key, label: msg.label, visible: !!msg.visible,
+                });
+            } else if (msg.type === 'cs4g:overflow-select-all-layers') {
+                interactionLogger.record('overflow_select_all_layers', { visible: !!msg.visible });
+            } else if (msg.type === 'cs4g:overflow-node-double-clicked' && typeof msg.name === 'string') {
+                // The overflow graph node double-click opens the SLD
+                // overlay for that voltage level (or substation, depending
+                // on the backend). The parent's `onVlOpen` handler routes
+                // through the same path used by the NAD double-click.
+                if (onVlOpen) onVlOpen(msg.name);
+                interactionLogger.record('overflow_node_double_clicked', { name: msg.name });
+            }
+        };
+        window.addEventListener('message', onMessage);
+        return () => window.removeEventListener('message', onMessage);
+    }, [onVlOpen, onOverflowPinPreview, onOverflowPinDoubleClick,
+        onOverviewFiltersChange, onSimulateUnsimulatedAction]);
+    // Outside-click + Escape dismissal for the overflow pin popover —
+    // mirrors `ActionOverviewDiagram`. Clicks INSIDE the iframe (the
+    // pin itself, the graph background) live in a different document
+    // and don't reach the parent's mousedown handler, so they don't
+    // close the popover. To prevent that the iframe's own background
+    // click is forwarded by the upstream interactive_html clicker
+    // through the existing `cs4g:overflow-node-double-clicked` path
+    // (clicks not on a pin are silently ignored), so the popover
+    // stays open until the user clicks outside the iframe / hits Esc
+    // / clicks the popover's own close button.
+    React.useEffect(() => {
+        if (!overflowPopoverPin) return;
+        const onDocMouseDown = (e: MouseEvent) => {
+            const target = e.target as Node | null;
+            if (overflowPopoverRef.current && target
+                && overflowPopoverRef.current.contains(target)) return;
+            // Clicks ON the iframe itself bubble up to the parent as
+            // an event whose target is the iframe element. Don't close
+            // the popover in that case — the click might be a follow-up
+            // pin click handled separately.
+            if (target instanceof Element
+                && target === overflowIframeRef.current) return;
+            setOverflowPopoverPin(null);
+            setOverflowPopoverViewport(null);
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setOverflowPopoverPin(null);
+                setOverflowPopoverViewport(null);
+            }
+        };
+        document.addEventListener('mousedown', onDocMouseDown);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', onDocMouseDown);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [overflowPopoverPin]);
+
+    React.useEffect(() => {
+        const iframe = overflowIframeRef.current;
+        if (!iframe || !iframe.contentWindow) return;
+        if (!overlayReady) return;
+        iframe.contentWindow.postMessage({
+            type: 'cs4g:pins',
+            visible: !!overflowPinsEnabled,
+            pins: overflowPinsEnabled ? (overflowPins ?? []) : [],
+        }, '*');
+    }, [overlayReady, overflowPinsEnabled, overflowPins]);
+
+    // Broadcast the current Action-Overview filter state into the
+    // iframe whenever it changes (and once at overlay-ready time).
+    // The iframe's sidebar mirrors these chips so a change made on
+    // the Action Overview NAD instantly reflects in the overflow
+    // graph filter panel — and vice versa.
+    React.useEffect(() => {
+        const iframe = overflowIframeRef.current;
+        if (!iframe || !iframe.contentWindow) return;
+        if (!overlayReady) return;
+        if (!overviewFilters) return;
+        iframe.contentWindow.postMessage({
+            type: 'cs4g:filters',
+            filters: overviewFilters,
+        }, '*');
+    }, [overlayReady, overviewFilters]);
 
     const filteredInspectables = useMemo(() => {
         const q = inspectQuery.toUpperCase();
@@ -988,17 +1227,106 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                             Geo
                                         </button>
                                     </div>
+                                    {/* Pin overlay toggle. Only enabled once
+                                        the action analysis is complete (the
+                                        gate is owned by App.tsx through
+                                        `overflowPinsAvailable`). */}
+                                    {onOverflowPinsToggle && (() => {
+                                        const pinsDisabled = !overflowPinsAvailable;
+                                        const tip = pinsDisabled
+                                            ? 'Run "Analyze & Suggest" to compute action pins'
+                                            : (overflowPinsEnabled
+                                                ? 'Hide action pins on the overflow graph'
+                                                : 'Show action pins on the overflow graph');
+                                        return (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const next = !overflowPinsEnabled;
+                                                    onOverflowPinsToggle(next);
+                                                    interactionLogger.record('overflow_pins_toggled', { enabled: next });
+                                                }}
+                                                disabled={pinsDisabled}
+                                                aria-pressed={!!overflowPinsEnabled}
+                                                title={tip}
+                                                data-testid="toggle-overflow-pins"
+                                                style={{
+                                                    background: overflowPinsEnabled ? colors.brandSoft : colors.surface,
+                                                    color: overflowPinsEnabled ? colors.brand : colors.textSecondary,
+                                                    border: `1px solid ${overflowPinsEnabled ? colors.brand : colors.border}`,
+                                                    borderRadius: '4px',
+                                                    padding: '4px 8px',
+                                                    cursor: pinsDisabled ? 'not-allowed' : 'pointer',
+                                                    fontSize: '12px',
+                                                    fontWeight: 600,
+                                                    boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
+                                                    opacity: pinsDisabled ? 0.55 : 1,
+                                                }}
+                                            >
+                                                {'\u{1F4CC} Pins'}
+                                            </button>
+                                        );
+                                    })()}
                                 </div>
                             );
                         })()}
                         {result?.pdf_url ? (
                             <iframe
+                                ref={overflowIframeRef}
                                 src={`http://localhost:8000${result.pdf_url}`}
                                 key={result.pdf_url}
                                 style={{ width: '100%', height: '100%', border: 'none' }}
                                 title="Overflow Graph"
                             />
-                        ) : (
+                        ) : null}
+                        {/* Floating ActionCard popover anchored on the
+                            single-clicked overflow pin. Reuses the
+                            exact same component the Action Overview
+                            uses for its pin preview, so the visual
+                            and interaction contract stays in lock-
+                            step on both surfaces. */}
+                        {result?.pdf_url && overflowPopoverPin && result?.actions?.[overflowPopoverPin.id] && (() => {
+                            const popoverDetails = result.actions[overflowPopoverPin.id];
+                            const keys = Object.keys(result.actions || {});
+                            const popoverIndex = keys.indexOf(overflowPopoverPin.id) + 1;
+                            return (
+                                <ActionCardPopover
+                                    popoverRef={overflowPopoverRef}
+                                    testId="overflow-pin-popover"
+                                    extraDataAttributes={{
+                                        'data-place-above': overflowPopoverPin.placeAbove ? 'true' : 'false',
+                                        'data-horizontal-align': overflowPopoverPin.horizontalAlign,
+                                    }}
+                                    actionId={overflowPopoverPin.id}
+                                    details={popoverDetails}
+                                    index={popoverIndex}
+                                    style={{
+                                        ...computePopoverStyle(overflowPopoverPin, overflowPopoverViewport ?? undefined),
+                                        width: POPOVER_WIDTH,
+                                        maxHeight: POPOVER_MAX_HEIGHT,
+                                        overflowY: 'auto',
+                                    }}
+                                    linesOverloaded={overloadedLinesMemo}
+                                    monitoringFactor={monitoringFactor ?? 1}
+                                    metaIndex={n1MetaIndex ?? null}
+                                    selectedActionIds={selectedActionIds}
+                                    rejectedActionIds={rejectedActionIds}
+                                    onActivateAction={(id) => {
+                                        setOverflowPopoverPin(null);
+                                        setOverflowPopoverViewport(null);
+                                        if (onActionSelect) onActionSelect(id);
+                                    }}
+                                    onActionFavorite={onActionFavorite}
+                                    onActionReject={onActionReject}
+                                    onClose={() => {
+                                        setOverflowPopoverPin(null);
+                                        setOverflowPopoverViewport(null);
+                                    }}
+                                    displayName={displayName}
+                                />
+                            );
+                        })()}
+                        {!result?.pdf_url && (
                             <div style={{
                                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%',
                                 color: analysisLoading ? colors.warningText : colors.textTertiary,

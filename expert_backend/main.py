@@ -17,11 +17,11 @@ from pathlib import Path
 from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from expert_backend.services.network_service import network_service
+from expert_backend.services.overflow_overlay import inject_overlay
 from expert_backend.services.recommender_service import recommender_service
 
 logger = logging.getLogger(__name__)
@@ -187,11 +187,52 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve generated PDFs. 
-# We mount the directory where PDFs are generated.
-# Since the directory name is 'Overflow_Graph', we ensure it exists.
-os.makedirs("Overflow_Graph", exist_ok=True)
-app.mount("/results/pdf", StaticFiles(directory="Overflow_Graph"), name="pdfs")
+# Serve generated overflow-graph artifacts. The directory hosts a mix of
+# legacy *.pdf files and the current default *.html interactive viewer
+# (`config.VISUALIZATION_FORMAT="html"`). HTML responses are
+# post-processed on the fly to splice the Co-Study4Grid action-pin
+# overlay (`overflow_overlay.inject_overlay`) before `</body>` so the
+# upstream alphaDeesp viewer stays a pure dependency we can upgrade.
+# The route name `/results/pdf/...` is kept for backward compatibility
+# with sessions saved under the legacy PDF era — see the field
+# `pdf_url` in `session.json`.
+_OVERFLOW_DIR = (Path(__file__).resolve().parent.parent / "Overflow_Graph").resolve()
+_OVERFLOW_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/results/pdf/{filename:path}")
+def serve_overflow_artifact(filename: str) -> Response:
+    """Serve a generated overflow-graph artifact, post-processing HTML
+    to inject the action-pin overlay.
+
+    Path-traversal guard: the resolved file must be inside
+    `_OVERFLOW_DIR`. Anything outside returns 404 (kept indistinct
+    from "not found" so the response shape doesn't leak info).
+    """
+    candidate = (_OVERFLOW_DIR / filename).resolve()
+    try:
+        candidate.relative_to(_OVERFLOW_DIR)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+
+    suffix = candidate.suffix.lower()
+    if suffix == ".html":
+        try:
+            html = candidate.read_text(encoding="utf-8")
+        except OSError:
+            raise HTTPException(status_code=500, detail="Cannot read overflow file")
+        try:
+            html = inject_overlay(html)
+        except ValueError:
+            # Upstream HTML lacks </body> — serve raw so behaviour stays
+            # functional (the overlay is additive, not a hard requirement).
+            logger.warning("inject_overlay skipped: no </body> in %s", filename)
+        return Response(content=html, media_type="text/html; charset=utf-8")
+
+    # PDF (legacy) and any other file type: stream as-is.
+    return FileResponse(str(candidate))
 
 @app.get("/api/user-config")
 def get_user_config():
@@ -392,6 +433,20 @@ def get_nominal_voltages():
         mapping = network_service.get_nominal_voltages()
         unique_kv = sorted(set(mapping.values()))
         return {"mapping": mapping, "unique_kv": unique_kv}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/voltage-level-substations")
+def get_voltage_level_substations():
+    """Return ``{vl_id: substation_id}`` for all voltage levels.
+
+    Frontend uses this to anchor action-overview pins on the overflow
+    graph: pins reference voltage-level IDs (action targets) but the
+    overflow graph nodes are substation IDs — this map is the bridge.
+    """
+    try:
+        return {"mapping": network_service.get_voltage_level_substations()}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

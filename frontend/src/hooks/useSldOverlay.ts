@@ -14,7 +14,7 @@ export interface SldOverlayState {
     vlOverlay: VlOverlay | null;
     setVlOverlay: (v: VlOverlay | null) => void;
     selectedBranchForSld: MutableRefObject<string>;
-    handleVlDoubleClick: (actionId: string, vlName: string) => void;
+    handleVlDoubleClick: (actionId: string, vlName: string, forceTab?: SldTab) => void;
     handleOverlaySldTabChange: (sldTab: SldTab) => void;
     handleOverlayClose: () => void;
     /**
@@ -121,15 +121,30 @@ export function useSldOverlay(activeTab: TabId, liveSelectedActionId?: string | 
         }
     }, []);
 
-    const handleVlDoubleClick = useCallback((actionId: string, vlName: string) => {
+    const handleVlDoubleClick = useCallback((actionId: string, vlName: string, forceTab?: SldTab) => {
         interactionLogger.record('sld_overlay_opened', { vl_name: vlName, action_id: actionId });
+        // ``forceTab`` lets a caller (e.g. the overflow-graph pin
+        // double-click) jump straight to a specific sub-tab regardless
+        // of the current main-window tab. Without it we infer from
+        // ``activeTab`` so the SLD opens on the matching variant.
+        // When the parent tab is neither 'n' nor 'n-1' (e.g. 'overflow'
+        // or 'overview') we'd previously default to 'action' — but
+        // that strands the user on a "No action selected" placeholder
+        // whenever no actionId is in flight (typical for an overflow-
+        // graph node click that isn't a pin). Fall back to 'n-1' in
+        // that case so the operator sees the contingency state the
+        // overflow graph was built from.
         let initialTab: SldTab;
-        if (activeTab === 'n') {
+        if (forceTab) {
+            initialTab = forceTab;
+        } else if (activeTab === 'n') {
             initialTab = 'n';
         } else if (activeTab === 'n-1') {
             initialTab = 'n-1';
-        } else {
+        } else if (actionId) {
             initialTab = 'action';
+        } else {
+            initialTab = 'n-1';
         }
         setVlOverlay({ vlName, actionId, svg: null, sldMetadata: null, loading: true, error: null, tab: initialTab });
         fetchSldVariant(vlName, actionId, initialTab, selectedBranchForSld.current);

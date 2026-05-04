@@ -66,6 +66,17 @@ export const api = {
         );
         return response.data;
     },
+    /**
+     * Return ``{vl_id: substation_id}`` for every voltage level.
+     * Used to anchor action-overview pins on the overflow graph
+     * (which uses substation names as node identifiers).
+     */
+    getVoltageLevelSubstations: async (): Promise<{ mapping: Record<string, string> }> => {
+        const response = await axios.get<{ mapping: Record<string, string> }>(
+            `${API_BASE_URL}/api/voltage-level-substations`
+        );
+        return response.data;
+    },
     // NOTE: the FastAPI backend always serialises the SVG as a raw
     // XML string, so these axios methods narrow `DiagramData.svg` to
     // `string` at the boundary. The wider `string | SVGSVGElement`

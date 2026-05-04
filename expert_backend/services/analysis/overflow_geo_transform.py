@@ -336,6 +336,34 @@ def transform_html(html: str, layout: Mapping[str, tuple[float, float]]) -> str:
         # node outline rather than the node centre.
         ex, ey = _pull_back(sxn, syn, txn, tyn, node_gap)
 
+        # Tapered (style="tapered") edges represent SWAPPED-FLOW lines
+        # in the upstream graph builder. Graphviz emits them as TWO
+        # ``<polygon>`` children (a long ~21-point body + a 4-point
+        # arrowhead) and NO ``<path>``. The plain loop below would
+        # overwrite BOTH polygons with arrowhead shapes, leaving the
+        # edge with no visible body and no clearly directed arrow.
+        # Special-case the rewrite so the body becomes a tapered
+        # 4-vertex strip (wide at source, narrow at target — same
+        # visual cue as the hierarchical layout) and the second
+        # polygon stays the arrowhead.
+        is_tapered = g.get("data-attr-style") == "tapered"
+        polygons = [c for c in g.iter()
+                    if _local_tag(c) == "polygon"]
+        if is_tapered and polygons:
+            _rewrite_tapered_edge(
+                polygons, sxn, syn, ex, ey,
+                stroke_w=path_stroke,
+                arrow_len=arrow_len,
+                arrow_half=arrow_half,
+            )
+            # Edge labels still need to move to the midpoint of the
+            # new straight line.
+            for child in g.iter():
+                if _local_tag(child) == "text":
+                    child.set("x", _fmt((sxn + ex) / 2))
+                    child.set("y", _fmt((syn + ey) / 2))
+            continue
+
         for child in g.iter():
             tag = _local_tag(child)
             if tag == "path":
@@ -431,6 +459,74 @@ def _reanchor_graph_transform(svg_root, new_h: float) -> None:
             t = f"{t} {new_translate}".strip()
         g.set("transform", t)
         return
+
+
+def _tapered_strip_points(sx: float, sy: float, ex: float, ey: float,
+                          width_src: float, width_tgt: float) -> str:
+    """Return the ``points`` attribute for a 4-vertex polygon shaped
+    like a tapered strip — wide at (sx, sy), narrow at (ex, ey).
+
+    Graphviz uses ``style="tapered"`` to mark **swapped-flow** edges
+    in the upstream overflow graph: the line itself is a filled
+    polygon whose width tapers from source to target. The
+    hierarchical layout's tapered polygon has ~20 points hugging the
+    spline; for the geo redraw a simple 4-vertex strip along the
+    straight (sx,sy)→(ex,ey) segment carries the same visual
+    semantic without any spline math.
+    """
+    dx, dy = ex - sx, ey - sy
+    length = math.hypot(dx, dy)
+    if length == 0:
+        return f"{_fmt(sx)},{_fmt(sy)} {_fmt(ex)},{_fmt(ey)}"
+    ux, uy = dx / length, dy / length
+    # Perpendicular unit vector (rotated 90° CCW).
+    px, py = -uy, ux
+    hs = width_src / 2.0
+    ht = width_tgt / 2.0
+    return (
+        f"{_fmt(sx + px * hs)},{_fmt(sy + py * hs)} "
+        f"{_fmt(ex + px * ht)},{_fmt(ey + py * ht)} "
+        f"{_fmt(ex - px * ht)},{_fmt(ey - py * ht)} "
+        f"{_fmt(sx - px * hs)},{_fmt(sy - py * hs)}"
+    )
+
+
+def _rewrite_tapered_edge(polygons: list, sx: float, sy: float,
+                          ex: float, ey: float,
+                          stroke_w: float,
+                          arrow_len: float,
+                          arrow_half: float) -> None:
+    """Rewrite a tapered edge's polygons in place.
+
+    The hierarchical SVG emits two polygons per tapered edge:
+      1. a long filled body (the tapered strip itself);
+      2. a short triangular arrowhead at the target.
+
+    Both are rewritten — the body becomes a 4-vertex tapered strip
+    along the new straight segment, and the arrowhead retains its
+    triangle shape pointing at the target node. ``stroke-width`` is
+    zeroed because graphviz inherits a heavy stroke onto these
+    polygons that would otherwise turn the tapered fill into a chunky
+    blob in the geo viewBox.
+    """
+    body = polygons[0]
+    body.set(
+        "points",
+        _tapered_strip_points(
+            sx, sy, ex, ey,
+            width_src=max(stroke_w, 4.0),
+            width_tgt=max(stroke_w * 0.25, 1.0),
+        ),
+    )
+    body.set("stroke-width", "0")
+    if len(polygons) >= 2:
+        arrow = polygons[1]
+        arrow.set(
+            "points",
+            _arrowhead_points(sx, sy, ex, ey,
+                              arrow_len=arrow_len, arrow_half=arrow_half),
+        )
+        arrow.set("stroke-width", "0")
 
 
 def _arrowhead_points(sx: float, sy: float, ex: float, ey: float,
