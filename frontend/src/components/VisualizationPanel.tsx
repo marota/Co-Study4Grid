@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
-import React, { useState, useMemo, useRef, type RefObject } from 'react';
+import React, { useState, useMemo, type RefObject } from 'react';
 import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab, MetadataIndex, ActionOverviewFilters, UnsimulatedActionScoreInfo } from '../types';
 import MemoizedSvgContainer from './MemoizedSvgContainer';
 import SldOverlay from './SldOverlay';
@@ -13,132 +13,18 @@ import DetachableTabHost from './DetachableTabHost';
 import ActionOverviewDiagram from './ActionOverviewDiagram';
 import ActionCardPopover from './ActionCardPopover';
 import DiagramLegend from './DiagramLegend';
+import InspectSearchField from './InspectSearchField';
+import DetachedPlaceholder from './DetachedPlaceholder';
 import type { DetachedTabsMap } from '../hooks/useDetachedTabs';
 import type { PZInstance } from '../hooks/useTiedTabsSync';
+import { useOverflowIframe } from '../hooks/useOverflowIframe';
 import { colors } from '../styles/tokens';
 import { interactionLogger } from '../utils/interactionLogger';
 import {
-    decidePopoverPlacement,
     computePopoverStyle,
     POPOVER_WIDTH,
     POPOVER_MAX_HEIGHT,
 } from '../utils/popoverPlacement';
-
-/**
- * Inspect text field + custom suggestions dropdown.
- *
- * This replaces a native <input list=...> + <datalist> pair. The
- * native datalist is unreliable when its owning subtree is physically
- * relocated between documents via DetachableTabHost — Chromium in
- * particular has been observed to show the dropdown in the wrong
- * window (or not at all in the window being typed into) when a tied
- * detached tab shares the same `inspectQuery` state with the main
- * window's active tab overlay.
- *
- * By rendering the suggestion list ourselves, as a plain
- * absolutely-positioned div sibling of the input, the dropdown is
- * guaranteed to live in the same DOM subtree as the input it belongs
- * to, in whichever window that subtree happens to be. It therefore
- * renders reliably whether the overlay sits in the main window or in
- * a detached popup, regardless of the tied state.
- */
-const InspectSearchField: React.FC<{
-    tabId: TabId;
-    inspectQuery: string;
-    onChangeQuery: (tab: TabId, q: string) => void;
-    filteredInspectables: string[];
-}> = ({ tabId, inspectQuery, onChangeQuery, filteredInspectables }) => {
-    const [focused, setFocused] = useState(false);
-    // Keep the dropdown visible long enough for an option click to
-    // register before onBlur hides it (click fires after blur).
-    const closeTimer = useRef<number | null>(null);
-
-    // Hide the dropdown after a matched commit so the user isn't left
-    // with a hovering suggestion panel while zoomed in on the asset.
-    const exactMatch = inspectQuery.length > 0
-        && filteredInspectables.some(v => v.toUpperCase() === inspectQuery.toUpperCase());
-    const showDropdown = focused && inspectQuery.length > 0 && filteredInspectables.length > 0 && !exactMatch;
-
-    return (
-        <div style={{ position: 'relative' }}>
-            <input
-                value={inspectQuery}
-                onChange={e => onChangeQuery(tabId, e.target.value)}
-                onFocus={() => {
-                    if (closeTimer.current !== null) {
-                        window.clearTimeout(closeTimer.current);
-                        closeTimer.current = null;
-                    }
-                    setFocused(true);
-                }}
-                onBlur={() => {
-                    // Defer the hide so onMouseDown on an option can
-                    // complete and fire its onClick before the
-                    // dropdown unmounts.
-                    closeTimer.current = window.setTimeout(() => {
-                        setFocused(false);
-                        closeTimer.current = null;
-                    }, 150);
-                }}
-                placeholder="🔍 Inspect..."
-                style={{
-                    padding: '5px 10px',
-                    border: inspectQuery ? `2px solid ${colors.brand}` : `1px solid ${colors.border}`,
-                    borderRadius: '4px',
-                    fontSize: '12px',
-                    width: '180px',
-                    boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
-                    background: 'white',
-                }}
-            />
-            {showDropdown && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        bottom: '100%',
-                        left: 0,
-                        marginBottom: '4px',
-                        width: '220px',
-                        maxHeight: '220px',
-                        overflowY: 'auto',
-                        background: 'white',
-                        border: `1px solid ${colors.brand}`,
-                        borderRadius: '4px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
-                        zIndex: 200,
-                        fontSize: '12px',
-                    }}
-                >
-                    {filteredInspectables.map(item => (
-                        <div
-                            key={item}
-                            // Use onMouseDown (fires before the
-                            // input's onBlur) so the selection is
-                            // recorded even though the blur is about
-                            // to hide us.
-                            onMouseDown={e => {
-                                e.preventDefault();
-                                onChangeQuery(tabId, item);
-                            }}
-                            style={{
-                                padding: '5px 10px',
-                                cursor: 'pointer',
-                                borderBottom: `1px solid ${colors.borderSubtle}`,
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                            }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = colors.brandSoft; }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = 'white'; }}
-                        >
-                            {item}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
 
 // Module-level stable references so React.memo children don't
 // break referential equality on every parent render.
@@ -408,202 +294,27 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     const hasAnyDiagram = !!(nDiagram?.svg || n1Diagram?.svg || actionDiagram?.svg);
     const showPathWarning = !warningDismissed && !hasAnyDiagram;
 
-    // Iframe + pin overlay wiring. The iframe is same-origin
-    // (localhost:8000), so postMessage is safe. We track readiness via
-    // the `cs4g:overlay-ready` handshake so the very first pin payload
-    // doesn't arrive before the iframe's load event has fired.
-    const overflowIframeRef = React.useRef<HTMLIFrameElement | null>(null);
-    const [overlayReady, setOverlayReady] = React.useState(false);
-    // Popover state — same shape ActionOverviewDiagram uses for its
-    // single-click pin preview, so we can reuse `decidePopoverPlacement`
-    // / `computePopoverStyle` / `ActionCardPopover` verbatim.
-    const [overflowPopoverPin, setOverflowPopoverPin] = React.useState<{
-        id: string;
-        screenX: number;
-        screenY: number;
-        placeAbove: boolean;
-        horizontalAlign: 'start' | 'center' | 'end';
-    } | null>(null);
-    const [overflowPopoverViewport, setOverflowPopoverViewport] = React.useState<{
-        width: number; height: number;
-    } | null>(null);
-    const overflowPopoverRef = React.useRef<HTMLDivElement | null>(null);
-    React.useEffect(() => {
-        // Reset readiness on URL change (a new file means a fresh load).
-        setOverlayReady(false);
-        // A fresh iframe means any old popover is referencing a pin
-        // that no longer exists. Drop it on URL change.
-        setOverflowPopoverPin(null);
-        setOverflowPopoverViewport(null);
-    }, [result?.pdf_url]);
-    React.useEffect(() => {
-        const onMessage = (ev: MessageEvent) => {
-            const msg = ev?.data;
-            if (!msg || typeof msg !== 'object') return;
-            if (msg.type === 'cs4g:overlay-ready') {
-                setOverlayReady(true);
-            } else if (msg.type === 'cs4g:pin-clicked' && typeof msg.actionId === 'string') {
-                // Single click on an overflow pin mirrors the
-                // Action-Overview pin: focus the feed card on the
-                // matching action (`onOverflowPinPreview`) AND show
-                // a floating ActionCardPopover anchored on the pin.
-                // It must NOT call `onActionSelect`, which would
-                // switch the active tab to the action variant diagram
-                // and stop the operator from completing a double-click
-                // drill into the SLD overlay.
-                if (onOverflowPinPreview) onOverflowPinPreview(msg.actionId);
-                interactionLogger.record('overflow_pin_clicked', { actionId: msg.actionId });
-                // The pin's bounding rect is in iframe-screen pixels;
-                // translate to parent-screen pixels by adding the
-                // iframe's own offset so the popover lands on the
-                // correct spot in the parent document.
-                const iframeEl = overflowIframeRef.current;
-                const rect = msg.screenRect;
-                if (iframeEl && rect && typeof rect === 'object') {
-                    const ifRect = iframeEl.getBoundingClientRect();
-                    const cx = ifRect.left + (rect.left ?? 0) + (rect.width ?? 0) / 2;
-                    const cy = ifRect.top + (rect.top ?? 0) + (rect.height ?? 0) / 2;
-                    const viewport = {
-                        width: window.innerWidth,
-                        height: window.innerHeight,
-                    };
-                    const placement = decidePopoverPlacement(cx, cy, viewport);
-                    setOverflowPopoverPin({
-                        id: msg.actionId,
-                        screenX: cx,
-                        screenY: cy,
-                        ...placement,
-                    });
-                    setOverflowPopoverViewport(viewport);
-                }
-            } else if (msg.type === 'cs4g:pin-double-clicked'
-                && typeof msg.actionId === 'string'
-                && typeof msg.substation === 'string') {
-                // Drill into the SLD on the action sub-tab for that
-                // substation. Logging happens in the parent handler so
-                // the event is suppressed when the action is not
-                // actually known to the result.
-                // Double click cancels any open preview popover so the
-                // SLD overlay takes the focus on the way in.
-                setOverflowPopoverPin(null);
-                setOverflowPopoverViewport(null);
-                if (onOverflowPinDoubleClick) {
-                    onOverflowPinDoubleClick(msg.actionId, msg.substation);
-                }
-            } else if (msg.type === 'cs4g:overflow-unsimulated-pin-double-clicked'
-                && typeof msg.actionId === 'string') {
-                // Double-click on an un-simulated overflow pin kicks
-                // off a manual simulation — same path the Action
-                // Overview's renderUnsimulatedPin double-click takes
-                // through ``handleSimulateUnsimulatedAction``. Drop
-                // any popover open over the previous pin first; the
-                // simulation will replace this pin with a real one.
-                setOverflowPopoverPin(null);
-                setOverflowPopoverViewport(null);
-                if (onSimulateUnsimulatedAction) {
-                    onSimulateUnsimulatedAction(msg.actionId);
-                }
-                interactionLogger.record('overview_unsimulated_pin_simulated', {
-                    action_id: msg.actionId,
-                });
-            } else if (msg.type === 'cs4g:overflow-filter-changed'
-                && msg.filters && typeof msg.filters === 'object') {
-                // The iframe sidebar carries a copy of the Action-
-                // Overview filter chips. When the operator changes
-                // one there we forward the new state up so the
-                // parent's shared ``overviewFilters`` (which also
-                // drives the Action Feed and the Action Overview
-                // NAD pins) stays in lock-step with the iframe's UI.
-                if (onOverviewFiltersChange) {
-                    onOverviewFiltersChange(msg.filters);
-                }
-                interactionLogger.record('overview_filter_changed', {
-                    kind: 'overflow_iframe',
-                });
-            } else if (msg.type === 'cs4g:overflow-layer-toggled') {
-                interactionLogger.record('overflow_layer_toggled', {
-                    key: msg.key, label: msg.label, visible: !!msg.visible,
-                });
-            } else if (msg.type === 'cs4g:overflow-select-all-layers') {
-                interactionLogger.record('overflow_select_all_layers', { visible: !!msg.visible });
-            } else if (msg.type === 'cs4g:overflow-node-double-clicked' && typeof msg.name === 'string') {
-                // The overflow graph node double-click opens the SLD
-                // overlay for that voltage level (or substation, depending
-                // on the backend). The parent's `onVlOpen` handler routes
-                // through the same path used by the NAD double-click.
-                if (onVlOpen) onVlOpen(msg.name);
-                interactionLogger.record('overflow_node_double_clicked', { name: msg.name });
-            }
-        };
-        window.addEventListener('message', onMessage);
-        return () => window.removeEventListener('message', onMessage);
-    }, [onVlOpen, onOverflowPinPreview, onOverflowPinDoubleClick,
-        onOverviewFiltersChange, onSimulateUnsimulatedAction]);
-    // Outside-click + Escape dismissal for the overflow pin popover —
-    // mirrors `ActionOverviewDiagram`. Clicks INSIDE the iframe (the
-    // pin itself, the graph background) live in a different document
-    // and don't reach the parent's mousedown handler, so they don't
-    // close the popover. To prevent that the iframe's own background
-    // click is forwarded by the upstream interactive_html clicker
-    // through the existing `cs4g:overflow-node-double-clicked` path
-    // (clicks not on a pin are silently ignored), so the popover
-    // stays open until the user clicks outside the iframe / hits Esc
-    // / clicks the popover's own close button.
-    React.useEffect(() => {
-        if (!overflowPopoverPin) return;
-        const onDocMouseDown = (e: MouseEvent) => {
-            const target = e.target as Node | null;
-            if (overflowPopoverRef.current && target
-                && overflowPopoverRef.current.contains(target)) return;
-            // Clicks ON the iframe itself bubble up to the parent as
-            // an event whose target is the iframe element. Don't close
-            // the popover in that case — the click might be a follow-up
-            // pin click handled separately.
-            if (target instanceof Element
-                && target === overflowIframeRef.current) return;
-            setOverflowPopoverPin(null);
-            setOverflowPopoverViewport(null);
-        };
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                setOverflowPopoverPin(null);
-                setOverflowPopoverViewport(null);
-            }
-        };
-        document.addEventListener('mousedown', onDocMouseDown);
-        document.addEventListener('keydown', onKey);
-        return () => {
-            document.removeEventListener('mousedown', onDocMouseDown);
-            document.removeEventListener('keydown', onKey);
-        };
-    }, [overflowPopoverPin]);
-
-    React.useEffect(() => {
-        const iframe = overflowIframeRef.current;
-        if (!iframe || !iframe.contentWindow) return;
-        if (!overlayReady) return;
-        iframe.contentWindow.postMessage({
-            type: 'cs4g:pins',
-            visible: !!overflowPinsEnabled,
-            pins: overflowPinsEnabled ? (overflowPins ?? []) : [],
-        }, '*');
-    }, [overlayReady, overflowPinsEnabled, overflowPins]);
-
-    // Broadcast the current Action-Overview filter state into the
-    // iframe whenever it changes (and once at overlay-ready time).
-    // The iframe's sidebar mirrors these chips so a change made on
-    // the Action Overview NAD instantly reflects in the overflow
-    // graph filter panel — and vice versa.
-    React.useEffect(() => {
-        const iframe = overflowIframeRef.current;
-        if (!iframe || !iframe.contentWindow) return;
-        if (!overlayReady) return;
-        if (!overviewFilters) return;
-        iframe.contentWindow.postMessage({
-            type: 'cs4g:filters',
-            filters: overviewFilters,
-        }, '*');
-    }, [overlayReady, overviewFilters]);
+    // Overflow-graph iframe ↔ parent-window plumbing (handshake,
+    // pin / filter / node messages, popover state with outside-click
+    // dismissal, pin & filter broadcasts). See useOverflowIframe.
+    const {
+        overflowIframeRef,
+        overflowPopoverRef,
+        overflowPopoverPin,
+        setOverflowPopoverPin,
+        overflowPopoverViewport,
+        setOverflowPopoverViewport,
+    } = useOverflowIframe({
+        pdfUrl: result?.pdf_url,
+        overflowPinsEnabled,
+        overflowPins,
+        overviewFilters,
+        onOverflowPinPreview,
+        onOverflowPinDoubleClick,
+        onSimulateUnsimulatedAction,
+        onOverviewFiltersChange,
+        onVlOpen,
+    });
 
     const filteredInspectables = useMemo(() => {
         const q = inspectQuery.toUpperCase();
@@ -881,36 +592,13 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     // content. The tab's DOM lives in a popup — we show a friendly
     // "click to focus" indicator so the main-window user can find it.
     const renderDetachedPlaceholder = (tabId: TabId, label: string, accentColor: string) => (
-        <div style={{
-            position: 'absolute', inset: 0,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: '12px', background: colors.surfaceMuted, color: colors.textSecondary, fontSize: '13px',
-        }}>
-            <div style={{ fontSize: '32px', color: accentColor }}>{'\u21D7'}</div>
-            <div style={{ fontWeight: 600 }}>"{label}" is open in a separate window</div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                    onClick={() => focusDetachedTabCb(tabId)}
-                    style={{
-                        border: `1px solid ${accentColor}`, background: 'white', color: accentColor,
-                        borderRadius: '4px', padding: '6px 14px', fontSize: '12px',
-                        fontWeight: 600, cursor: 'pointer',
-                    }}
-                >
-                    Focus window
-                </button>
-                <button
-                    onClick={() => reattachTabCb(tabId)}
-                    style={{
-                        border: `1px solid ${colors.border}`, background: colors.surfaceMuted, color: colors.textSecondary,
-                        borderRadius: '4px', padding: '6px 14px', fontSize: '12px',
-                        fontWeight: 600, cursor: 'pointer',
-                    }}
-                >
-                    Reattach
-                </button>
-            </div>
-        </div>
+        <DetachedPlaceholder
+            tabId={tabId}
+            label={label}
+            accentColor={accentColor}
+            onFocusDetachedTab={focusDetachedTabCb}
+            onReattachTab={reattachTabCb}
+        />
     );
 
     return (
