@@ -18,7 +18,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "ExpertOp4Grid>=0.2.8",
+    "ExpertOp4Grid>=0.3.2.post1",
     # Pinned below 1.15 until the test baseline
     # (`expert_backend/tests/baseline_scenario.json`) is regenerated with
     # the newer solver. pypowsybl 1.15.0 shifts both P (~±2.6 MW) and Q
