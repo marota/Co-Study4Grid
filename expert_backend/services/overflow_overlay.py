@@ -738,96 +738,110 @@ def _build_overlay_block() -> str:
     }}
 
     let drawn = 0;
+    const svgNs = 'http://www.w3.org/2000/svg';
 
     // Render combined-pin dashed connectors first so the unitary
-    // pins draw on top of the curve at its endpoints.
+    // pins draw on top of the curve at its endpoints. Each iteration
+    // is wrapped in try/catch so a single malformed combined pin
+    // can't abort the whole render — the unitary loop below MUST
+    // always run, otherwise selecting a combined action would
+    // silently erase every pin from the graph.
     for (const cp of combined) {{
-      const p1 = positions.get(cp.action1Id);
-      const p2 = positions.get(cp.action2Id);
-      if (!p1 || !p2) continue;
-      const {{ ctrlX, ctrlY, midX, midY }} = combinedCurveMidpoint(p1, p2, 0.3);
-      const stroke = SEVERITY_FILL[cp.severity] || SEVERITY_FILL.grey;
-      const sw = Math.max(2, baseR * 0.18);
+      try {{
+        const p1 = positions.get(cp.action1Id);
+        const p2 = positions.get(cp.action2Id);
+        if (!p1 || !p2) continue;
+        const mid = combinedCurveMidpoint(p1, p2, 0.3);
+        const stroke = SEVERITY_FILL[cp.severity] || SEVERITY_FILL.grey;
+        const sw = Math.max(2, baseR * 0.18);
 
-      const svgNs = 'http://www.w3.org/2000/svg';
-      const curve = document.createElementNS(svgNs, 'path');
-      curve.setAttribute('class', 'cs4g-overflow-combined-curve');
-      curve.setAttribute('d',
-        'M ' + p1.x + ' ' + p1.y +
-        ' Q ' + ctrlX + ' ' + ctrlY +
-        ' ' + p2.x + ' ' + p2.y);
-      curve.setAttribute('fill', 'none');
-      curve.setAttribute('stroke', stroke);
-      curve.setAttribute('stroke-width', String(sw));
-      curve.setAttribute('stroke-dasharray', String(sw * 2.5) + ' ' + String(sw * 1.5));
-      curve.setAttribute('stroke-linecap', 'round');
-      curve.setAttribute('pointer-events', 'none');
-      curve.setAttribute('opacity', '0.85');
-      layer.appendChild(curve);
+        const curve = document.createElementNS(svgNs, 'path');
+        curve.setAttribute('class', 'cs4g-overflow-combined-curve');
+        curve.setAttribute('d',
+          'M ' + p1.x + ' ' + p1.y +
+          ' Q ' + mid.ctrlX + ' ' + mid.ctrlY +
+          ' ' + p2.x + ' ' + p2.y);
+        curve.setAttribute('fill', 'none');
+        curve.setAttribute('stroke', stroke);
+        curve.setAttribute('stroke-width', String(sw));
+        curve.setAttribute('stroke-dasharray', String(sw * 2.5) + ' ' + String(sw * 1.5));
+        curve.setAttribute('stroke-linecap', 'round');
+        curve.setAttribute('pointer-events', 'none');
+        curve.setAttribute('opacity', '0.85');
+        layer.appendChild(curve);
 
-      // Combined pin sits at the curve midpoint. Wrap as a normal
-      // pin descriptor so ``buildPin`` reuses the click / dblclick
-      // semantics — the parent receives ``cs4g:pin-clicked`` /
-      // ``cs4g:pin-double-clicked`` keyed on the pair id.
-      const pinDesc = {{
-        actionId: cp.actionId,
-        substation: cp.substation || '',
-        label: cp.label,
-        severity: cp.severity,
-        title: cp.title || cp.actionId,
-        isSelected: !!cp.isSelected,
-        isRejected: !!cp.isRejected,
-      }};
-      const g = buildPin(pinDesc, {{ x: midX, y: midY }}, layer);
-      g.setAttribute('data-combined-pair', '1');
+        // Combined pin sits at the curve midpoint. Wrap as a normal
+        // pin descriptor so ``buildPin`` reuses the click / dblclick
+        // semantics — the parent receives ``cs4g:pin-clicked`` /
+        // ``cs4g:pin-double-clicked`` keyed on the pair id.
+        const pinDesc = {{
+          actionId: cp.actionId,
+          substation: cp.substation || '',
+          label: cp.label,
+          severity: cp.severity,
+          title: cp.title || cp.actionId,
+          isSelected: !!cp.isSelected,
+          isRejected: !!cp.isRejected,
+        }};
+        const g = buildPin(pinDesc, {{ x: mid.midX, y: mid.midY }}, layer);
+        g.setAttribute('data-combined-pair', '1');
 
-      // "+" badge on top of the body, mirroring renderCombinedPin
-      // in ``actionPinRender.ts``.
-      const r = baseR;
-      const tail = r * 0.9;
-      const badgeCy = -r - tail - r * 0.95;
-      const body = g.querySelector('.cs4g-pin-body') || g;
-      const badge = document.createElementNS(svgNs, 'circle');
-      badge.setAttribute('cx', '0');
-      badge.setAttribute('cy', String(badgeCy));
-      badge.setAttribute('r', String(r * 0.35));
-      badge.setAttribute('fill', stroke);
-      badge.setAttribute('stroke', 'white');
-      badge.setAttribute('stroke-width', String(r * 0.06));
-      badge.setAttribute('pointer-events', 'none');
-      body.appendChild(badge);
-      const plus = document.createElementNS(svgNs, 'text');
-      plus.setAttribute('x', '0');
-      plus.setAttribute('y', String(badgeCy));
-      plus.setAttribute('text-anchor', 'middle');
-      plus.setAttribute('dominant-baseline', 'central');
-      plus.setAttribute('font-size', String(r * 0.5));
-      plus.setAttribute('font-weight', '900');
-      plus.setAttribute('font-family', 'system-ui, -apple-system, Arial, sans-serif');
-      plus.setAttribute('fill', 'white');
-      plus.setAttribute('pointer-events', 'none');
-      plus.textContent = '+';
-      body.appendChild(plus);
+        // "+" badge on top of the body, mirroring renderCombinedPin
+        // in ``actionPinRender.ts``. Falls back to appending on the
+        // group itself when ``createPinGlyph`` doesn't expose a
+        // ``.cs4g-pin-body`` inner group.
+        const r = baseR;
+        const tail = r * 0.9;
+        const badgeCy = -r - tail - r * 0.95;
+        const body = g.querySelector('.cs4g-pin-body') || g;
+        const badge = document.createElementNS(svgNs, 'circle');
+        badge.setAttribute('cx', '0');
+        badge.setAttribute('cy', String(badgeCy));
+        badge.setAttribute('r', String(r * 0.35));
+        badge.setAttribute('fill', stroke);
+        badge.setAttribute('stroke', 'white');
+        badge.setAttribute('stroke-width', String(r * 0.06));
+        badge.setAttribute('pointer-events', 'none');
+        body.appendChild(badge);
+        const plus = document.createElementNS(svgNs, 'text');
+        plus.setAttribute('x', '0');
+        plus.setAttribute('y', String(badgeCy));
+        plus.setAttribute('text-anchor', 'middle');
+        plus.setAttribute('dominant-baseline', 'central');
+        plus.setAttribute('font-size', String(r * 0.5));
+        plus.setAttribute('font-weight', '900');
+        plus.setAttribute('font-family', 'system-ui, -apple-system, Arial, sans-serif');
+        plus.setAttribute('fill', 'white');
+        plus.setAttribute('pointer-events', 'none');
+        plus.textContent = '+';
+        body.appendChild(plus);
 
-      layer.appendChild(g);
-      drawn += 1;
+        layer.appendChild(g);
+        drawn += 1;
+      }} catch (e) {{
+        // Combined-pin rendering must never block unitary pins.
+      }}
     }}
 
     // Render unitary pins. Constituents of any combined pair are
-    // dimmed so the combined pin reads as the primary actor.
+    // dimmed so the combined glyph reads as the primary actor.
     for (const pin of unitary) {{
-      const centre = positions.get(pin.actionId);
-      if (!centre) continue;
-      const g = buildPin(pin, centre, layer);
-      if (dimmedConstituents.has(pin.actionId) && !pin.unsimulated) {{
-        // Lighter than full opacity but visibly heavier than the
-        // un-simulated 0.5 dim — mirrors the "context" feel the
-        // Action Overview applies to combined-pin constituents.
-        g.setAttribute('opacity', '0.55');
-        g.setAttribute('data-combined-constituent', '1');
+      try {{
+        const centre = positions.get(pin.actionId);
+        if (!centre) continue;
+        const g = buildPin(pin, centre, layer);
+        if (dimmedConstituents.has(pin.actionId) && !pin.unsimulated) {{
+          // Lighter than full opacity but visibly heavier than the
+          // un-simulated 0.5 dim — mirrors the "context" feel the
+          // Action Overview applies to combined-pin constituents.
+          g.setAttribute('opacity', '0.55');
+          g.setAttribute('data-combined-constituent', '1');
+        }}
+        layer.appendChild(g);
+        drawn += 1;
+      }} catch (e) {{
+        // Skip the offending pin and keep rendering the rest.
       }}
-      layer.appendChild(g);
-      drawn += 1;
     }}
 
     updatePinCounter(drawn);
