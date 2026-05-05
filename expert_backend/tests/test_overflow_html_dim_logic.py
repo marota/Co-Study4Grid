@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Set
 
 import networkx as nx
@@ -444,10 +445,19 @@ class TestSmallGridOverflowGraphLayers:
     capture the user-reported bug class — extras nodes leaking into
     the constrained-path layer and missing hub auto-flags."""
 
-    HTML_PATH = (
-        "/home/marotant/dev/AntiGravity/ExpertAssist/Overflow_Graph/"
-        "Overflow_Graph_P.SAOL31RONCI_chronic_grid.xiidm_"
-        "timestep_9_hierarchi_only_signif_edges_no_consoli.html"
+    # Resolve relative to the project root so the test works on any
+    # checkout (CI, dev machine, container) — not just the original
+    # author's home dir.  Test file lives at
+    # ``<root>/expert_backend/tests/test_overflow_html_dim_logic.py``,
+    # so the project root is two parents above this file.
+    PROJECT_ROOT = Path(__file__).resolve().parents[2]
+    HTML_PATH = str(
+        PROJECT_ROOT
+        / "Overflow_Graph"
+        / (
+            "Overflow_Graph_P.SAOL31RONCI_chronic_grid.xiidm_"
+            "timestep_9_hierarchi_only_signif_edges_no_consoli.html"
+        )
     )
 
     def _load_model(self):
@@ -567,7 +577,10 @@ class TestSmallGridOverflowGraphLayers:
         than its own ``<title>`` says. After the fix, every SVG edge's
         title and data-* attributes must agree."""
         import html as _html_mod
-        with open(self.HTML_PATH) as f:
+        import os
+        if not os.path.isfile(self.HTML_PATH):
+            pytest.skip(f"Generated HTML not present: {self.HTML_PATH}")
+        with open(self.HTML_PATH, "r", encoding="utf-8") as f:
             html = f.read()
         svg_block = re.search(r"<svg[^>]*>.*?</svg>", html, re.S).group(0)
         edge_blocks = re.findall(
