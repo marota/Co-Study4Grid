@@ -72,6 +72,17 @@ def _build_full_layer_graph() -> OverFlowGraph:
     g.add_node("RC_B",  shape="oval")
     g.add_node("NR_A",  shape="oval")  # non-reconnectable
     g.add_node("NR_B",  shape="oval")
+    # Prod / load / quiet nodes — carry the same prod_or_load + value
+    # attributes upstream `build_nodes` assigns. The viewer layers
+    # filter on these.
+    g.add_node("PROD_BIG",  shape="oval", prod_or_load="prod", value="42.0",
+               style="filled", fillcolor="coral")
+    g.add_node("LOAD_BIG",  shape="oval", prod_or_load="load", value="-30.0",
+               style="filled", fillcolor="lightblue")
+    g.add_node("LOAD_TINY", shape="oval", prod_or_load="load", value="0.4",
+               style="filled", fillcolor="#ffffed")  # below 1 MW floor
+    g.add_node("LOAD_ZERO", shape="oval", prod_or_load="load", value="0.0",
+               style="filled", fillcolor="#ffffed")  # exact zero balance
 
     # Overload (black) — also part of constrained path
     g.add_edge("OVL_A", "OVL_B", name="L_OVL", color="black", label="100")
@@ -230,6 +241,51 @@ class TestLayerMembershipsFromSourceFlags:
             assert edges_by_id[eid]["attrs"].get("style", "").lower() == "dotted"
         names = {edges_by_id[eid]["attrs"].get("name") for eid in layer["edges"]}
         assert names == {"L_NRECO"}
+
+
+class TestProdLoadValueLayers:
+    """Coverage for the value-based ``node:prod`` / ``node:load`` layers
+    introduced alongside the ``prod_or_load`` attribute upstream
+    ``build_nodes`` writes on every node.
+
+    Contract:
+
+    * Only nodes whose ``prod_or_load`` matches the layer kind AND
+      whose ``abs(value)`` is at least 1 MW count — the white-coloured
+      zero-balance nodes (``prod_or_load='load'`` with ``value='0.0'``)
+      must NOT leak into the Consumption layer.
+    * Both layers live in the *Individual entities properties* section
+      so they group with Hubs / Overloads / Reconnectable in the
+      viewer's sidebar.
+    """
+
+    def test_production_layer_contains_only_prod_nodes_above_floor(self):
+        _, model = _build_html_and_model()
+        layer = _layers_by_key(model).get("node:prod")
+        assert layer is not None, "node:prod layer missing"
+        assert set(layer["nodes"]) == {"PROD_BIG"}
+        assert layer["edges"] == []
+
+    def test_consumption_layer_excludes_zero_balance_and_subfloor_nodes(self):
+        _, model = _build_html_and_model()
+        layer = _layers_by_key(model).get("node:load")
+        assert layer is not None, "node:load layer missing"
+        # LOAD_BIG passes the floor; LOAD_TINY (0.4 MW) and LOAD_ZERO
+        # (0.0 MW) are filtered out by the 1 MW threshold.
+        node_set = set(layer["nodes"])
+        assert "LOAD_BIG" in node_set
+        assert "LOAD_TINY" not in node_set
+        assert "LOAD_ZERO" not in node_set
+        # Prod nodes never bleed into the load layer.
+        assert "PROD_BIG" not in node_set
+        # No edges on a value-based node layer.
+        assert layer["edges"] == []
+
+    def test_value_layers_group_under_individual_entities_section(self):
+        _, model = _build_html_and_model()
+        layers = _layers_by_key(model)
+        for key in ("node:prod", "node:load"):
+            assert layers[key]["section"] == "Individual entities properties"
 
 
 # ---------------------------------------------------------------------
