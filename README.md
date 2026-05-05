@@ -5,7 +5,7 @@
 > Formerly known as **ExpertAssist**. Rebranded to Co-Study4Grid in release 0.4 (PR #65).
 
 ![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)
-![Release](https://img.shields.io/badge/release-0.6.5-green)
+![Release](https://img.shields.io/badge/release-0.7.0-green)
 
 ---
 
@@ -56,6 +56,21 @@ branches, ~12 MB NAD SVG) with `scripts/profile_diagram_perf.py` and
 the backend micro-benches under `benchmarks/`. Full write-ups in
 [`docs/performance/history/`](docs/performance/history/) and
 [`CHANGELOG.md`](CHANGELOG.md).
+
+### 0.7.0 — interactive overflow viewer + European-wide grid
+
+* **Interactive overflow analysis tab** (PRs #116, #122–#127): the
+  static overflow PDF is replaced by a same-origin HTML viewer with a
+  layer-toggle sidebar (Constrained path / Red-loop / Overloads /
+  Hubs / Reconnectable / Production / Consumption / flow polarities),
+  hierarchical ↔ geographic layout switch, action-pin overlay synced
+  with the Action Overview, and double-click → SLD drilldown.
+* **PyPSA-EUR European-wide grid** (PRs #112, #117): full pipeline
+  for generating XIIDM grids from PyPSA-EUR data with calibrated
+  thermal limits and a fr225_400 dataset.
+* **Design-token migration** (PR #120): centralised
+  `src/styles/tokens.{css,ts}` palette enforced by the code-quality
+  gate (zero hex literals outside the token files).
 
 ### 0.6.5 — SVG DOM recycling (PR #108)
 
@@ -348,7 +363,7 @@ layers of automated checks (`scripts/check_standalone_parity.py`,
 
 ## Changelog
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the list of changes per release. The current release is **0.6.5**.
+See [`CHANGELOG.md`](CHANGELOG.md) for the list of changes per release. The current release is **0.7.0**.
 
 ---
 

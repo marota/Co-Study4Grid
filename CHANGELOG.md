@@ -11,6 +11,165 @@ and the project (informally) follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.7.0] — 2026-05-05
+
+Major feature release headlined by the **interactive overflow
+analysis tab**, the **PyPSA-EUR European-wide grid pipeline**, and a
+full **design-token migration** of the frontend. Sixteen merged PRs
+since 0.6.5 plus the inline polish landed on the
+``claude/interactive-overflow-analysis`` branch.
+
+### Highlights
+
+- **Interactive overflow analysis tab** (PRs #116, #122–#127). The
+  static overflow PDF is replaced by a same-origin HTML viewer
+  produced by upstream ``alphaDeesp/core/interactive_html.py``. The
+  viewer carries:
+  - Layer-toggle sidebar grouped into three sections — *Structural
+    Paths* (Constrained path, Red-loop), *Individual entities
+    properties* (Overloads, Low-margin lines, Hubs, Reconnectable,
+    Non-reconnectable, Swapped flow, **Production nodes**,
+    **Consumption nodes**) and *Flow redispatch values* (Positive /
+    Negative / Null).
+  - Hierarchical ↔ geographic layout toggle backed by a per-study
+    cache.
+  - Pin overlay synced with the Action Overview filters; single-click
+    pins open the same `ActionCardPopover`, double-click drills into
+    the SLD overlay.
+  - Double-click on a graph node opens the substation SLD overlay
+    via the existing `cs4g:overflow-node-double-clicked`
+    postMessage.
+  - Auto-installer for the graphviz `dot` binary on package install
+    (PR #126), so a fresh checkout works without a manual
+    ``apt install``.
+- **PyPSA-EUR European-wide grid** (PRs #112, #117). Full pipeline
+  in ``scripts/pypsa_eur/`` for generating XIIDM grids from PyPSA-EUR
+  data, with calibrated thermal limits, an fr225_400 dataset, and
+  pytest coverage (``test_build_pipeline.py``,
+  ``test_calibrate_thermal_limits.py``,
+  ``test_generate_n1_overloads.py``,
+  ``test_regenerate_grid_layout.py``).
+- **Design-token migration** (PR #120, three phases). New
+  ``frontend/src/styles/tokens.{css,ts}`` is the single source of
+  truth for colour, spacing, typography and radius. Code-quality
+  gate now enforces ``FRONTEND_HEX_LITERAL_MAX = 0`` outside the
+  token files.
+- **Tiered warning system + diagram legend** (PR #122). Structured
+  notice tiers (info / warning / critical) and an in-place legend on
+  the Visualization panel; satisfies UI-critique recommendations
+  #4–5.
+- **Progressive-disclosure ActionCard** (PR #121). Severity icons
+  drive a glanceable summary; details collapse / expand on demand.
+- **Voltage-level names toggle** (PR #118). New ``🏷 VL`` chip flips
+  visibility of pypowsybl's VL labels with `!important` CSS rules,
+  with a native `<title>` tooltip fallback so the names stay
+  reachable.
+
+### Added
+
+- **Interactive HTML overflow viewer** (PR #116):
+  ``services/overflow_overlay.py`` injects the Co-Study4Grid pin /
+  popover overlay into the upstream HTML; the React panel hosts the
+  iframe via ``hooks/useOverflowIframe.ts`` (extracted from
+  ``VisualizationPanel.tsx`` in this release).
+- **Production / Consumption node filters** (this branch +
+  ExpertOp4Grid 0.3.2.post1). Two new layers ``node:prod`` /
+  ``node:load`` driven by the upstream ``prod_or_load`` + ``value``
+  attributes ``build_nodes`` writes on every node, with a 1 MW
+  absolute-value floor so passive substations (which carry
+  ``prod_or_load="load"`` + ``value="0.0"`` by convention) don't
+  flood the Consumption layer. Coral / lightblue circle swatches
+  match the upstream node fillcolors.
+- **Layer interaction logs** (PR #125). Six new event types
+  surfaced by the overflow tab — ``overflow_layer_toggled``,
+  ``overflow_select_all_layers``, ``overflow_node_double_clicked``,
+  ``overflow_pin_clicked``, ``overflow_pin_double_clicked``,
+  ``overflow_pins_toggled``, ``overflow_layout_mode_toggled`` — all
+  emitted in the canonical replay log.
+- **Voltage-level names toggle** (PR #118): per-tab `showVoltageLevelNames`
+  state with a native `<title>` tooltip injected by
+  ``utils/svg/vlTitles.ts`` so the operator can still read the VL name
+  by hovering when labels are off.
+- **Tiered notice system + diagram legend** (PR #122): the sidebar
+  Notices pill ranks issues by severity; the new ``DiagramLegend``
+  component sits inside the visualization panel and is reused by the
+  overflow tab.
+- **Progressive-disclosure ActionCard** (PR #121): redesigned card
+  with severity icon, glanceable summary, on-demand expand for
+  topology / load-shed / curtailment details.
+- **PyPSA-EUR pipeline** (PR #117): one-command pipeline driving
+  ``build_pypsa_eur`` → ``calibrate_thermal_limits`` →
+  ``generate_n1_overloads`` → ``regenerate_grid_layout`` for any
+  European country / voltage subset.
+- **Reconnect actions on the fly** (PR #110): backend auto-creates
+  ``reco_*`` actions for every disconnectable line so the operator
+  can compose mixed disconnect + reconnect studies without editing
+  the action JSON.
+
+### Changed
+
+- **Frontend design tokens** (PRs #120 phases A/B/C). Components,
+  modals, hooks and SVG presentation attributes now consume the
+  centralised palette. Token files are exempt from the hex-literal
+  ceiling; everything else is gated.
+- **VisualizationPanel decomposition** (this branch). 1654 → 1342
+  lines after extracting ``InspectSearchField``,
+  ``DetachedPlaceholder``, and the new ``useOverflowIframe`` hook —
+  satisfies the ``FRONTEND_COMPONENT_MAX = 1500`` ceiling.
+- **NoticesPanel popover** (PR #123): renders via React portal and
+  wraps long unbreakable strings, fixing the sidebar overflow clip.
+- **ExpertOp4Grid pin** bumped to ``0.3.2.post1`` (carries the
+  Production / Consumption node layers).
+
+### Fixed
+
+- **Halo stacking on the Remedial Action tab** (PR #111). Flow
+  delta freshness + halo z-order regressions surfaced after the
+  PR #109 hook extraction.
+- **f-string cleanup** (PR #113). Removed unnecessary f-string
+  prefixes from static strings caught by ruff F541.
+- **Target max rho on user-selected overloads** (PR #114). Estimation
+  pair filter now matches the simulation contract.
+- **Build extras** (PR #127). Restored ``[quality]`` extra under
+  ``optional-dependencies`` after the migration to PEP 621.
+
+### CI / tests
+
+- **Parity layers build the standalone first** (this branch). All
+  four parity layers (1 + 2 + 3a + 4) now run ``npm run
+  build:standalone`` before the audit so they target the freshly
+  generated bundle instead of the frozen
+  ``standalone_interface_legacy.html``.
+- **Gesture-sequence parser recognises ``reactExports.useCallback``**
+  (this branch). The vite/rollup-bundled wrapper form is now matched
+  the same as the bare ``useCallback`` source form, lifting gesture
+  parity to 30/30.
+- **Backend tests split** (this branch). The backend job is now two
+  lanes: a fast lane (~720 tests, ~15 s, no graphviz) and a
+  ``test-backend-graphviz`` lane gated behind both fast jobs.
+  ``awalsh128/cache-apt-pkgs-action`` caches the graphviz install,
+  saving ~8 minutes of ``apt-get update`` on every run.
+- **Test fixture path generalisation** (this branch). The
+  ``test_overflow_html_dim_logic.py`` fixture now derives its
+  reference HTML path from ``Path(__file__).resolve().parents[2]``
+  so the test runs on any checkout, with a ``pytest.skip`` guard
+  for fresh checkouts where the graph hasn't been generated yet.
+
+### Documentation
+
+- **docs/features/interactive-overflow-analysis.md**: full
+  architecture, attribute-tagging contract, layer-toggle UI, and
+  the Production / Consumption filter machinery.
+- **docs/features/interaction-logging.md** (PR #125): six new
+  overflow-tab event types with replay-contract details.
+- **Development-cycle retrospective** (PR #119, three commits):
+  consolidated ExpertAssist-era retrospective covering PRs #1–#65,
+  reconciliation of 0.5.0 features, and six mermaid diagrams of
+  the four-phase development cycle.
+- **CLAUDE.md / READMEs refresh** (PR #115).
+
+---
+
 ## [0.6.5] — 2026-04-22
 
 Follow-up release to **0.6.0** consolidating the SVG-DOM-recycling
@@ -573,7 +732,8 @@ the authoritative reference for pre-0.5.0 work.
 
 ---
 
-[Unreleased]: https://github.com/marota/Co-Study4Grid/compare/0.6.5...HEAD
+[Unreleased]: https://github.com/marota/Co-Study4Grid/compare/0.7.0...HEAD
+[0.7.0]: https://github.com/marota/Co-Study4Grid/releases/tag/0.7.0
 [0.6.5]: https://github.com/marota/Co-Study4Grid/releases/tag/0.6.5
 [0.6.0]: https://github.com/marota/Co-Study4Grid/releases/tag/0.6.0
 [0.5.0]: https://github.com/marota/Co-Study4Grid/releases/tag/0.5.0
