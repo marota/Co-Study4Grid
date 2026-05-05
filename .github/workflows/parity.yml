@@ -39,6 +39,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      # The parity check needs an up-to-date standalone bundle to
+      # diff against. `frontend/dist-standalone/` is gitignored, so
+      # in CI we have to (re)build it from source — otherwise the
+      # script falls back to the frozen `standalone_interface_legacy.html`
+      # which lags behind the React source by design.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build standalone bundle
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build:standalone
       - name: Run parity check
         run: python scripts/check_standalone_parity.py
       - name: Emit Markdown summary
@@ -58,6 +73,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build standalone bundle
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build:standalone
       - name: Run session-fidelity check
         run: python scripts/check_session_fidelity.py
 
@@ -73,6 +98,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build standalone bundle
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build:standalone
       - name: Run gesture-sequence check
         run: python scripts/check_gesture_sequence.py
 
@@ -90,6 +125,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build standalone bundle
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build:standalone
       - name: Run invariants check
         run: python scripts/check_invariants.py
 
