@@ -83,6 +83,7 @@ type InteractionType =
   | 'zoom_out'                     // User clicked zoom-out button
   | 'zoom_reset'                   // User clicked zoom reset button
   | 'inspect_query_changed'        // User typed in search/inspect box
+  | 'vl_names_toggled'             // User toggled the 🏷 VL labels visibility on an NAD tab
   // === Action Overview Diagram ===
   | 'overview_shown'               // Overview view became visible (no card selected)
   | 'overview_hidden'              // Overview view hidden (card selected / tab switched)
@@ -93,6 +94,17 @@ type InteractionType =
   | 'overview_zoom_out'            // User clicked overview zoom-out button
   | 'overview_zoom_fit'            // User clicked overview "Fit" button
   | 'overview_inspect_changed'     // User focused or cleared an asset in the overview inspect search
+  | 'overview_filter_changed'      // User changed a category / threshold / action-type chip (overview OR overflow iframe)
+  | 'overview_unsimulated_toggled' // User toggled the "Show unsimulated" checkbox
+  | 'overview_unsimulated_pin_simulated' // User double-clicked an unsimulated pin to kick off its manual simulation
+  // === Overflow Analysis Tab ===
+  | 'overflow_layout_mode_toggled' // User flipped the Hierarchical / Geo layout switch
+  | 'overflow_pins_toggled'        // User flipped the 📌 Pins toolbar button
+  | 'overflow_pin_clicked'         // Single-click on an action pin inside the overflow iframe
+  | 'overflow_pin_double_clicked'  // Double-click on an action pin → SLD drill-down on the action sub-tab
+  | 'overflow_layer_toggled'       // Layer-toggle gesture inside the overflow iframe sidebar
+  | 'overflow_select_all_layers'   // Select-all / Unselect-all link in the overflow iframe sidebar
+  | 'overflow_node_double_clicked' // Double-click on an overflow-graph node → SLD drill-down on its VL
   // === SLD Overlay ===
   | 'sld_overlay_opened'           // User double-clicked VL to open SLD
   | 'sld_overlay_tab_changed'      // User switched SLD tab (n / n-1 / action)
@@ -180,6 +192,7 @@ Each event's `details` field contains **all parameters needed to replay** the us
 | `zoom_out` | `{ tab: TabId }` | Click - button |
 | `zoom_reset` | `{ tab: TabId }` | Click reset button |
 | `inspect_query_changed` | `{ query: string, target_tab?: TabId }` — `target_tab` is only present when the inspect field was triggered from a detached-tab overlay (per-tab inspect routing). Absent = main-window active tab. | Type in search box |
+| `vl_names_toggled` | `{ show: boolean }` — new visibility state of the `🏷 VL` toggle (default ON). Toggles the `nad-hide-vl-labels` CSS class on every NAD tab; the labels remain reachable via the per-bus `<title>` tooltip injected by `applyVlTitles`. | Click `🏷 VL` next to the bottom-left Inspect field. |
 
 ### Action Overview Diagram
 
@@ -194,6 +207,23 @@ Each event's `details` field contains **all parameters needed to replay** the us
 | `overview_zoom_out` | `{}` | Click the overview `-` zoom button. |
 | `overview_zoom_fit` | `{}` — resets the viewBox to the auto-fit rectangle (contingency + overloads + pins). | Click the overview `Fit` button. |
 | `overview_inspect_changed` | `{ query: string, action: 'focus' \| 'cleared' }` — `focus` means the typed query matched an exact equipment id and the view zoomed onto it. `cleared` means the query was emptied and the view returned to the fit rectangle. Intermediate keystrokes that don't match are not logged. | Type in the overview inspect field or clear it. |
+| `overview_filter_changed` | `{ kind: 'category' \| 'categories_bulk' \| 'threshold' \| 'action_type' \| 'overflow_iframe', category?: ActionSeverityCategory, enabled?: boolean, threshold?: number, action_type?: ActionTypeFilterToken }` — the discriminator `kind` says which chip / control changed: a single severity chip (`category` + `enabled`), the All / None bulk-select pills (`categories_bulk` + `enabled`), the Max-loading numeric input (`threshold`), the action-type chip row (`action_type`), or a chip change inside the Overflow Analysis iframe sidebar (`overflow_iframe` — the parent re-broadcasts the new filters via `cs4g:filters`). Logged for every change of `ActionOverviewFilters`, regardless of the surface that triggered it, so the Action Feed / Action Overview pins / overflow pins always reach the same filter state on replay. | Click a category chip, the All / None pill, edit the Max-loading input, click an action-type chip, OR change any of those in the Overflow Analysis iframe sidebar. |
+| `overview_unsimulated_toggled` | `{ enabled: boolean }` — new state of the **Show unsimulated** checkbox. Drives the dashed grey "?" pin layer on both the Action Overview NAD and (gated on the same flag) the Overflow Analysis iframe. | Click the **Show unsimulated** checkbox in the Action Overview filters or the iframe filters panel. |
+| `overview_unsimulated_pin_simulated` | `{ action_id: string }` — the action a double-click kicked off a manual simulation for. Emitted by both the Action Overview NAD and the Overflow Analysis iframe (the latter forwards the gesture via `cs4g:overflow-unsimulated-pin-double-clicked`). Wait-point: the simulated action eventually appears in the Action Feed and replaces the dashed pin with a coloured one. | Double-click an unsimulated pin on either surface. |
+
+### Overflow Analysis Tab
+
+The Overflow Analysis iframe forwards user gestures to the parent React app via `postMessage`, where they are recorded as the events below. See `docs/features/interactive-overflow-analysis.md` §8 for the full message-routing contract.
+
+| Event | Details | Replay Action |
+|-------|---------|---------------|
+| `overflow_layout_mode_toggled` | `{ to: 'hierarchical' \| 'geo' }` on start; the corresponding `_completed` event carries `{ to, cached: boolean }` (or `{ to, error: string }` on failure). Wait-point: the iframe URL refreshes once the backend regenerates / serves the requested layout. | Click the Hierarchical / Geo layout switch on the Overflow Analysis tab. |
+| `overflow_pins_toggled` | `{ enabled: boolean }` — new state of the toolbar `📌 Pins` button. Disabled until step-2 has streamed actions; default OFF. When `enabled === true`, the parent posts the `cs4g:pins` payload to the iframe and the action pin layer becomes visible. | Click the `📌 Pins` toolbar toggle on the Overflow Analysis tab. |
+| `overflow_pin_clicked` | `{ actionId: string }` — single click on an action pin inside the iframe. The Action Feed scrolls to the matching card AND a floating `ActionCardPopover` opens anchored on the pin. Does NOT switch the active main tab. | Click a pin once on the Overflow Analysis tab. |
+| `overflow_pin_double_clicked` | `{ actionId: string, substation: string }` — double-click on an action pin. Closes any open popover and opens the SLD overlay scoped to that substation with `forceTab='action'`. Logged ONLY when `result.actions[actionId]` exists — stale double-clicks (action evicted by re-analysis) are silently dropped. | Double-click an action pin. |
+| `overflow_layer_toggled` | `{ key: string, label: string, visible: boolean }` — `key` is the canonical layer key (e.g. `"semantic:is_hub"`, `"color:coral"`); `label` is the human-readable sidebar label; `visible` is the new checkbox state (dim-instead-of-hide membership recomputed from this). | Tick / untick a layer checkbox in the iframe sidebar. |
+| `overflow_select_all_layers` | `{ visible: boolean }` — bulk-flip of every layer checkbox via the **Select all · Unselect all** link row above the layer list. | Click **Select all** or **Unselect all** in the iframe sidebar. |
+| `overflow_node_double_clicked` | `{ name: string }` — substation / VL name of the double-clicked overflow-graph node. The parent's `onVlOpen` handler routes to the SLD overlay using the same path as a NAD VL double-click. | Double-click a node in the overflow graph. |
 
 ### SLD Overlay
 
@@ -248,6 +278,8 @@ These events trigger async API calls. The replay agent must wait for the operati
 | `settings_applied` | Network reloaded, branches refreshed |
 | `tab_detached` | Popup opened, React portal target mounted — or the event is skipped if the runner can't open real popups |
 | `tab_reattached` | Popup closed, content re-rendered in the main window |
+| `overflow_layout_mode_toggled` | Overflow iframe URL refreshes after the backend regenerates / serves the requested layout (`POST /api/regenerate-overflow-graph`); the matching `_completed` event carries `cached: bool` or `error: string`. |
+| `overview_unsimulated_pin_simulated` | The dashed `?` pin is replaced by a coloured pin once the manual simulation lands in `result.actions`. |
 
 ### Handling `*_completed` Events
 
@@ -308,6 +340,7 @@ If a replay agent depends on any of those post-load side effects, the reload pat
 
 - **Per-card edit state** (`cardEditMw`, `cardEditTap`): these are the raw, uncommitted values in the action card inputs. Only the committed, re-simulated result survives — persisted as `pst_details.tap_position` / `load_shedding_details[].shedded_mw` / `curtailment_details[].curtailed_mw`. A replay agent that wants to reproduce edit keystrokes must consume the `action_mw_resimulated` / `pst_tap_resimulated` events from `interaction_log.json` instead.
 - **Detached / tied tab state** (PR #84/#85): `detachedTabs` and the tied-tab registry are deliberately ephemeral. Detaching a tab does not change any analysis result, so reload intentionally starts with all tabs attached to the main window. A replay that needs to reproduce detach / reattach / tie / untie must stream the matching events from `interaction_log.json`.
+- **Overflow Analysis tab UI state**: `overflowPinsEnabled`, `overflowLayoutMode`, the iframe layer-toggle checkboxes and the shared `overviewFilters` (category chips / threshold / action-type / Show unsimulated) are intentionally not in `session.json` — they reset on reload. A replay must stream `overflow_pins_toggled` / `overflow_layout_mode_toggled` / `overflow_layer_toggled` / `overflow_select_all_layers` / `overview_filter_changed` / `overview_unsimulated_toggled` from `interaction_log.json` to reach the same operator state.
 
 ---
 

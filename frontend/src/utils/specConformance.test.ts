@@ -84,6 +84,24 @@ const SPEC: Record<string, SpecRow> = {
   // Overflow Analysis tab layout toggle. `to` = target mode ('hierarchical' | 'geo');
   // start event only. Completion event carries `cached` or `error`.
   overflow_layout_mode_toggled:   { required: new Set(['to']) },
+  // Overflow Analysis tab — Co-Study4Grid pin overlay toggle.
+  overflow_pins_toggled:          { required: new Set(['enabled']) },
+  // Click on a pin overlaid on the overflow graph (forwarded from
+  // the iframe via postMessage).
+  overflow_pin_clicked:           { required: new Set(['actionId']) },
+  // Double-click on an action pin in the overflow graph — drills
+  // into the SLD overlay on the post-action ('action') sub-tab for
+  // that pin's substation.
+  overflow_pin_double_clicked:    { required: new Set(['actionId', 'substation']) },
+  // Layer-toggle gesture inside the overflow-graph viewer (forwarded
+  // from the iframe). `key` = layer key (e.g. "color:coral",
+  // "semantic:is_hub"); `visible` = checkbox new state.
+  overflow_layer_toggled:         { required: new Set(['key', 'label', 'visible']) },
+  // Select-all / Unselect-all on the overflow-graph layer list.
+  overflow_select_all_layers:     { required: new Set(['visible']) },
+  // Double-click on a node in the overflow-graph viewer — forwarded
+  // from the iframe; opens the SLD overlay for that voltage level.
+  overflow_node_double_clicked:   { required: new Set(['name']) },
   voltage_range_changed:          { required: new Set(['min', 'max']) },
   asset_clicked:                  { required: new Set(['action_id', 'asset_name', 'tab']) },
   zoom_in:                        { required: new Set(['tab']) },

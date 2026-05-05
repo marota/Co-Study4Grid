@@ -1,0 +1,1104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>g_overflow_print_geo_2026-05-05_13-05.html</title>
+<style>
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --border: #d0d7de;
+    --muted: #6b7280; --accent: #0969da; --dim-opacity: 0.12;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: #111; }
+  #app { display: flex; height: 100vh; }
+  #sidebar {
+    width: 280px; flex-shrink: 0; padding: 12px 14px; overflow-y: auto;
+    background: var(--panel); border-right: 1px solid var(--border); font-size: 13px;
+  }
+  #sidebar h1 { font-size: 14px; margin: 0 0 6px; }
+  #sidebar h2 { font-size: 12px; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; letter-spacing: 0.04em; }
+  #sidebar .layer-section-header { font-size: 11px; text-transform: uppercase; color: var(--muted); margin: 10px 0 4px; letter-spacing: 0.03em; font-weight: 600; border-top: 1px solid var(--border); padding-top: 6px; }
+  #sidebar .layer-section-header:first-of-type { border-top: none; padding-top: 0; margin-top: 4px; }
+  #sidebar input[type=text] { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; }
+  #sidebar label { display: flex; align-items: center; gap: 6px; padding: 3px 0; cursor: pointer; }
+  #sidebar label .swatch { width: 12px; height: 12px; border-radius: 2px; border: 1px solid #ccc; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
+  #sidebar label .swatch svg { width: 10px; height: 10px; display: block; }
+  #sidebar .layer-controls { display: flex; gap: 8px; font-size: 11px; margin-bottom: 4px; }
+  #sidebar .layer-controls button { background: transparent; border: none; padding: 2px 4px; cursor: pointer; color: var(--accent); font-size: 11px; text-decoration: underline; }
+  #sidebar .layer-controls button:hover { background: #eef; }
+  #sidebar .hint { color: var(--muted); font-size: 11px; line-height: 1.5; margin-top: 6px; }
+  #info { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-word; background: #f6f8fa; border-radius: 4px; padding: 8px; min-height: 60px; }
+  #stage { flex: 1; position: relative; overflow: hidden; background: var(--bg); }
+  #stage svg { display: block; width: 100%; height: 100%; cursor: grab; }
+  #stage svg.dragging { cursor: grabbing; }
+  #stage .toolbar { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 2px; }
+  #stage .toolbar button { border: none; background: transparent; padding: 4px 8px; cursor: pointer; font-size: 14px; font-weight: bold; color: #333; }
+  #stage .toolbar button:hover { background: #eef; }
+  #tooltip { position: absolute; pointer-events: none; background: rgba(20,20,20,0.92); color: #fff; padding: 6px 8px; border-radius: 4px; font-size: 11px; line-height: 1.4; max-width: 260px; z-index: 10; display: none; }
+  #tooltip .key { color: #9ad; }
+  /* Interaction states applied via classes on the root <g class="graph"> */
+  .graph.has-selection .node:not(.hl):not(.selected),
+  .graph.has-selection .edge:not(.hl) { opacity: var(--dim-opacity); }
+  .graph .node.selected ellipse,
+  .graph .node.selected polygon,
+  .graph .node.selected circle { stroke-width: 5px; }
+  /* Unchecked layers stay rendered but recede to a near-transparent
+     light-grey so the user retains spatial context. Applied to both
+     nodes and edges. Pointer-events kept enabled so hover/click still
+     works on dimmed elements. */
+  .graph .layer-off { opacity: 0.12; }
+  .graph.has-search .node:not(.match) { opacity: var(--dim-opacity); }
+  .graph .node.match ellipse,
+  .graph .node.match polygon,
+  .graph .node.match circle { stroke: #0969da !important; stroke-width: 4px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <h1>g_overflow_print_geo_2026-05-05_13-05.html</h1>
+    <div class="hint">Click a node to highlight its neighbourhood. Wheel to zoom, drag to pan. Esc clears selection.</div>
+
+    <h2>Search</h2>
+    <input type="text" id="search" placeholder="filter nodes by name…" autocomplete="off">
+
+    <h2>Layers</h2>
+    <div class="layer-controls">
+      <button id="layers-select-all" type="button" title="Show every layer">Select all</button>
+      <span style="color: var(--muted)">·</span>
+      <button id="layers-select-none" type="button" title="Dim every layer">Unselect all</button>
+    </div>
+    <div id="layers"></div>
+
+    <h2>Selection</h2>
+    <div id="info">Nothing selected.</div>
+
+    <h2>Stats</h2>
+    <div class="hint" id="stats"></div>
+  </aside>
+  <section id="stage">
+    <div class="toolbar">
+      <button id="zoom-in" title="Zoom in">+</button>
+      <button id="zoom-out" title="Zoom out">−</button>
+      <button id="zoom-reset" title="Reset view">⟲</button>
+    </div>
+    <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 2.43.0 (0)
+ -->
+<!-- Title: %3 Pages: 1 -->
+<svg width="551pt" height="1606pt"
+ viewBox="0.00 0.00 551.00 1605.60" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 1601.6)">
+<title>%3</title>
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-1601.6 547,-1601.6 547,4 -4,4"/>
+<!-- 1GEN.P7 -->
+<g id="node1" class="node" data-name="1GEN.P7" data-attr-name="1GEN.P7" data-attr-color="red" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="169,807.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.75"><title>1GEN.P7</title>
+<ellipse fill="#ffffed" stroke="red" stroke-width="2" cx="169" cy="-807.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="169" y="-805.1" font-family="Times,serif" font-size="10.00">1GEN.P7</text>
+</g>
+<!-- GEN.PP6 -->
+<g id="node2" class="node" data-name="GEN.PP6" data-attr-name="GEN.PP6" data-attr-color="darkgreen" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="218,715.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.75"><title>GEN.PP6</title>
+<ellipse fill="#ffffed" stroke="darkgreen" stroke-width="2" cx="218" cy="-715.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="218" y="-713.1" font-family="Times,serif" font-size="10.00">GEN.PP6</text>
+</g>
+<!-- 1GEN.P7&#45;&gt;GEN.PP6 -->
+<g id="edge1" class="edge" data-source="1GEN.P7" data-target="GEN.PP6" data-layers="color:coral" data-attr-tail="0" data-attr-head="1" data-attr-capacity="29.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="29" data-attr-lp="204.5,761.6" data-attr-name="GEN.PY761" data-attr-penwidth="15.0" data-attr-pos="e,209.15,732.85 177.76,790.51 185.1,777.03 195.71,757.54 204.19,741.96"><title>1GEN.P7&#45;&gt;GEN.PP6</title>
+<path fill="none" stroke="coral" stroke-width="15" d="M177.76,-790.51C185.1,-777.03 195.71,-757.54 204.19,-741.96"/>
+<polygon fill="coral" stroke="coral" stroke-width="15" points="215.9,-747.91 209.15,-732.85 192.84,-735.36 215.9,-747.91"/>
+<text text-anchor="middle" x="204.5" y="-759.1" font-family="Times,serif" font-size="10.00">29</text>
+</g>
+<!-- GEN.PP7 -->
+<g id="node3" class="node" data-name="GEN.PP7" data-attr-name="GEN.PP7" data-attr-color="red" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="95,632.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.75"><title>GEN.PP7</title>
+<ellipse fill="#ffffed" stroke="red" stroke-width="2" cx="95" cy="-632.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="95" y="-630.1" font-family="Times,serif" font-size="10.00">GEN.PP7</text>
+</g>
+<!-- GEN.PP6&#45;&gt;GEN.PP7 -->
+<g id="edge4" class="edge" data-source="GEN.PP6" data-target="GEN.PP7" data-layers="color:coral style:dashed" data-attr-tail="1" data-attr-head="2" data-attr-capacity="-0.0" data-attr-color="coral" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="-0" data-attr-lp="189,674.1" data-attr-name="GEN.PY762" data-attr-penwidth="1.5" data-attr-pos="205.13,699.56 196.25,689.84 183.79,677.41 171,668.6 154.61,657.31 134,648.08 118.37,641.94" data-attr-style="dashed"><title>GEN.PP6&#45;&gt;GEN.PP7</title>
+<path fill="none" stroke="coral" stroke-width="1.5" stroke-dasharray="5,2" d="M205.13,-699.56C196.25,-689.84 183.79,-677.41 171,-668.6 154.61,-657.31 134,-648.08 118.37,-641.94"/>
+<text text-anchor="middle" x="189" y="-671.6" font-family="Times,serif" font-size="10.00">&#45;0</text>
+</g>
+<!-- IZERNP6 -->
+<g id="node35" class="node" data-name="IZERNP6" data-attr-name="IZERNP6" data-attr-color="darkgreen" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="251,632.6" data-attr-prod_or_load="load" data-attr-shape="point" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.05"><title>IZERNP6</title>
+<ellipse fill="#ffffed" stroke="darkgreen" stroke-width="2" cx="251" cy="-632.6" rx="1.8" ry="1.8"/>
+</g>
+<!-- GEN.PP6&#45;&gt;IZERNP6 -->
+<g id="edge2" class="edge" data-source="GEN.PP6" data-target="IZERNP6" data-layers="color:coral" data-attr-tail="1" data-attr-head="34" data-attr-capacity="9.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="9" data-attr-lp="240.5,674.1" data-attr-name="GEN.PL61IZERN" data-attr-penwidth="5.0" data-attr-pos="e,250.58,634.62 224.84,697.82 231.41,681.69 241.13,657.82 246.69,644.18"><title>GEN.PP6&#45;&gt;IZERNP6</title>
+<path fill="none" stroke="coral" stroke-width="5" d="M224.84,-697.82C231.41,-681.69 241.13,-657.82 246.69,-644.18"/>
+<polygon fill="coral" stroke="coral" stroke-width="5" points="250.86,-645.53 250.58,-634.62 242.76,-642.23 250.86,-645.53"/>
+<text text-anchor="middle" x="240.5" y="-671.6" font-family="Times,serif" font-size="10.00">9</text>
+</g>
+<!-- VOUGLP6 -->
+<g id="node50" class="node" data-name="VOUGLP6" data-attr-name="VOUGLP6" data-attr-color="darkgreen" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="246,383.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.7585"><title>VOUGLP6</title>
+<ellipse fill="#ffffed" stroke="darkgreen" stroke-width="2" cx="246" cy="-383.6" rx="27.11" ry="18"/>
+<text text-anchor="middle" x="246" y="-381.1" font-family="Times,serif" font-size="10.00">VOUGLP6</text>
+</g>
+<!-- GEN.PP6&#45;&gt;VOUGLP6 -->
+<g id="edge3" class="edge" data-source="GEN.PP6" data-target="VOUGLP6" data-layers="color:coral" data-attr-tail="1" data-attr-head="49" data-attr-capacity="20.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="20" data-attr-lp="224.5,549.6" data-attr-name="GEN.PL61VOUGL" data-attr-penwidth="10.0" data-attr-pos="e,236.83,400.79 218,697.53 218,681.14 218,655.68 218,633.6 218,633.6 218,633.6 218,465.6 218,446.13 225.31,425.4 232.47,409.79"><title>GEN.PP6&#45;&gt;VOUGLP6</title>
+<path fill="none" stroke="coral" stroke-width="10" d="M218,-697.53C218,-681.14 218,-655.68 218,-633.6 218,-633.6 218,-633.6 218,-465.6 218,-446.13 225.31,-425.4 232.47,-409.79"/>
+<polygon fill="coral" stroke="coral" stroke-width="10" points="240.34,-413.6 236.83,-400.79 224.6,-405.97 240.34,-413.6"/>
+<text text-anchor="middle" x="224.5" y="-547.1" font-family="Times,serif" font-size="10.00">20</text>
+</g>
+<!-- GEN.PP7&#45;&gt;1GEN.P7 -->
+<g id="edge5" class="edge" data-source="GEN.PP7" data-target="1GEN.P7" data-layers="color:coral" data-attr-tail="2" data-attr-head="0" data-attr-capacity="29.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="29" data-attr-lp="161.5,715.6" data-attr-name="GEN.PY771" data-attr-penwidth="15.0" data-attr-pos="e,166.54,789.45 110.82,647.33 116.92,653.33 123.5,660.78 128,668.6 148.35,703.94 159.41,750.29 164.76,779.26"><title>GEN.PP7&#45;&gt;1GEN.P7</title>
+<path fill="none" stroke="coral" stroke-width="15" d="M110.82,-647.33C116.92,-653.33 123.5,-660.78 128,-668.6 148.35,-703.94 159.41,-750.29 164.76,-779.26"/>
+<polygon fill="coral" stroke="coral" stroke-width="15" points="151.89,-781.85 166.54,-789.45 177.75,-777.34 151.89,-781.85"/>
+<text text-anchor="middle" x="161.5" y="-713.1" font-family="Times,serif" font-size="10.00">29</text>
+</g>
+<!-- 1GROSP7 -->
+<g id="node4" class="node" data-name="1GROSP7" data-attr-name="1GROSP7" data-attr-color="red" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="169,1139.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.75"><title>1GROSP7</title>
+<ellipse fill="#ffffed" stroke="red" stroke-width="2" cx="169" cy="-1139.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="169" y="-1137.1" font-family="Times,serif" font-size="10.00">1GROSP7</text>
+</g>
+<!-- GROSNP6 -->
+<g id="node5" class="node" data-name="GROSNP6" data-attr-name="GROSNP6" data-attr-color="darkgreen" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="233,1056.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.77308"><title>GROSNP6</title>
+<ellipse fill="#ffffed" stroke="darkgreen" stroke-width="2" cx="233" cy="-1056.6" rx="27.66" ry="18"/>
+<text text-anchor="middle" x="233" y="-1054.1" font-family="Times,serif" font-size="10.00">GROSNP6</text>
+</g>
+<!-- 1GROSP7&#45;&gt;GROSNP6 -->
+<g id="edge6" class="edge" data-source="1GROSP7" data-target="GROSNP6" data-layers="color:blue" data-attr-tail="3" data-attr-head="4" data-attr-capacity="-4.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-4" data-attr-lp="210,1098.1" data-attr-name="GROSNY761" data-attr-on_constrained_path="True" data-attr-penwidth="2.0" data-attr-pos="e,220.8,1073 181.04,1123.4 190.45,1111.4 203.71,1094.7 214.47,1081"><title>1GROSP7&#45;&gt;GROSNP6</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M181.04,-1123.36C190.45,-1111.45 203.71,-1094.67 214.47,-1081.05"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="217.35,-1083.06 220.8,-1073.04 211.85,-1078.72 217.35,-1083.06"/>
+<text text-anchor="middle" x="210" y="-1095.6" font-family="Times,serif" font-size="10.00">&#45;4</text>
+</g>
+<!-- CHALOP6 -->
+<g id="node21" class="node" data-name="CHALOP6" data-attr-name="CHALOP6" data-attr-color="darkgreen" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="251,973.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.7585"><title>CHALOP6</title>
+<ellipse fill="#ffffed" stroke="darkgreen" stroke-width="2" cx="251" cy="-973.6" rx="27.11" ry="18"/>
+<text text-anchor="middle" x="251" y="-971.1" font-family="Times,serif" font-size="10.00">CHALOP6</text>
+</g>
+<!-- GROSNP6&#45;&gt;CHALOP6 -->
+<g id="edge7" class="edge" data-source="GROSNP6" data-target="CHALOP6" data-layers="color:blue" data-attr-tail="4" data-attr-head="20" data-attr-capacity="-4.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-4" data-attr-lp="252,1015.1" data-attr-name="CHALOL61GROSN" data-attr-on_constrained_path="True" data-attr-penwidth="2.0" data-attr-pos="e,249.03,991.76 238.9,1038.7 240.73,1033 242.62,1026.6 244,1020.6 245.4,1014.6 246.59,1008 247.57,1001.8"><title>GROSNP6&#45;&gt;CHALOP6</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M238.9,-1038.65C240.73,-1032.97 242.62,-1026.56 244,-1020.6 245.4,-1014.55 246.59,-1007.99 247.57,-1001.76"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="251.05,-1002.16 249.03,-991.76 244.13,-1001.15 251.05,-1002.16"/>
+<text text-anchor="middle" x="252" y="-1012.6" font-family="Times,serif" font-size="10.00">&#45;4</text>
+</g>
+<!-- GROSNP6&#45;&gt;CHALOP6 -->
+<g id="edge8" class="edge" data-source="GROSNP6" data-target="CHALOP6" data-layers="color:blue" data-attr-tail="4" data-attr-head="20" data-attr-capacity="-4.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-4" data-attr-lp="238,1015.1" data-attr-name="CHALOL62GROSN" data-attr-on_constrained_path="True" data-attr-penwidth="2.0" data-attr-pos="e,240.88,990.35 231.09,1038.3 230.6,1029.6 230.75,1018.9 233,1009.6 233.83,1006.2 235.05,1002.7 236.48,999.36"><title>GROSNP6&#45;&gt;CHALOP6</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M231.09,-1038.33C230.6,-1029.6 230.75,-1018.91 233,-1009.6 233.83,-1006.18 235.05,-1002.71 236.48,-999.36"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="239.64,-1000.87 240.88,-990.35 233.35,-997.8 239.64,-1000.87"/>
+<text text-anchor="middle" x="238" y="-1012.6" font-family="Times,serif" font-size="10.00">&#45;4</text>
+</g>
+<!-- MACONP6 -->
+<g id="node37" class="node" data-name="MACONP6" data-attr-name="MACONP6" data-attr-color="darkgreen" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="203,973.6" data-attr-prod_or_load="load" data-attr-shape="point" data-attr-style="filled" data-attr-value="-74.80100368542847" data-attr-width="0.05"><title>MACONP6</title>
+<ellipse fill="lightblue" stroke="darkgreen" stroke-width="2" cx="203" cy="-973.6" rx="1.8" ry="1.8"/>
+</g>
+<!-- GROSNP6&#45;&gt;MACONP6 -->
+<g id="edge9" class="edge" data-source="GROSNP6" data-target="MACONP6" data-layers="color:coral" data-attr-tail="4" data-attr-head="36" data-attr-capacity="0.0" data-attr-color="coral" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="0" data-attr-lp="223.5,1015.1" data-attr-name="GROSNL61MACON" data-attr-penwidth="1.5" data-attr-pos="226.78,1038.8 218.82,1017.3 205.76,982.04 203.38,975.62"><title>GROSNP6&#45;&gt;MACONP6</title>
+<path fill="none" stroke="coral" stroke-width="1.5" d="M226.78,-1038.82C218.82,-1017.32 205.76,-982.04 203.38,-975.62"/>
+<text text-anchor="middle" x="223.5" y="-1012.6" font-family="Times,serif" font-size="10.00">0</text>
+</g>
+<!-- GROSNP7 -->
+<g id="node6" class="node" data-name="GROSNP7" data-attr-name="GROSNP7" data-attr-color="red" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="191,1222.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.77308"><title>GROSNP7</title>
+<ellipse fill="#ffffed" stroke="red" stroke-width="2" cx="191" cy="-1222.6" rx="27.66" ry="18"/>
+<text text-anchor="middle" x="191" y="-1220.1" font-family="Times,serif" font-size="10.00">GROSNP7</text>
+</g>
+<!-- GROSNP7&#45;&gt;1GROSP7 -->
+<g id="edge10" class="edge" data-source="GROSNP7" data-target="1GROSP7" data-layers="color:blue" data-attr-tail="5" data-attr-head="3" data-attr-capacity="-4.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-4" data-attr-lp="187,1181.1" data-attr-name="GROSNY771" data-attr-on_constrained_path="True" data-attr-penwidth="2.0" data-attr-pos="e,173.55,1157.4 186.44,1204.8 183.49,1194 179.59,1179.6 176.22,1167.2"><title>GROSNP7&#45;&gt;1GROSP7</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M186.44,-1204.82C183.49,-1193.96 179.59,-1179.58 176.22,-1167.19"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="179.55,-1166.09 173.55,-1157.36 172.8,-1167.93 179.55,-1166.09"/>
+<text text-anchor="middle" x="187" y="-1178.6" font-family="Times,serif" font-size="10.00">&#45;4</text>
+</g>
+<!-- GROSNP7&#45;&gt;GROSNP6 -->
+<g id="edge11" class="edge" data-source="GROSNP7" data-target="GROSNP6" data-layers="color:blue" data-attr-tail="5" data-attr-head="4" data-attr-capacity="-3.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-3" data-attr-lp="222,1139.6" data-attr-name="GROSNY762" data-attr-on_constrained_path="True" data-attr-penwidth="2.0" data-attr-pos="e,228.62,1074.7 195.34,1204.7 202.63,1176.2 217.41,1118.5 226.13,1084.4"><title>GROSNP7&#45;&gt;GROSNP6</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M195.34,-1204.67C202.63,-1176.19 217.41,-1118.48 226.13,-1084.43"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="229.53,-1085.24 228.62,-1074.69 222.75,-1083.51 229.53,-1085.24"/>
+<text text-anchor="middle" x="222" y="-1137.1" font-family="Times,serif" font-size="10.00">&#45;3</text>
+</g>
+<!-- 1VIELP7 -->
+<g id="node7" class="node" data-name="1VIELP7" data-attr-name="1VIELP7" data-attr-color="red" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="186,1496.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.75"><title>1VIELP7</title>
+<ellipse fill="#ffffed" stroke="red" stroke-width="2" cx="186" cy="-1496.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="186" y="-1494.1" font-family="Times,serif" font-size="10.00">1VIELP7</text>
+</g>
+<!-- VIELMP6 -->
+<g id="node8" class="node" data-name="VIELMP6" data-attr-name="VIELMP6" data-attr-color="darkgreen" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="True" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="295,1413.6" data-attr-prod_or_load="load" data-attr-shape="diamond" data-attr-style="filled" data-attr-value="-726.8624989580555" data-attr-width="1.0108"><title>VIELMP6</title>
+<polygon fill="lightblue" stroke="darkgreen" stroke-width="2" points="295,-1431.6 258.72,-1413.6 295,-1395.6 331.28,-1413.6 295,-1431.6"/>
+<text text-anchor="middle" x="295" y="-1411.1" font-family="Times,serif" font-size="10.00">VIELMP6</text>
+</g>
+<!-- 1VIELP7&#45;&gt;VIELMP6 -->
+<g id="edge12" class="edge" data-source="1VIELP7" data-target="VIELMP6" data-layers="color:blue" data-attr-tail="6" data-attr-head="7" data-attr-capacity="-5.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-5" data-attr-lp="230,1455.1" data-attr-name="VIELMY761" data-attr-on_constrained_path="True" data-attr-penwidth="2.0" data-attr-pos="e,275.37,1421.9 196.94,1479.7 204.1,1470.1 214.13,1458.1 225,1449.6 237.38,1439.9 252.9,1431.8 266.17,1425.8"><title>1VIELP7&#45;&gt;VIELMP6</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M196.94,-1479.68C204.1,-1470.1 214.13,-1458.13 225,-1449.6 237.38,-1439.88 252.9,-1431.79 266.17,-1425.84"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="267.55,-1429.06 275.37,-1421.9 264.8,-1422.62 267.55,-1429.06"/>
+<text text-anchor="middle" x="230" y="-1452.6" font-family="Times,serif" font-size="10.00">&#45;5</text>
+</g>
+<!-- C.REGP6 -->
+<g id="node18" class="node" data-name="C.REGP6" data-attr-name="C.REGP6" data-attr-color="darkgreen" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="328,1330.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-6.353643894195557" data-attr-width="0.75"><title>C.REGP6</title>
+<ellipse fill="lightblue" stroke="darkgreen" stroke-width="2" cx="328" cy="-1330.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="328" y="-1328.1" font-family="Times,serif" font-size="10.00">C.REGP6</text>
+</g>
+<!-- VIELMP6&#45;&gt;C.REGP6 -->
+<g id="edge13" class="edge" data-source="VIELMP6" data-target="C.REGP6" data-layers="color:blue" data-attr-tail="7" data-attr-head="17" data-attr-capacity="-5.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-5" data-attr-lp="301,1372.1" data-attr-name="C.REGL61VIELM" data-attr-on_constrained_path="True" data-attr-penwidth="3.0" data-attr-pos="e,311.26,1345.2 292.65,1396.7 291.95,1387.6 292.2,1376.1 296,1366.6 297.98,1361.7 301,1357 304.4,1352.8"><title>VIELMP6&#45;&gt;C.REGP6</title>
+<path fill="none" stroke="blue" stroke-width="3" d="M292.65,-1396.72C291.95,-1387.59 292.2,-1376.09 296,-1366.6 297.98,-1361.66 301,-1356.99 304.4,-1352.76"/>
+<polygon fill="blue" stroke="blue" stroke-width="3" points="307.12,-1354.98 311.26,-1345.22 301.94,-1350.26 307.12,-1354.98"/>
+<text text-anchor="middle" x="301" y="-1369.6" font-family="Times,serif" font-size="10.00">&#45;5</text>
+</g>
+<!-- VIELMP6&#45;&gt;C.REGP6 -->
+<g id="edge14" class="edge" data-source="VIELMP6" data-target="C.REGP6" data-layers="color:blue" data-attr-tail="7" data-attr-head="17" data-attr-capacity="-5.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-5" data-attr-lp="318,1372.1" data-attr-name="C.REGL62VIELM" data-attr-on_constrained_path="True" data-attr-penwidth="3.0" data-attr-pos="e,321.24,1348.2 300.9,1398.1 305.45,1387 311.87,1371.2 317.31,1357.8"><title>VIELMP6&#45;&gt;C.REGP6</title>
+<path fill="none" stroke="blue" stroke-width="3" d="M300.9,-1398.12C305.45,-1386.95 311.87,-1371.2 317.31,-1357.83"/>
+<polygon fill="blue" stroke="blue" stroke-width="3" points="320.71,-1358.77 321.24,-1348.19 314.23,-1356.13 320.71,-1358.77"/>
+<text text-anchor="middle" x="318" y="-1369.6" font-family="Times,serif" font-size="10.00">&#45;5</text>
+</g>
+<!-- COMMUP6 -->
+<g id="node24" class="node" data-name="COMMUP6" data-attr-name="COMMUP6" data-attr-color="darkgreen" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="265,1330.6" data-attr-prod_or_load="load" data-attr-shape="point" data-attr-style="filled" data-attr-value="-7.425389289855957" data-attr-width="0.05"><title>COMMUP6</title>
+<ellipse fill="lightblue" stroke="darkgreen" stroke-width="2" cx="265" cy="-1330.6" rx="1.8" ry="1.8"/>
+</g>
+<!-- VIELMP6&#45;&gt;COMMUP6 -->
+<g id="edge15" class="edge" data-source="VIELMP6" data-target="COMMUP6" data-layers="color:coral" data-attr-tail="7" data-attr-head="23" data-attr-capacity="2.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="2" data-attr-lp="271.5,1372.1" data-attr-name="COMMUL61VIELM" data-attr-penwidth="1.5" data-attr-pos="e,264.83,1332.8 283.27,1401.1 277.59,1394.7 271.31,1386.4 268,1377.6 263.74,1366.3 263.46,1352.4 263.94,1342.9"><title>VIELMP6&#45;&gt;COMMUP6</title>
+<path fill="none" stroke="coral" stroke-width="1.5" d="M283.27,-1401.07C277.59,-1394.72 271.31,-1386.36 268,-1377.6 263.74,-1366.33 263.46,-1352.41 263.94,-1342.86"/>
+<polygon fill="coral" stroke="coral" stroke-width="1.5" points="267.44,-1343.06 264.83,-1332.79 260.46,-1342.44 267.44,-1343.06"/>
+<text text-anchor="middle" x="271.5" y="-1369.6" font-family="Times,serif" font-size="10.00">2</text>
+</g>
+<!-- COUCHP6 -->
+<g id="node25" class="node" data-name="COUCHP6" data-attr-name="COUCHP6" data-attr-color="darkgreen" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="462,1276.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.78767"><title>COUCHP6</title>
+<ellipse fill="#ffffed" stroke="darkgreen" stroke-width="2" cx="462" cy="-1276.6" rx="28.21" ry="18"/>
+<text text-anchor="middle" x="462" y="-1274.1" font-family="Times,serif" font-size="10.00">COUCHP6</text>
+</g>
+<!-- VIELMP6&#45;&gt;COUCHP6 -->
+<g id="edge16" class="edge" data-source="VIELMP6" data-target="COUCHP6" data-layers="color:blue" data-attr-tail="7" data-attr-head="24" data-attr-capacity="-7.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-7" data-attr-lp="355,1372.1" data-attr-name="COUCHL61VIELM" data-attr-on_constrained_path="True" data-attr-penwidth="4.0" data-attr-pos="e,445.06,1291.3 308.1,1402 335.87,1379.6 401,1326.9 437,1297.8"><title>VIELMP6&#45;&gt;COUCHP6</title>
+<path fill="none" stroke="blue" stroke-width="4" d="M308.1,-1402.01C335.87,-1379.56 401,-1326.91 437,-1297.81"/>
+<polygon fill="blue" stroke="blue" stroke-width="4" points="439.48,-1300.3 445.06,-1291.3 435.08,-1294.86 439.48,-1300.3"/>
+<text text-anchor="middle" x="355" y="-1369.6" font-family="Times,serif" font-size="10.00">&#45;7</text>
+</g>
+<!-- VIELMP7 -->
+<g id="node9" class="node" data-name="VIELMP7" data-attr-name="VIELMP7" data-attr-color="red" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="True" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="150,1579.6" data-attr-prod_or_load="load" data-attr-shape="diamond" data-attr-style="filled" data-attr-value="0.0" data-attr-width="1.0108"><title>VIELMP7</title>
+<polygon fill="#ffffed" stroke="red" stroke-width="2" points="150,-1597.6 113.72,-1579.6 150,-1561.6 186.28,-1579.6 150,-1597.6"/>
+<text text-anchor="middle" x="150" y="-1577.1" font-family="Times,serif" font-size="10.00">VIELMP7</text>
+</g>
+<!-- VIELMP7&#45;&gt;GEN.PP7 -->
+<g id="edge17" class="edge" data-source="VIELMP7" data-target="GEN.PP7" data-layers="color:coral" data-attr-tail="8" data-attr-head="2" data-attr-capacity="8.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="8" data-attr-lp="41.5,1098.1" data-attr-name="GEN.PL71VIELM" data-attr-penwidth="4.0" data-attr-pos="e,77.898,646.81 126.79,1573 93.988,1563.5 38,1541 38,1497.6 38,1497.6 38,1497.6 38,714.6 38,690.51 55.066,668.53 70.522,653.57"><title>VIELMP7&#45;&gt;GEN.PP7</title>
+<path fill="none" stroke="coral" stroke-width="4" d="M126.79,-1573C93.99,-1563.54 38,-1541.03 38,-1497.6 38,-1497.6 38,-1497.6 38,-714.6 38,-690.51 55.07,-668.53 70.52,-653.57"/>
+<polygon fill="coral" stroke="coral" stroke-width="4" points="72.89,-656.14 77.9,-646.81 68.16,-650.98 72.89,-656.14"/>
+<text text-anchor="middle" x="41.5" y="-1095.6" font-family="Times,serif" font-size="10.00">8</text>
+</g>
+<!-- VIELMP7&#45;&gt;GEN.PP7 -->
+<g id="edge18" class="edge" data-source="VIELMP7" data-target="GEN.PP7" data-layers="color:coral" data-attr-tail="8" data-attr-head="2" data-attr-capacity="8.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="8" data-attr-lp="3.5,1098.1" data-attr-name="GEN.PL72VIELM" data-attr-penwidth="4.0" data-attr-pos="e,71.517,641.8 121.08,1575.9 77.49,1570.1 0,1552.1 0,1497.6 0,1497.6 0,1497.6 0,714.6 0,681.06 34.716,658.47 62.175,645.85"><title>VIELMP7&#45;&gt;GEN.PP7</title>
+<path fill="none" stroke="coral" stroke-width="4" d="M121.08,-1575.91C77.49,-1570.08 0,-1552.06 0,-1497.6 0,-1497.6 0,-1497.6 0,-714.6 0,-681.06 34.72,-658.47 62.18,-645.85"/>
+<polygon fill="coral" stroke="coral" stroke-width="4" points="63.73,-648.99 71.52,-641.8 60.95,-642.56 63.73,-648.99"/>
+<text text-anchor="middle" x="3.5" y="-1095.6" font-family="Times,serif" font-size="10.00">8</text>
+</g>
+<!-- VIELMP7&#45;&gt;1VIELP7 -->
+<g id="edge20" class="edge" data-source="VIELMP7" data-target="1VIELP7" data-layers="color:blue" data-attr-tail="8" data-attr-head="6" data-attr-capacity="-5.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-5" data-attr-lp="176,1538.1" data-attr-name="VIELMY771" data-attr-on_constrained_path="True" data-attr-penwidth="2.0" data-attr-pos="e,178.69,1514.1 156.27,1564.5 161.3,1553.2 168.48,1537 174.53,1523.4"><title>VIELMP7&#45;&gt;1VIELP7</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M156.27,-1564.49C161.3,-1553.18 168.48,-1537.02 174.53,-1523.41"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="177.82,-1524.62 178.69,-1514.06 171.43,-1521.78 177.82,-1524.62"/>
+<text text-anchor="middle" x="176" y="-1535.6" font-family="Times,serif" font-size="10.00">&#45;5</text>
+</g>
+<!-- VIELMP7&#45;&gt;VIELMP6 -->
+<g id="edge21" class="edge" data-source="VIELMP7" data-target="VIELMP6" data-layers="color:blue" data-attr-tail="8" data-attr-head="7" data-attr-capacity="-7.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-7" data-attr-lp="256,1496.6" data-attr-name="VIELMY762" data-attr-on_constrained_path="True" data-attr-penwidth="3.0" data-attr-pos="e,286.82,1427.6 163.52,1568.1 178.6,1556 203.33,1535.2 222,1514.6 244.91,1489.4 267.44,1457 281.28,1436.1"><title>VIELMP7&#45;&gt;VIELMP6</title>
+<path fill="none" stroke="blue" stroke-width="3" d="M163.52,-1568.05C178.6,-1555.96 203.33,-1535.15 222,-1514.6 244.91,-1489.37 267.44,-1457.04 281.28,-1436.08"/>
+<polygon fill="blue" stroke="blue" stroke-width="3" points="284.29,-1437.87 286.82,-1427.58 278.43,-1434.04 284.29,-1437.87"/>
+<text text-anchor="middle" x="256" y="-1494.1" font-family="Times,serif" font-size="10.00">&#45;7</text>
+</g>
+<!-- VIELMP7&#45;&gt;VIELMP6 -->
+<g id="edge22" class="edge" data-source="VIELMP7" data-target="VIELMP6" data-layers="color:blue" data-attr-tail="8" data-attr-head="7" data-attr-capacity="-4.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-4" data-attr-lp="289,1496.6" data-attr-name="VIELMY763" data-attr-on_constrained_path="True" data-attr-penwidth="2.0" data-attr-pos="e,293.82,1431.2 171.52,1572.2 197.44,1563.4 240.53,1545.1 265,1514.6 281.9,1493.6 289.29,1463.2 292.51,1441.4"><title>VIELMP7&#45;&gt;VIELMP6</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M171.52,-1572.19C197.44,-1563.38 240.53,-1545.06 265,-1514.6 281.9,-1493.57 289.29,-1463.18 292.51,-1441.44"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="296.02,-1441.6 293.82,-1431.24 289.08,-1440.71 296.02,-1441.6"/>
+<text text-anchor="middle" x="289" y="-1494.1" font-family="Times,serif" font-size="10.00">&#45;4</text>
+</g>
+<!-- H.PAUP7 -->
+<g id="node12" class="node" data-name="H.PAUP7" data-attr-name="H.PAUP7" data-attr-color="red" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="135,1413.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.75"><title>H.PAUP7</title>
+<ellipse fill="#ffffed" stroke="red" stroke-width="2" cx="135" cy="-1413.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="135" y="-1411.1" font-family="Times,serif" font-size="10.00">H.PAUP7</text>
+</g>
+<!-- VIELMP7&#45;&gt;H.PAUP7 -->
+<g id="edge19" class="edge" data-source="VIELMP7" data-target="H.PAUP7" data-layers="color:coral" data-attr-tail="8" data-attr-head="11" data-attr-capacity="2.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="2" data-attr-lp="146.5,1496.6" data-attr-name="H.PAUL71VIELM" data-attr-penwidth="1.5" data-attr-pos="e,136.21,1431.6 148.09,1562.3 146.6,1549.4 144.54,1530.8 143,1514.6 140.66,1489.9 138.45,1461.7 136.95,1441.6"><title>VIELMP7&#45;&gt;H.PAUP7</title>
+<path fill="none" stroke="coral" stroke-width="1.5" d="M148.09,-1562.3C146.6,-1549.38 144.54,-1530.85 143,-1514.6 140.66,-1489.91 138.45,-1461.74 136.95,-1441.61"/>
+<polygon fill="coral" stroke="coral" stroke-width="1.5" points="140.43,-1441.31 136.21,-1431.6 133.45,-1441.83 140.43,-1441.31"/>
+<text text-anchor="middle" x="146.5" y="-1494.1" font-family="Times,serif" font-size="10.00">2</text>
+</g>
+<!-- 2H.PAP7 -->
+<g id="node10" class="node" data-name="2H.PAP7" data-attr-name="2H.PAP7" data-attr-color="red" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="215,1330.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.75"><title>2H.PAP7</title>
+<ellipse fill="#ffffed" stroke="red" stroke-width="2" cx="215" cy="-1330.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="215" y="-1328.1" font-family="Times,serif" font-size="10.00">2H.PAP7</text>
+</g>
+<!-- H.PAUP6 -->
+<g id="node11" class="node" data-name="H.PAUP6" data-attr-name="H.PAUP6" data-attr-color="darkgreen" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="265,1222.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.75"><title>H.PAUP6</title>
+<ellipse fill="#ffffed" stroke="darkgreen" stroke-width="2" cx="265" cy="-1222.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="265" y="-1220.1" font-family="Times,serif" font-size="10.00">H.PAUP6</text>
+</g>
+<!-- 2H.PAP7&#45;&gt;H.PAUP6 -->
+<g id="edge23" class="edge" data-source="2H.PAP7" data-target="H.PAUP6" data-layers="color:blue" data-attr-tail="9" data-attr-head="10" data-attr-capacity="-4.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-4" data-attr-lp="253,1276.6" data-attr-name="H.PAUY762" data-attr-penwidth="2.0" data-attr-pos="e,257.24,1240 222.81,1313 230.88,1295.9 243.59,1269 252.95,1249.1"><title>2H.PAP7&#45;&gt;H.PAUP6</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M222.81,-1313.04C230.88,-1295.92 243.59,-1268.99 252.95,-1249.14"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="256.14,-1250.58 257.24,-1240.05 249.81,-1247.6 256.14,-1250.58"/>
+<text text-anchor="middle" x="253" y="-1274.1" font-family="Times,serif" font-size="10.00">&#45;4</text>
+</g>
+<!-- GUEUGP6 -->
+<g id="node34" class="node" data-name="GUEUGP6" data-attr-name="GUEUGP6" data-attr-color="darkgreen" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="265,1139.6" data-attr-prod_or_load="load" data-attr-shape="point" data-attr-style="filled" data-attr-value="-37.59623193373598" data-attr-width="0.05"><title>GUEUGP6</title>
+<ellipse fill="lightblue" stroke="darkgreen" stroke-width="2" cx="265" cy="-1139.6" rx="1.8" ry="1.8"/>
+</g>
+<!-- H.PAUP6&#45;&gt;GUEUGP6 -->
+<g id="edge24" class="edge" data-source="H.PAUP6" data-target="GUEUGP6" data-layers="color:coral" data-attr-tail="10" data-attr-head="33" data-attr-capacity="-0.0" data-attr-color="coral" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="-0" data-attr-lp="270,1181.1" data-attr-name="GUEUGL61H.PAU" data-attr-penwidth="1.5" data-attr-pos="265,1204.4 265,1182.9 265,1148 265,1141.6"><title>H.PAUP6&#45;&gt;GUEUGP6</title>
+<path fill="none" stroke="coral" stroke-width="1.5" d="M265,-1204.42C265,-1182.87 265,-1147.97 265,-1141.61"/>
+<text text-anchor="middle" x="270" y="-1178.6" font-family="Times,serif" font-size="10.00">&#45;0</text>
+</g>
+<!-- H.PAUP7&#45;&gt;2H.PAP7 -->
+<g id="edge26" class="edge" data-source="H.PAUP7" data-target="2H.PAP7" data-layers="color:blue" data-attr-tail="11" data-attr-head="9" data-attr-capacity="-4.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-4" data-attr-lp="185,1372.1" data-attr-name="H.PAUY772" data-attr-penwidth="2.0" data-attr-pos="e,200.82,1346 149.3,1398.1 161.59,1385.7 179.48,1367.6 193.5,1353.4"><title>H.PAUP7&#45;&gt;2H.PAP7</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M149.3,-1398.12C161.59,-1385.68 179.48,-1367.56 193.5,-1353.37"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="196.28,-1355.53 200.82,-1345.96 191.3,-1350.61 196.28,-1355.53"/>
+<text text-anchor="middle" x="185" y="-1369.6" font-family="Times,serif" font-size="10.00">&#45;4</text>
+</g>
+<!-- SSV.OP7 -->
+<g id="node48" class="node" data-name="SSV.OP7" data-attr-name="SSV.OP7" data-attr-color="red" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="True" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="135,1330.6" data-attr-prod_or_load="load" data-attr-shape="diamond" data-attr-style="filled" data-attr-value="-11.244022369384766" data-attr-width="0.88702"><title>SSV.OP7</title>
+<polygon fill="lightblue" stroke="red" stroke-width="2" points="135,-1348.6 103.13,-1330.6 135,-1312.6 166.87,-1330.6 135,-1348.6"/>
+<text text-anchor="middle" x="135" y="-1328.1" font-family="Times,serif" font-size="10.00">SSV.OP7</text>
+</g>
+<!-- H.PAUP7&#45;&gt;SSV.OP7 -->
+<g id="edge25" class="edge" data-source="H.PAUP7" data-target="SSV.OP7" data-layers="color:coral" data-attr-tail="11" data-attr-head="47" data-attr-capacity="6.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="6" data-attr-lp="138.5,1372.1" data-attr-name="H.PAUL71SSV.O" data-attr-penwidth="3.0" data-attr-pos="e,135,1348.8 135,1395.4 135,1384.8 135,1370.9 135,1358.8"><title>H.PAUP7&#45;&gt;SSV.OP7</title>
+<path fill="none" stroke="coral" stroke-width="3" d="M135,-1395.42C135,-1384.79 135,-1370.91 135,-1358.8"/>
+<polygon fill="coral" stroke="coral" stroke-width="3" points="138.5,-1358.75 135,-1348.75 131.5,-1358.75 138.5,-1358.75"/>
+<text text-anchor="middle" x="138.5" y="-1369.6" font-family="Times,serif" font-size="10.00">6</text>
+</g>
+<!-- AUXONP3 -->
+<g id="node13" class="node" data-name="AUXONP3" data-attr-name="AUXONP3" data-attr-color="purple" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="357,807.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.77308"><title>AUXONP3</title>
+<ellipse fill="#ffffed" stroke="purple" stroke-width="2" cx="357" cy="-807.6" rx="27.66" ry="18"/>
+<text text-anchor="middle" x="357" y="-805.1" font-family="Times,serif" font-size="10.00">AUXONP3</text>
+</g>
+<!-- RIBAUP3 -->
+<g id="node45" class="node" data-name="RIBAUP3" data-attr-name="RIBAUP3" data-attr-color="purple" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="357,715.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.75"><title>RIBAUP3</title>
+<ellipse fill="#ffffed" stroke="purple" stroke-width="2" cx="357" cy="-715.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="357" y="-713.1" font-family="Times,serif" font-size="10.00">RIBAUP3</text>
+</g>
+<!-- AUXONP3&#45;&gt;RIBAUP3 -->
+<g id="edge27" class="edge" data-source="AUXONP3" data-target="RIBAUP3" data-layers="color:blue" data-attr-tail="12" data-attr-head="44" data-attr-capacity="-4.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-4" data-attr-lp="362,761.6" data-attr-name="AUXONL31RIBAU" data-attr-penwidth="2.0" data-attr-pos="e,357,733.9 357,789.25 357,776.42 357,758.71 357,743.98"><title>AUXONP3&#45;&gt;RIBAUP3</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M357,-789.25C357,-776.42 357,-758.71 357,-743.98"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="360.5,-743.9 357,-733.9 353.5,-743.9 360.5,-743.9"/>
+<text text-anchor="middle" x="362" y="-759.1" font-family="Times,serif" font-size="10.00">&#45;4</text>
+</g>
+<!-- BEON P3 -->
+<g id="node14" class="node" data-name="BEON P3" data-attr-name="BEON P3" data-attr-color="purple" data-attr-fillcolor="coral" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="477,715.6" data-attr-prod_or_load="prod" data-attr-shape="oval" data-attr-style="filled" data-attr-value="122.28780397918274" data-attr-width="0.75"><title>BEON P3</title>
+<ellipse fill="coral" stroke="purple" stroke-width="2" cx="477" cy="-715.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="477" y="-713.1" font-family="Times,serif" font-size="10.00">BEON P3</text>
+</g>
+<!-- P.SAOP3 -->
+<g id="node42" class="node" data-name="P.SAOP3" data-attr-name="P.SAOP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="475,632.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-13.056921005249023" data-attr-width="0.75"><title>P.SAOP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="475" cy="-632.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="475" y="-630.1" font-family="Times,serif" font-size="10.00">P.SAOP3</text>
+</g>
+<!-- BEON P3&#45;&gt;P.SAOP3 -->
+<g id="edge28" class="edge" data-source="BEON P3" data-target="P.SAOP3" data-layers="color:blue" data-attr-tail="13" data-attr-head="41" data-attr-capacity="-26.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-26" data-attr-lp="484,674.1" data-attr-name="BEON L31P.SAO" data-attr-on_constrained_path="True" data-attr-penwidth="13.0" data-attr-pos="e,475.42,650.75 476.58,697.42 476.31,686.79 475.97,672.91 475.67,660.8"><title>BEON P3&#45;&gt;P.SAOP3</title>
+<path fill="none" stroke="blue" stroke-width="13" d="M476.58,-697.42C476.31,-686.79 475.97,-672.91 475.67,-660.8"/>
+<polygon fill="blue" stroke="blue" stroke-width="13" points="487.04,-660.47 475.42,-650.75 464.3,-661.03 487.04,-660.47"/>
+<text text-anchor="middle" x="484" y="-671.6" font-family="Times,serif" font-size="10.00">&#45;26</text>
+</g>
+<!-- BOISSP6 -->
+<g id="node15" class="node" data-name="BOISSP6" data-attr-name="BOISSP6" data-attr-color="darkgreen" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="241,807.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-0.15227925062267644" data-attr-width="0.75"><title>BOISSP6</title>
+<ellipse fill="lightblue" stroke="darkgreen" stroke-width="2" cx="241" cy="-807.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="241" y="-805.1" font-family="Times,serif" font-size="10.00">BOISSP6</text>
+</g>
+<!-- BOISSP6&#45;&gt;GEN.PP6 -->
+<g id="edge29" class="edge" data-source="BOISSP6" data-target="GEN.PP6" data-layers="color:coral style:dashed" data-attr-tail="14" data-attr-head="1" data-attr-capacity="0.0" data-attr-color="coral" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="0" data-attr-lp="235.5,761.6" data-attr-name="BOISSL61GEN.P" data-attr-penwidth="1.5" data-attr-pos="236.67,789.67 232.56,773.58 226.41,749.52 222.31,733.45" data-attr-style="dashed"><title>BOISSP6&#45;&gt;GEN.PP6</title>
+<path fill="none" stroke="coral" stroke-width="1.5" stroke-dasharray="5,2" d="M236.67,-789.67C232.56,-773.58 226.41,-749.52 222.31,-733.45"/>
+<text text-anchor="middle" x="235.5" y="-759.1" font-family="Times,serif" font-size="10.00">0</text>
+</g>
+<!-- C.FOUP3 -->
+<g id="node16" class="node" data-name="C.FOUP3" data-attr-name="C.FOUP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="468,466.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-6.148222923278809" data-attr-width="0.75"><title>C.FOUP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="468" cy="-466.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="468" y="-464.1" font-family="Times,serif" font-size="10.00">C.FOUP3</text>
+</g>
+<!-- MERVAP3 -->
+<g id="node40" class="node" data-name="MERVAP3" data-attr-name="MERVAP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="464,383.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-0.10486570745706558" data-attr-width="0.77308"><title>MERVAP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="464" cy="-383.6" rx="27.66" ry="18"/>
+<text text-anchor="middle" x="464" y="-381.1" font-family="Times,serif" font-size="10.00">MERVAP3</text>
+</g>
+<!-- C.FOUP3&#45;&gt;MERVAP3 -->
+<g id="edge30" class="edge" data-source="C.FOUP3" data-target="MERVAP3" data-layers="color:blue style:tapered" data-attr-tail="15" data-attr-head="39" data-attr-arrowtail="none" data-attr-capacity="-25.0" data-attr-color="blue" data-attr-dir="both" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-25" data-attr-lp="474,425.1" data-attr-name="C.FOUL31MERVA" data-attr-on_constrained_path="True" data-attr-penwidth="13.0" data-attr-pos="e,464.85,401.75 467.15,448.42 466.63,437.79 465.94,423.91 465.34,411.8" data-attr-style="tapered"><title>C.FOUP3&#45;&gt;MERVAP3</title>
+<polygon fill="blue" stroke="transparent" stroke-width="13" points="467.15,-448.42 467.65,-446.78 468.15,-445.08 468.67,-443.35 469.21,-441.58 469.75,-439.77 470.3,-437.93 470.86,-436.07 471.42,-434.18 472,-432.27 472.57,-430.35 472.2,-428.47 471.43,-426.6 470.65,-424.72 469.88,-422.84 469.11,-420.97 468.35,-419.11 467.59,-417.26 466.83,-415.42 466.08,-413.6 465.34,-411.8 465.34,-411.8 464.79,-413.66 464.22,-415.55 463.65,-417.45 463.07,-419.37 462.5,-421.3 461.91,-423.24 461.33,-425.18 460.75,-427.12 460.17,-429.06 459.98,-430.98 460.74,-432.83 461.5,-434.67 462.25,-436.49 462.99,-438.29 463.72,-440.07 464.43,-441.81 465.14,-443.52 465.83,-445.2 466.5,-446.83 467.15,-448.42 467.15,-448.42"/>
+<polygon fill="blue" stroke="blue" stroke-width="13" points="476.7,-411.18 464.85,-401.75 453.98,-412.3 476.7,-411.18"/>
+<text text-anchor="middle" x="474" y="-422.6" font-family="Times,serif" font-size="10.00">&#45;25</text>
+</g>
+<!-- C.REGP3 -->
+<g id="node17" class="node" data-name="C.REGP3" data-attr-name="C.REGP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="312,1139.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-0.1620672643184662" data-attr-width="0.75"><title>C.REGP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="312" cy="-1139.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="312" y="-1137.1" font-family="Times,serif" font-size="10.00">C.REGP3</text>
+</g>
+<!-- ZCRIMP3 -->
+<g id="node51" class="node" data-name="ZCRIMP3" data-attr-name="ZCRIMP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="311,1056.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-11.261329609944369" data-attr-width="0.75"><title>ZCRIMP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="311" cy="-1056.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="311" y="-1054.1" font-family="Times,serif" font-size="10.00">ZCRIMP3</text>
+</g>
+<!-- C.REGP3&#45;&gt;ZCRIMP3 -->
+<g id="edge31" class="edge" data-source="C.REGP3" data-target="ZCRIMP3" data-layers="color:blue" data-attr-tail="16" data-attr-head="50" data-attr-capacity="-2.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-2" data-attr-lp="316,1098.1" data-attr-name="C.REGL31ZCRIM" data-attr-penwidth="1.5" data-attr-pos="e,311.21,1074.8 311.79,1121.4 311.66,1110.8 311.49,1096.9 311.34,1084.8"><title>C.REGP3&#45;&gt;ZCRIMP3</title>
+<path fill="none" stroke="blue" stroke-width="1.5" d="M311.79,-1121.42C311.66,-1110.79 311.49,-1096.91 311.34,-1084.8"/>
+<polygon fill="blue" stroke="blue" stroke-width="1.5" points="314.84,-1084.71 311.21,-1074.75 307.84,-1084.8 314.84,-1084.71"/>
+<text text-anchor="middle" x="316" y="-1095.6" font-family="Times,serif" font-size="10.00">&#45;2</text>
+</g>
+<!-- ZMAGNP6 -->
+<g id="node53" class="node" data-name="ZMAGNP6" data-attr-name="ZMAGNP6" data-attr-color="darkgreen" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="386,1222.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.80226"><title>ZMAGNP6</title>
+<ellipse fill="#ffffed" stroke="darkgreen" stroke-width="2" cx="386" cy="-1222.6" rx="28.76" ry="18"/>
+<text text-anchor="middle" x="386" y="-1220.1" font-family="Times,serif" font-size="10.00">ZMAGNP6</text>
+</g>
+<!-- C.REGP6&#45;&gt;ZMAGNP6 -->
+<g id="edge32" class="edge" data-source="C.REGP6" data-target="ZMAGNP6" data-layers="color:blue" data-attr-tail="17" data-attr-head="52" data-attr-capacity="-9.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-9" data-attr-lp="370,1276.6" data-attr-name="C.REGL61ZMAGN" data-attr-on_constrained_path="True" data-attr-penwidth="5.0" data-attr-pos="e,377.11,1239.9 336.81,1313.5 346.22,1296.3 361.26,1268.8 372.24,1248.8"><title>C.REGP6&#45;&gt;ZMAGNP6</title>
+<path fill="none" stroke="blue" stroke-width="5" d="M336.81,-1313.5C346.22,-1296.3 361.26,-1268.81 372.24,-1248.75"/>
+<polygon fill="blue" stroke="blue" stroke-width="5" points="376.15,-1250.72 377.11,-1239.85 368.47,-1246.52 376.15,-1250.72"/>
+<text text-anchor="middle" x="370" y="-1274.1" font-family="Times,serif" font-size="10.00">&#45;9</text>
+</g>
+<!-- C.SAUP3 -->
+<g id="node19" class="node" data-name="C.SAUP3" data-attr-name="C.SAUP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="323,973.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-644.2928026129196" data-attr-width="0.75"><title>C.SAUP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="323" cy="-973.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="323" y="-971.1" font-family="Times,serif" font-size="10.00">C.SAUP3</text>
+</g>
+<!-- CHALOP3 -->
+<g id="node20" class="node" data-name="CHALOP3" data-attr-name="CHALOP3" data-attr-color="purple" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="286,890.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.7585"><title>CHALOP3</title>
+<ellipse fill="#ffffed" stroke="purple" stroke-width="2" cx="286" cy="-890.6" rx="27.11" ry="18"/>
+<text text-anchor="middle" x="286" y="-888.1" font-family="Times,serif" font-size="10.00">CHALOP3</text>
+</g>
+<!-- LOUHAP3 -->
+<g id="node36" class="node" data-name="LOUHAP3" data-attr-name="LOUHAP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="True" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="331,18" data-attr-prod_or_load="load" data-attr-shape="diamond" data-attr-style="filled" data-attr-value="-7.917870998382568" data-attr-width="1.0933"><title>LOUHAP3</title>
+<polygon fill="lightblue" stroke="purple" stroke-width="2" points="331,-36 291.78,-18 331,0 370.22,-18 331,-36"/>
+<text text-anchor="middle" x="331" y="-15.5" font-family="Times,serif" font-size="10.00">LOUHAP3</text>
+</g>
+<!-- CHALOP3&#45;&gt;LOUHAP3 -->
+<g id="edge33" class="edge" data-source="CHALOP3" data-target="LOUHAP3" data-layers="color:coral style:dashed" data-attr-tail="19" data-attr-head="35" data-attr-capacity="-0.0" data-attr-color="coral" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="-0" data-attr-lp="306,425.1" data-attr-name="CHALOL31LOUHA" data-attr-penwidth="1.5" data-attr-pos="290.99,872.7 295.36,856.43 301,831.05 301,808.6 301,808.6 301,808.6 301,87.5 301,66.727 312.72,45.163 321.51,31.91" data-attr-style="dashed"><title>CHALOP3&#45;&gt;LOUHAP3</title>
+<path fill="none" stroke="coral" stroke-width="1.5" stroke-dasharray="5,2" d="M290.99,-872.7C295.36,-856.43 301,-831.05 301,-808.6 301,-808.6 301,-808.6 301,-87.5 301,-66.73 312.72,-45.16 321.51,-31.91"/>
+<text text-anchor="middle" x="306" y="-422.6" font-family="Times,serif" font-size="10.00">&#45;0</text>
+</g>
+<!-- CHALOP6&#45;&gt;CHALOP3 -->
+<g id="edge35" class="edge" data-source="CHALOP6" data-target="CHALOP3" data-layers="color:coral" data-attr-tail="20" data-attr-head="19" data-attr-capacity="-0.0" data-attr-color="coral" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="-0" data-attr-lp="248,932.1" data-attr-name="CHALOY633" data-attr-penwidth="1.5" data-attr-pos="243.51,956.2 240.48,947.11 238.61,935.82 243,926.6 247.71,916.69 256.75,908.67 265.34,902.81"><title>CHALOP6&#45;&gt;CHALOP3</title>
+<path fill="none" stroke="coral" stroke-width="1.5" d="M243.51,-956.2C240.48,-947.11 238.61,-935.82 243,-926.6 247.71,-916.69 256.75,-908.67 265.34,-902.81"/>
+<text text-anchor="middle" x="248" y="-929.6" font-family="Times,serif" font-size="10.00">&#45;0</text>
+</g>
+<!-- CHALOP6&#45;&gt;CHALOP3 -->
+<g id="edge36" class="edge" data-source="CHALOP6" data-target="CHALOP3" data-layers="color:coral" data-attr-tail="20" data-attr-head="19" data-attr-capacity="-0.0" data-attr-color="coral" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="-0" data-attr-lp="276,932.1" data-attr-name="CHALOY631" data-attr-penwidth="1.5" data-attr-pos="258.08,956.21 264.12,942.25 272.74,922.28 278.81,908.25"><title>CHALOP6&#45;&gt;CHALOP3</title>
+<path fill="none" stroke="coral" stroke-width="1.5" d="M258.08,-956.21C264.12,-942.25 272.74,-922.28 278.81,-908.25"/>
+<text text-anchor="middle" x="276" y="-929.6" font-family="Times,serif" font-size="10.00">&#45;0</text>
+</g>
+<!-- CHALOP6&#45;&gt;CHALOP3 -->
+<g id="edge37" class="edge" data-source="CHALOP6" data-target="CHALOP3" data-layers="color:coral" data-attr-tail="20" data-attr-head="19" data-attr-capacity="-0.0" data-attr-color="coral" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="-0" data-attr-lp="293,932.1" data-attr-name="CHALOY632" data-attr-penwidth="1.5" data-attr-pos="268.41,959.49 274.87,953.59 281.47,946.04 285,937.6 288.76,928.61 289.17,917.74 288.56,908.83"><title>CHALOP6&#45;&gt;CHALOP3</title>
+<path fill="none" stroke="coral" stroke-width="1.5" d="M268.41,-959.49C274.87,-953.59 281.47,-946.04 285,-937.6 288.76,-928.61 289.17,-917.74 288.56,-908.83"/>
+<text text-anchor="middle" x="293" y="-929.6" font-family="Times,serif" font-size="10.00">&#45;0</text>
+</g>
+<!-- CPVANP6 -->
+<g id="node27" class="node" data-name="CPVANP6" data-attr-name="CPVANP6" data-attr-color="darkgreen" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="450,890.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.75"><title>CPVANP6</title>
+<ellipse fill="#ffffed" stroke="darkgreen" stroke-width="2" cx="450" cy="-890.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="450" y="-888.1" font-family="Times,serif" font-size="10.00">CPVANP6</text>
+</g>
+<!-- CHALOP6&#45;&gt;CPVANP6 -->
+<g id="edge34" class="edge" data-source="CHALOP6" data-target="CPVANP6" data-layers="color:blue" data-attr-tail="20" data-attr-head="26" data-attr-capacity="-8.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-8" data-attr-lp="361,932.1" data-attr-name="CHALOL61CPVAN" data-attr-on_constrained_path="True" data-attr-penwidth="4.0" data-attr-pos="e,427.04,900.52 272.59,962.11 277.32,959.9 282.3,957.63 287,955.6 299.46,950.22 373.79,921.23 417.65,904.17"><title>CHALOP6&#45;&gt;CPVANP6</title>
+<path fill="none" stroke="blue" stroke-width="4" d="M272.59,-962.11C277.32,-959.9 282.3,-957.63 287,-955.6 299.46,-950.22 373.79,-921.23 417.65,-904.17"/>
+<polygon fill="blue" stroke="blue" stroke-width="4" points="418.99,-907.4 427.04,-900.52 416.45,-900.88 418.99,-907.4"/>
+<text text-anchor="middle" x="361" y="-929.6" font-family="Times,serif" font-size="10.00">&#45;8</text>
+</g>
+<!-- CIZE P6 -->
+<g id="node22" class="node" data-name="CIZE P6" data-attr-name="CIZE P6" data-attr-color="darkgreen" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="251,549.6" data-attr-prod_or_load="load" data-attr-shape="point" data-attr-style="filled" data-attr-value="-7.378726482391357" data-attr-width="0.05"><title>CIZE P6</title>
+<ellipse fill="lightblue" stroke="darkgreen" stroke-width="2" cx="251" cy="-549.6" rx="1.8" ry="1.8"/>
+</g>
+<!-- FLEYRP6 -->
+<g id="node30" class="node" data-name="FLEYRP6" data-attr-name="FLEYRP6" data-attr-color="darkgreen" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="251,466.6" data-attr-prod_or_load="load" data-attr-shape="point" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.05"><title>FLEYRP6</title>
+<ellipse fill="#ffffed" stroke="darkgreen" stroke-width="2" cx="251" cy="-466.6" rx="1.8" ry="1.8"/>
+</g>
+<!-- CIZE P6&#45;&gt;FLEYRP6 -->
+<g id="edge38" class="edge" data-source="CIZE P6" data-target="FLEYRP6" data-layers="color:coral" data-attr-tail="21" data-attr-head="29" data-attr-capacity="9.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="9" data-attr-lp="254.5,508.1" data-attr-name="CIZE L61FLEYR" data-attr-penwidth="5.0" data-attr-pos="e,251,468.4 251,547.69 251,540.98 251,498.81 251,478.51"><title>CIZE P6&#45;&gt;FLEYRP6</title>
+<path fill="none" stroke="coral" stroke-width="5" d="M251,-547.69C251,-540.98 251,-498.81 251,-478.51"/>
+<polygon fill="coral" stroke="coral" stroke-width="5" points="255.38,-478.4 251,-468.4 246.63,-478.4 255.38,-478.4"/>
+<text text-anchor="middle" x="254.5" y="-505.6" font-family="Times,serif" font-size="10.00">9</text>
+</g>
+<!-- COLLOP3 -->
+<g id="node23" class="node" data-name="COLLOP3" data-attr-name="COLLOP3" data-attr-color="purple" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="370,890.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.75"><title>COLLOP3</title>
+<ellipse fill="#ffffed" stroke="purple" stroke-width="2" cx="370" cy="-890.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="370" y="-888.1" font-family="Times,serif" font-size="10.00">COLLOP3</text>
+</g>
+<!-- COLLOP3&#45;&gt;AUXONP3 -->
+<g id="edge39" class="edge" data-source="COLLOP3" data-target="AUXONP3" data-layers="color:blue" data-attr-tail="22" data-attr-head="12" data-attr-capacity="-4.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-4" data-attr-lp="369,849.1" data-attr-name="AUXONL31COLLO" data-attr-penwidth="2.0" data-attr-pos="e,359.75,825.75 367.24,872.42 365.54,861.79 363.31,847.91 361.37,835.8"><title>COLLOP3&#45;&gt;AUXONP3</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M367.24,-872.42C365.54,-861.79 363.31,-847.91 361.37,-835.8"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="364.79,-835.07 359.75,-825.75 357.88,-836.18 364.79,-835.07"/>
+<text text-anchor="middle" x="369" y="-846.6" font-family="Times,serif" font-size="10.00">&#45;4</text>
+</g>
+<!-- COMMUP6&#45;&gt;H.PAUP6 -->
+<g id="edge40" class="edge" data-source="COMMUP6" data-target="H.PAUP6" data-layers="color:coral" data-attr-tail="23" data-attr-head="10" data-attr-capacity="2.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="2" data-attr-lp="268.5,1276.6" data-attr-name="COMMUL61H.PAU" data-attr-penwidth="1.5" data-attr-pos="e,265,1240.9 265,1328.4 265,1320.9 265,1279.6 265,1251.1"><title>COMMUP6&#45;&gt;H.PAUP6</title>
+<path fill="none" stroke="coral" stroke-width="1.5" d="M265,-1328.41C265,-1320.91 265,-1279.57 265,-1251.11"/>
+<polygon fill="coral" stroke="coral" stroke-width="1.5" points="268.5,-1250.93 265,-1240.93 261.5,-1250.93 268.5,-1250.93"/>
+<text text-anchor="middle" x="268.5" y="-1274.1" font-family="Times,serif" font-size="10.00">2</text>
+</g>
+<!-- COUCHP6&#45;&gt;CPVANP6 -->
+<g id="edge41" class="edge" data-source="COUCHP6" data-target="CPVANP6" data-layers="color:blue" data-attr-tail="24" data-attr-head="26" data-attr-capacity="-8.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-8" data-attr-lp="493,1098.1" data-attr-name="COUCHL61CPVAN" data-attr-on_constrained_path="True" data-attr-penwidth="4.0" data-attr-pos="e,462.02,906.74 469.52,1259.1 477.2,1240.7 488,1209.9 488,1182.1 488,1182.1 488,1182.1 488,972.6 488,951.82 477.63,930.65 467.72,915.16"><title>COUCHP6&#45;&gt;CPVANP6</title>
+<path fill="none" stroke="blue" stroke-width="4" d="M469.52,-1259.09C477.2,-1240.71 488,-1209.9 488,-1182.1 488,-1182.1 488,-1182.1 488,-972.6 488,-951.82 477.63,-930.65 467.72,-915.16"/>
+<polygon fill="blue" stroke="blue" stroke-width="4" points="470.53,-913.06 462.02,-906.74 464.73,-916.99 470.53,-913.06"/>
+<text text-anchor="middle" x="493" y="-1095.6" font-family="Times,serif" font-size="10.00">&#45;8</text>
+</g>
+<!-- CPVANP3 -->
+<g id="node26" class="node" data-name="CPVANP3" data-attr-name="CPVANP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-in_red_loop="True" data-attr-is_hub="True" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="479,807.6" data-attr-prod_or_load="load" data-attr-shape="diamond" data-attr-style="filled" data-attr-value="-17.320354461669922" data-attr-width="1.052"><title>CPVANP3</title>
+<polygon fill="lightblue" stroke="purple" stroke-width="2" points="479,-825.6 441.25,-807.6 479,-789.6 516.75,-807.6 479,-825.6"/>
+<text text-anchor="middle" x="479" y="-805.1" font-family="Times,serif" font-size="10.00">CPVANP3</text>
+</g>
+<!-- CPVANP3&#45;&gt;BEON P3 -->
+<g id="edge42" class="edge" data-source="CPVANP3" data-target="BEON P3" data-attr-tail="25" data-attr-head="13" data-attr-capacity="-26.0" data-attr-color="black:yellow:black" data-attr-constrained="True" data-attr-fontcolor="darkred" data-attr-fontsize="10" data-attr-is_monitored="True" data-attr-is_overload="True" data-attr-label="-26 &lt;BR/&gt;  &lt;B&gt;97%&lt;/B&gt;  → 0%" data-attr-lp="510.5,761.6" data-attr-name="BEON L31CPVAN" data-attr-on_constrained_path="True" data-attr-penwidth="13.0" data-attr-pos="e,477.38,733.76 478.62,789.67 478.34,776.81 477.94,758.84 477.61,743.95"><title>CPVANP3&#45;&gt;BEON P3</title>
+<path fill="none" stroke="black" stroke-width="13" d="M476.62,-789.72C476.34,-776.85 475.94,-758.89 475.61,-743.99"/>
+<path fill="none" stroke="yellow" stroke-width="13" d="M478.62,-789.67C478.34,-776.81 477.94,-758.84 477.61,-743.95"/>
+<path fill="none" stroke="black" stroke-width="13" d="M480.62,-789.63C480.34,-776.76 479.94,-758.8 479.61,-743.9"/>
+<polygon fill="black" stroke="black" stroke-width="13" points="488.98,-743.5 477.38,-733.76 466.23,-744.01 488.98,-743.5"/>
+<text text-anchor="start" x="499.5" y="-764.6" font-family="Times,serif" font-size="10.00" fill="darkred"> &#45;26 </text>
+<text text-anchor="start" x="478" y="-754.6" font-family="Times,serif" font-size="10.00" fill="darkred"> &#160;</text>
+<text text-anchor="start" x="485" y="-754.6" font-family="Times,serif" font-weight="bold" font-size="10.00" fill="darkred">97%</text>
+<text text-anchor="start" x="509" y="-754.6" font-family="Times,serif" font-size="10.00" fill="darkred"> &#160;→ 0%</text>
+</g>
+<!-- CPVANP3&#45;&gt;RIBAUP3 -->
+<g id="edge43" class="edge" data-source="CPVANP3" data-target="RIBAUP3" data-layers="color:coral" data-attr-tail="25" data-attr-head="44" data-attr-capacity="4.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="4" data-attr-lp="431.5,761.6" data-attr-name="CPVANL31RIBAU" data-attr-penwidth="2.0" data-attr-pos="e,374.61,729.59 464.53,795.92 444.43,781.09 407.73,754.03 382.86,735.68"><title>CPVANP3&#45;&gt;RIBAUP3</title>
+<path fill="none" stroke="coral" stroke-width="2" d="M464.53,-795.92C444.43,-781.09 407.73,-754.03 382.86,-735.68"/>
+<polygon fill="coral" stroke="coral" stroke-width="2" points="384.73,-732.71 374.61,-729.59 380.57,-738.34 384.73,-732.71"/>
+<text text-anchor="middle" x="431.5" y="-759.1" font-family="Times,serif" font-size="10.00">4</text>
+</g>
+<!-- CPVANP6&#45;&gt;CPVANP3 -->
+<g id="edge45" class="edge" data-source="CPVANP6" data-target="CPVANP3" data-layers="color:blue" data-attr-tail="26" data-attr-head="25" data-attr-capacity="-11.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-11" data-attr-lp="474,849.1" data-attr-name="CPVANY633" data-attr-on_constrained_path="True" data-attr-penwidth="6.0" data-attr-pos="e,473.89,823.54 456.29,872.89 458.44,867.11 460.85,860.58 463,854.6 465.5,847.65 468.16,840.09 470.57,833.14"><title>CPVANP6&#45;&gt;CPVANP3</title>
+<path fill="none" stroke="blue" stroke-width="6" d="M456.29,-872.89C458.44,-867.11 460.85,-860.58 463,-854.6 465.5,-847.65 468.16,-840.09 470.57,-833.14"/>
+<polygon fill="blue" stroke="blue" stroke-width="6" points="475.58,-834.71 473.89,-823.54 465.66,-831.28 475.58,-834.71"/>
+<text text-anchor="middle" x="474" y="-846.6" font-family="Times,serif" font-size="10.00">&#45;11</text>
+</g>
+<!-- CPVANP6&#45;&gt;CPVANP3 -->
+<g id="edge46" class="edge" data-source="CPVANP6" data-target="CPVANP3" data-layers="color:dimgray style:dotted" data-attr-tail="26" data-attr-head="25" data-attr-capacity="0.0" data-attr-color="dimgray" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="0" data-attr-lp="491.5,849.1" data-attr-name="CPVANY632" data-attr-penwidth="1.5" data-attr-pos="468.13,877.05 475.1,871.14 482.27,863.43 486,854.6 490.28,844.48 488.03,832.13 484.99,822.78" data-attr-style="dotted"><title>CPVANP6&#45;&gt;CPVANP3</title>
+<path fill="none" stroke="dimgray" stroke-width="1.5" stroke-dasharray="1,5" d="M468.13,-877.05C475.1,-871.14 482.27,-863.43 486,-854.6 490.28,-844.48 488.03,-832.13 484.99,-822.78"/>
+<text text-anchor="middle" x="491.5" y="-846.6" font-family="Times,serif" font-size="10.00">0</text>
+</g>
+<!-- CPVANP6&#45;&gt;CPVANP3 -->
+<g id="edge47" class="edge" data-source="CPVANP6" data-target="CPVANP3" data-layers="color:blue" data-attr-tail="26" data-attr-head="25" data-attr-capacity="-11.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-11" data-attr-lp="451,849.1" data-attr-name="CPVANY631" data-attr-on_constrained_path="True" data-attr-penwidth="6.0" data-attr-pos="e,463.88,818.68 443.23,872.88 440.62,863.91 439.1,852.83 443,843.6 445.87,836.8 450.78,830.67 456.07,825.51"><title>CPVANP6&#45;&gt;CPVANP3</title>
+<path fill="none" stroke="blue" stroke-width="6" d="M443.23,-872.88C440.62,-863.91 439.1,-852.83 443,-843.6 445.87,-836.8 450.78,-830.67 456.07,-825.51"/>
+<polygon fill="blue" stroke="blue" stroke-width="6" points="459.81,-829.22 463.88,-818.68 452.9,-821.31 459.81,-829.22"/>
+<text text-anchor="middle" x="451" y="-846.6" font-family="Times,serif" font-size="10.00">&#45;11</text>
+</g>
+<!-- PYMONP6 -->
+<g id="node44" class="node" data-name="PYMONP6" data-attr-name="PYMONP6" data-attr-color="darkgreen" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="381,466.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-12.424229881299595" data-attr-width="0.80226"><title>PYMONP6</title>
+<ellipse fill="lightblue" stroke="darkgreen" stroke-width="2" cx="381" cy="-466.6" rx="28.76" ry="18"/>
+<text text-anchor="middle" x="381" y="-464.1" font-family="Times,serif" font-size="10.00">PYMONP6</text>
+</g>
+<!-- CPVANP6&#45;&gt;PYMONP6 -->
+<g id="edge44" class="edge" data-source="CPVANP6" data-target="PYMONP6" data-layers="color:dimgray" data-attr-tail="26" data-attr-head="43" data-attr-capacity="-0.0" data-attr-color="dimgray" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-0" data-attr-lp="418,674.1" data-attr-name="CPVANL61PYMON" data-attr-penwidth="1.5" data-attr-pos="e,391.48,483.62 438.09,874.11 427.27,858.47 413,833.18 413,808.6 413,808.6 413,808.6 413,548.6 413,528.82 404.64,508.1 396.47,492.56"><title>CPVANP6&#45;&gt;PYMONP6</title>
+<path fill="none" stroke="dimgray" stroke-width="1.5" d="M438.09,-874.11C427.27,-858.47 413,-833.18 413,-808.6 413,-808.6 413,-808.6 413,-548.6 413,-528.82 404.64,-508.1 396.47,-492.56"/>
+<polygon fill="dimgray" stroke="dimgray" stroke-width="1.5" points="399.41,-490.65 391.48,-483.62 393.29,-494.06 399.41,-490.65"/>
+<text text-anchor="middle" x="418" y="-671.6" font-family="Times,serif" font-size="10.00">&#45;0</text>
+</g>
+<!-- CREYSP7 -->
+<g id="node28" class="node" data-name="CREYSP7" data-attr-name="CREYSP7" data-attr-color="red" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="105,1181.1" data-attr-prod_or_load="load" data-attr-shape="point" data-attr-style="filled" data-attr-value="-0.42903903126716614" data-attr-width="0.05"><title>CREYSP7</title>
+<ellipse fill="lightblue" stroke="red" stroke-width="2" cx="105" cy="-1181.1" rx="1.8" ry="1.8"/>
+</g>
+<!-- CREYSP7&#45;&gt;GEN.PP7 -->
+<g id="edge48" class="edge" data-source="CREYSP7" data-target="GEN.PP7" data-layers="color:coral" data-attr-tail="27" data-attr-head="2" data-attr-capacity="7.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="7" data-attr-lp="79.5,932.1" data-attr-name="CREYSL71GEN.P" data-attr-penwidth="3.0" data-attr-pos="e,88.673,650.4 104.5,1179.3 100.65,1173.4 76,1134.4 76,1099.1 76,1099.1 76,1099.1 76,714.6 76,696 80.809,675.61 85.588,659.95"><title>CREYSP7&#45;&gt;GEN.PP7</title>
+<path fill="none" stroke="coral" stroke-width="3" d="M104.5,-1179.34C100.65,-1173.45 76,-1134.35 76,-1099.1 76,-1099.1 76,-1099.1 76,-714.6 76,-696 80.81,-675.61 85.59,-659.95"/>
+<polygon fill="coral" stroke="coral" stroke-width="3" points="88.93,-660.99 88.67,-650.4 82.27,-658.84 88.93,-660.99"/>
+<text text-anchor="middle" x="79.5" y="-929.6" font-family="Times,serif" font-size="10.00">7</text>
+</g>
+<!-- CREYSP7&#45;&gt;GEN.PP7 -->
+<g id="edge49" class="edge" data-source="CREYSP7" data-target="GEN.PP7" data-layers="color:coral" data-attr-tail="27" data-attr-head="2" data-attr-capacity="7.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="7" data-attr-lp="117.5,932.1" data-attr-name="CREYSL72GEN.P" data-attr-penwidth="3.0" data-attr-pos="e,101.33,650.4 105.16,1179.3 106.35,1173.2 114,1132.5 114,1099.1 114,1099.1 114,1099.1 114,714.6 114,696 109.19,675.61 104.41,659.95"><title>CREYSP7&#45;&gt;GEN.PP7</title>
+<path fill="none" stroke="coral" stroke-width="3" d="M105.16,-1179.31C106.35,-1173.16 114,-1132.49 114,-1099.1 114,-1099.1 114,-1099.1 114,-714.6 114,-696 109.19,-675.61 104.41,-659.95"/>
+<polygon fill="coral" stroke="coral" stroke-width="3" points="107.73,-658.84 101.33,-650.4 101.07,-660.99 107.73,-658.84"/>
+<text text-anchor="middle" x="117.5" y="-929.6" font-family="Times,serif" font-size="10.00">7</text>
+</g>
+<!-- CUISEP3 -->
+<g id="node29" class="node" data-name="CUISEP3" data-attr-name="CUISEP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="237,233.8" data-attr-prod_or_load="load" data-attr-shape="point" data-attr-style="filled" data-attr-value="-16.68807815015316" data-attr-width="0.05"><title>CUISEP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="237" cy="-233.8" rx="1.8" ry="1.8"/>
+</g>
+<!-- G.CHEP3 -->
+<g id="node32" class="node" data-name="G.CHEP3" data-attr-name="G.CHEP3" data-attr-color="purple" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="254,163" data-attr-prod_or_load="load" data-attr-shape="point" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.05"><title>G.CHEP3</title>
+<ellipse fill="#ffffed" stroke="purple" stroke-width="2" cx="254" cy="-163" rx="1.8" ry="1.8"/>
+</g>
+<!-- CUISEP3&#45;&gt;G.CHEP3 -->
+<g id="edge50" class="edge" data-source="CUISEP3" data-target="G.CHEP3" data-layers="color:coral" data-attr-tail="28" data-attr-head="31" data-attr-capacity="14.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="14" data-attr-lp="244.5,208.5" data-attr-name="CUISEL31G.CHE" data-attr-penwidth="7.0" data-attr-pos="e,253.47,164.92 236.89,231.65 236.55,227.63 235.65,213.93 238,203 240.2,192.73 244.96,181.72 248.72,174.03"><title>CUISEP3&#45;&gt;G.CHEP3</title>
+<path fill="none" stroke="coral" stroke-width="7" d="M236.89,-231.65C236.55,-227.63 235.65,-213.93 238,-203 240.2,-192.73 244.96,-181.72 248.72,-174.03"/>
+<polygon fill="coral" stroke="coral" stroke-width="7" points="254.28,-176.62 253.47,-164.92 243.42,-170.96 254.28,-176.62"/>
+<text text-anchor="middle" x="244.5" y="-206" font-family="Times,serif" font-size="10.00">14</text>
+</g>
+<!-- FLEYRP6&#45;&gt;VOUGLP6 -->
+<g id="edge51" class="edge" data-source="FLEYRP6" data-target="VOUGLP6" data-layers="color:coral" data-attr-tail="29" data-attr-head="49" data-attr-capacity="9.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="9" data-attr-lp="252.5,425.1" data-attr-name="FLEYRL61VOUGL" data-attr-penwidth="5.0" data-attr-pos="e,247.06,401.75 250.94,464.69 250.62,459.49 248.99,432.98 247.68,411.86"><title>FLEYRP6&#45;&gt;VOUGLP6</title>
+<path fill="none" stroke="coral" stroke-width="5" d="M250.94,-464.69C250.62,-459.49 248.99,-432.98 247.68,-411.86"/>
+<polygon fill="coral" stroke="coral" stroke-width="5" points="252.04,-411.46 247.06,-401.75 243.31,-412 252.04,-411.46"/>
+<text text-anchor="middle" x="252.5" y="-422.6" font-family="Times,serif" font-size="10.00">9</text>
+</g>
+<!-- FRON5P3 -->
+<g id="node31" class="node" data-name="FRON5P3" data-attr-name="FRON5P3" data-attr-color="purple" data-attr-fillcolor="coral" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="271,88.5" data-attr-prod_or_load="prod" data-attr-shape="point" data-attr-style="filled" data-attr-value="2.9964044094085693" data-attr-width="0.05"><title>FRON5P3</title>
+<ellipse fill="coral" stroke="purple" stroke-width="2" cx="271" cy="-88.5" rx="1.8" ry="1.8"/>
+</g>
+<!-- FRON5P3&#45;&gt;LOUHAP3 -->
+<g id="edge52" class="edge" data-source="FRON5P3" data-target="LOUHAP3" data-layers="color:coral" data-attr-tail="30" data-attr-head="35" data-attr-capacity="14.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="14" data-attr-lp="280.5,59.5" data-attr-name="FRON5L31LOUHA" data-attr-penwidth="7.0" data-attr-pos="e,309.8,26.383 270.81,86.582 269.98,82.428 267.11,65.119 274,54 280.23,43.948 290.52,36.355 300.66,30.856"><title>FRON5P3&#45;&gt;LOUHAP3</title>
+<path fill="none" stroke="coral" stroke-width="7" d="M270.81,-86.58C269.98,-82.43 267.11,-65.12 274,-54 280.23,-43.95 290.52,-36.36 300.66,-30.86"/>
+<polygon fill="coral" stroke="coral" stroke-width="7" points="303.51,-36.28 309.8,-26.38 298.13,-25.27 303.51,-36.28"/>
+<text text-anchor="middle" x="280.5" y="-57" font-family="Times,serif" font-size="10.00">14</text>
+</g>
+<!-- G.CHEP3&#45;&gt;FRON5P3 -->
+<g id="edge53" class="edge" data-source="G.CHEP3" data-target="FRON5P3" data-layers="color:coral" data-attr-tail="31" data-attr-head="30" data-attr-capacity="14.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="14" data-attr-lp="272.5,117.5" data-attr-name="FRON5L31G.CHE" data-attr-penwidth="7.0" data-attr-pos="e,270.74,90.61 254.19,161.19 255.57,155.31 264.07,119.04 268.43,100.46"><title>G.CHEP3&#45;&gt;FRON5P3</title>
+<path fill="none" stroke="coral" stroke-width="7" d="M254.19,-161.19C255.57,-155.31 264.07,-119.04 268.43,-100.46"/>
+<polygon fill="coral" stroke="coral" stroke-width="7" points="274.42,-101.74 270.74,-90.61 262.49,-98.95 274.42,-101.74"/>
+<text text-anchor="middle" x="272.5" y="-115" font-family="Times,serif" font-size="10.00">14</text>
+</g>
+<!-- GENLIP3 -->
+<g id="node33" class="node" data-name="GENLIP3" data-attr-name="GENLIP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="395,973.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-6.1360554695129395" data-attr-width="0.75"><title>GENLIP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="395" cy="-973.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="395" y="-971.1" font-family="Times,serif" font-size="10.00">GENLIP3</text>
+</g>
+<!-- GENLIP3&#45;&gt;COLLOP3 -->
+<g id="edge54" class="edge" data-source="GENLIP3" data-target="COLLOP3" data-layers="color:blue" data-attr-tail="32" data-attr-head="22" data-attr-capacity="-4.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-4" data-attr-lp="388,932.1" data-attr-name="COLLOL31GENLI" data-attr-penwidth="2.0" data-attr-pos="e,375.17,908.36 389.82,955.82 386.47,944.96 382.03,930.58 378.21,918.19"><title>GENLIP3&#45;&gt;COLLOP3</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M389.82,-955.82C386.47,-944.96 382.03,-930.58 378.21,-918.19"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="381.47,-916.88 375.17,-908.36 374.78,-918.95 381.47,-916.88"/>
+<text text-anchor="middle" x="388" y="-929.6" font-family="Times,serif" font-size="10.00">&#45;4</text>
+</g>
+<!-- GUEUGP6&#45;&gt;GROSNP6 -->
+<g id="edge55" class="edge" data-source="GUEUGP6" data-target="GROSNP6" data-layers="color:coral" data-attr-tail="33" data-attr-head="4" data-attr-capacity="0.0" data-attr-color="coral" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="0" data-attr-lp="254.5,1098.1" data-attr-name="GROSNL61GUEUG" data-attr-penwidth="1.5" data-attr-pos="264.64,1137.7 262.22,1131.6 248.17,1096 239.63,1074.4"><title>GUEUGP6&#45;&gt;GROSNP6</title>
+<path fill="none" stroke="coral" stroke-width="1.5" d="M264.64,-1137.69C262.22,-1131.57 248.17,-1096.01 239.63,-1074.38"/>
+<text text-anchor="middle" x="254.5" y="-1095.6" font-family="Times,serif" font-size="10.00">0</text>
+</g>
+<!-- IZERNP6&#45;&gt;CIZE P6 -->
+<g id="edge56" class="edge" data-source="IZERNP6" data-target="CIZE P6" data-layers="color:coral" data-attr-tail="34" data-attr-head="21" data-attr-capacity="9.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="9" data-attr-lp="254.5,591.1" data-attr-name="CIZE L61IZERN" data-attr-penwidth="5.0" data-attr-pos="e,251,551.4 251,630.69 251,623.98 251,581.81 251,561.51"><title>IZERNP6&#45;&gt;CIZE P6</title>
+<path fill="none" stroke="coral" stroke-width="5" d="M251,-630.69C251,-623.98 251,-581.81 251,-561.51"/>
+<polygon fill="coral" stroke="coral" stroke-width="5" points="255.38,-561.4 251,-551.4 246.63,-561.4 255.38,-561.4"/>
+<text text-anchor="middle" x="254.5" y="-588.6" font-family="Times,serif" font-size="10.00">9</text>
+</g>
+<!-- ZJOUXP6 -->
+<g id="node52" class="node" data-name="ZJOUXP6" data-attr-name="ZJOUXP6" data-attr-color="darkgreen" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="214,890.6" data-attr-prod_or_load="load" data-attr-shape="point" data-attr-style="filled" data-attr-value="-22.331632456116495" data-attr-width="0.05"><title>ZJOUXP6</title>
+<ellipse fill="lightblue" stroke="darkgreen" stroke-width="2" cx="214" cy="-890.6" rx="1.8" ry="1.8"/>
+</g>
+<!-- MACONP6&#45;&gt;ZJOUXP6 -->
+<g id="edge57" class="edge" data-source="MACONP6" data-target="ZJOUXP6" data-layers="color:coral" data-attr-tail="36" data-attr-head="51" data-attr-capacity="0.0" data-attr-color="coral" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="0" data-attr-lp="213.5,932.1" data-attr-name="MACONL61ZJOUX" data-attr-penwidth="1.5" data-attr-pos="203.12,971.69 204.26,963.35 212.82,900.26 213.89,892.4"><title>MACONP6&#45;&gt;ZJOUXP6</title>
+<path fill="none" stroke="coral" stroke-width="1.5" d="M203.12,-971.69C204.26,-963.35 212.82,-900.26 213.89,-892.4"/>
+<text text-anchor="middle" x="213.5" y="-929.6" font-family="Times,serif" font-size="10.00">0</text>
+</g>
+<!-- MAGNYP3 -->
+<g id="node38" class="node" data-name="MAGNYP3" data-attr-name="MAGNYP3" data-attr-color="purple" data-attr-fillcolor="coral" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="385,1056.6" data-attr-prod_or_load="prod" data-attr-shape="oval" data-attr-style="filled" data-attr-value="1.1445649862289429" data-attr-width="0.80226"><title>MAGNYP3</title>
+<ellipse fill="coral" stroke="purple" stroke-width="2" cx="385" cy="-1056.6" rx="28.76" ry="18"/>
+<text text-anchor="middle" x="385" y="-1054.1" font-family="Times,serif" font-size="10.00">MAGNYP3</text>
+</g>
+<!-- MAGNYP3&#45;&gt;C.SAUP3 -->
+<g id="edge58" class="edge" data-source="MAGNYP3" data-target="C.SAUP3" data-layers="color:coral" data-attr-tail="37" data-attr-head="18" data-attr-capacity="2.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="2" data-attr-lp="360.5,1015.1" data-attr-name="C.SAUL31MAGNY" data-attr-penwidth="1.5" data-attr-pos="e,334.71,989.89 373.05,1040 363.98,1028.1 351.37,1011.7 341.08,998.22"><title>MAGNYP3&#45;&gt;C.SAUP3</title>
+<path fill="none" stroke="coral" stroke-width="1.5" d="M373.05,-1039.98C363.98,-1028.14 351.37,-1011.67 341.08,-998.22"/>
+<polygon fill="coral" stroke="coral" stroke-width="1.5" points="343.56,-995.71 334.71,-989.89 338.01,-999.96 343.56,-995.71"/>
+<text text-anchor="middle" x="360.5" y="-1012.6" font-family="Times,serif" font-size="10.00">2</text>
+</g>
+<!-- MAGNYP3&#45;&gt;GENLIP3 -->
+<g id="edge59" class="edge" data-source="MAGNYP3" data-target="GENLIP3" data-layers="color:blue" data-attr-tail="37" data-attr-head="32" data-attr-capacity="-4.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-4" data-attr-lp="395,1015.1" data-attr-name="GENLIL31MAGNY" data-attr-penwidth="2.0" data-attr-pos="e,392.88,991.75 387.12,1038.4 388.43,1027.8 390.15,1013.9 391.64,1001.8"><title>MAGNYP3&#45;&gt;GENLIP3</title>
+<path fill="none" stroke="blue" stroke-width="2" d="M387.12,-1038.42C388.43,-1027.79 390.15,-1013.91 391.64,-1001.8"/>
+<polygon fill="blue" stroke="blue" stroke-width="2" points="395.13,-1002.11 392.88,-991.75 388.18,-1001.25 395.13,-1002.11"/>
+<text text-anchor="middle" x="395" y="-1012.6" font-family="Times,serif" font-size="10.00">&#45;4</text>
+</g>
+<!-- MAGNYP6 -->
+<g id="node39" class="node" data-name="MAGNYP6" data-attr-name="MAGNYP6" data-attr-color="darkgreen" data-attr-fillcolor="#ffffed" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="386,1139.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="0.0" data-attr-width="0.80226"><title>MAGNYP6</title>
+<ellipse fill="#ffffed" stroke="darkgreen" stroke-width="2" cx="386" cy="-1139.6" rx="28.76" ry="18"/>
+<text text-anchor="middle" x="386" y="-1137.1" font-family="Times,serif" font-size="10.00">MAGNYP6</text>
+</g>
+<!-- MAGNYP6&#45;&gt;MAGNYP3 -->
+<g id="edge60" class="edge" data-source="MAGNYP6" data-target="MAGNYP3" data-layers="color:blue" data-attr-tail="38" data-attr-head="37" data-attr-capacity="-2.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-2" data-attr-lp="390,1098.1" data-attr-name="MAGNYY633" data-attr-penwidth="1.5" data-attr-pos="e,385.21,1074.8 385.79,1121.4 385.66,1110.8 385.49,1096.9 385.34,1084.8"><title>MAGNYP6&#45;&gt;MAGNYP3</title>
+<path fill="none" stroke="blue" stroke-width="1.5" d="M385.79,-1121.42C385.66,-1110.79 385.49,-1096.91 385.34,-1084.8"/>
+<polygon fill="blue" stroke="blue" stroke-width="1.5" points="388.84,-1084.71 385.21,-1074.75 381.84,-1084.8 388.84,-1084.71"/>
+<text text-anchor="middle" x="390" y="-1095.6" font-family="Times,serif" font-size="10.00">&#45;2</text>
+</g>
+<!-- SSUSUP3 -->
+<g id="node47" class="node" data-name="SSUSUP3" data-attr-name="SSUSUP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="451,271.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-16.42313003540039" data-attr-width="0.75"><title>SSUSUP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="451" cy="-271.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="451" y="-269.1" font-family="Times,serif" font-size="10.00">SSUSUP3</text>
+</g>
+<!-- MERVAP3&#45;&gt;SSUSUP3 -->
+<g id="edge61" class="edge" data-source="MERVAP3" data-target="SSUSUP3" data-layers="color:blue style:tapered" data-attr-tail="39" data-attr-head="46" data-attr-arrowtail="none" data-attr-capacity="-25.0" data-attr-color="blue" data-attr-dir="both" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-25" data-attr-lp="467,342.1" data-attr-name="MERVAL31SSUSU" data-attr-on_constrained_path="True" data-attr-penwidth="13.0" data-attr-pos="e,453.02,289.67 461.97,365.41 459.89,347.81 456.63,320.21 454.2,299.67" data-attr-style="tapered"><title>MERVAP3&#45;&gt;SSUSUP3</title>
+<polygon fill="blue" stroke="transparent" stroke-width="13" points="461.97,-365.41 462.18,-362.64 462.4,-359.72 462.64,-356.68 462.88,-353.52 463.13,-350.26 463.38,-346.91 463.64,-343.49 463.91,-340.01 464.18,-336.47 464.45,-332.91 463.78,-329.43 462.67,-325.99 461.57,-322.56 460.47,-319.14 459.38,-315.75 458.3,-312.4 457.24,-309.11 456.2,-305.88 455.18,-302.73 454.2,-299.67 454.2,-299.67 453.95,-302.87 453.7,-306.17 453.44,-309.56 453.18,-313.01 452.91,-316.51 452.64,-320.06 452.37,-323.64 452.09,-327.24 451.82,-330.84 451.98,-334.38 453.07,-337.79 454.16,-341.16 455.23,-344.49 456.28,-347.75 457.31,-350.95 458.31,-354.06 459.28,-357.07 460.22,-359.98 461.12,-362.76 461.97,-365.41 461.97,-365.41"/>
+<polygon fill="blue" stroke="blue" stroke-width="13" points="465.49,-298.26 453.02,-289.67 442.89,-300.93 465.49,-298.26"/>
+<text text-anchor="middle" x="467" y="-339.6" font-family="Times,serif" font-size="10.00">&#45;25</text>
+</g>
+<!-- NAVILP3 -->
+<g id="node41" class="node" data-name="NAVILP3" data-attr-name="NAVILP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.5" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-on_constrained_path="True" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="470,549.6" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-5.608800411224365" data-attr-width="0.75"><title>NAVILP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="470" cy="-549.6" rx="27" ry="18"/>
+<text text-anchor="middle" x="470" y="-547.1" font-family="Times,serif" font-size="10.00">NAVILP3</text>
+</g>
+<!-- NAVILP3&#45;&gt;C.FOUP3 -->
+<g id="edge62" class="edge" data-source="NAVILP3" data-target="C.FOUP3" data-layers="color:blue style:tapered" data-attr-tail="40" data-attr-head="15" data-attr-arrowtail="none" data-attr-capacity="-25.0" data-attr-color="blue" data-attr-dir="both" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-25" data-attr-lp="477,508.1" data-attr-name="C.FOUL31NAVIL" data-attr-on_constrained_path="True" data-attr-penwidth="13.0" data-attr-pos="e,468.42,484.75 469.58,531.42 469.31,520.79 468.97,506.91 468.67,494.8" data-attr-style="tapered"><title>NAVILP3&#45;&gt;C.FOUP3</title>
+<polygon fill="blue" stroke="transparent" stroke-width="13" points="469.58,-531.42 470.11,-529.79 470.66,-528.11 471.22,-526.39 471.8,-524.63 472.38,-522.84 472.98,-521.02 473.59,-519.17 474.2,-517.3 474.82,-515.41 475.44,-513.51 475.11,-511.62 474.39,-509.73 473.66,-507.83 472.94,-505.94 472.21,-504.05 471.49,-502.17 470.78,-500.3 470.07,-498.45 469.37,-496.62 468.67,-494.8 468.67,-494.8 468.07,-496.65 467.46,-498.51 466.84,-500.4 466.22,-502.3 465.59,-504.22 464.96,-506.14 464.33,-508.07 463.7,-509.99 463.07,-511.91 462.84,-513.82 463.55,-515.69 464.26,-517.55 464.97,-519.39 465.66,-521.2 466.35,-522.99 467.02,-524.75 467.68,-526.48 468.33,-528.17 468.96,-529.82 469.58,-531.42 469.58,-531.42"/>
+<polygon fill="blue" stroke="blue" stroke-width="13" points="480.04,-494.47 468.42,-484.75 457.3,-495.03 480.04,-494.47"/>
+<text text-anchor="middle" x="477" y="-505.6" font-family="Times,serif" font-size="10.00">&#45;25</text>
+</g>
+<!-- P.SAOP3&#45;&gt;NAVILP3 -->
+<g id="edge63" class="edge" data-source="P.SAOP3" data-target="NAVILP3" data-layers="color:blue" data-attr-tail="41" data-attr-head="40" data-attr-capacity="-25.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-25" data-attr-lp="480,591.1" data-attr-name="NAVILL31P.SAO" data-attr-on_constrained_path="True" data-attr-penwidth="13.0" data-attr-pos="e,471.06,567.75 473.94,614.42 473.28,603.79 472.43,589.91 471.68,577.8"><title>P.SAOP3&#45;&gt;NAVILP3</title>
+<path fill="none" stroke="blue" stroke-width="13" d="M473.94,-614.42C473.28,-603.79 472.43,-589.91 471.68,-577.8"/>
+<polygon fill="blue" stroke="blue" stroke-width="13" points="483.03,-577.03 471.06,-567.75 460.32,-578.44 483.03,-577.03"/>
+<text text-anchor="middle" x="480" y="-588.6" font-family="Times,serif" font-size="10.00">&#45;25</text>
+</g>
+<!-- PYMONP3 -->
+<g id="node43" class="node" data-name="PYMONP3" data-attr-name="PYMONP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.61111" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="2" data-attr-pin="True" data-attr-pos="362,163" data-attr-prod_or_load="load" data-attr-shape="oval" data-attr-style="filled" data-attr-value="-62.34090228033739" data-attr-width="0.91337"><title>PYMONP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="362" cy="-163" rx="28.78" ry="18"/>
+<ellipse fill="none" stroke="purple" stroke-width="2" cx="362" cy="-163" rx="32.76" ry="22"/>
+<text text-anchor="middle" x="362" y="-160.5" font-family="Times,serif" font-size="10.00">PYMONP3</text>
+</g>
+<!-- PYMONP3&#45;&gt;LOUHAP3 -->
+<g id="edge64" class="edge" data-source="PYMONP3" data-target="LOUHAP3" data-layers="color:coral" data-attr-tail="42" data-attr-head="35" data-attr-capacity="12.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="12" data-attr-lp="353.5,88.5" data-attr-name="LOUHAL31PYMON" data-attr-penwidth="6.0" data-attr-pos="e,334.37,34.534 357.49,141.21 351.95,115.63 342.54,72.221 336.55,44.614"><title>PYMONP3&#45;&gt;LOUHAP3</title>
+<path fill="none" stroke="coral" stroke-width="6" d="M357.49,-141.21C351.95,-115.63 342.54,-72.22 336.55,-44.61"/>
+<polygon fill="coral" stroke="coral" stroke-width="6" points="341.62,-43.19 334.37,-34.53 331.36,-45.42 341.62,-43.19"/>
+<text text-anchor="middle" x="353.5" y="-86" font-family="Times,serif" font-size="10.00">12</text>
+</g>
+<!-- PYMONP6&#45;&gt;PYMONP3 -->
+<g id="edge66" class="edge" data-source="PYMONP6" data-target="PYMONP3" data-layers="color:dimgray" data-attr-tail="43" data-attr-head="42" data-attr-capacity="-0.0" data-attr-color="dimgray" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-0" data-attr-lp="365,313.1" data-attr-name="PYMONY631" data-attr-penwidth="1.5" data-attr-pos="e,361.07,185.07 374.01,448.86 367.9,432.71 360,407.41 360,384.6 360,384.6 360,384.6 360,232.8 360,220.54 360.32,207.06 360.71,195.3"><title>PYMONP6&#45;&gt;PYMONP3</title>
+<path fill="none" stroke="dimgray" stroke-width="1.5" d="M374.01,-448.86C367.9,-432.71 360,-407.41 360,-384.6 360,-384.6 360,-384.6 360,-232.8 360,-220.54 360.32,-207.06 360.71,-195.3"/>
+<polygon fill="dimgray" stroke="dimgray" stroke-width="1.5" points="364.21,-195.19 361.07,-185.07 357.22,-194.94 364.21,-195.19"/>
+<text text-anchor="middle" x="365" y="-310.6" font-family="Times,serif" font-size="10.00">&#45;0</text>
+</g>
+<!-- PYMONP6&#45;&gt;PYMONP3 -->
+<g id="edge67" class="edge" data-source="PYMONP6" data-target="PYMONP3" data-layers="color:dimgray style:dotted" data-attr-tail="43" data-attr-head="42" data-attr-capacity="0.0" data-attr-color="dimgray" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="0" data-attr-lp="409.5,313.1" data-attr-name="PYMONY632" data-attr-penwidth="1.5" data-attr-pos="389.19,449.3 396.48,433.26 406,407.85 406,384.6 406,384.6 406,384.6 406,232.8 406,212.95 392.84,194.24 380.92,181.35" data-attr-style="dotted"><title>PYMONP6&#45;&gt;PYMONP3</title>
+<path fill="none" stroke="dimgray" stroke-width="1.5" stroke-dasharray="1,5" d="M389.19,-449.3C396.48,-433.26 406,-407.85 406,-384.6 406,-384.6 406,-384.6 406,-232.8 406,-212.95 392.84,-194.24 380.92,-181.35"/>
+<text text-anchor="middle" x="409.5" y="-310.6" font-family="Times,serif" font-size="10.00">0</text>
+</g>
+<!-- PYMONP6&#45;&gt;VOUGLP6 -->
+<g id="edge65" class="edge" data-source="PYMONP6" data-target="VOUGLP6" data-layers="color:dimgray style:dotted" data-attr-tail="43" data-attr-head="49" data-attr-capacity="0.0" data-attr-color="dimgray" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="0" data-attr-lp="334.5,425.1" data-attr-name="PYMONL61VOUGL" data-attr-penwidth="1.5" data-attr-pos="363.24,452.21 350.21,442.64 331.9,429.71 315,419.6 299.67,410.43 281.64,401.34 267.86,394.72" data-attr-style="dotted"><title>PYMONP6&#45;&gt;VOUGLP6</title>
+<path fill="none" stroke="dimgray" stroke-width="1.5" stroke-dasharray="1,5" d="M363.24,-452.21C350.21,-442.64 331.9,-429.71 315,-419.6 299.67,-410.43 281.64,-401.34 267.86,-394.72"/>
+<text text-anchor="middle" x="334.5" y="-422.6" font-family="Times,serif" font-size="10.00">0</text>
+</g>
+<!-- SAISSP3 -->
+<g id="node46" class="node" data-name="SAISSP3" data-attr-name="SAISSP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="271,233.8" data-attr-prod_or_load="load" data-attr-shape="point" data-attr-style="filled" data-attr-value="-11.96368408203125" data-attr-width="0.05"><title>SAISSP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="271" cy="-233.8" rx="1.8" ry="1.8"/>
+</g>
+<!-- SAISSP3&#45;&gt;PYMONP3 -->
+<g id="edge68" class="edge" data-source="SAISSP3" data-target="PYMONP3" data-layers="color:coral" data-attr-tail="45" data-attr-head="42" data-attr-capacity="12.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="12" data-attr-lp="314.5,208.5" data-attr-name="PYMONL31SAISS" data-attr-penwidth="6.0" data-attr-pos="e,340.61,180.17 272.02,232.03 277.96,227.54 308.59,204.38 332.49,186.31"><title>SAISSP3&#45;&gt;PYMONP3</title>
+<path fill="none" stroke="coral" stroke-width="6" d="M272.02,-232.03C277.96,-227.54 308.59,-204.38 332.49,-186.31"/>
+<polygon fill="coral" stroke="coral" stroke-width="6" points="335.8,-190.39 340.61,-180.17 329.46,-182.02 335.8,-190.39"/>
+<text text-anchor="middle" x="314.5" y="-206" font-family="Times,serif" font-size="10.00">12</text>
+</g>
+<!-- SSUSUP3&#45;&gt;LOUHAP3 -->
+<g id="edge69" class="edge" data-source="SSUSUP3" data-target="LOUHAP3" data-layers="color:blue style:tapered" data-attr-tail="46" data-attr-head="35" data-attr-arrowtail="none" data-attr-capacity="-26.0" data-attr-color="blue" data-attr-dir="both" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-26" data-attr-lp="454,163" data-attr-name="LOUHAL31SSUSU" data-attr-on_constrained_path="True" data-attr-penwidth="13.0" data-attr-pos="e,359.13,23.195 448.85,253.51 447.5,241.28 446,224.4 446,209.5 446,209.5 446,209.5 446,87.5 446,50.961 402.62,33.465 369.14,25.404" data-attr-style="tapered"><title>SSUSUP3&#45;&gt;LOUHAP3</title>
+<polygon fill="blue" stroke="transparent" stroke-width="13" points="448.85,-253.51 448.74,-251.63 448.62,-249.69 448.51,-247.69 448.41,-245.63 448.31,-243.52 448.21,-241.37 448.13,-239.18 448.05,-236.96 447.98,-234.71 447.92,-232.43 447.87,-230.14 447.84,-227.83 447.81,-225.51 447.81,-223.2 447.81,-220.88 447.83,-218.57 447.87,-216.27 447.93,-213.99 448.01,-211.73 448.1,-209.49 448.11,-209.48 448.11,-209.38 448.12,-209.09 448.15,-208.52 448.2,-207.59 448.26,-206.21 448.35,-204.27 448.48,-201.69 448.63,-198.38 448.83,-194.25 449.07,-189.2 449.36,-183.15 449.7,-176 450.1,-167.65 450.56,-158.03 451.08,-147.04 451.68,-134.58 452.35,-120.56 451.91,-104.9 451.08,-87.35 450.48,-81.58 449.2,-76 447.31,-70.77 444.87,-65.9 441.92,-61.38 438.54,-57.2 434.77,-53.36 430.65,-49.82 426.25,-46.56 421.58,-43.58 416.7,-40.85 411.63,-38.35 406.43,-36.08 401.12,-34.02 395.74,-32.15 390.33,-30.47 384.93,-28.97 379.57,-27.63 374.3,-26.44 369.14,-25.4 369.14,-25.4 374.17,-26.93 379.29,-28.6 384.46,-30.44 389.65,-32.43 394.81,-34.59 399.9,-36.91 404.87,-39.41 409.68,-42.09 414.3,-44.94 418.67,-47.97 422.76,-51.17 426.52,-54.54 429.92,-58.08 432.91,-61.79 435.47,-65.65 437.57,-69.67 439.19,-73.85 440.3,-78.2 440.89,-82.74 440.92,-87.65 440.09,-104.9 439.65,-120.56 440.32,-134.58 440.92,-147.04 441.44,-158.03 441.9,-167.65 442.3,-176 442.64,-183.15 442.93,-189.2 443.17,-194.25 443.37,-198.38 443.52,-201.69 443.65,-204.27 443.74,-206.21 443.8,-207.59 443.85,-208.52 443.88,-209.09 443.89,-209.38 443.89,-209.48 443.9,-209.51 444.01,-211.77 444.15,-214.06 444.32,-216.36 444.5,-218.68 444.7,-221.01 444.91,-223.34 445.14,-225.66 445.39,-227.98 445.65,-230.29 445.91,-232.58 446.19,-234.85 446.47,-237.09 446.76,-239.3 447.06,-241.48 447.36,-243.61 447.66,-245.7 447.96,-247.74 448.26,-249.73 448.56,-251.65 448.85,-253.51 448.85,-253.51"/>
+<polygon fill="blue" stroke="blue" stroke-width="13" points="371.35,-14.24 359.13,-23.19 366.45,-36.46 371.35,-14.24"/>
+<text text-anchor="middle" x="454" y="-160.5" font-family="Times,serif" font-size="10.00">&#45;26</text>
+</g>
+<!-- SSV.OP7&#45;&gt;GROSNP7 -->
+<g id="edge72" class="edge" data-source="SSV.OP7" data-target="GROSNP7" data-layers="color:blue" data-attr-tail="47" data-attr-head="5" data-attr-capacity="-7.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-7" data-attr-lp="177,1276.6" data-attr-name="GROSNL71SSV.O" data-attr-on_constrained_path="True" data-attr-penwidth="3.0" data-attr-pos="e,182.31,1240 142.09,1316.2 150.97,1299.4 166.38,1270.2 177.53,1249.1"><title>SSV.OP7&#45;&gt;GROSNP7</title>
+<path fill="none" stroke="blue" stroke-width="3" d="M142.09,-1316.18C150.97,-1299.36 166.38,-1270.21 177.53,-1249.1"/>
+<polygon fill="blue" stroke="blue" stroke-width="3" points="180.74,-1250.52 182.31,-1240.04 174.55,-1247.25 180.74,-1250.52"/>
+<text text-anchor="middle" x="177" y="-1274.1" font-family="Times,serif" font-size="10.00">&#45;7</text>
+</g>
+<!-- SSV.OP7&#45;&gt;CREYSP7 -->
+<g id="edge70" class="edge" data-source="SSV.OP7" data-target="CREYSP7" data-layers="color:coral" data-attr-tail="47" data-attr-head="27" data-attr-capacity="7.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="7" data-attr-lp="132.5,1276.6" data-attr-name="CREYSL71SSV.O" data-attr-penwidth="3.0" data-attr-pos="e,105.25,1183 132.33,1313.7 128.23,1289.9 119.93,1243.6 111,1204.6 110.12,1200.7 109.03,1196.5 108.03,1192.8"><title>SSV.OP7&#45;&gt;CREYSP7</title>
+<path fill="none" stroke="coral" stroke-width="3" d="M132.33,-1313.74C128.23,-1289.93 119.93,-1243.59 111,-1204.6 110.12,-1200.74 109.03,-1196.55 108.03,-1192.83"/>
+<polygon fill="coral" stroke="coral" stroke-width="3" points="111.33,-1191.63 105.25,-1182.95 104.59,-1193.53 111.33,-1191.63"/>
+<text text-anchor="middle" x="132.5" y="-1274.1" font-family="Times,serif" font-size="10.00">7</text>
+</g>
+<!-- SSV.OP7&#45;&gt;CREYSP7 -->
+<g id="edge71" class="edge" data-source="SSV.OP7" data-target="CREYSP7" data-layers="color:coral" data-attr-tail="47" data-attr-head="27" data-attr-capacity="7.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="7" data-attr-lp="115.5,1276.6" data-attr-name="CREYSL72SSV.O" data-attr-penwidth="3.0" data-attr-pos="e,104.85,1183.3 125.24,1318.1 120.34,1311.6 114.85,1303.2 112,1294.6 100.19,1259.2 102.1,1214.1 103.83,1193.4"><title>SSV.OP7&#45;&gt;CREYSP7</title>
+<path fill="none" stroke="coral" stroke-width="3" d="M125.24,-1318.1C120.34,-1311.63 114.85,-1303.15 112,-1294.6 100.19,-1259.17 102.1,-1214.05 103.83,-1193.37"/>
+<polygon fill="coral" stroke="coral" stroke-width="3" points="107.33,-1193.55 104.85,-1183.25 100.37,-1192.85 107.33,-1193.55"/>
+<text text-anchor="middle" x="115.5" y="-1274.1" font-family="Times,serif" font-size="10.00">7</text>
+</g>
+<!-- VOUGLP3 -->
+<g id="node49" class="node" data-name="VOUGLP3" data-attr-name="VOUGLP3" data-attr-color="purple" data-attr-fillcolor="lightblue" data-attr-fontsize="10" data-attr-height="0.05" data-attr-in_red_loop="True" data-attr-is_hub="False" data-attr-label="\N" data-attr-margin="0" data-attr-penwidth="2" data-attr-peripheries="1" data-attr-pin="True" data-attr-pos="254,313.1" data-attr-prod_or_load="load" data-attr-shape="point" data-attr-style="filled" data-attr-value="-6.1703362464904785" data-attr-width="0.05"><title>VOUGLP3</title>
+<ellipse fill="lightblue" stroke="purple" stroke-width="2" cx="254" cy="-313.1" rx="1.8" ry="1.8"/>
+</g>
+<!-- VOUGLP3&#45;&gt;CUISEP3 -->
+<g id="edge73" class="edge" data-source="VOUGLP3" data-target="CUISEP3" data-layers="color:coral" data-attr-tail="48" data-attr-head="28" data-attr-capacity="14.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="14" data-attr-lp="243.5,271.6" data-attr-name="CUISEL31VOUGL" data-attr-penwidth="7.0" data-attr-pos="e,236.81,235.6 253.13,311.36 250.15,308.75 240.36,299.63 237,289.6 232.12,275.05 233.39,257.08 235,245.77"><title>VOUGLP3&#45;&gt;CUISEP3</title>
+<path fill="none" stroke="coral" stroke-width="7" d="M253.13,-311.36C250.15,-308.75 240.36,-299.63 237,-289.6 232.12,-275.05 233.39,-257.08 235,-245.77"/>
+<polygon fill="coral" stroke="coral" stroke-width="7" points="241.09,-246.52 236.81,-235.6 229.03,-244.37 241.09,-246.52"/>
+<text text-anchor="middle" x="243.5" y="-269.1" font-family="Times,serif" font-size="10.00">14</text>
+</g>
+<!-- VOUGLP3&#45;&gt;SAISSP3 -->
+<g id="edge74" class="edge" data-source="VOUGLP3" data-target="SAISSP3" data-layers="color:coral" data-attr-tail="48" data-attr-head="45" data-attr-capacity="13.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="13" data-attr-lp="273.5,271.6" data-attr-name="SAISSL31VOUGL" data-attr-penwidth="7.0" data-attr-pos="e,270.79,235.76 254.19,311.23 255.59,304.88 264.3,265.25 268.6,245.7"><title>VOUGLP3&#45;&gt;SAISSP3</title>
+<path fill="none" stroke="coral" stroke-width="7" d="M254.19,-311.23C255.59,-304.88 264.3,-265.25 268.6,-245.7"/>
+<polygon fill="coral" stroke="coral" stroke-width="7" points="274.62,-246.85 270.79,-235.76 262.66,-244.21 274.62,-246.85"/>
+<text text-anchor="middle" x="273.5" y="-269.1" font-family="Times,serif" font-size="10.00">13</text>
+</g>
+<!-- VOUGLP6&#45;&gt;VOUGLP3 -->
+<g id="edge75" class="edge" data-source="VOUGLP6" data-target="VOUGLP3" data-layers="color:coral" data-attr-tail="49" data-attr-head="48" data-attr-capacity="15.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="15" data-attr-lp="235.5,342.1" data-attr-name="VOUGLY632" data-attr-penwidth="8.0" data-attr-pos="e,252.97,314.61 234.17,367.07 228.82,358.06 224.57,346.56 229,336.6 232.1,329.63 238.55,323.92 244.12,319.99"><title>VOUGLP6&#45;&gt;VOUGLP3</title>
+<path fill="none" stroke="coral" stroke-width="8" d="M234.17,-367.07C228.82,-358.06 224.57,-346.56 229,-336.6 232.1,-329.63 238.55,-323.92 244.12,-319.99"/>
+<polygon fill="coral" stroke="coral" stroke-width="8" points="248.06,-325.79 252.97,-314.61 240.78,-313.82 248.06,-325.79"/>
+<text text-anchor="middle" x="235.5" y="-339.6" font-family="Times,serif" font-size="10.00">15</text>
+</g>
+<!-- VOUGLP6&#45;&gt;VOUGLP3 -->
+<g id="edge76" class="edge" data-source="VOUGLP6" data-target="VOUGLP3" data-layers="color:coral" data-attr-tail="49" data-attr-head="48" data-attr-capacity="14.0" data-attr-color="coral" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="14" data-attr-lp="258.5,342.1" data-attr-name="VOUGLY631" data-attr-penwidth="7.0" data-attr-pos="e,253.84,315.47 248.02,365.31 249.48,352.83 251.4,336.32 252.67,325.47"><title>VOUGLP6&#45;&gt;VOUGLP3</title>
+<path fill="none" stroke="coral" stroke-width="7" d="M248.02,-365.31C249.48,-352.83 251.4,-336.32 252.67,-325.47"/>
+<polygon fill="coral" stroke="coral" stroke-width="7" points="258.76,-326.11 253.84,-315.47 246.6,-324.69 258.76,-326.11"/>
+<text text-anchor="middle" x="258.5" y="-339.6" font-family="Times,serif" font-size="10.00">14</text>
+</g>
+<!-- ZCRIMP3&#45;&gt;C.SAUP3 -->
+<g id="edge77" class="edge" data-source="ZCRIMP3" data-target="C.SAUP3" data-layers="color:blue" data-attr-tail="50" data-attr-head="18" data-attr-capacity="-2.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-2" data-attr-lp="322,1015.1" data-attr-name="C.SAUL31ZCRIM" data-attr-penwidth="1.5" data-attr-pos="e,320.46,991.75 313.54,1038.4 315.12,1027.8 317.18,1013.9 318.97,1001.8"><title>ZCRIMP3&#45;&gt;C.SAUP3</title>
+<path fill="none" stroke="blue" stroke-width="1.5" d="M313.54,-1038.42C315.12,-1027.79 317.18,-1013.91 318.97,-1001.8"/>
+<polygon fill="blue" stroke="blue" stroke-width="1.5" points="322.46,-1002.16 320.46,-991.75 315.53,-1001.13 322.46,-1002.16"/>
+<text text-anchor="middle" x="322" y="-1012.6" font-family="Times,serif" font-size="10.00">&#45;2</text>
+</g>
+<!-- ZJOUXP6&#45;&gt;BOISSP6 -->
+<g id="edge78" class="edge" data-source="ZJOUXP6" data-target="BOISSP6" data-layers="color:coral" data-attr-tail="51" data-attr-head="14" data-attr-capacity="0.0" data-attr-color="coral" data-attr-dir="none" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-in_red_loop="True" data-attr-label="0" data-attr-lp="233.5,849.1" data-attr-name="BOISSL61ZJOUX" data-attr-penwidth="1.5" data-attr-pos="214.3,888.69 216.34,882.57 228.2,847.01 235.41,825.38"><title>ZJOUXP6&#45;&gt;BOISSP6</title>
+<path fill="none" stroke="coral" stroke-width="1.5" d="M214.3,-888.69C216.34,-882.57 228.2,-847.01 235.41,-825.38"/>
+<text text-anchor="middle" x="233.5" y="-846.6" font-family="Times,serif" font-size="10.00">0</text>
+</g>
+<!-- ZMAGNP6&#45;&gt;CPVANP6 -->
+<g id="edge79" class="edge" data-source="ZMAGNP6" data-target="CPVANP6" data-layers="color:blue" data-attr-tail="52" data-attr-head="26" data-attr-capacity="-7.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-7" data-attr-lp="455,1056.6" data-attr-name="CPVANL61ZMAGN" data-attr-on_constrained_path="True" data-attr-penwidth="3.0" data-attr-pos="e,450,908.67 405.2,1208.9 424.05,1194.7 450,1169.8 450,1140.6 450,1140.6 450,1140.6 450,972.6 450,954.66 450,934.49 450,918.76"><title>ZMAGNP6&#45;&gt;CPVANP6</title>
+<path fill="none" stroke="blue" stroke-width="3" d="M405.2,-1208.86C424.05,-1194.66 450,-1169.81 450,-1140.6 450,-1140.6 450,-1140.6 450,-972.6 450,-954.66 450,-934.49 450,-918.76"/>
+<polygon fill="blue" stroke="blue" stroke-width="3" points="453.5,-918.67 450,-908.67 446.5,-918.67 453.5,-918.67"/>
+<text text-anchor="middle" x="455" y="-1054.1" font-family="Times,serif" font-size="10.00">&#45;7</text>
+</g>
+<!-- ZMAGNP6&#45;&gt;MAGNYP6 -->
+<g id="edge80" class="edge" data-source="ZMAGNP6" data-target="MAGNYP6" data-layers="color:blue" data-attr-tail="52" data-attr-head="38" data-attr-capacity="-2.0" data-attr-color="blue" data-attr-fontcolor="black" data-attr-fontsize="10" data-attr-label="-2" data-attr-lp="391,1181.1" data-attr-name="MAGNYL61ZMAGN" data-attr-penwidth="1.5" data-attr-pos="e,386,1157.8 386,1204.4 386,1193.8 386,1179.9 386,1167.8"><title>ZMAGNP6&#45;&gt;MAGNYP6</title>
+<path fill="none" stroke="blue" stroke-width="1.5" d="M386,-1204.42C386,-1193.79 386,-1179.91 386,-1167.8"/>
+<polygon fill="blue" stroke="blue" stroke-width="1.5" points="389.5,-1167.75 386,-1157.75 382.5,-1167.75 389.5,-1167.75"/>
+<text text-anchor="middle" x="391" y="-1178.6" font-family="Times,serif" font-size="10.00">&#45;2</text>
+</g>
+</g>
+</svg>
+
+    <div id="tooltip"></div>
+  </section>
+</div>
+<script>
+const MODEL = {"nodes": [{"name": "1GEN.P7", "attrs": {"name": "1GEN.P7", "color": "red", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "169,807.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.75"}}, {"name": "GEN.PP6", "attrs": {"name": "GEN.PP6", "color": "darkgreen", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "218,715.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.75"}}, {"name": "GEN.PP7", "attrs": {"name": "GEN.PP7", "color": "red", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "95,632.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.75"}}, {"name": "1GROSP7", "attrs": {"name": "1GROSP7", "color": "red", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "169,1139.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.75"}}, {"name": "GROSNP6", "attrs": {"name": "GROSNP6", "color": "darkgreen", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "233,1056.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.77308"}}, {"name": "GROSNP7", "attrs": {"name": "GROSNP7", "color": "red", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "191,1222.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.77308"}}, {"name": "1VIELP7", "attrs": {"name": "1VIELP7", "color": "red", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "186,1496.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.75"}}, {"name": "VIELMP6", "attrs": {"name": "VIELMP6", "color": "darkgreen", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "True", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "295,1413.6", "prod_or_load": "load", "shape": "diamond", "style": "filled", "value": "-726.8624989580555", "width": "1.0108"}}, {"name": "VIELMP7", "attrs": {"name": "VIELMP7", "color": "red", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "True", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "150,1579.6", "prod_or_load": "load", "shape": "diamond", "style": "filled", "value": "0.0", "width": "1.0108"}}, {"name": "2H.PAP7", "attrs": {"name": "2H.PAP7", "color": "red", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "215,1330.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.75"}}, {"name": "H.PAUP6", "attrs": {"name": "H.PAUP6", "color": "darkgreen", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "265,1222.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.75"}}, {"name": "H.PAUP7", "attrs": {"name": "H.PAUP7", "color": "red", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "135,1413.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.75"}}, {"name": "AUXONP3", "attrs": {"name": "AUXONP3", "color": "purple", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "357,807.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.77308"}}, {"name": "BEON P3", "attrs": {"name": "BEON P3", "color": "purple", "fillcolor": "coral", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "477,715.6", "prod_or_load": "prod", "shape": "oval", "style": "filled", "value": "122.28780397918274", "width": "0.75"}}, {"name": "BOISSP6", "attrs": {"name": "BOISSP6", "color": "darkgreen", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "241,807.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-0.15227925062267644", "width": "0.75"}}, {"name": "C.FOUP3", "attrs": {"name": "C.FOUP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "468,466.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-6.148222923278809", "width": "0.75"}}, {"name": "C.REGP3", "attrs": {"name": "C.REGP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "312,1139.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-0.1620672643184662", "width": "0.75"}}, {"name": "C.REGP6", "attrs": {"name": "C.REGP6", "color": "darkgreen", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "328,1330.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-6.353643894195557", "width": "0.75"}}, {"name": "C.SAUP3", "attrs": {"name": "C.SAUP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "323,973.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-644.2928026129196", "width": "0.75"}}, {"name": "CHALOP3", "attrs": {"name": "CHALOP3", "color": "purple", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "286,890.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.7585"}}, {"name": "CHALOP6", "attrs": {"name": "CHALOP6", "color": "darkgreen", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "251,973.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.7585"}}, {"name": "CIZE P6", "attrs": {"name": "CIZE P6", "color": "darkgreen", "fillcolor": "lightblue", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "251,549.6", "prod_or_load": "load", "shape": "point", "style": "filled", "value": "-7.378726482391357", "width": "0.05"}}, {"name": "COLLOP3", "attrs": {"name": "COLLOP3", "color": "purple", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "370,890.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.75"}}, {"name": "COMMUP6", "attrs": {"name": "COMMUP6", "color": "darkgreen", "fillcolor": "lightblue", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "265,1330.6", "prod_or_load": "load", "shape": "point", "style": "filled", "value": "-7.425389289855957", "width": "0.05"}}, {"name": "COUCHP6", "attrs": {"name": "COUCHP6", "color": "darkgreen", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "462,1276.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.78767"}}, {"name": "CPVANP3", "attrs": {"name": "CPVANP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "True", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "479,807.6", "prod_or_load": "load", "shape": "diamond", "style": "filled", "value": "-17.320354461669922", "width": "1.052"}}, {"name": "CPVANP6", "attrs": {"name": "CPVANP6", "color": "darkgreen", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "450,890.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.75"}}, {"name": "CREYSP7", "attrs": {"name": "CREYSP7", "color": "red", "fillcolor": "lightblue", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "105,1181.1", "prod_or_load": "load", "shape": "point", "style": "filled", "value": "-0.42903903126716614", "width": "0.05"}}, {"name": "CUISEP3", "attrs": {"name": "CUISEP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "237,233.8", "prod_or_load": "load", "shape": "point", "style": "filled", "value": "-16.68807815015316", "width": "0.05"}}, {"name": "FLEYRP6", "attrs": {"name": "FLEYRP6", "color": "darkgreen", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "251,466.6", "prod_or_load": "load", "shape": "point", "style": "filled", "value": "0.0", "width": "0.05"}}, {"name": "FRON5P3", "attrs": {"name": "FRON5P3", "color": "purple", "fillcolor": "coral", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "271,88.5", "prod_or_load": "prod", "shape": "point", "style": "filled", "value": "2.9964044094085693", "width": "0.05"}}, {"name": "G.CHEP3", "attrs": {"name": "G.CHEP3", "color": "purple", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "254,163", "prod_or_load": "load", "shape": "point", "style": "filled", "value": "0.0", "width": "0.05"}}, {"name": "GENLIP3", "attrs": {"name": "GENLIP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "395,973.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-6.1360554695129395", "width": "0.75"}}, {"name": "GUEUGP6", "attrs": {"name": "GUEUGP6", "color": "darkgreen", "fillcolor": "lightblue", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "265,1139.6", "prod_or_load": "load", "shape": "point", "style": "filled", "value": "-37.59623193373598", "width": "0.05"}}, {"name": "IZERNP6", "attrs": {"name": "IZERNP6", "color": "darkgreen", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "251,632.6", "prod_or_load": "load", "shape": "point", "style": "filled", "value": "0.0", "width": "0.05"}}, {"name": "LOUHAP3", "attrs": {"name": "LOUHAP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "True", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "331,18", "prod_or_load": "load", "shape": "diamond", "style": "filled", "value": "-7.917870998382568", "width": "1.0933"}}, {"name": "MACONP6", "attrs": {"name": "MACONP6", "color": "darkgreen", "fillcolor": "lightblue", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "203,973.6", "prod_or_load": "load", "shape": "point", "style": "filled", "value": "-74.80100368542847", "width": "0.05"}}, {"name": "MAGNYP3", "attrs": {"name": "MAGNYP3", "color": "purple", "fillcolor": "coral", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "385,1056.6", "prod_or_load": "prod", "shape": "oval", "style": "filled", "value": "1.1445649862289429", "width": "0.80226"}}, {"name": "MAGNYP6", "attrs": {"name": "MAGNYP6", "color": "darkgreen", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "386,1139.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.80226"}}, {"name": "MERVAP3", "attrs": {"name": "MERVAP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "464,383.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-0.10486570745706558", "width": "0.77308"}}, {"name": "NAVILP3", "attrs": {"name": "NAVILP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "470,549.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-5.608800411224365", "width": "0.75"}}, {"name": "P.SAOP3", "attrs": {"name": "P.SAOP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "475,632.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-13.056921005249023", "width": "0.75"}}, {"name": "PYMONP3", "attrs": {"name": "PYMONP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.61111", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "2", "pin": "True", "pos": "362,163", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-62.34090228033739", "width": "0.91337"}}, {"name": "PYMONP6", "attrs": {"name": "PYMONP6", "color": "darkgreen", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "381,466.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-12.424229881299595", "width": "0.80226"}}, {"name": "RIBAUP3", "attrs": {"name": "RIBAUP3", "color": "purple", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "357,715.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.75"}}, {"name": "SAISSP3", "attrs": {"name": "SAISSP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "271,233.8", "prod_or_load": "load", "shape": "point", "style": "filled", "value": "-11.96368408203125", "width": "0.05"}}, {"name": "SSUSUP3", "attrs": {"name": "SSUSUP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "451,271.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-16.42313003540039", "width": "0.75"}}, {"name": "SSV.OP7", "attrs": {"name": "SSV.OP7", "color": "red", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "True", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "135,1330.6", "prod_or_load": "load", "shape": "diamond", "style": "filled", "value": "-11.244022369384766", "width": "0.88702"}}, {"name": "VOUGLP3", "attrs": {"name": "VOUGLP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "254,313.1", "prod_or_load": "load", "shape": "point", "style": "filled", "value": "-6.1703362464904785", "width": "0.05"}}, {"name": "VOUGLP6", "attrs": {"name": "VOUGLP6", "color": "darkgreen", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "246,383.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.7585"}}, {"name": "ZCRIMP3", "attrs": {"name": "ZCRIMP3", "color": "purple", "fillcolor": "lightblue", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "311,1056.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "-11.261329609944369", "width": "0.75"}}, {"name": "ZJOUXP6", "attrs": {"name": "ZJOUXP6", "color": "darkgreen", "fillcolor": "lightblue", "fontsize": "10", "height": "0.05", "in_red_loop": "True", "is_hub": "False", "label": "\\N", "margin": "0", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "214,890.6", "prod_or_load": "load", "shape": "point", "style": "filled", "value": "-22.331632456116495", "width": "0.05"}}, {"name": "ZMAGNP6", "attrs": {"name": "ZMAGNP6", "color": "darkgreen", "fillcolor": "#ffffed", "fontsize": "10", "height": "0.5", "is_hub": "False", "label": "\\N", "margin": "0", "on_constrained_path": "True", "penwidth": "2", "peripheries": "1", "pin": "True", "pos": "386,1222.6", "prod_or_load": "load", "shape": "oval", "style": "filled", "value": "0.0", "width": "0.80226"}}], "edges": [{"id": "edge1", "source": "1GEN.P7", "target": "GEN.PP6", "attrs": {"tail": 0, "head": 1, "capacity": "29.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "29", "lp": "204.5,761.6", "name": "GEN.PY761", "penwidth": "15.0", "pos": "e,209.15,732.85 177.76,790.51 185.1,777.03 195.71,757.54 204.19,741.96"}}, {"id": "edge4", "source": "GEN.PP6", "target": "GEN.PP7", "attrs": {"tail": 1, "head": 2, "capacity": "-0.0", "color": "coral", "dir": "none", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "-0", "lp": "189,674.1", "name": "GEN.PY762", "penwidth": "1.5", "pos": "205.13,699.56 196.25,689.84 183.79,677.41 171,668.6 154.61,657.31 134,648.08 118.37,641.94", "style": "dashed"}}, {"id": "edge2", "source": "GEN.PP6", "target": "IZERNP6", "attrs": {"tail": 1, "head": 34, "capacity": "9.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "9", "lp": "240.5,674.1", "name": "GEN.PL61IZERN", "penwidth": "5.0", "pos": "e,250.58,634.62 224.84,697.82 231.41,681.69 241.13,657.82 246.69,644.18"}}, {"id": "edge3", "source": "GEN.PP6", "target": "VOUGLP6", "attrs": {"tail": 1, "head": 49, "capacity": "20.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "20", "lp": "224.5,549.6", "name": "GEN.PL61VOUGL", "penwidth": "10.0", "pos": "e,236.83,400.79 218,697.53 218,681.14 218,655.68 218,633.6 218,633.6 218,633.6 218,465.6 218,446.13 225.31,425.4 232.47,409.79"}}, {"id": "edge5", "source": "GEN.PP7", "target": "1GEN.P7", "attrs": {"tail": 2, "head": 0, "capacity": "29.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "29", "lp": "161.5,715.6", "name": "GEN.PY771", "penwidth": "15.0", "pos": "e,166.54,789.45 110.82,647.33 116.92,653.33 123.5,660.78 128,668.6 148.35,703.94 159.41,750.29 164.76,779.26"}}, {"id": "edge6", "source": "1GROSP7", "target": "GROSNP6", "attrs": {"tail": 3, "head": 4, "capacity": "-4.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-4", "lp": "210,1098.1", "name": "GROSNY761", "on_constrained_path": "True", "penwidth": "2.0", "pos": "e,220.8,1073 181.04,1123.4 190.45,1111.4 203.71,1094.7 214.47,1081"}}, {"id": "edge7", "source": "GROSNP6", "target": "CHALOP6", "attrs": {"tail": 4, "head": 20, "capacity": "-4.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-4", "lp": "252,1015.1", "name": "CHALOL61GROSN", "on_constrained_path": "True", "penwidth": "2.0", "pos": "e,249.03,991.76 238.9,1038.7 240.73,1033 242.62,1026.6 244,1020.6 245.4,1014.6 246.59,1008 247.57,1001.8"}}, {"id": "edge8", "source": "GROSNP6", "target": "CHALOP6", "attrs": {"tail": 4, "head": 20, "capacity": "-4.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-4", "lp": "238,1015.1", "name": "CHALOL62GROSN", "on_constrained_path": "True", "penwidth": "2.0", "pos": "e,240.88,990.35 231.09,1038.3 230.6,1029.6 230.75,1018.9 233,1009.6 233.83,1006.2 235.05,1002.7 236.48,999.36"}}, {"id": "edge9", "source": "GROSNP6", "target": "MACONP6", "attrs": {"tail": 4, "head": 36, "capacity": "0.0", "color": "coral", "dir": "none", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "0", "lp": "223.5,1015.1", "name": "GROSNL61MACON", "penwidth": "1.5", "pos": "226.78,1038.8 218.82,1017.3 205.76,982.04 203.38,975.62"}}, {"id": "edge10", "source": "GROSNP7", "target": "1GROSP7", "attrs": {"tail": 5, "head": 3, "capacity": "-4.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-4", "lp": "187,1181.1", "name": "GROSNY771", "on_constrained_path": "True", "penwidth": "2.0", "pos": "e,173.55,1157.4 186.44,1204.8 183.49,1194 179.59,1179.6 176.22,1167.2"}}, {"id": "edge11", "source": "GROSNP7", "target": "GROSNP6", "attrs": {"tail": 5, "head": 4, "capacity": "-3.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-3", "lp": "222,1139.6", "name": "GROSNY762", "on_constrained_path": "True", "penwidth": "2.0", "pos": "e,228.62,1074.7 195.34,1204.7 202.63,1176.2 217.41,1118.5 226.13,1084.4"}}, {"id": "edge12", "source": "1VIELP7", "target": "VIELMP6", "attrs": {"tail": 6, "head": 7, "capacity": "-5.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-5", "lp": "230,1455.1", "name": "VIELMY761", "on_constrained_path": "True", "penwidth": "2.0", "pos": "e,275.37,1421.9 196.94,1479.7 204.1,1470.1 214.13,1458.1 225,1449.6 237.38,1439.9 252.9,1431.8 266.17,1425.8"}}, {"id": "edge13", "source": "VIELMP6", "target": "C.REGP6", "attrs": {"tail": 7, "head": 17, "capacity": "-5.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-5", "lp": "301,1372.1", "name": "C.REGL61VIELM", "on_constrained_path": "True", "penwidth": "3.0", "pos": "e,311.26,1345.2 292.65,1396.7 291.95,1387.6 292.2,1376.1 296,1366.6 297.98,1361.7 301,1357 304.4,1352.8"}}, {"id": "edge14", "source": "VIELMP6", "target": "C.REGP6", "attrs": {"tail": 7, "head": 17, "capacity": "-5.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-5", "lp": "318,1372.1", "name": "C.REGL62VIELM", "on_constrained_path": "True", "penwidth": "3.0", "pos": "e,321.24,1348.2 300.9,1398.1 305.45,1387 311.87,1371.2 317.31,1357.8"}}, {"id": "edge15", "source": "VIELMP6", "target": "COMMUP6", "attrs": {"tail": 7, "head": 23, "capacity": "2.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "2", "lp": "271.5,1372.1", "name": "COMMUL61VIELM", "penwidth": "1.5", "pos": "e,264.83,1332.8 283.27,1401.1 277.59,1394.7 271.31,1386.4 268,1377.6 263.74,1366.3 263.46,1352.4 263.94,1342.9"}}, {"id": "edge16", "source": "VIELMP6", "target": "COUCHP6", "attrs": {"tail": 7, "head": 24, "capacity": "-7.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-7", "lp": "355,1372.1", "name": "COUCHL61VIELM", "on_constrained_path": "True", "penwidth": "4.0", "pos": "e,445.06,1291.3 308.1,1402 335.87,1379.6 401,1326.9 437,1297.8"}}, {"id": "edge17", "source": "VIELMP7", "target": "GEN.PP7", "attrs": {"tail": 8, "head": 2, "capacity": "8.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "8", "lp": "41.5,1098.1", "name": "GEN.PL71VIELM", "penwidth": "4.0", "pos": "e,77.898,646.81 126.79,1573 93.988,1563.5 38,1541 38,1497.6 38,1497.6 38,1497.6 38,714.6 38,690.51 55.066,668.53 70.522,653.57"}}, {"id": "edge18", "source": "VIELMP7", "target": "GEN.PP7", "attrs": {"tail": 8, "head": 2, "capacity": "8.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "8", "lp": "3.5,1098.1", "name": "GEN.PL72VIELM", "penwidth": "4.0", "pos": "e,71.517,641.8 121.08,1575.9 77.49,1570.1 0,1552.1 0,1497.6 0,1497.6 0,1497.6 0,714.6 0,681.06 34.716,658.47 62.175,645.85"}}, {"id": "edge20", "source": "VIELMP7", "target": "1VIELP7", "attrs": {"tail": 8, "head": 6, "capacity": "-5.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-5", "lp": "176,1538.1", "name": "VIELMY771", "on_constrained_path": "True", "penwidth": "2.0", "pos": "e,178.69,1514.1 156.27,1564.5 161.3,1553.2 168.48,1537 174.53,1523.4"}}, {"id": "edge21", "source": "VIELMP7", "target": "VIELMP6", "attrs": {"tail": 8, "head": 7, "capacity": "-7.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-7", "lp": "256,1496.6", "name": "VIELMY762", "on_constrained_path": "True", "penwidth": "3.0", "pos": "e,286.82,1427.6 163.52,1568.1 178.6,1556 203.33,1535.2 222,1514.6 244.91,1489.4 267.44,1457 281.28,1436.1"}}, {"id": "edge22", "source": "VIELMP7", "target": "VIELMP6", "attrs": {"tail": 8, "head": 7, "capacity": "-4.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-4", "lp": "289,1496.6", "name": "VIELMY763", "on_constrained_path": "True", "penwidth": "2.0", "pos": "e,293.82,1431.2 171.52,1572.2 197.44,1563.4 240.53,1545.1 265,1514.6 281.9,1493.6 289.29,1463.2 292.51,1441.4"}}, {"id": "edge19", "source": "VIELMP7", "target": "H.PAUP7", "attrs": {"tail": 8, "head": 11, "capacity": "2.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "2", "lp": "146.5,1496.6", "name": "H.PAUL71VIELM", "penwidth": "1.5", "pos": "e,136.21,1431.6 148.09,1562.3 146.6,1549.4 144.54,1530.8 143,1514.6 140.66,1489.9 138.45,1461.7 136.95,1441.6"}}, {"id": "edge23", "source": "2H.PAP7", "target": "H.PAUP6", "attrs": {"tail": 9, "head": 10, "capacity": "-4.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-4", "lp": "253,1276.6", "name": "H.PAUY762", "penwidth": "2.0", "pos": "e,257.24,1240 222.81,1313 230.88,1295.9 243.59,1269 252.95,1249.1"}}, {"id": "edge24", "source": "H.PAUP6", "target": "GUEUGP6", "attrs": {"tail": 10, "head": 33, "capacity": "-0.0", "color": "coral", "dir": "none", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "-0", "lp": "270,1181.1", "name": "GUEUGL61H.PAU", "penwidth": "1.5", "pos": "265,1204.4 265,1182.9 265,1148 265,1141.6"}}, {"id": "edge26", "source": "H.PAUP7", "target": "2H.PAP7", "attrs": {"tail": 11, "head": 9, "capacity": "-4.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-4", "lp": "185,1372.1", "name": "H.PAUY772", "penwidth": "2.0", "pos": "e,200.82,1346 149.3,1398.1 161.59,1385.7 179.48,1367.6 193.5,1353.4"}}, {"id": "edge25", "source": "H.PAUP7", "target": "SSV.OP7", "attrs": {"tail": 11, "head": 47, "capacity": "6.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "6", "lp": "138.5,1372.1", "name": "H.PAUL71SSV.O", "penwidth": "3.0", "pos": "e,135,1348.8 135,1395.4 135,1384.8 135,1370.9 135,1358.8"}}, {"id": "edge27", "source": "AUXONP3", "target": "RIBAUP3", "attrs": {"tail": 12, "head": 44, "capacity": "-4.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-4", "lp": "362,761.6", "name": "AUXONL31RIBAU", "penwidth": "2.0", "pos": "e,357,733.9 357,789.25 357,776.42 357,758.71 357,743.98"}}, {"id": "edge28", "source": "BEON P3", "target": "P.SAOP3", "attrs": {"tail": 13, "head": 41, "capacity": "-26.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-26", "lp": "484,674.1", "name": "BEON L31P.SAO", "on_constrained_path": "True", "penwidth": "13.0", "pos": "e,475.42,650.75 476.58,697.42 476.31,686.79 475.97,672.91 475.67,660.8"}}, {"id": "edge29", "source": "BOISSP6", "target": "GEN.PP6", "attrs": {"tail": 14, "head": 1, "capacity": "0.0", "color": "coral", "dir": "none", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "0", "lp": "235.5,761.6", "name": "BOISSL61GEN.P", "penwidth": "1.5", "pos": "236.67,789.67 232.56,773.58 226.41,749.52 222.31,733.45", "style": "dashed"}}, {"id": "edge30", "source": "C.FOUP3", "target": "MERVAP3", "attrs": {"tail": 15, "head": 39, "arrowtail": "none", "capacity": "-25.0", "color": "blue", "dir": "both", "fontcolor": "black", "fontsize": "10", "label": "-25", "lp": "474,425.1", "name": "C.FOUL31MERVA", "on_constrained_path": "True", "penwidth": "13.0", "pos": "e,464.85,401.75 467.15,448.42 466.63,437.79 465.94,423.91 465.34,411.8", "style": "tapered"}}, {"id": "edge31", "source": "C.REGP3", "target": "ZCRIMP3", "attrs": {"tail": 16, "head": 50, "capacity": "-2.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-2", "lp": "316,1098.1", "name": "C.REGL31ZCRIM", "penwidth": "1.5", "pos": "e,311.21,1074.8 311.79,1121.4 311.66,1110.8 311.49,1096.9 311.34,1084.8"}}, {"id": "edge32", "source": "C.REGP6", "target": "ZMAGNP6", "attrs": {"tail": 17, "head": 52, "capacity": "-9.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-9", "lp": "370,1276.6", "name": "C.REGL61ZMAGN", "on_constrained_path": "True", "penwidth": "5.0", "pos": "e,377.11,1239.9 336.81,1313.5 346.22,1296.3 361.26,1268.8 372.24,1248.8"}}, {"id": "edge33", "source": "CHALOP3", "target": "LOUHAP3", "attrs": {"tail": 19, "head": 35, "capacity": "-0.0", "color": "coral", "dir": "none", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "-0", "lp": "306,425.1", "name": "CHALOL31LOUHA", "penwidth": "1.5", "pos": "290.99,872.7 295.36,856.43 301,831.05 301,808.6 301,808.6 301,808.6 301,87.5 301,66.727 312.72,45.163 321.51,31.91", "style": "dashed"}}, {"id": "edge35", "source": "CHALOP6", "target": "CHALOP3", "attrs": {"tail": 20, "head": 19, "capacity": "-0.0", "color": "coral", "dir": "none", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "-0", "lp": "248,932.1", "name": "CHALOY633", "penwidth": "1.5", "pos": "243.51,956.2 240.48,947.11 238.61,935.82 243,926.6 247.71,916.69 256.75,908.67 265.34,902.81"}}, {"id": "edge36", "source": "CHALOP6", "target": "CHALOP3", "attrs": {"tail": 20, "head": 19, "capacity": "-0.0", "color": "coral", "dir": "none", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "-0", "lp": "276,932.1", "name": "CHALOY631", "penwidth": "1.5", "pos": "258.08,956.21 264.12,942.25 272.74,922.28 278.81,908.25"}}, {"id": "edge37", "source": "CHALOP6", "target": "CHALOP3", "attrs": {"tail": 20, "head": 19, "capacity": "-0.0", "color": "coral", "dir": "none", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "-0", "lp": "293,932.1", "name": "CHALOY632", "penwidth": "1.5", "pos": "268.41,959.49 274.87,953.59 281.47,946.04 285,937.6 288.76,928.61 289.17,917.74 288.56,908.83"}}, {"id": "edge34", "source": "CHALOP6", "target": "CPVANP6", "attrs": {"tail": 20, "head": 26, "capacity": "-8.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-8", "lp": "361,932.1", "name": "CHALOL61CPVAN", "on_constrained_path": "True", "penwidth": "4.0", "pos": "e,427.04,900.52 272.59,962.11 277.32,959.9 282.3,957.63 287,955.6 299.46,950.22 373.79,921.23 417.65,904.17"}}, {"id": "edge38", "source": "CIZE P6", "target": "FLEYRP6", "attrs": {"tail": 21, "head": 29, "capacity": "9.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "9", "lp": "254.5,508.1", "name": "CIZE L61FLEYR", "penwidth": "5.0", "pos": "e,251,468.4 251,547.69 251,540.98 251,498.81 251,478.51"}}, {"id": "edge39", "source": "COLLOP3", "target": "AUXONP3", "attrs": {"tail": 22, "head": 12, "capacity": "-4.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-4", "lp": "369,849.1", "name": "AUXONL31COLLO", "penwidth": "2.0", "pos": "e,359.75,825.75 367.24,872.42 365.54,861.79 363.31,847.91 361.37,835.8"}}, {"id": "edge40", "source": "COMMUP6", "target": "H.PAUP6", "attrs": {"tail": 23, "head": 10, "capacity": "2.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "2", "lp": "268.5,1276.6", "name": "COMMUL61H.PAU", "penwidth": "1.5", "pos": "e,265,1240.9 265,1328.4 265,1320.9 265,1279.6 265,1251.1"}}, {"id": "edge41", "source": "COUCHP6", "target": "CPVANP6", "attrs": {"tail": 24, "head": 26, "capacity": "-8.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-8", "lp": "493,1098.1", "name": "COUCHL61CPVAN", "on_constrained_path": "True", "penwidth": "4.0", "pos": "e,462.02,906.74 469.52,1259.1 477.2,1240.7 488,1209.9 488,1182.1 488,1182.1 488,1182.1 488,972.6 488,951.82 477.63,930.65 467.72,915.16"}}, {"id": "edge42", "source": "CPVANP3", "target": "BEON P3", "attrs": {"tail": 25, "head": 13, "capacity": "-26.0", "color": "black:yellow:black", "constrained": "True", "fontcolor": "darkred", "fontsize": "10", "is_monitored": "True", "is_overload": "True", "label": "-26 <BR/>  <B>97%</B>  \u2192 0%", "lp": "510.5,761.6", "name": "BEON L31CPVAN", "on_constrained_path": "True", "penwidth": "13.0", "pos": "e,477.38,733.76 478.62,789.67 478.34,776.81 477.94,758.84 477.61,743.95"}}, {"id": "edge43", "source": "CPVANP3", "target": "RIBAUP3", "attrs": {"tail": 25, "head": 44, "capacity": "4.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "label": "4", "lp": "431.5,761.6", "name": "CPVANL31RIBAU", "penwidth": "2.0", "pos": "e,374.61,729.59 464.53,795.92 444.43,781.09 407.73,754.03 382.86,735.68"}}, {"id": "edge45", "source": "CPVANP6", "target": "CPVANP3", "attrs": {"tail": 26, "head": 25, "capacity": "-11.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-11", "lp": "474,849.1", "name": "CPVANY633", "on_constrained_path": "True", "penwidth": "6.0", "pos": "e,473.89,823.54 456.29,872.89 458.44,867.11 460.85,860.58 463,854.6 465.5,847.65 468.16,840.09 470.57,833.14"}}, {"id": "edge46", "source": "CPVANP6", "target": "CPVANP3", "attrs": {"tail": 26, "head": 25, "capacity": "0.0", "color": "dimgray", "dir": "none", "fontcolor": "black", "fontsize": "10", "label": "0", "lp": "491.5,849.1", "name": "CPVANY632", "penwidth": "1.5", "pos": "468.13,877.05 475.1,871.14 482.27,863.43 486,854.6 490.28,844.48 488.03,832.13 484.99,822.78", "style": "dotted"}}, {"id": "edge47", "source": "CPVANP6", "target": "CPVANP3", "attrs": {"tail": 26, "head": 25, "capacity": "-11.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-11", "lp": "451,849.1", "name": "CPVANY631", "on_constrained_path": "True", "penwidth": "6.0", "pos": "e,463.88,818.68 443.23,872.88 440.62,863.91 439.1,852.83 443,843.6 445.87,836.8 450.78,830.67 456.07,825.51"}}, {"id": "edge44", "source": "CPVANP6", "target": "PYMONP6", "attrs": {"tail": 26, "head": 43, "capacity": "-0.0", "color": "dimgray", "fontcolor": "black", "fontsize": "10", "label": "-0", "lp": "418,674.1", "name": "CPVANL61PYMON", "penwidth": "1.5", "pos": "e,391.48,483.62 438.09,874.11 427.27,858.47 413,833.18 413,808.6 413,808.6 413,808.6 413,548.6 413,528.82 404.64,508.1 396.47,492.56"}}, {"id": "edge48", "source": "CREYSP7", "target": "GEN.PP7", "attrs": {"tail": 27, "head": 2, "capacity": "7.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "7", "lp": "79.5,932.1", "name": "CREYSL71GEN.P", "penwidth": "3.0", "pos": "e,88.673,650.4 104.5,1179.3 100.65,1173.4 76,1134.4 76,1099.1 76,1099.1 76,1099.1 76,714.6 76,696 80.809,675.61 85.588,659.95"}}, {"id": "edge49", "source": "CREYSP7", "target": "GEN.PP7", "attrs": {"tail": 27, "head": 2, "capacity": "7.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "7", "lp": "117.5,932.1", "name": "CREYSL72GEN.P", "penwidth": "3.0", "pos": "e,101.33,650.4 105.16,1179.3 106.35,1173.2 114,1132.5 114,1099.1 114,1099.1 114,1099.1 114,714.6 114,696 109.19,675.61 104.41,659.95"}}, {"id": "edge50", "source": "CUISEP3", "target": "G.CHEP3", "attrs": {"tail": 28, "head": 31, "capacity": "14.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "14", "lp": "244.5,208.5", "name": "CUISEL31G.CHE", "penwidth": "7.0", "pos": "e,253.47,164.92 236.89,231.65 236.55,227.63 235.65,213.93 238,203 240.2,192.73 244.96,181.72 248.72,174.03"}}, {"id": "edge51", "source": "FLEYRP6", "target": "VOUGLP6", "attrs": {"tail": 29, "head": 49, "capacity": "9.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "9", "lp": "252.5,425.1", "name": "FLEYRL61VOUGL", "penwidth": "5.0", "pos": "e,247.06,401.75 250.94,464.69 250.62,459.49 248.99,432.98 247.68,411.86"}}, {"id": "edge52", "source": "FRON5P3", "target": "LOUHAP3", "attrs": {"tail": 30, "head": 35, "capacity": "14.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "14", "lp": "280.5,59.5", "name": "FRON5L31LOUHA", "penwidth": "7.0", "pos": "e,309.8,26.383 270.81,86.582 269.98,82.428 267.11,65.119 274,54 280.23,43.948 290.52,36.355 300.66,30.856"}}, {"id": "edge53", "source": "G.CHEP3", "target": "FRON5P3", "attrs": {"tail": 31, "head": 30, "capacity": "14.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "14", "lp": "272.5,117.5", "name": "FRON5L31G.CHE", "penwidth": "7.0", "pos": "e,270.74,90.61 254.19,161.19 255.57,155.31 264.07,119.04 268.43,100.46"}}, {"id": "edge54", "source": "GENLIP3", "target": "COLLOP3", "attrs": {"tail": 32, "head": 22, "capacity": "-4.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-4", "lp": "388,932.1", "name": "COLLOL31GENLI", "penwidth": "2.0", "pos": "e,375.17,908.36 389.82,955.82 386.47,944.96 382.03,930.58 378.21,918.19"}}, {"id": "edge55", "source": "GUEUGP6", "target": "GROSNP6", "attrs": {"tail": 33, "head": 4, "capacity": "0.0", "color": "coral", "dir": "none", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "0", "lp": "254.5,1098.1", "name": "GROSNL61GUEUG", "penwidth": "1.5", "pos": "264.64,1137.7 262.22,1131.6 248.17,1096 239.63,1074.4"}}, {"id": "edge56", "source": "IZERNP6", "target": "CIZE P6", "attrs": {"tail": 34, "head": 21, "capacity": "9.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "9", "lp": "254.5,591.1", "name": "CIZE L61IZERN", "penwidth": "5.0", "pos": "e,251,551.4 251,630.69 251,623.98 251,581.81 251,561.51"}}, {"id": "edge57", "source": "MACONP6", "target": "ZJOUXP6", "attrs": {"tail": 36, "head": 51, "capacity": "0.0", "color": "coral", "dir": "none", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "0", "lp": "213.5,932.1", "name": "MACONL61ZJOUX", "penwidth": "1.5", "pos": "203.12,971.69 204.26,963.35 212.82,900.26 213.89,892.4"}}, {"id": "edge58", "source": "MAGNYP3", "target": "C.SAUP3", "attrs": {"tail": 37, "head": 18, "capacity": "2.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "label": "2", "lp": "360.5,1015.1", "name": "C.SAUL31MAGNY", "penwidth": "1.5", "pos": "e,334.71,989.89 373.05,1040 363.98,1028.1 351.37,1011.7 341.08,998.22"}}, {"id": "edge59", "source": "MAGNYP3", "target": "GENLIP3", "attrs": {"tail": 37, "head": 32, "capacity": "-4.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-4", "lp": "395,1015.1", "name": "GENLIL31MAGNY", "penwidth": "2.0", "pos": "e,392.88,991.75 387.12,1038.4 388.43,1027.8 390.15,1013.9 391.64,1001.8"}}, {"id": "edge60", "source": "MAGNYP6", "target": "MAGNYP3", "attrs": {"tail": 38, "head": 37, "capacity": "-2.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-2", "lp": "390,1098.1", "name": "MAGNYY633", "penwidth": "1.5", "pos": "e,385.21,1074.8 385.79,1121.4 385.66,1110.8 385.49,1096.9 385.34,1084.8"}}, {"id": "edge61", "source": "MERVAP3", "target": "SSUSUP3", "attrs": {"tail": 39, "head": 46, "arrowtail": "none", "capacity": "-25.0", "color": "blue", "dir": "both", "fontcolor": "black", "fontsize": "10", "label": "-25", "lp": "467,342.1", "name": "MERVAL31SSUSU", "on_constrained_path": "True", "penwidth": "13.0", "pos": "e,453.02,289.67 461.97,365.41 459.89,347.81 456.63,320.21 454.2,299.67", "style": "tapered"}}, {"id": "edge62", "source": "NAVILP3", "target": "C.FOUP3", "attrs": {"tail": 40, "head": 15, "arrowtail": "none", "capacity": "-25.0", "color": "blue", "dir": "both", "fontcolor": "black", "fontsize": "10", "label": "-25", "lp": "477,508.1", "name": "C.FOUL31NAVIL", "on_constrained_path": "True", "penwidth": "13.0", "pos": "e,468.42,484.75 469.58,531.42 469.31,520.79 468.97,506.91 468.67,494.8", "style": "tapered"}}, {"id": "edge63", "source": "P.SAOP3", "target": "NAVILP3", "attrs": {"tail": 41, "head": 40, "capacity": "-25.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-25", "lp": "480,591.1", "name": "NAVILL31P.SAO", "on_constrained_path": "True", "penwidth": "13.0", "pos": "e,471.06,567.75 473.94,614.42 473.28,603.79 472.43,589.91 471.68,577.8"}}, {"id": "edge64", "source": "PYMONP3", "target": "LOUHAP3", "attrs": {"tail": 42, "head": 35, "capacity": "12.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "12", "lp": "353.5,88.5", "name": "LOUHAL31PYMON", "penwidth": "6.0", "pos": "e,334.37,34.534 357.49,141.21 351.95,115.63 342.54,72.221 336.55,44.614"}}, {"id": "edge66", "source": "PYMONP6", "target": "PYMONP3", "attrs": {"tail": 43, "head": 42, "capacity": "-0.0", "color": "dimgray", "fontcolor": "black", "fontsize": "10", "label": "-0", "lp": "365,313.1", "name": "PYMONY631", "penwidth": "1.5", "pos": "e,361.07,185.07 374.01,448.86 367.9,432.71 360,407.41 360,384.6 360,384.6 360,384.6 360,232.8 360,220.54 360.32,207.06 360.71,195.3"}}, {"id": "edge67", "source": "PYMONP6", "target": "PYMONP3", "attrs": {"tail": 43, "head": 42, "capacity": "0.0", "color": "dimgray", "dir": "none", "fontcolor": "black", "fontsize": "10", "label": "0", "lp": "409.5,313.1", "name": "PYMONY632", "penwidth": "1.5", "pos": "389.19,449.3 396.48,433.26 406,407.85 406,384.6 406,384.6 406,384.6 406,232.8 406,212.95 392.84,194.24 380.92,181.35", "style": "dotted"}}, {"id": "edge65", "source": "PYMONP6", "target": "VOUGLP6", "attrs": {"tail": 43, "head": 49, "capacity": "0.0", "color": "dimgray", "dir": "none", "fontcolor": "black", "fontsize": "10", "label": "0", "lp": "334.5,425.1", "name": "PYMONL61VOUGL", "penwidth": "1.5", "pos": "363.24,452.21 350.21,442.64 331.9,429.71 315,419.6 299.67,410.43 281.64,401.34 267.86,394.72", "style": "dotted"}}, {"id": "edge68", "source": "SAISSP3", "target": "PYMONP3", "attrs": {"tail": 45, "head": 42, "capacity": "12.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "12", "lp": "314.5,208.5", "name": "PYMONL31SAISS", "penwidth": "6.0", "pos": "e,340.61,180.17 272.02,232.03 277.96,227.54 308.59,204.38 332.49,186.31"}}, {"id": "edge69", "source": "SSUSUP3", "target": "LOUHAP3", "attrs": {"tail": 46, "head": 35, "arrowtail": "none", "capacity": "-26.0", "color": "blue", "dir": "both", "fontcolor": "black", "fontsize": "10", "label": "-26", "lp": "454,163", "name": "LOUHAL31SSUSU", "on_constrained_path": "True", "penwidth": "13.0", "pos": "e,359.13,23.195 448.85,253.51 447.5,241.28 446,224.4 446,209.5 446,209.5 446,209.5 446,87.5 446,50.961 402.62,33.465 369.14,25.404", "style": "tapered"}}, {"id": "edge72", "source": "SSV.OP7", "target": "GROSNP7", "attrs": {"tail": 47, "head": 5, "capacity": "-7.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-7", "lp": "177,1276.6", "name": "GROSNL71SSV.O", "on_constrained_path": "True", "penwidth": "3.0", "pos": "e,182.31,1240 142.09,1316.2 150.97,1299.4 166.38,1270.2 177.53,1249.1"}}, {"id": "edge70", "source": "SSV.OP7", "target": "CREYSP7", "attrs": {"tail": 47, "head": 27, "capacity": "7.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "7", "lp": "132.5,1276.6", "name": "CREYSL71SSV.O", "penwidth": "3.0", "pos": "e,105.25,1183 132.33,1313.7 128.23,1289.9 119.93,1243.6 111,1204.6 110.12,1200.7 109.03,1196.5 108.03,1192.8"}}, {"id": "edge71", "source": "SSV.OP7", "target": "CREYSP7", "attrs": {"tail": 47, "head": 27, "capacity": "7.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "7", "lp": "115.5,1276.6", "name": "CREYSL72SSV.O", "penwidth": "3.0", "pos": "e,104.85,1183.3 125.24,1318.1 120.34,1311.6 114.85,1303.2 112,1294.6 100.19,1259.2 102.1,1214.1 103.83,1193.4"}}, {"id": "edge73", "source": "VOUGLP3", "target": "CUISEP3", "attrs": {"tail": 48, "head": 28, "capacity": "14.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "14", "lp": "243.5,271.6", "name": "CUISEL31VOUGL", "penwidth": "7.0", "pos": "e,236.81,235.6 253.13,311.36 250.15,308.75 240.36,299.63 237,289.6 232.12,275.05 233.39,257.08 235,245.77"}}, {"id": "edge74", "source": "VOUGLP3", "target": "SAISSP3", "attrs": {"tail": 48, "head": 45, "capacity": "13.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "13", "lp": "273.5,271.6", "name": "SAISSL31VOUGL", "penwidth": "7.0", "pos": "e,270.79,235.76 254.19,311.23 255.59,304.88 264.3,265.25 268.6,245.7"}}, {"id": "edge75", "source": "VOUGLP6", "target": "VOUGLP3", "attrs": {"tail": 49, "head": 48, "capacity": "15.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "15", "lp": "235.5,342.1", "name": "VOUGLY632", "penwidth": "8.0", "pos": "e,252.97,314.61 234.17,367.07 228.82,358.06 224.57,346.56 229,336.6 232.1,329.63 238.55,323.92 244.12,319.99"}}, {"id": "edge76", "source": "VOUGLP6", "target": "VOUGLP3", "attrs": {"tail": 49, "head": 48, "capacity": "14.0", "color": "coral", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "14", "lp": "258.5,342.1", "name": "VOUGLY631", "penwidth": "7.0", "pos": "e,253.84,315.47 248.02,365.31 249.48,352.83 251.4,336.32 252.67,325.47"}}, {"id": "edge77", "source": "ZCRIMP3", "target": "C.SAUP3", "attrs": {"tail": 50, "head": 18, "capacity": "-2.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-2", "lp": "322,1015.1", "name": "C.SAUL31ZCRIM", "penwidth": "1.5", "pos": "e,320.46,991.75 313.54,1038.4 315.12,1027.8 317.18,1013.9 318.97,1001.8"}}, {"id": "edge78", "source": "ZJOUXP6", "target": "BOISSP6", "attrs": {"tail": 51, "head": 14, "capacity": "0.0", "color": "coral", "dir": "none", "fontcolor": "black", "fontsize": "10", "in_red_loop": "True", "label": "0", "lp": "233.5,849.1", "name": "BOISSL61ZJOUX", "penwidth": "1.5", "pos": "214.3,888.69 216.34,882.57 228.2,847.01 235.41,825.38"}}, {"id": "edge79", "source": "ZMAGNP6", "target": "CPVANP6", "attrs": {"tail": 52, "head": 26, "capacity": "-7.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-7", "lp": "455,1056.6", "name": "CPVANL61ZMAGN", "on_constrained_path": "True", "penwidth": "3.0", "pos": "e,450,908.67 405.2,1208.9 424.05,1194.7 450,1169.8 450,1140.6 450,1140.6 450,1140.6 450,972.6 450,954.66 450,934.49 450,918.76"}}, {"id": "edge80", "source": "ZMAGNP6", "target": "MAGNYP6", "attrs": {"tail": 52, "head": 38, "capacity": "-2.0", "color": "blue", "fontcolor": "black", "fontsize": "10", "label": "-2", "lp": "391,1181.1", "name": "MAGNYL61ZMAGN", "penwidth": "1.5", "pos": "e,386,1157.8 386,1204.4 386,1193.8 386,1179.9 386,1167.8"}}], "adjacency": {"1GEN.P7": [{"node": "GEN.PP6", "edge": "edge1"}, {"node": "GEN.PP7", "edge": "edge5"}], "GEN.PP6": [{"node": "1GEN.P7", "edge": "edge1"}, {"node": "GEN.PP7", "edge": "edge4"}, {"node": "IZERNP6", "edge": "edge2"}, {"node": "VOUGLP6", "edge": "edge3"}, {"node": "BOISSP6", "edge": "edge29"}], "GEN.PP7": [{"node": "GEN.PP6", "edge": "edge4"}, {"node": "1GEN.P7", "edge": "edge5"}, {"node": "VIELMP7", "edge": "edge17"}, {"node": "VIELMP7", "edge": "edge18"}, {"node": "CREYSP7", "edge": "edge48"}, {"node": "CREYSP7", "edge": "edge49"}], "1GROSP7": [{"node": "GROSNP6", "edge": "edge6"}, {"node": "GROSNP7", "edge": "edge10"}], "GROSNP6": [{"node": "1GROSP7", "edge": "edge6"}, {"node": "CHALOP6", "edge": "edge7"}, {"node": "CHALOP6", "edge": "edge8"}, {"node": "MACONP6", "edge": "edge9"}, {"node": "GROSNP7", "edge": "edge11"}, {"node": "GUEUGP6", "edge": "edge55"}], "GROSNP7": [{"node": "1GROSP7", "edge": "edge10"}, {"node": "GROSNP6", "edge": "edge11"}, {"node": "SSV.OP7", "edge": "edge72"}], "1VIELP7": [{"node": "VIELMP6", "edge": "edge12"}, {"node": "VIELMP7", "edge": "edge20"}], "VIELMP6": [{"node": "1VIELP7", "edge": "edge12"}, {"node": "C.REGP6", "edge": "edge13"}, {"node": "C.REGP6", "edge": "edge14"}, {"node": "COMMUP6", "edge": "edge15"}, {"node": "COUCHP6", "edge": "edge16"}, {"node": "VIELMP7", "edge": "edge21"}, {"node": "VIELMP7", "edge": "edge22"}], "VIELMP7": [{"node": "GEN.PP7", "edge": "edge17"}, {"node": "GEN.PP7", "edge": "edge18"}, {"node": "1VIELP7", "edge": "edge20"}, {"node": "VIELMP6", "edge": "edge21"}, {"node": "VIELMP6", "edge": "edge22"}, {"node": "H.PAUP7", "edge": "edge19"}], "2H.PAP7": [{"node": "H.PAUP6", "edge": "edge23"}, {"node": "H.PAUP7", "edge": "edge26"}], "H.PAUP6": [{"node": "2H.PAP7", "edge": "edge23"}, {"node": "GUEUGP6", "edge": "edge24"}, {"node": "COMMUP6", "edge": "edge40"}], "H.PAUP7": [{"node": "VIELMP7", "edge": "edge19"}, {"node": "2H.PAP7", "edge": "edge26"}, {"node": "SSV.OP7", "edge": "edge25"}], "AUXONP3": [{"node": "RIBAUP3", "edge": "edge27"}, {"node": "COLLOP3", "edge": "edge39"}], "BEON P3": [{"node": "P.SAOP3", "edge": "edge28"}, {"node": "CPVANP3", "edge": "edge42"}], "BOISSP6": [{"node": "GEN.PP6", "edge": "edge29"}, {"node": "ZJOUXP6", "edge": "edge78"}], "C.FOUP3": [{"node": "MERVAP3", "edge": "edge30"}, {"node": "NAVILP3", "edge": "edge62"}], "C.REGP3": [{"node": "ZCRIMP3", "edge": "edge31"}], "C.REGP6": [{"node": "VIELMP6", "edge": "edge13"}, {"node": "VIELMP6", "edge": "edge14"}, {"node": "ZMAGNP6", "edge": "edge32"}], "C.SAUP3": [{"node": "MAGNYP3", "edge": "edge58"}, {"node": "ZCRIMP3", "edge": "edge77"}], "CHALOP3": [{"node": "LOUHAP3", "edge": "edge33"}, {"node": "CHALOP6", "edge": "edge35"}, {"node": "CHALOP6", "edge": "edge36"}, {"node": "CHALOP6", "edge": "edge37"}], "CHALOP6": [{"node": "GROSNP6", "edge": "edge7"}, {"node": "GROSNP6", "edge": "edge8"}, {"node": "CHALOP3", "edge": "edge35"}, {"node": "CHALOP3", "edge": "edge36"}, {"node": "CHALOP3", "edge": "edge37"}, {"node": "CPVANP6", "edge": "edge34"}], "CIZE P6": [{"node": "FLEYRP6", "edge": "edge38"}, {"node": "IZERNP6", "edge": "edge56"}], "COLLOP3": [{"node": "AUXONP3", "edge": "edge39"}, {"node": "GENLIP3", "edge": "edge54"}], "COMMUP6": [{"node": "VIELMP6", "edge": "edge15"}, {"node": "H.PAUP6", "edge": "edge40"}], "COUCHP6": [{"node": "VIELMP6", "edge": "edge16"}, {"node": "CPVANP6", "edge": "edge41"}], "CPVANP3": [{"node": "BEON P3", "edge": "edge42"}, {"node": "RIBAUP3", "edge": "edge43"}, {"node": "CPVANP6", "edge": "edge45"}, {"node": "CPVANP6", "edge": "edge46"}, {"node": "CPVANP6", "edge": "edge47"}], "CPVANP6": [{"node": "CHALOP6", "edge": "edge34"}, {"node": "COUCHP6", "edge": "edge41"}, {"node": "CPVANP3", "edge": "edge45"}, {"node": "CPVANP3", "edge": "edge46"}, {"node": "CPVANP3", "edge": "edge47"}, {"node": "PYMONP6", "edge": "edge44"}, {"node": "ZMAGNP6", "edge": "edge79"}], "CREYSP7": [{"node": "GEN.PP7", "edge": "edge48"}, {"node": "GEN.PP7", "edge": "edge49"}, {"node": "SSV.OP7", "edge": "edge70"}, {"node": "SSV.OP7", "edge": "edge71"}], "CUISEP3": [{"node": "G.CHEP3", "edge": "edge50"}, {"node": "VOUGLP3", "edge": "edge73"}], "FLEYRP6": [{"node": "CIZE P6", "edge": "edge38"}, {"node": "VOUGLP6", "edge": "edge51"}], "FRON5P3": [{"node": "LOUHAP3", "edge": "edge52"}, {"node": "G.CHEP3", "edge": "edge53"}], "G.CHEP3": [{"node": "CUISEP3", "edge": "edge50"}, {"node": "FRON5P3", "edge": "edge53"}], "GENLIP3": [{"node": "COLLOP3", "edge": "edge54"}, {"node": "MAGNYP3", "edge": "edge59"}], "GUEUGP6": [{"node": "H.PAUP6", "edge": "edge24"}, {"node": "GROSNP6", "edge": "edge55"}], "IZERNP6": [{"node": "GEN.PP6", "edge": "edge2"}, {"node": "CIZE P6", "edge": "edge56"}], "LOUHAP3": [{"node": "CHALOP3", "edge": "edge33"}, {"node": "FRON5P3", "edge": "edge52"}, {"node": "PYMONP3", "edge": "edge64"}, {"node": "SSUSUP3", "edge": "edge69"}], "MACONP6": [{"node": "GROSNP6", "edge": "edge9"}, {"node": "ZJOUXP6", "edge": "edge57"}], "MAGNYP3": [{"node": "C.SAUP3", "edge": "edge58"}, {"node": "GENLIP3", "edge": "edge59"}, {"node": "MAGNYP6", "edge": "edge60"}], "MAGNYP6": [{"node": "MAGNYP3", "edge": "edge60"}, {"node": "ZMAGNP6", "edge": "edge80"}], "MERVAP3": [{"node": "C.FOUP3", "edge": "edge30"}, {"node": "SSUSUP3", "edge": "edge61"}], "NAVILP3": [{"node": "C.FOUP3", "edge": "edge62"}, {"node": "P.SAOP3", "edge": "edge63"}], "P.SAOP3": [{"node": "BEON P3", "edge": "edge28"}, {"node": "NAVILP3", "edge": "edge63"}], "PYMONP3": [{"node": "LOUHAP3", "edge": "edge64"}, {"node": "PYMONP6", "edge": "edge66"}, {"node": "PYMONP6", "edge": "edge67"}, {"node": "SAISSP3", "edge": "edge68"}], "PYMONP6": [{"node": "CPVANP6", "edge": "edge44"}, {"node": "PYMONP3", "edge": "edge66"}, {"node": "PYMONP3", "edge": "edge67"}, {"node": "VOUGLP6", "edge": "edge65"}], "RIBAUP3": [{"node": "AUXONP3", "edge": "edge27"}, {"node": "CPVANP3", "edge": "edge43"}], "SAISSP3": [{"node": "PYMONP3", "edge": "edge68"}, {"node": "VOUGLP3", "edge": "edge74"}], "SSUSUP3": [{"node": "MERVAP3", "edge": "edge61"}, {"node": "LOUHAP3", "edge": "edge69"}], "SSV.OP7": [{"node": "H.PAUP7", "edge": "edge25"}, {"node": "GROSNP7", "edge": "edge72"}, {"node": "CREYSP7", "edge": "edge70"}, {"node": "CREYSP7", "edge": "edge71"}], "VOUGLP3": [{"node": "CUISEP3", "edge": "edge73"}, {"node": "SAISSP3", "edge": "edge74"}, {"node": "VOUGLP6", "edge": "edge75"}, {"node": "VOUGLP6", "edge": "edge76"}], "VOUGLP6": [{"node": "GEN.PP6", "edge": "edge3"}, {"node": "FLEYRP6", "edge": "edge51"}, {"node": "PYMONP6", "edge": "edge65"}, {"node": "VOUGLP3", "edge": "edge75"}, {"node": "VOUGLP3", "edge": "edge76"}], "ZCRIMP3": [{"node": "C.REGP3", "edge": "edge31"}, {"node": "C.SAUP3", "edge": "edge77"}], "ZJOUXP6": [{"node": "MACONP6", "edge": "edge57"}, {"node": "BOISSP6", "edge": "edge78"}], "ZMAGNP6": [{"node": "C.REGP6", "edge": "edge32"}, {"node": "CPVANP6", "edge": "edge79"}, {"node": "MAGNYP6", "edge": "edge80"}]}, "layers": [{"key": "semantic:on_constrained_path", "label": "Constrained path", "swatch": "constrained-path", "nodes": ["1GROSP7", "GROSNP6", "GROSNP7", "1VIELP7", "VIELMP6", "VIELMP7", "BEON P3", "C.FOUP3", "C.REGP6", "CHALOP6", "COUCHP6", "CPVANP3", "CPVANP6", "LOUHAP3", "MERVAP3", "NAVILP3", "P.SAOP3", "SSUSUP3", "SSV.OP7", "ZMAGNP6"], "edges": ["edge6", "edge7", "edge8", "edge10", "edge11", "edge12", "edge13", "edge14", "edge16", "edge20", "edge21", "edge22", "edge28", "edge30", "edge32", "edge34", "edge41", "edge42", "edge45", "edge47", "edge61", "edge62", "edge63", "edge69", "edge72", "edge79"], "section": "Structural Paths"}, {"key": "semantic:in_red_loop", "label": "Red-loop paths", "swatch": "red-loop", "nodes": ["1GEN.P7", "GEN.PP6", "GEN.PP7", "GROSNP6", "VIELMP6", "VIELMP7", "H.PAUP6", "H.PAUP7", "BOISSP6", "CHALOP3", "CHALOP6", "CIZE P6", "COMMUP6", "CPVANP3", "CREYSP7", "CUISEP3", "FLEYRP6", "FRON5P3", "G.CHEP3", "GUEUGP6", "IZERNP6", "LOUHAP3", "MACONP6", "PYMONP3", "SAISSP3", "SSV.OP7", "VOUGLP3", "VOUGLP6", "ZJOUXP6"], "edges": ["edge1", "edge4", "edge2", "edge3", "edge5", "edge9", "edge15", "edge17", "edge18", "edge19", "edge24", "edge25", "edge29", "edge33", "edge35", "edge36", "edge37", "edge38", "edge40", "edge48", "edge49", "edge50", "edge51", "edge52", "edge53", "edge55", "edge56", "edge57", "edge64", "edge68", "edge70", "edge71", "edge73", "edge74", "edge75", "edge76", "edge78"], "section": "Structural Paths"}, {"key": "style:dashed", "label": "Reconnectable", "swatch": "", "nodes": ["GEN.PP6", "GEN.PP7", "BOISSP6", "CHALOP3", "LOUHAP3"], "edges": ["edge4", "edge29", "edge33"], "section": "Individual entities properties"}, {"key": "style:tapered", "label": "Swapped flow", "swatch": "", "nodes": ["C.FOUP3", "MERVAP3", "SSUSUP3", "NAVILP3", "LOUHAP3"], "edges": ["edge30", "edge61", "edge62", "edge69"], "section": "Individual entities properties"}, {"key": "style:dotted", "label": "Non-reconnectable", "swatch": "", "nodes": ["CPVANP6", "CPVANP3", "PYMONP6", "PYMONP3", "VOUGLP6"], "edges": ["edge46", "edge67", "edge65"], "section": "Individual entities properties"}, {"key": "semantic:is_overload", "label": "Overloads", "swatch": "overload", "nodes": ["CPVANP3", "BEON P3"], "edges": ["edge42"], "section": "Individual entities properties"}, {"key": "semantic:is_monitored", "label": "Low margin lines", "swatch": "monitored", "nodes": ["CPVANP3", "BEON P3"], "edges": ["edge42"], "section": "Individual entities properties"}, {"key": "semantic:is_hub", "label": "Hubs", "swatch": "diamond", "nodes": ["VIELMP6", "VIELMP7", "CPVANP3", "LOUHAP3", "SSV.OP7"], "edges": [], "section": "Individual entities properties"}, {"key": "node:prod", "label": "Production nodes", "swatch": "prod-node", "nodes": ["BEON P3", "FRON5P3", "MAGNYP3"], "edges": [], "section": "Individual entities properties"}, {"key": "node:load", "label": "Consumption nodes", "swatch": "load-node", "nodes": ["VIELMP6", "C.FOUP3", "C.REGP6", "C.SAUP3", "CIZE P6", "COMMUP6", "CPVANP3", "CUISEP3", "GENLIP3", "GUEUGP6", "LOUHAP3", "MACONP6", "NAVILP3", "P.SAOP3", "PYMONP3", "PYMONP6", "SAISSP3", "SSUSUP3", "SSV.OP7", "VOUGLP3", "ZCRIMP3", "ZJOUXP6"], "edges": [], "section": "Individual entities properties"}, {"key": "color:coral", "label": "Positive", "swatch": "coral", "nodes": ["1GEN.P7", "GEN.PP6", "GEN.PP7", "IZERNP6", "VOUGLP6", "GROSNP6", "MACONP6", "VIELMP6", "COMMUP6", "VIELMP7", "H.PAUP7", "H.PAUP6", "GUEUGP6", "SSV.OP7", "BOISSP6", "CHALOP3", "LOUHAP3", "CHALOP6", "CIZE P6", "FLEYRP6", "CPVANP3", "RIBAUP3", "CREYSP7", "CUISEP3", "G.CHEP3", "FRON5P3", "ZJOUXP6", "MAGNYP3", "C.SAUP3", "PYMONP3", "SAISSP3", "VOUGLP3"], "edges": ["edge1", "edge4", "edge2", "edge3", "edge5", "edge9", "edge15", "edge17", "edge18", "edge19", "edge24", "edge25", "edge29", "edge33", "edge35", "edge36", "edge37", "edge38", "edge40", "edge43", "edge48", "edge49", "edge50", "edge51", "edge52", "edge53", "edge55", "edge56", "edge57", "edge58", "edge64", "edge68", "edge70", "edge71", "edge73", "edge74", "edge75", "edge76", "edge78"], "section": "Flow redispatch values"}, {"key": "color:blue", "label": "Negative", "swatch": "blue", "nodes": ["1GROSP7", "GROSNP6", "CHALOP6", "GROSNP7", "1VIELP7", "VIELMP6", "C.REGP6", "COUCHP6", "VIELMP7", "2H.PAP7", "H.PAUP6", "H.PAUP7", "AUXONP3", "RIBAUP3", "BEON P3", "P.SAOP3", "C.FOUP3", "MERVAP3", "C.REGP3", "ZCRIMP3", "ZMAGNP6", "CPVANP6", "COLLOP3", "CPVANP3", "GENLIP3", "MAGNYP3", "MAGNYP6", "SSUSUP3", "NAVILP3", "LOUHAP3", "SSV.OP7", "C.SAUP3"], "edges": ["edge6", "edge7", "edge8", "edge10", "edge11", "edge12", "edge13", "edge14", "edge16", "edge20", "edge21", "edge22", "edge23", "edge26", "edge27", "edge28", "edge30", "edge31", "edge32", "edge34", "edge39", "edge41", "edge45", "edge47", "edge54", "edge59", "edge60", "edge61", "edge62", "edge63", "edge69", "edge72", "edge77", "edge79", "edge80"], "section": "Flow redispatch values"}, {"key": "color:dimgray", "label": "Null", "swatch": "dimgray", "nodes": ["CPVANP6", "CPVANP3", "PYMONP6", "PYMONP3", "VOUGLP6"], "edges": ["edge46", "edge44", "edge66", "edge67", "edge65"], "section": "Flow redispatch values"}]};
+(function(){
+  const svg = document.querySelector('#stage svg');
+  const root = svg.querySelector('g.graph') || svg.querySelector('g');
+  if (root && !root.classList.contains('graph')) root.classList.add('graph');
+
+  // ---- Pan & zoom: native viewBox manipulation (~30 lines, no deps) ----
+  let vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number);
+  if (vb.length !== 4) { const r = svg.getBBox(); vb = [r.x, r.y, r.width, r.height]; }
+  const initial = vb.slice();
+  function setVB() { svg.setAttribute('viewBox', vb.join(' ')); }
+  function clientToSvg(x, y) {
+    const rect = svg.getBoundingClientRect();
+    return { x: vb[0] + (x - rect.left) / rect.width * vb[2], y: vb[1] + (y - rect.top) / rect.height * vb[3] };
+  }
+  svg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const k = e.deltaY < 0 ? 0.85 : 1.18;
+    const p = clientToSvg(e.clientX, e.clientY);
+    vb[0] = p.x - (p.x - vb[0]) * k;
+    vb[1] = p.y - (p.y - vb[1]) * k;
+    vb[2] *= k; vb[3] *= k;
+    setVB();
+  }, { passive: false });
+  let dragStart = null;
+  svg.addEventListener('mousedown', (e) => { if (e.button !== 0) return; dragStart = { x: e.clientX, y: e.clientY, vb: vb.slice() }; svg.classList.add('dragging'); });
+  window.addEventListener('mouseup', () => { dragStart = null; svg.classList.remove('dragging'); });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragStart) return;
+    const rect = svg.getBoundingClientRect();
+    vb[0] = dragStart.vb[0] - (e.clientX - dragStart.x) / rect.width * vb[2];
+    vb[1] = dragStart.vb[1] - (e.clientY - dragStart.y) / rect.height * vb[3];
+    setVB();
+  });
+  document.getElementById('zoom-in').onclick = () => zoomBy(0.8);
+  document.getElementById('zoom-out').onclick = () => zoomBy(1.25);
+  document.getElementById('zoom-reset').onclick = () => { vb = initial.slice(); setVB(); };
+  function zoomBy(k) {
+    const cx = vb[0] + vb[2]/2, cy = vb[1] + vb[3]/2;
+    vb[0] = cx - (cx - vb[0]) * k; vb[1] = cy - (cy - vb[1]) * k;
+    vb[2] *= k; vb[3] *= k; setVB();
+  }
+
+  // ---- Adjacency lookup, hover, click-highlight ----
+  const tooltip = document.getElementById('tooltip');
+  const info = document.getElementById('info');
+  function fmtAttrs(prefix, el) {
+    const out = [];
+    for (const a of el.attributes) {
+      if (a.name.startsWith('data-' + prefix + '-')) {
+        const k = a.name.slice(('data-' + prefix + '-').length);
+        out.push('<span class="key">' + k + '</span>: ' + a.value);
+      }
+    }
+    return out.join('<br>');
+  }
+  function showTooltip(e, html) {
+    tooltip.innerHTML = html;
+    tooltip.style.display = 'block';
+    const r = svg.getBoundingClientRect();
+    tooltip.style.left = (e.clientX - r.left + 12) + 'px';
+    tooltip.style.top = (e.clientY - r.top + 12) + 'px';
+  }
+  function hideTooltip() { tooltip.style.display = 'none'; }
+
+  function clearSelection() {
+    root.classList.remove('has-selection');
+    root.querySelectorAll('.hl, .selected').forEach(el => el.classList.remove('hl', 'selected'));
+    info.textContent = 'Nothing selected.';
+  }
+  function selectNode(name) {
+    clearSelection();
+    const node = root.querySelector('.node[data-name="' + cssEscape(name) + '"]');
+    if (!node) return;
+    root.classList.add('has-selection');
+    node.classList.add('selected', 'hl');
+    const neighbours = MODEL.adjacency[name] || [];
+    for (const n of neighbours) {
+      const nb = root.querySelector('.node[data-name="' + cssEscape(n.node) + '"]');
+      if (nb) nb.classList.add('hl');
+      const ed = document.getElementById(n.edge);
+      if (ed) ed.classList.add('hl');
+    }
+    info.innerHTML = '<b>' + escapeHtml(name) + '</b><br>' + fmtAttrs('attr', node)
+      + '<br><br>degree: ' + neighbours.length;
+  }
+  function cssEscape(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/(["\\])/g, '\\$1'); }
+  function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+  root.addEventListener('mouseover', (e) => {
+    const g = e.target.closest('.node, .edge'); if (!g) return;
+    if (g.classList.contains('node')) {
+      showTooltip(e, '<b>' + escapeHtml(g.getAttribute('data-name') || '') + '</b><br>' + fmtAttrs('attr', g));
+    } else {
+      const lbl = g.querySelector('text'); const name = g.getAttribute('data-attr-name') || '';
+      showTooltip(e, '<b>' + escapeHtml(g.getAttribute('data-source')) + ' → ' + escapeHtml(g.getAttribute('data-target')) + '</b>'
+        + (name ? '<br>' + escapeHtml(name) : '')
+        + '<br>' + fmtAttrs('attr', g));
+    }
+  });
+  root.addEventListener('mousemove', (e) => {
+    if (tooltip.style.display === 'block') {
+      const r = svg.getBoundingClientRect();
+      tooltip.style.left = (e.clientX - r.left + 12) + 'px';
+      tooltip.style.top = (e.clientY - r.top + 12) + 'px';
+    }
+  });
+  root.addEventListener('mouseout', hideTooltip);
+  root.addEventListener('click', (e) => {
+    const g = e.target.closest('.node'); if (!g) return;
+    e.stopPropagation();
+    selectNode(g.getAttribute('data-name'));
+  });
+  svg.addEventListener('click', (e) => { if (e.target === svg || e.target === root) clearSelection(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { clearSelection(); document.getElementById('search').value = ''; applySearch(); }});
+
+  // ---- Search ----
+  function applySearch() {
+    const q = document.getElementById('search').value.trim().toLowerCase();
+    root.querySelectorAll('.node.match').forEach(n => n.classList.remove('match'));
+    if (!q) { root.classList.remove('has-search'); return; }
+    root.classList.add('has-search');
+    let count = 0;
+    root.querySelectorAll('.node').forEach(n => {
+      const name = (n.getAttribute('data-name') || '').toLowerCase();
+      if (name.indexOf(q) !== -1) { n.classList.add('match'); count++; }
+    });
+  }
+  document.getElementById('search').addEventListener('input', applySearch);
+
+  // ---- Layer toggles ----
+  // Membership-based dim model: every node and edge knows which
+  // layers claim it. An element is **visible** iff at least one of
+  // its claiming layers is currently checked. Elements with no
+  // memberships at all are dimmed whenever any layer toggle differs
+  // from the default "all checked" state — that matches the
+  // user-facing intent that ticking a single layer focuses the view
+  // on that layer only and recedes everything else.
+  const layersEl = document.getElementById('layers');
+  function swatchInner(swatch) {
+    if (!swatch) return '<span style="display:block;width:100%;height:100%;border:1px dashed #999"></span>';
+    const COLORED = {coral:1, blue:1, black:1, gray:1, dimgray:1, darkred:1, red:1, green:1};
+    if (COLORED[swatch]) return '';
+    if (swatch === 'diamond') return '<svg viewBox="0 0 10 10"><polygon points="5,0 10,5 5,10 0,5" fill="#444"/></svg>';
+    if (swatch === 'red-loop') return '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="2" fill="coral"/><circle cx="5" cy="5" r="4" fill="none" stroke="coral" stroke-width="1"/></svg>';
+    if (swatch === 'constrained-path') return '<svg viewBox="0 0 14 6"><line x1="0" y1="3" x2="14" y2="3" stroke="black" stroke-width="2"/></svg>';
+    if (swatch === 'overload') return '<svg viewBox="0 0 14 6"><line x1="0" y1="3" x2="14" y2="3" stroke="black" stroke-width="2.5"/><line x1="0" y1="3" x2="14" y2="3" stroke="yellow" stroke-width="0.8"/></svg>';
+    if (swatch === 'monitored') return '<svg viewBox="0 0 14 6"><line x1="0" y1="3" x2="14" y2="3" stroke="coral" stroke-width="2.5"/><line x1="0" y1="3" x2="14" y2="3" stroke="yellow" stroke-width="0.8"/></svg>';
+    // Match the upstream node fillcolors set in build_nodes:
+    //   prod (prod_minus_load > 0)  → coral
+    //   load (prod_minus_load < 0)  → lightblue
+    if (swatch === 'prod-node') return '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="coral" stroke="#444" stroke-width="0.6"/></svg>';
+    if (swatch === 'load-node') return '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="lightblue" stroke="#444" stroke-width="0.6"/></svg>';
+    return '';
+  }
+  function swatchStyle(swatch) {
+    const COLORED = {coral:1, blue:1, black:1, gray:1, dimgray:1, darkred:1, red:1, green:1};
+    if (COLORED[swatch]) return 'background:' + swatch;
+    return 'background:#fff';
+  }
+
+  // Build per-element layer membership maps once. These are consulted
+  // by `applyAllLayers()` on every checkbox change so an element
+  // claimed by multiple layers never gets stuck in `layer-off`
+  // because an unrelated checkbox flipped the wrong way.
+  const nodeMemberships = new Map();  // data-name -> Array<layerIndex>
+  const edgeMemberships = new Map();  // edge id  -> Array<layerIndex>
+  for (let i = 0; i < MODEL.layers.length; i++) {
+    const layer = MODEL.layers[i];
+    for (const n of (layer.nodes || [])) {
+      const arr = nodeMemberships.get(n);
+      if (arr) arr.push(i); else nodeMemberships.set(n, [i]);
+    }
+    for (const e of (layer.edges || [])) {
+      const arr = edgeMemberships.get(e);
+      if (arr) arr.push(i); else edgeMemberships.set(e, [i]);
+    }
+  }
+
+  const layerCheckboxes = [];
+  let lastSection = null;
+  for (const layer of MODEL.layers) {
+    if (layer.section && layer.section !== lastSection) {
+      const header = document.createElement('h3');
+      header.className = 'layer-section-header';
+      header.textContent = layer.section;
+      layersEl.appendChild(header);
+      lastSection = layer.section;
+    }
+    const id = 'layer-' + layer.key.replace(/[^a-z0-9]/gi, '-');
+    const wrap = document.createElement('label');
+    const total = (layer.nodes ? layer.nodes.length : 0) + (layer.edges ? layer.edges.length : 0);
+    wrap.innerHTML = '<input type="checkbox" id="' + id + '" checked>'
+      + '<span class="swatch" style="' + swatchStyle(layer.swatch) + '">' + swatchInner(layer.swatch) + '</span>'
+      + '<span>' + escapeHtml(layer.label) + ' <span style="color:var(--muted)">(' + total + ')</span></span>';
+    layersEl.appendChild(wrap);
+    const cb = wrap.querySelector('input');
+    layerCheckboxes.push(cb);
+    cb.addEventListener('change', (e) => {
+      applyAllLayers();
+      window.parent.postMessage({
+        type: 'cs4g:overflow-layer-toggled',
+        key: layer.key,
+        label: layer.label,
+        visible: e.target.checked
+      }, '*');
+    });
+  }
+
+  function applyAllLayers() {
+    const checkedSet = new Set();
+    let allChecked = true;
+    for (let i = 0; i < layerCheckboxes.length; i++) {
+      if (layerCheckboxes[i].checked) checkedSet.add(i);
+      else allChecked = false;
+    }
+    function shouldDim(memberships) {
+      if (allChecked) return false;
+      if (!memberships || memberships.length === 0) return true;
+      for (const idx of memberships) {
+        if (checkedSet.has(idx)) return false;
+      }
+      return true;
+    }
+    root.querySelectorAll('.node').forEach((el) => {
+      const name = el.getAttribute('data-name');
+      el.classList.toggle('layer-off', shouldDim(nodeMemberships.get(name)));
+    });
+    root.querySelectorAll('.edge').forEach((el) => {
+      const id = el.getAttribute('id');
+      el.classList.toggle('layer-off', shouldDim(edgeMemberships.get(id)));
+    });
+  }
+  // Expose for testability and external triggers (e.g. parent app
+  // requesting a full repaint after dynamic content updates).
+  window.__cs4gApplyAllLayers = applyAllLayers;
+
+  function setAllLayers(visible) {
+    let changed = false;
+    for (let i = 0; i < layerCheckboxes.length; i++) {
+      if (layerCheckboxes[i].checked !== visible) {
+        layerCheckboxes[i].checked = visible;
+        changed = true;
+      }
+    }
+    if (changed) applyAllLayers();
+    window.parent.postMessage({
+      type: 'cs4g:overflow-select-all-layers',
+      visible: visible
+    }, '*');
+  }
+  document.getElementById('layers-select-all').addEventListener('click', () => setAllLayers(true));
+  document.getElementById('layers-select-none').addEventListener('click', () => setAllLayers(false));
+
+  // Double-click on a graph node bubbles up to the parent window,
+  // which is responsible for opening the corresponding Single-Line
+  // Diagram view. The node `data-name` is the voltage-level (or
+  // substation, depending on backend) identifier the parent will
+  // resolve to a SLD endpoint.
+  root.addEventListener('dblclick', (ev) => {
+    const g = ev.target.closest('.node');
+    if (!g) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const name = g.getAttribute('data-name') || '';
+    if (!name) return;
+    window.parent.postMessage({
+      type: 'cs4g:overflow-node-double-clicked',
+      name: name
+    }, '*');
+  });
+
+  document.getElementById('stats').textContent =
+    MODEL.nodes.length + ' nodes, ' + MODEL.edges.length + ' edges';
+})();
+</script>
+</body>
+</html>

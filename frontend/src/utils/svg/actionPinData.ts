@@ -308,7 +308,7 @@ export const buildActionOverviewPins = (
  * without leaving the overview. Falls back to a generic prompt when
  * score info is absent (e.g. older session reloads).
  */
-const buildUnsimulatedPinTitle = (
+export const buildUnsimulatedPinTitle = (
     id: string,
     info: UnsimulatedActionScoreInfo | undefined,
 ): string => {

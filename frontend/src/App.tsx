@@ -32,6 +32,10 @@ import { useDiagramHighlights } from './hooks/useDiagramHighlights';
 import { interactionLogger } from './utils/interactionLogger';
 import { DEFAULT_ACTION_OVERVIEW_FILTERS } from './utils/actionTypes';
 import { applyVlTitles } from './utils/svgUtils';
+import {
+    buildOverflowPinPayload,
+    buildOverflowUnsimulatedPinPayload,
+} from './utils/svg/overflowPinPayload';
 
 function App() {
   // ===== Settings Hook =====
@@ -68,6 +72,14 @@ function App() {
   const [voltageLevels, setVoltageLevels] = useState<string[]>([]);
   /** ID → human-readable name for branches (lines + transformers) and VLs. */
   const [nameMap, setNameMap] = useState<Record<string, string>>({});
+  /** VL id → substation id. Loaded once after config-load and used to
+   *  anchor the action-overview pins on the overflow graph (whose
+   *  nodes are pypowsybl substation ids). */
+  const [vlToSubstation, setVlToSubstation] = useState<Record<string, string>>({});
+  /** Whether the user has switched ON the pin overlay on the overflow
+   *  graph. Default OFF; toggle is disabled until Step 2 has produced
+   *  a non-empty `result.actions` map. */
+  const [overflowPinsEnabled, setOverflowPinsEnabled] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -383,7 +395,75 @@ function App() {
     diagrams.lastZoomState.current = { query: '', branch: '' };
     setSelectedBranch('');
     setShowMonitoringWarning(false);
+    setVlToSubstation({});
+    setOverflowPinsEnabled(false);
   }, [clearContingencyState, diagrams, setShowMonitoringWarning]);
+
+  // Pre-compute the pin descriptors posted to the overflow-graph
+  // iframe. Memoised so unrelated re-renders don't churn the iframe
+  // postMessage. The toggle is gated on Step 2 having delivered at
+  // least one action — the iframe overlay is otherwise useless.
+  const overflowPinsAvailable = useMemo(
+    () => !analysisLoading && !!result?.actions && Object.keys(result.actions).length > 0,
+    [analysisLoading, result?.actions],
+  );
+  const overflowPins = useMemo(
+    () => overflowPinsAvailable
+      ? buildOverflowPinPayload(
+          result?.actions ?? null,
+          diagrams.n1MetaIndex ?? null,
+          vlToSubstation,
+          monitoringFactor,
+          selectedActionIds,
+          rejectedActionIds,
+          undefined,
+          overviewFilters,
+        )
+      : [],
+    [overflowPinsAvailable, result?.actions, diagrams.n1MetaIndex, vlToSubstation,
+     monitoringFactor, selectedActionIds, rejectedActionIds, overviewFilters],
+  );
+
+  // Un-simulated overflow pins. Built only when the operator has
+  // ticked ``Show unsimulated`` in the Action-Overview filter row
+  // (which is mirrored in the iframe sidebar's filter panel).
+  // Identical contract to the Action Overview pin layer:
+  //   - dimmed grey pin with '?' label,
+  //   - dblclick triggers a manual simulation rather than the SLD
+  //     drill-down,
+  //   - skipped when the id is already in ``result.actions``.
+  const overflowUnsimulatedPins = useMemo(
+    () => (overflowPinsAvailable && overviewFilters?.showUnsimulated)
+      ? buildOverflowUnsimulatedPinPayload(
+          unsimulatedActionIds,
+          new Set(Object.keys(result?.actions ?? {})),
+          diagrams.n1MetaIndex ?? null,
+          vlToSubstation,
+          unsimulatedActionInfo,
+        )
+      : [],
+    [overflowPinsAvailable, overviewFilters?.showUnsimulated,
+     unsimulatedActionIds, unsimulatedActionInfo,
+     result?.actions, diagrams.n1MetaIndex, vlToSubstation],
+  );
+
+  // Pin payload posted to the iframe is the union of simulated +
+  // un-simulated pins. The overlay differentiates them via the
+  // ``unsimulated`` flag on each pin.
+  const allOverflowPins = useMemo(
+    () => [...overflowPins, ...overflowUnsimulatedPins],
+    [overflowPins, overflowUnsimulatedPins],
+  );
+
+  // Auto-disable the toggle when the gate goes away (e.g. user
+  // applied new settings, which clears the result). Without this,
+  // the toggle would stay ON but the toolbar would show 'OFF' style
+  // because `overflowPinsAvailable` is false.
+  useEffect(() => {
+    if (!overflowPinsAvailable && overflowPinsEnabled) {
+      setOverflowPinsEnabled(false);
+    }
+  }, [overflowPinsAvailable, overflowPinsEnabled]);
 
   const wrappedActionSelect = useCallback(
     (actionId: string | null) =>
@@ -746,11 +826,15 @@ function App() {
       // only started after branches resolved — wasting the ~0.8s branches
       // gap off the critical path of the initial load.
       // See docs/performance/history/loading-parallel.md.
-      const [branchRes, vlRes, nomVRes, diagramRaw] = await Promise.all([
+      const [branchRes, vlRes, nomVRes, diagramRaw, vlSubRes] = await Promise.all([
         api.getBranches(),
         api.getVoltageLevels(),
         api.getNominalVoltages(),
         api.getNetworkDiagram(),
+        // Cheap query (~1 ms even on PyPSA-EUR France); pulled in
+        // parallel so it never extends the critical path. Used to
+        // anchor overflow-graph action pins on substations.
+        api.getVoltageLevelSubstations().catch(() => ({ mapping: {} as Record<string, string> })),
       ]);
 
       setBranches(branchRes.branches);
@@ -766,6 +850,7 @@ function App() {
       }
 
       diagrams.ingestBaseDiagram(diagramRaw, vlRes.voltage_levels.length);
+      setVlToSubstation(vlSubRes.mapping || {});
 
       committedNetworkPathRef.current = networkPath;
       interactionLogger.record('config_loaded', buildConfigInteractionDetails());
@@ -808,11 +893,15 @@ function App() {
       // See the sibling call site in `applySettingsImmediate` for context:
       // fire 4 XHRs in parallel so the slow base-diagram call overlaps
       // with branches/voltage-levels/nominal-voltages.
-      const [branchRes, vlRes, nomVRes, diagramRaw] = await Promise.all([
+      const [branchRes, vlRes, nomVRes, diagramRaw, vlSubRes] = await Promise.all([
         api.getBranches(),
         api.getVoltageLevels(),
         api.getNominalVoltages(),
         api.getNetworkDiagram(),
+        // Cheap query (~1 ms even on PyPSA-EUR France); pulled in
+        // parallel so it never extends the critical path. Used to
+        // anchor overflow-graph action pins on substations.
+        api.getVoltageLevelSubstations().catch(() => ({ mapping: {} as Record<string, string> })),
       ]);
 
       setBranches(branchRes.branches);
@@ -827,6 +916,7 @@ function App() {
       }
 
       diagrams.ingestBaseDiagram(diagramRaw, vlRes.voltage_levels.length);
+      setVlToSubstation(vlSubRes.mapping || {});
       committedNetworkPathRef.current = networkPath;
       interactionLogger.record('config_loaded', buildConfigInteractionDetails());
     } catch (err: unknown) {
@@ -1000,6 +1090,20 @@ function App() {
     // "Action '' not found in last analysis result".
     handleVlDoubleClick(selectedActionId || '', vlName);
   }, [handleVlDoubleClick, selectedActionId]);
+
+  // Double-click on an action pin in the overflow graph drills into
+  // that substation's SLD on the post-action ('action') sub-tab.
+  // Guarded on the action being known to the analysis result —
+  // double-clicks on stale or unknown pins are silently ignored.
+  const handleOverflowPinDoubleClick = useCallback((actionId: string, substation: string) => {
+    if (!actionId || !substation) return;
+    const knownAction = !!result?.actions?.[actionId];
+    if (!knownAction) return;
+    interactionLogger.record('overflow_pin_double_clicked', {
+      actionId, substation,
+    });
+    handleVlDoubleClick(actionId, substation, 'action');
+  }, [handleVlDoubleClick, result?.actions]);
 
   const handleCancelDialog = useCallback(() => {
     // Cancelling a "Change Network?" dialog must roll back the
@@ -1244,6 +1348,8 @@ function App() {
             onOverlaySldTabChange={handleOverlaySldTabChange}
             voltageLevels={voltageLevels}
             onVlOpen={handleVlOpen}
+            onOverflowPinPreview={handlePinPreview}
+            onOverflowPinDoubleClick={handleOverflowPinDoubleClick}
             networkPath={networkPath}
             layoutPath={layoutPath}
             onOpenSettings={handleOpenSettings}
@@ -1270,6 +1376,10 @@ function App() {
             onSimulateUnsimulatedAction={handleSimulateUnsimulatedAction}
             showVoltageLevelNames={showVoltageLevelNames}
             onToggleVoltageLevelNames={handleToggleVoltageLevelNames}
+            overflowPins={allOverflowPins}
+            overflowPinsEnabled={overflowPinsEnabled}
+            overflowPinsAvailable={overflowPinsAvailable}
+            onOverflowPinsToggle={setOverflowPinsEnabled}
           />
         </div>
       </div>

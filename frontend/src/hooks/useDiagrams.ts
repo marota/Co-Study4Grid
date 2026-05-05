@@ -166,7 +166,7 @@ export interface DiagramsState {
   handleManualZoomIn: (targetTab?: TabId) => void;
   handleManualZoomOut: (targetTab?: TabId) => void;
   handleManualReset: (targetTab?: TabId) => void;
-  handleVlDoubleClick: (actionId: string, vlName: string) => void;
+  handleVlDoubleClick: (actionId: string, vlName: string, forceTab?: SldTab) => void;
   handleOverlaySldTabChange: (sldTab: SldTab) => void;
   handleOverlayClose: () => void;
   handleAssetClick: (

@@ -5,132 +5,26 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
-import React, { useState, useMemo, useRef, type RefObject } from 'react';
+import React, { useState, useMemo, type RefObject } from 'react';
 import type { DiagramData, AnalysisResult, TabId, VlOverlay, SldTab, MetadataIndex, ActionOverviewFilters, UnsimulatedActionScoreInfo } from '../types';
 import MemoizedSvgContainer from './MemoizedSvgContainer';
 import SldOverlay from './SldOverlay';
 import DetachableTabHost from './DetachableTabHost';
 import ActionOverviewDiagram from './ActionOverviewDiagram';
+import ActionCardPopover from './ActionCardPopover';
 import DiagramLegend from './DiagramLegend';
+import InspectSearchField from './InspectSearchField';
+import DetachedPlaceholder from './DetachedPlaceholder';
 import type { DetachedTabsMap } from '../hooks/useDetachedTabs';
 import type { PZInstance } from '../hooks/useTiedTabsSync';
+import { useOverflowIframe } from '../hooks/useOverflowIframe';
 import { colors } from '../styles/tokens';
-
-/**
- * Inspect text field + custom suggestions dropdown.
- *
- * This replaces a native <input list=...> + <datalist> pair. The
- * native datalist is unreliable when its owning subtree is physically
- * relocated between documents via DetachableTabHost — Chromium in
- * particular has been observed to show the dropdown in the wrong
- * window (or not at all in the window being typed into) when a tied
- * detached tab shares the same `inspectQuery` state with the main
- * window's active tab overlay.
- *
- * By rendering the suggestion list ourselves, as a plain
- * absolutely-positioned div sibling of the input, the dropdown is
- * guaranteed to live in the same DOM subtree as the input it belongs
- * to, in whichever window that subtree happens to be. It therefore
- * renders reliably whether the overlay sits in the main window or in
- * a detached popup, regardless of the tied state.
- */
-const InspectSearchField: React.FC<{
-    tabId: TabId;
-    inspectQuery: string;
-    onChangeQuery: (tab: TabId, q: string) => void;
-    filteredInspectables: string[];
-}> = ({ tabId, inspectQuery, onChangeQuery, filteredInspectables }) => {
-    const [focused, setFocused] = useState(false);
-    // Keep the dropdown visible long enough for an option click to
-    // register before onBlur hides it (click fires after blur).
-    const closeTimer = useRef<number | null>(null);
-
-    // Hide the dropdown after a matched commit so the user isn't left
-    // with a hovering suggestion panel while zoomed in on the asset.
-    const exactMatch = inspectQuery.length > 0
-        && filteredInspectables.some(v => v.toUpperCase() === inspectQuery.toUpperCase());
-    const showDropdown = focused && inspectQuery.length > 0 && filteredInspectables.length > 0 && !exactMatch;
-
-    return (
-        <div style={{ position: 'relative' }}>
-            <input
-                value={inspectQuery}
-                onChange={e => onChangeQuery(tabId, e.target.value)}
-                onFocus={() => {
-                    if (closeTimer.current !== null) {
-                        window.clearTimeout(closeTimer.current);
-                        closeTimer.current = null;
-                    }
-                    setFocused(true);
-                }}
-                onBlur={() => {
-                    // Defer the hide so onMouseDown on an option can
-                    // complete and fire its onClick before the
-                    // dropdown unmounts.
-                    closeTimer.current = window.setTimeout(() => {
-                        setFocused(false);
-                        closeTimer.current = null;
-                    }, 150);
-                }}
-                placeholder="🔍 Inspect..."
-                style={{
-                    padding: '5px 10px',
-                    border: inspectQuery ? `2px solid ${colors.brand}` : `1px solid ${colors.border}`,
-                    borderRadius: '4px',
-                    fontSize: '12px',
-                    width: '180px',
-                    boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
-                    background: 'white',
-                }}
-            />
-            {showDropdown && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        bottom: '100%',
-                        left: 0,
-                        marginBottom: '4px',
-                        width: '220px',
-                        maxHeight: '220px',
-                        overflowY: 'auto',
-                        background: 'white',
-                        border: `1px solid ${colors.brand}`,
-                        borderRadius: '4px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
-                        zIndex: 200,
-                        fontSize: '12px',
-                    }}
-                >
-                    {filteredInspectables.map(item => (
-                        <div
-                            key={item}
-                            // Use onMouseDown (fires before the
-                            // input's onBlur) so the selection is
-                            // recorded even though the blur is about
-                            // to hide us.
-                            onMouseDown={e => {
-                                e.preventDefault();
-                                onChangeQuery(tabId, item);
-                            }}
-                            style={{
-                                padding: '5px 10px',
-                                cursor: 'pointer',
-                                borderBottom: `1px solid ${colors.borderSubtle}`,
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                            }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = colors.brandSoft; }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = 'white'; }}
-                        >
-                            {item}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
+import { interactionLogger } from '../utils/interactionLogger';
+import {
+    computePopoverStyle,
+    POPOVER_WIDTH,
+    POPOVER_MAX_HEIGHT,
+} from '../utils/popoverPlacement';
 
 // Module-level stable references so React.memo children don't
 // break referential equality on every parent render.
@@ -200,6 +94,20 @@ interface VisualizationPanelProps {
     onOverlaySldTabChange: (tab: SldTab) => void;
     voltageLevels: string[];
     onVlOpen: (vlName: string) => void;
+    /**
+     * Single click on an overflow-graph action pin. Should focus the
+     * feed card for that action (same as clicking an Action-Overview
+     * pin) — NOT switch tabs. Optional so call sites that don't
+     * surface the overflow viewer can omit it.
+     */
+    onOverflowPinPreview?: (actionId: string) => void;
+    /**
+     * Double-click on an action pin in the overflow graph. Routes the
+     * user to the SLD overlay opened on the post-action ('action')
+     * sub-tab for that substation. Optional so call sites that don't
+     * surface the overflow viewer can omit it.
+     */
+    onOverflowPinDoubleClick?: (actionId: string, substation: string) => void;
     networkPath: string;
     layoutPath: string;
     onOpenSettings: (tab?: 'recommender' | 'configurations' | 'paths') => void;
@@ -270,6 +178,20 @@ interface VisualizationPanelProps {
      */
     showVoltageLevelNames?: boolean;
     onToggleVoltageLevelNames?: (show: boolean) => void;
+    /**
+     * Pre-computed pin descriptors posted to the overflow-graph
+     * iframe when `overflowPinsEnabled` is true. Built upstream by
+     * `buildOverflowPinPayload` from `actions`, `monitoringFactor`,
+     * and the VL→substation map. Re-posted whenever the array
+     * reference changes.
+     */
+    overflowPins?: ReadonlyArray<import('../utils/svg/overflowPinPayload').OverflowPin>;
+    /** Toggle state — controlled by App.tsx so it survives tab swaps. */
+    overflowPinsEnabled?: boolean;
+    /** Whether the toggle is allowed to be enabled at all (Step 2 done). */
+    overflowPinsAvailable?: boolean;
+    /** Setter for `overflowPinsEnabled` — wired to interactionLogger. */
+    onOverflowPinsToggle?: (enabled: boolean) => void;
 }
 
 
@@ -306,6 +228,8 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onOverlaySldTabChange,
     voltageLevels,
     onVlOpen,
+    onOverflowPinPreview,
+    onOverflowPinDoubleClick,
     networkPath,
     layoutPath,
     onOpenSettings,
@@ -338,6 +262,10 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onSimulateUnsimulatedAction,
     showVoltageLevelNames = true,
     onToggleVoltageLevelNames,
+    overflowPins,
+    overflowPinsEnabled = false,
+    overflowPinsAvailable = false,
+    onOverflowPinsToggle,
 }) => {
     // No-op fallbacks so conditional branches don't need to guard.
     const detachTabCb = onDetachTab ?? (() => {});
@@ -365,6 +293,28 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
 
     const hasAnyDiagram = !!(nDiagram?.svg || n1Diagram?.svg || actionDiagram?.svg);
     const showPathWarning = !warningDismissed && !hasAnyDiagram;
+
+    // Overflow-graph iframe ↔ parent-window plumbing (handshake,
+    // pin / filter / node messages, popover state with outside-click
+    // dismissal, pin & filter broadcasts). See useOverflowIframe.
+    const {
+        overflowIframeRef,
+        overflowPopoverRef,
+        overflowPopoverPin,
+        setOverflowPopoverPin,
+        overflowPopoverViewport,
+        setOverflowPopoverViewport,
+    } = useOverflowIframe({
+        pdfUrl: result?.pdf_url,
+        overflowPinsEnabled,
+        overflowPins,
+        overviewFilters,
+        onOverflowPinPreview,
+        onOverflowPinDoubleClick,
+        onSimulateUnsimulatedAction,
+        onOverviewFiltersChange,
+        onVlOpen,
+    });
 
     const filteredInspectables = useMemo(() => {
         const q = inspectQuery.toUpperCase();
@@ -642,36 +592,13 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     // content. The tab's DOM lives in a popup — we show a friendly
     // "click to focus" indicator so the main-window user can find it.
     const renderDetachedPlaceholder = (tabId: TabId, label: string, accentColor: string) => (
-        <div style={{
-            position: 'absolute', inset: 0,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: '12px', background: colors.surfaceMuted, color: colors.textSecondary, fontSize: '13px',
-        }}>
-            <div style={{ fontSize: '32px', color: accentColor }}>{'\u21D7'}</div>
-            <div style={{ fontWeight: 600 }}>"{label}" is open in a separate window</div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                    onClick={() => focusDetachedTabCb(tabId)}
-                    style={{
-                        border: `1px solid ${accentColor}`, background: 'white', color: accentColor,
-                        borderRadius: '4px', padding: '6px 14px', fontSize: '12px',
-                        fontWeight: 600, cursor: 'pointer',
-                    }}
-                >
-                    Focus window
-                </button>
-                <button
-                    onClick={() => reattachTabCb(tabId)}
-                    style={{
-                        border: `1px solid ${colors.border}`, background: colors.surfaceMuted, color: colors.textSecondary,
-                        borderRadius: '4px', padding: '6px 14px', fontSize: '12px',
-                        fontWeight: 600, cursor: 'pointer',
-                    }}
-                >
-                    Reattach
-                </button>
-            </div>
-        </div>
+        <DetachedPlaceholder
+            tabId={tabId}
+            label={label}
+            accentColor={accentColor}
+            onFocusDetachedTab={focusDetachedTabCb}
+            onReattachTab={reattachTabCb}
+        />
     );
 
     return (
@@ -988,17 +915,106 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                             Geo
                                         </button>
                                     </div>
+                                    {/* Pin overlay toggle. Only enabled once
+                                        the action analysis is complete (the
+                                        gate is owned by App.tsx through
+                                        `overflowPinsAvailable`). */}
+                                    {onOverflowPinsToggle && (() => {
+                                        const pinsDisabled = !overflowPinsAvailable;
+                                        const tip = pinsDisabled
+                                            ? 'Run "Analyze & Suggest" to compute action pins'
+                                            : (overflowPinsEnabled
+                                                ? 'Hide action pins on the overflow graph'
+                                                : 'Show action pins on the overflow graph');
+                                        return (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const next = !overflowPinsEnabled;
+                                                    onOverflowPinsToggle(next);
+                                                    interactionLogger.record('overflow_pins_toggled', { enabled: next });
+                                                }}
+                                                disabled={pinsDisabled}
+                                                aria-pressed={!!overflowPinsEnabled}
+                                                title={tip}
+                                                data-testid="toggle-overflow-pins"
+                                                style={{
+                                                    background: overflowPinsEnabled ? colors.brandSoft : colors.surface,
+                                                    color: overflowPinsEnabled ? colors.brand : colors.textSecondary,
+                                                    border: `1px solid ${overflowPinsEnabled ? colors.brand : colors.border}`,
+                                                    borderRadius: '4px',
+                                                    padding: '4px 8px',
+                                                    cursor: pinsDisabled ? 'not-allowed' : 'pointer',
+                                                    fontSize: '12px',
+                                                    fontWeight: 600,
+                                                    boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
+                                                    opacity: pinsDisabled ? 0.55 : 1,
+                                                }}
+                                            >
+                                                {'\u{1F4CC} Pins'}
+                                            </button>
+                                        );
+                                    })()}
                                 </div>
                             );
                         })()}
                         {result?.pdf_url ? (
                             <iframe
+                                ref={overflowIframeRef}
                                 src={`http://localhost:8000${result.pdf_url}`}
                                 key={result.pdf_url}
                                 style={{ width: '100%', height: '100%', border: 'none' }}
                                 title="Overflow Graph"
                             />
-                        ) : (
+                        ) : null}
+                        {/* Floating ActionCard popover anchored on the
+                            single-clicked overflow pin. Reuses the
+                            exact same component the Action Overview
+                            uses for its pin preview, so the visual
+                            and interaction contract stays in lock-
+                            step on both surfaces. */}
+                        {result?.pdf_url && overflowPopoverPin && result?.actions?.[overflowPopoverPin.id] && (() => {
+                            const popoverDetails = result.actions[overflowPopoverPin.id];
+                            const keys = Object.keys(result.actions || {});
+                            const popoverIndex = keys.indexOf(overflowPopoverPin.id) + 1;
+                            return (
+                                <ActionCardPopover
+                                    popoverRef={overflowPopoverRef}
+                                    testId="overflow-pin-popover"
+                                    extraDataAttributes={{
+                                        'data-place-above': overflowPopoverPin.placeAbove ? 'true' : 'false',
+                                        'data-horizontal-align': overflowPopoverPin.horizontalAlign,
+                                    }}
+                                    actionId={overflowPopoverPin.id}
+                                    details={popoverDetails}
+                                    index={popoverIndex}
+                                    style={{
+                                        ...computePopoverStyle(overflowPopoverPin, overflowPopoverViewport ?? undefined),
+                                        width: POPOVER_WIDTH,
+                                        maxHeight: POPOVER_MAX_HEIGHT,
+                                        overflowY: 'auto',
+                                    }}
+                                    linesOverloaded={overloadedLinesMemo}
+                                    monitoringFactor={monitoringFactor ?? 1}
+                                    metaIndex={n1MetaIndex ?? null}
+                                    selectedActionIds={selectedActionIds}
+                                    rejectedActionIds={rejectedActionIds}
+                                    onActivateAction={(id) => {
+                                        setOverflowPopoverPin(null);
+                                        setOverflowPopoverViewport(null);
+                                        if (onActionSelect) onActionSelect(id);
+                                    }}
+                                    onActionFavorite={onActionFavorite}
+                                    onActionReject={onActionReject}
+                                    onClose={() => {
+                                        setOverflowPopoverPin(null);
+                                        setOverflowPopoverViewport(null);
+                                    }}
+                                    displayName={displayName}
+                                />
+                            );
+                        })()}
+                        {!result?.pdf_url && (
                             <div style={{
                                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%',
                                 color: analysisLoading ? colors.warningText : colors.textTertiary,

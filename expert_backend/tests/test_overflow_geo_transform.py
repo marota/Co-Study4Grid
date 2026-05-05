@@ -419,3 +419,156 @@ def test_drops_graphviz_background_polygon():
     assert 'fill="white" stroke="transparent"' in html
     out = transform_html(html, {"A": (0, 0), "B": (100, 100)})
     assert 'fill="white" stroke="transparent"' not in out
+
+
+# ---------------------------------------------------------------------
+# Tapered (swapped-flow) edges — must keep both body and arrowhead
+# visible after the geo transform.
+# ---------------------------------------------------------------------
+
+_TAPERED_HTML = """\
+<!doctype html>
+<html><head></head><body>
+<svg width="400pt" height="400pt" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <g class="graph">
+    <g id="node1" class="node" data-name="A" data-attr-pos="10,20">
+      <title>A</title>
+      <ellipse cx="10" cy="-20" rx="5" ry="5" stroke="red"/>
+    </g>
+    <g id="node2" class="node" data-name="B" data-attr-pos="50,60">
+      <title>B</title>
+      <ellipse cx="50" cy="-60" rx="5" ry="5" stroke="darkgreen"/>
+    </g>
+    <g id="edge1" class="edge" data-source="A" data-target="B"
+       data-attr-style="tapered" data-attr-color="blue" data-attr-dir="both">
+      <title>A-&gt;B</title>
+      <polygon fill="blue" stroke="transparent" stroke-width="13"
+               points="10,-20 12,-22 14,-24 16,-26 18,-28 20,-30 22,-32 24,-34 26,-36 28,-38 30,-40 32,-42 34,-44 36,-46 38,-48 40,-50 42,-52 44,-54 46,-56 48,-58 50,-60"/>
+      <polygon fill="blue" stroke="blue" stroke-width="13"
+               points="52,-58 48,-62 46,-60"/>
+      <text x="30" y="-40">-25</text>
+    </g>
+  </g>
+</svg>
+</body></html>
+"""
+
+
+def test_tapered_edge_keeps_arrowhead_polygon():
+    """Tapered edges (swapped-flow) must still have a recognisable
+    arrowhead at the target end after the geo redraw. Before the
+    fix the body polygon and the arrowhead polygon were both
+    rewritten to a 3-vertex triangle, leaving the edge with no
+    visible body and a stacked arrowhead."""
+    out = transform_html(_TAPERED_HTML, {"A": (0, 0), "B": (100, 100)})
+    polygons = re.findall(
+        r'<polygon[^>]*points="([^"]+)"', out,
+    )
+    assert len(polygons) >= 2, (
+        "tapered edge must retain BOTH polygons (body + arrowhead)"
+    )
+    # The first polygon (body) must be a tapered strip with 4
+    # vertices; the second (arrowhead) must be the 3-point triangle
+    # produced by ``_arrowhead_points``.
+    body_pts = polygons[0].split()
+    arrow_pts = polygons[1].split()
+    assert len(body_pts) == 4, (
+        f"tapered body should have 4 vertices, got {len(body_pts)}: {body_pts}"
+    )
+    assert len(arrow_pts) == 3, (
+        f"arrowhead should have 3 vertices, got {len(arrow_pts)}: {arrow_pts}"
+    )
+
+
+def test_tapered_edge_body_does_not_collapse_to_a_triangle():
+    """Regression: before the fix, the long ~21-vertex tapered body
+    was overwritten by ``_arrowhead_points`` and became a 3-vertex
+    triangle stacked on top of the actual arrowhead — visually the
+    line was gone. Asserting the body stays at 4 vertices guards
+    that path."""
+    out = transform_html(_TAPERED_HTML, {"A": (0, 0), "B": (100, 100)})
+    # Pull the body polygon (the one with stroke="transparent" or 0).
+    m = re.search(
+        r'<polygon[^>]*stroke="transparent"[^>]*points="([^"]+)"',
+        out,
+    )
+    assert m, "tapered body polygon (stroke=transparent) lost"
+    pts = m.group(1).split()
+    assert len(pts) == 4
+
+
+def test_mixed_tapered_and_regular_edges_in_same_svg():
+    """A graph with BOTH a regular path-based edge AND a tapered
+    polygon-only edge must transform each correctly:
+    - the regular edge keeps a single 3-vertex arrowhead polygon
+      AND a path with two end-points.
+    - the tapered edge keeps two polygons: a 4-vertex strip body
+      and a 3-vertex arrowhead.
+    Mixed-mode coverage is the only way to spot a regression where
+    a future refactor accidentally applies the tapered branch to a
+    regular edge or vice-versa."""
+    html = HIERARCHICAL_HTML.replace(
+        '<g id="edge1" class="edge" data-source="A" data-target="B" data-attr-color="coral">',
+        '<g id="edge1" class="edge" data-source="A" data-target="B" data-attr-color="coral">',
+    ).replace('</svg>', _TAPERED_HTML.split('<g class="graph">')[1].split('</svg>')[0])
+    # The replacement above shoehorns the tapered edge from the
+    # _TAPERED_HTML fixture INTO the regular fixture; ensure the
+    # underlying SVG still contains BOTH edges before transforming.
+    layout = {"A": (0, 0), "B": (100, 100)}
+    # We can't simply concat both; build a proper mixed SVG instead.
+    mixed = (
+        '<!doctype html><html><body>'
+        '<svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">'
+        '  <g class="graph">'
+        '    <g id="node1" class="node" data-name="A" data-attr-pos="10,20">'
+        '      <ellipse cx="10" cy="-20" rx="5" ry="5"/>'
+        '    </g>'
+        '    <g id="node2" class="node" data-name="B" data-attr-pos="50,60">'
+        '      <ellipse cx="50" cy="-60" rx="5" ry="5"/>'
+        '    </g>'
+        '    <g id="edge_regular" class="edge" data-source="A" data-target="B" data-attr-color="coral">'
+        '      <path fill="none" stroke="coral" d="M 10,-20 C 20,-30 40,-50 50,-60"/>'
+        '      <polygon fill="coral" points="52,-58 48,-62 46,-60"/>'
+        '    </g>'
+        '    <g id="edge_tapered" class="edge" data-source="A" data-target="B"'
+        '       data-attr-style="tapered" data-attr-color="blue" data-attr-dir="both">'
+        '      <polygon fill="blue" stroke="transparent" stroke-width="13"'
+        '               points="10,-20 12,-22 14,-24 16,-26 18,-28 20,-30 22,-32 24,-34 26,-36 28,-38 30,-40 32,-42 34,-44 36,-46 38,-48 40,-50 42,-52 44,-54 46,-56 48,-58 50,-60"/>'
+        '      <polygon fill="blue" stroke="blue" stroke-width="13" points="52,-58 48,-62 46,-60"/>'
+        '    </g>'
+        '  </g>'
+        '</svg>'
+        '</body></html>'
+    )
+    out = transform_html(mixed, layout)
+    # Regular edge: count its polygons (must still be 1) and verify
+    # path is rewritten to a straight line.
+    reg_m = re.search(
+        r'<g id="edge_regular"[^>]*>(.*?)</g>',
+        out, re.DOTALL,
+    )
+    assert reg_m, "regular edge group missing"
+    regular_block = reg_m.group(1)
+    regular_polys = re.findall(r'<polygon[^>]*points="([^"]+)"', regular_block)
+    assert len(regular_polys) == 1, (
+        f"regular edge should have exactly 1 arrowhead polygon, got {len(regular_polys)}"
+    )
+    assert len(regular_polys[0].split()) == 3, "regular arrowhead must be a 3-vertex triangle"
+    assert re.search(r'<path[^>]*d="M[^"]+L[^"]+"', regular_block), (
+        "regular edge path must be rewritten as a single ``M src L tgt`` segment"
+    )
+    # Tapered edge: must still have 2 polygons (body 4-vertex,
+    # arrowhead 3-vertex), no path.
+    tap_m = re.search(
+        r'<g id="edge_tapered"[^>]*>(.*?)</g>',
+        out, re.DOTALL,
+    )
+    assert tap_m, "tapered edge group missing"
+    tapered_block = tap_m.group(1)
+    tapered_polys = re.findall(r'<polygon[^>]*points="([^"]+)"', tapered_block)
+    assert len(tapered_polys) == 2, (
+        f"tapered edge should keep 2 polygons (body + arrowhead), got {len(tapered_polys)}"
+    )
+    assert len(tapered_polys[0].split()) == 4, "tapered body must be a 4-vertex strip"
+    assert len(tapered_polys[1].split()) == 3, "tapered arrowhead must be a 3-vertex triangle"
+    assert '<path' not in tapered_block, "tapered edge must NOT gain a <path> child"

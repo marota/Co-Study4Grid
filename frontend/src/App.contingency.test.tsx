@@ -113,6 +113,7 @@ const mockApi = vi.hoisted(() => ({
   getBranches: vi.fn().mockResolvedValue({ branches: ['BRANCH_A', 'BRANCH_B', 'BRANCH_C'], name_map: {} }),
   getVoltageLevels: vi.fn().mockResolvedValue({ voltage_levels: ['VL1', 'VL2'], name_map: {} }),
   getNominalVoltages: vi.fn().mockResolvedValue({ mapping: {}, unique_kv: [63, 225] }),
+  getVoltageLevelSubstations: vi.fn().mockResolvedValue({ mapping: {} }),
   getNetworkDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
   getN1Diagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] }),
   pickPath: vi.fn(),
@@ -307,6 +308,7 @@ describe('Overload Clearing Logic', () => {
     mockApi.getBranches.mockResolvedValue({ branches: ['BRANCH_A', 'BRANCH_B', 'BRANCH_C'], name_map: {} });
     mockApi.getVoltageLevels.mockResolvedValue({ voltage_levels: ['VL1', 'VL2'], name_map: {} });
     mockApi.getNominalVoltages.mockResolvedValue({ mapping: {}, unique_kv: [63, 225] });
+    mockApi.getVoltageLevelSubstations.mockResolvedValue({ mapping: {} });
     mockApi.getNetworkDiagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null });
     mockApi.getN1Diagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] });
     mockApi.runAnalysisStep1.mockResolvedValue({ can_proceed: true, lines_overloaded: ['LINE_OL1'] });
@@ -495,6 +497,7 @@ describe('N-1 overload state is populated before action analysis', () => {
     mockApi.getBranches.mockResolvedValue({ branches: ['BRANCH_A', 'BRANCH_B', 'BRANCH_C'], name_map: {} });
     mockApi.getVoltageLevels.mockResolvedValue({ voltage_levels: ['VL1', 'VL2'], name_map: {} });
     mockApi.getNominalVoltages.mockResolvedValue({ mapping: {}, unique_kv: [63, 225] });
+    mockApi.getVoltageLevelSubstations.mockResolvedValue({ mapping: {} });
     mockApi.getNetworkDiagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null });
     mockApi.getN1Diagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] });
     localStorage.clear();

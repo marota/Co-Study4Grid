@@ -296,14 +296,23 @@ def _find_handler_range(src: str, name: str) -> tuple[int, int] | None:
         i = m.end()
         # Optional modifiers before the arrow function.
         #   - useCallback(                   → step into the paren
+        #   - reactExports.useCallback(      → step into the paren
+        #     (vite/rollup imports the hook through a namespace
+        #     object, so the auto-generated standalone emits the
+        #     dotted form even though the React source had a bare
+        #     `useCallback(`).
         #   - async                          → skip keyword
         #   - (                              → already at arrow-fn param list
-        if src[i:i + 12].startswith("useCallback"):
-            # Advance to the `(` after "useCallback".
-            i = src.find("(", i)
+        wrap = re.match(
+            r"(?:[A-Za-z_$][\w$]*\s*\.\s*)?useCallback\b",
+            src[i:i + 64],
+        )
+        if wrap:
+            # Advance to the `(` after the wrapper identifier.
+            i = src.find("(", i + wrap.end())
             if i < 0:
                 return None
-            i += 1  # past the opening `useCallback(`.
+            i += 1  # past the opening wrapper `(`.
             i = _skip_ws(src, i)
         if src[i:i + 6].startswith("async "):
             i += 6

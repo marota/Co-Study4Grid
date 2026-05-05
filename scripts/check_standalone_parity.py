@@ -175,6 +175,13 @@ SPEC_DETAILS: dict[str, dict] = {
     # Start event carries the target mode; completion event adds
     # `cached` (boolean) or `error` (string).
     "overflow_layout_mode_toggled": _spec_row({"to"}),
+    # Co-Study4Grid pin overlay on the overflow graph.
+    "overflow_pins_toggled":    _spec_row({"enabled"}),
+    "overflow_pin_clicked":     _spec_row({"actionId"}),
+    "overflow_pin_double_clicked": _spec_row({"actionId", "substation"}),
+    "overflow_layer_toggled":   _spec_row({"key", "label", "visible"}),
+    "overflow_select_all_layers": _spec_row({"visible"}),
+    "overflow_node_double_clicked": _spec_row({"name"}),
     "voltage_range_changed":    _spec_row({"min", "max"}),
     "asset_clicked":            _spec_row({"action_id", "asset_name", "tab"}),
     "zoom_in":                  _spec_row({"tab"}),

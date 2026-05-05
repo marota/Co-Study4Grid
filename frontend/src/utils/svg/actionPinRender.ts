@@ -20,6 +20,11 @@ import {
     type ActionPinInfo,
     type CombinedPinInfo,
 } from './actionPinData';
+// Unitary-pin glyph is built by the shared pure-JS module so the
+// overflow-graph iframe overlay (`expert_backend/services/
+// overflow_overlay.py`) can render visually identical pins by
+// reading the same source.
+import { createPinGlyph as createSharedPinGlyph } from './pinGlyph';
 
 /**
  * Apply contingency + overload halo highlights to the
@@ -445,54 +450,28 @@ const renderUnitaryPin = (
     const isSelected = selectedIds?.has(pin.id) ?? false;
     const isRejected = rejectedIds?.has(pin.id) ?? false;
 
-    const g = document.createElementNS(SVG_NS, 'g');
+    // Shared glyph factory used by both the overview tab and the
+    // overflow-graph iframe overlay. Returns the inner <g> already
+    // populated with body, chrome, label and the selected/rejected
+    // status symbol.
+    const g = createSharedPinGlyph(document, {
+        severity: pin.severity,
+        label: pin.label,
+        title: pin.title,
+        actionId: pin.id,
+        isSelected,
+        isRejected,
+        dimmed: !!pin.dimmedByFilter,
+        r,
+        labelFont,
+        bodyClass: 'nad-action-overview-pin-body',
+    }) as SVGGElement;
+
+    // Wrap-up customisation specific to the overview layer.
     g.setAttribute('class', 'nad-action-overview-pin');
     g.setAttribute('transform', `translate(${pin.x} ${pin.y})`);
-    g.setAttribute('data-action-id', pin.id);
     if (pin.dimmedByFilter) g.setAttribute('data-dimmed-by-filter', 'true');
-    (g as unknown as SVGGElement).style.cursor = 'pointer';
-
-    const body = document.createElementNS(SVG_NS, 'g');
-    body.setAttribute('class', 'nad-action-overview-pin-body');
-    body.setAttribute('transform', 'scale(1)');
-    g.appendChild(body);
-
-    const { fill, stroke } = resolvePinFill(pin.severity, isSelected, isRejected, !!pin.dimmedByFilter);
-    const strokeWidth = isSelected ? r * 0.12 : undefined;
-
-    const R = r;
-    const tail = R * 0.9;
-    buildPinGlyph(body, R, labelFont, fill, pin.label, pin.title, stroke, strokeWidth);
-
-    // Status symbol above the teardrop bubble.
-    const symbolCy = -R - tail - R * 0.95;
-    if (isSelected) {
-        const starEl = document.createElementNS(SVG_NS, 'path');
-        starEl.setAttribute('d', starPath(0, symbolCy, R * 0.45));
-        starEl.setAttribute('fill', pinChrome.gold);
-        starEl.setAttribute('stroke', pinChrome.goldDark);
-        starEl.setAttribute('stroke-width', String(R * 0.05));
-        starEl.setAttribute('pointer-events', 'none');
-        body.appendChild(starEl);
-    } else if (isRejected) {
-        const crossEl = document.createElementNS(SVG_NS, 'path');
-        crossEl.setAttribute('d', crossPath(0, symbolCy, R * 0.35));
-        crossEl.setAttribute('fill', pinChrome.crossFill);
-        crossEl.setAttribute('stroke', pinChrome.crossStroke);
-        crossEl.setAttribute('stroke-width', String(R * 0.05));
-        crossEl.setAttribute('pointer-events', 'none');
-        body.appendChild(crossEl);
-    }
-
-    // Dim the whole pin group for rejected OR filter-dimmed actions.
-    // Filter-dimmed pins are kept alive only because a passing combined
-    // action anchors on them, so they must read as context, not as
-    // first-class actions.
-    if (isRejected) {
-        g.setAttribute('opacity', '0.55');
-    } else if (pin.dimmedByFilter) {
-        g.setAttribute('opacity', '0.4');
-    }
+    g.style.cursor = 'pointer';
 
     attachPinClickListeners(g, pin.id, onPinClick, onPinDoubleClick);
     frag.appendChild(g);

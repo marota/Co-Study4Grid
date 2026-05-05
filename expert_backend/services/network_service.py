@@ -171,6 +171,34 @@ class NetworkService:
             return sorted(voltage_levels.index.tolist())
         return []
 
+    def get_voltage_level_substations(self):
+        """Return ``{vl_id: substation_id}`` for every voltage level.
+
+        Used by the frontend to anchor action-overview pins on the
+        overflow graph: the overflow graph nodes are pypowsybl
+        substation IDs, while action data references voltage-level IDs
+        — this map closes that gap. Returns an empty dict if the
+        ``substation_id`` column is missing (pure-VL networks without
+        substations).
+        """
+        if not self.network:
+            raise ValueError("Network not loaded")
+
+        # `substation_id` ships in the default attribute set so a narrow
+        # query is enough; we don't pull `name` / `nominal_v` here.
+        voltage_levels = self.network.get_voltage_levels(attributes=['substation_id'])
+        if voltage_levels is None or voltage_levels.empty:
+            return {}
+        if 'substation_id' not in voltage_levels.columns:
+            return {}
+        sub_ids = voltage_levels['substation_id'].tolist()
+        idx = voltage_levels.index.tolist()
+        return {
+            vl_id: str(sub_id)
+            for vl_id, sub_id in zip(idx, sub_ids)
+            if sub_id is not None and str(sub_id) != 'nan'
+        }
+
     def get_voltage_level_names(self):
         """Return {vl_id: display_name} for all voltage levels."""
         if not self.network:

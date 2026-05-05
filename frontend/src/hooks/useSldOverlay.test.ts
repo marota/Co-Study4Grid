@@ -90,6 +90,20 @@ describe('useSldOverlay', () => {
         expect(result.current.vlOverlay!.tab).toBe('action');
     });
 
+    it('handleVlDoubleClick forceTab overrides the activeTab-derived initial tab', () => {
+        // The overflow-graph pin double-click drills straight into the
+        // post-action SLD regardless of which main tab is active.
+        vi.mocked(api.getActionVariantSld).mockImplementation(() => new Promise(() => { /* never resolves */ }));
+        const { result } = renderHook(() => useSldOverlay('n'));
+
+        act(() => {
+            result.current.handleVlDoubleClick('act1', 'VL_63', 'action');
+        });
+
+        expect(result.current.vlOverlay!.tab).toBe('action');
+        expect(api.getActionVariantSld).toHaveBeenCalled();
+    });
+
     it('handleOverlayClose sets vlOverlay to null', () => {
         vi.mocked(api.getNSld).mockImplementation(() => new Promise(() => { /* never resolves */ }));
         const { result } = renderHook(() => useSldOverlay('n'));
