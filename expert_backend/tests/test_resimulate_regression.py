@@ -48,7 +48,9 @@ def _setup_env_mock(name_load=None, load_p=None, name_gen=None, gen_p=None):
     obs_n1.n_components = 1
     obs_n1.main_component_load_mw = 1000.0
     obs_n1.name_line = ["LINE_1"]
-    obs_n1.rho = np.array([0.98]) # Overloaded in N-1
+    # Overloaded in N-1. obs.rho is mf-scaled (grid2op divides by
+    # ``limit * mf``), so values >= 1.0 are above the monitoring threshold.
+    obs_n1.rho = np.array([1.05])
     obs_n1.name_load = obs_n.name_load
     obs_n1.load_p = obs_n.load_p
     obs_n1.name_gen = obs_n.name_gen

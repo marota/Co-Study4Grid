@@ -692,10 +692,15 @@ class SimulationMixin:
 
         n.set_working_variant(self._get_n_variant())
         obs_n = env.get_obs()
+        # obs.rho is already pre-scaled by monitoring_factor (grid2op
+        # divides current by ``limit * mf``), so the overload threshold
+        # on obs.rho is 1.0 — not mf. Using mf here would double-apply
+        # the factor and treat lines at ~90 % of the permanent limit as
+        # "already overloaded". See simulation_helpers.build_care_mask.
         pre_existing_rho = {
             i: obs_n.rho[i]
             for i in range(len(obs_n.rho))
-            if obs_n.rho[i] >= monitoring_factor
+            if obs_n.rho[i] >= 1.0
         }
 
         lines_we_care_about, branches_with_limits = self._get_monitoring_parameters(obs_start)
@@ -844,16 +849,21 @@ class SimulationMixin:
             )
             return ids
 
-        mf = float(monitoring_factor)
         wt = float(worsening_threshold)
         lwca_set = set(lines_we_care_about) if lines_we_care_about else set(name_line_list)
         bwl_set = set(branches_with_limits)
+        # obs.rho is already pre-scaled by monitoring_factor — threshold
+        # is 1.0, not mf. See simulation_helpers.build_care_mask docstring.
         ids = []
         for i in range(len(obs_start.rho)):
             ln = name_line_list[i]
-            if obs_start.rho[i] >= mf and ln in lwca_set and ln in bwl_set:
-                if i in pre_existing_rho and obs_start.rho[i] <= pre_existing_rho[i] * (1 + wt):
-                    continue
+            if obs_start.rho[i] >= 1.0 and ln in lwca_set and ln in bwl_set:
+                # Symmetric impact rule — see ``simulation_helpers.build_care_mask``.
+                if i in pre_existing_rho:
+                    lower = pre_existing_rho[i] * (1 - wt)
+                    upper = pre_existing_rho[i] * (1 + wt)
+                    if lower <= obs_start.rho[i] <= upper:
+                        continue
                 ids.append(i)
         logger.info(
             "[compute_superposition] Computed lines_overloaded from N-1 state: %d lines "
@@ -905,9 +915,15 @@ class SimulationMixin:
             if len(obs_n.rho) >= num_lines
             else np.array(obs_n.rho)
         )
-        pre_existing = base_rho_n >= mf
-        not_worsened = rho_combined[:num_lines] <= base_rho_n * (1 + wt)
-        care_mask &= ~(pre_existing & not_worsened)
+        # obs.rho is already pre-scaled by monitoring_factor — threshold
+        # is 1.0, not mf. See simulation_helpers.build_care_mask docstring.
+        # ``rho_combined`` is in the same scale (linear combination of
+        # obs.rho values).
+        pre_existing = base_rho_n >= 1.0
+        # Symmetric impact rule — see ``simulation_helpers.build_care_mask``.
+        rho_c = rho_combined[:num_lines]
+        not_impacted = (rho_c >= base_rho_n * (1 - wt)) & (rho_c <= base_rho_n * (1 + wt))
+        care_mask &= ~(pre_existing & not_impacted)
 
         for idx in lines_overloaded_ids:
             if idx < len(care_mask):

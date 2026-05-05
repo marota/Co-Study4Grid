@@ -235,12 +235,17 @@ class TestOverloadedLinesForceInclusion:
 # ---------------------------------------------------------------------------
 
 class TestPreExistingOverloadHandling:
-    """Pre-existing N-state overloads should be excluded unless the combined
-    action worsens them. The worsening check must use rho_combined."""
+    """Pre-existing N-state overloads should be excluded only when the
+    combined action does not impact them (rho stays inside the symmetric
+    ±impact_threshold band around its N value). Lines that the action
+    significantly impacts — worsened OR improved — belong to the
+    action's sensitive area and must remain monitored."""
 
-    def test_preexisting_excluded_when_not_worsened(self):
-        """A pre-existing N-state overload that improves should be excluded
-        from max_rho (unless force-included as lines_overloaded)."""
+    def test_preexisting_included_when_significantly_improved(self):
+        """Symmetric impact rule: a pre-existing overload that the combined
+        action significantly *improves* belongs to the action's sensitive
+        area and must remain in max_rho. The previous one-sided rule used
+        to silently drop it; the new rule keeps it."""
         svc = RecommenderService()
         name_line = ["PRE_EXISTING", "OTHER"]
 
@@ -248,6 +253,9 @@ class TestPreExistingOverloadHandling:
         # PRE_EXISTING is overloaded in N (>= 0.95)
         obs_n_rho = [0.97, 0.40]
 
+        # Combined formula: |(1 - 1.0)*rho_n1 + 0.5*obs1 + 0.5*obs2|
+        # PRE_EXISTING: |0.5*0.70 + 0.5*0.65| = 0.675 — well below
+        # 0.97*(1-0.02)=0.9506, so the action clearly impacted it.
         obs_act1 = _make_obs([0.70, 0.65], name_line=name_line)
         obs_act2 = _make_obs([0.65, 0.60], name_line=name_line)
         actions = {
@@ -255,8 +263,6 @@ class TestPreExistingOverloadHandling:
             "act2": {"action": MagicMock(), "observation": obs_act2},
         }
 
-        # No analysis context — so force-inclusion won't add PRE_EXISTING
-        # (it's not in N-1 overloaded because rho_N1=0.80 < 0.95)
         _setup_env(svc, name_line, obs_n1_rho, obs_n_rho, actions,
                    analysis_context=None)
 
@@ -267,8 +273,47 @@ class TestPreExistingOverloadHandling:
             mock_sp.return_value = {"betas": [0.5, 0.5]}
             result = svc.compute_superposition("act1", "act2", "CONTINGENCY")
 
-        # PRE_EXISTING (N-state overload at 97%, combined action improves it)
-        # should be excluded, so OTHER should be max
+        # Symmetric rule keeps PRE_EXISTING — 0.675 > 0.625 (OTHER) — so
+        # the operator can see the action did materially affect this line.
+        assert result["max_rho_line"] == "PRE_EXISTING"
+
+    def test_preexisting_excluded_when_not_impacted(self):
+        """A pre-existing N-state overload whose combined rho stays inside
+        the symmetric ±impact_threshold band is unrelated to the action's
+        sensitive area and should be excluded from max_rho.
+
+        obs.rho is mf-scaled (grid2op divides by ``limit * mf``), so a
+        line is "pre-existing overloaded" only when ``obs.rho >= 1.0``.
+        """
+        svc = RecommenderService()
+        name_line = ["PRE_EXISTING", "OTHER"]
+
+        # PRE_EXISTING is overloaded in N at 1.05 (above mf-scaled 1.0).
+        obs_n_rho = [1.05, 0.40]
+        obs_n1_rho = [1.05, 0.70]
+
+        # Combined formula: |0.5*obs1 + 0.5*obs2|
+        # PRE_EXISTING: |0.5*1.045 + 0.5*1.055| = 1.05 — inside the band
+        # 1.05*(1±0.02) = [1.029, 1.071]. 1.05 is right at base → inside.
+        obs_act1 = _make_obs([1.045, 0.65], name_line=name_line)
+        obs_act2 = _make_obs([1.055, 0.60], name_line=name_line)
+        actions = {
+            "act1": {"action": MagicMock(), "observation": obs_act1},
+            "act2": {"action": MagicMock(), "observation": obs_act2},
+        }
+
+        _setup_env(svc, name_line, obs_n1_rho, obs_n_rho, actions,
+                   analysis_context=None)
+
+        with patch('expert_backend.services.simulation_mixin._identify_action_elements',
+                   return_value=([0], [])), \
+             patch('expert_backend.services.simulation_mixin.compute_combined_pair_superposition') as mock_sp:
+
+            mock_sp.return_value = {"betas": [0.5, 0.5]}
+            result = svc.compute_superposition("act1", "act2", "CONTINGENCY")
+
+        # PRE_EXISTING is unimpacted by the action (combined rho ≡ N)
+        # → excluded → OTHER (0.625) is the headline max.
         assert result["max_rho_line"] == "OTHER"
 
     def test_preexisting_included_when_worsened(self):

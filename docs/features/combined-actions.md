@@ -294,14 +294,18 @@ if action1_id not in all_actions:
     all_actions = self._last_result["prioritized_actions"]
 ```
 
-### Pre-existing overload filtering
+### Pre-existing overload filtering (symmetric impact rule)
 
-The superposition result filters out lines with pre-existing overloads (lines already overloaded in N state) unless the combined action **worsens** them beyond a configurable threshold (default 2%):
+The superposition result filters out lines with pre-existing overloads (lines already overloaded in N state) **only when the combined action does not impact them** — i.e. their combined rho stays inside a symmetric ±`worsening_threshold` band around the N-state baseline (default 2%). Lines that the action significantly **worsens OR improves** belong to its sensitive area and remain monitored:
 
 ```python
-worsened_mask = rho_combined > pre_existing_baseline * (1 + worsening_threshold)
-eligible_mask = care_mask & (~is_pre_existing | worsened_mask)
+is_pre_existing = base_rho_n >= monitoring_factor
+not_impacted = (rho_combined >= base_rho_n * (1 - worsening_threshold)) & \
+               (rho_combined <= base_rho_n * (1 + worsening_threshold))
+eligible_mask = care_mask & ~(is_pre_existing & not_impacted)
 ```
+
+The symmetric form replaces the previous one-sided `not_worsened` rule, which silently dropped lines whose pre-existing overload was significantly *reduced* by the action — hiding genuine action impact from the operator. The same rule is applied uniformly across `simulation_helpers.build_care_mask`, `simulation_helpers.resolve_lines_overloaded`, `simulation_mixin._augment_superposition_result`, `simulation_mixin._superposition_lines_overloaded`, and `diagram/overloads.get_overloaded_lines` so the N Overloads UI panel, the simulation `max_rho`, and the superposition estimate all agree.
 
 ### Analysis-time combined actions
 
