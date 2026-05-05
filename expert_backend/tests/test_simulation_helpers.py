@@ -239,20 +239,65 @@ class TestBuildCareMask:
         )
         assert mask.tolist() == [True, False, True]
 
-    def test_excludes_preexisting_overloads_not_worsened(self):
-        # Line A pre-existing overload (base rho=1.0), action rho=1.0 → not worsened → excluded
-        # Line B pre-existing overload (base rho=1.0), action rho=1.5 → worsened → included
+    def test_excludes_preexisting_overloads_not_impacted(self):
+        # Symmetric impact rule: a pre-existing overload is excluded only
+        # when the action leaves it inside the ±worsening_threshold band.
+        # A: pre-existing 1.0, action 1.0 → not_impacted → excluded.
+        # B: pre-existing 1.0, action 1.5 → worsened beyond +2% → included.
+        # C: pre-existing 1.0, action 0.7 → improved beyond -2% → included
+        #    (the action operates in this line's sensitive area).
+        mask = build_care_mask(
+            action_names=np.array(["A", "B", "C"]),
+            action_rho=np.array([1.0, 1.5, 0.7]),
+            base_rho=np.array([1.0, 1.0, 1.0]),
+            lines_we_care_about={"A", "B", "C"},
+            branches_with_limits={"A", "B", "C"},
+            lines_overloaded_ids=[],
+            monitoring_factor=0.95,
+            worsening_threshold=0.02,
+        )
+        assert mask.tolist() == [False, True, True]
+
+    def test_excludes_only_strictly_inert_preexisting_overloads(self):
+        # Inside the symmetric ±2% band the line is treated as "not impacted".
+        # Just outside the band (either direction) → kept.
+        mask = build_care_mask(
+            action_names=np.array(["INSIDE_BAND", "JUST_BELOW_BAND", "JUST_ABOVE_BAND"]),
+            action_rho=np.array([0.99, 0.97, 1.03]),
+            base_rho=np.array([1.0, 1.0, 1.0]),
+            lines_we_care_about={"INSIDE_BAND", "JUST_BELOW_BAND", "JUST_ABOVE_BAND"},
+            branches_with_limits={"INSIDE_BAND", "JUST_BELOW_BAND", "JUST_ABOVE_BAND"},
+            lines_overloaded_ids=[],
+            monitoring_factor=0.95,
+            worsening_threshold=0.02,
+        )
+        assert mask.tolist() == [False, True, True]
+
+    def test_obs_rho_threshold_is_one_not_monitoring_factor(self):
+        # Regression: grid2op's ``obs.rho`` is already pre-scaled by
+        # ``monitoring_factor`` (rho = current / (limit * mf)), so the
+        # "is overloaded" boundary on ``base_rho`` / ``action_rho`` is
+        # 1.0 — not ``mf``. The earlier code used ``>= mf`` here, which
+        # double-applied the factor and treated lines at ~mf**2 ≈ 90.25 %
+        # of the permanent limit as already overloaded — silently dropping
+        # them from the simulator's max_rho through the pre-existing
+        # filter. This test pins the corrected boundary.
+        #
+        # A: pre-existing 0.97 (between mf and 1.0) → NOT pre-existing,
+        #    action 0.50 → included (no exclusion fires).
+        # B: pre-existing 1.05 (above 1.0) → pre-existing, action 1.05
+        #    is inside the ±2 % band → excluded.
         mask = build_care_mask(
             action_names=np.array(["A", "B"]),
-            action_rho=np.array([1.0, 1.5]),
-            base_rho=np.array([1.0, 1.0]),
+            action_rho=np.array([0.50, 1.05]),
+            base_rho=np.array([0.97, 1.05]),
             lines_we_care_about={"A", "B"},
             branches_with_limits={"A", "B"},
             lines_overloaded_ids=[],
             monitoring_factor=0.95,
             worsening_threshold=0.02,
         )
-        assert mask.tolist() == [False, True]
+        assert mask.tolist() == [True, False]
 
     def test_force_includes_overloaded_ids(self):
         mask = build_care_mask(
@@ -323,6 +368,28 @@ class TestResolveLinesOverloaded:
         # Both A (1.2) and C (1.1) are overloaded and not pre-existing
         assert ids == [0, 2]
         assert names == ["A", "C"]
+
+    def test_recompute_threshold_is_one_not_monitoring_factor(self):
+        # Regression for the obs.rho double-scaling fix. Grid2op's
+        # ``obs.rho`` is already divided by ``limit * mf``, so a line is
+        # "overloaded" only when ``obs.rho >= 1.0`` — not when
+        # ``>= monitoring_factor``. The earlier check ``action_rho >= mf``
+        # wrongly treated 0.96 as overloaded.
+        obs_n1 = self._obs([0.96, 1.05, 0.50])
+        obs_n = self._obs([0.10, 0.10, 0.10])
+        ids, names = resolve_lines_overloaded(
+            obs_n1, obs_n,
+            analysis_context_overloaded=None,
+            caller_overloaded=None,
+            lines_we_care_about={"A", "B", "C"},
+            branches_with_limits={"A", "B", "C"},
+            monitoring_factor=0.95,
+            worsening_threshold=0.02,
+        )
+        # Only B (1.05 >= 1.0) is overloaded. A (0.96) is below the
+        # corrected threshold; the old code wrongly flagged it as well.
+        assert ids == [1]
+        assert names == ["B"]
 
     def test_ignores_missing_context_lines(self):
         obs_n1 = self._obs([0.1, 0.1, 0.1])

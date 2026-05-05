@@ -181,14 +181,19 @@ class TestGetElementMaxCurrents:
 
 
 class TestGetOverloadedLines:
-    def test_flags_lines_over_monitoring_factor(self):
-        lines = pd.DataFrame({"i1": [100.0, 50.0], "i2": [0.0, 0.0]},
-                             index=["L1", "L2"])
-        limits = _limits({"L1": 100.0, "L2": 100.0})
+    def test_flags_lines_at_or_above_monitoring_factor(self):
+        # `get_overloaded_lines` uses `>=` to match the backend simulation
+        # filter (`simulation_helpers.build_care_mask`), so a line sitting
+        # exactly at the threshold IS treated as overloaded — no silent
+        # disagreement between the N Overloads UI panel and the simulator.
+        lines = pd.DataFrame({"i1": [100.0, 50.0, 49.0], "i2": [0.0, 0.0, 0.0]},
+                             index=["L1", "L2", "L3"])
+        limits = _limits({"L1": 100.0, "L2": 100.0, "L3": 100.0})
         net = _mock_network(lines_df=lines, limits_df=limits)
         result = overloads.get_overloaded_lines(net, monitoring_factor=0.5)
-        # L1: 100 > 50 → overloaded. L2: 50 == 50 → not overloaded.
-        assert result == ["L1"]
+        # L1: 100 ≥ 50 → overloaded. L2: 50 ≥ 50 → overloaded.
+        # L3: 49 < 50 → not overloaded.
+        assert sorted(result) == ["L1", "L2"]
 
     def test_skips_elements_without_a_limit(self):
         lines = pd.DataFrame({"i1": [1000.0], "i2": [0.0]}, index=["L1"])
@@ -205,11 +210,12 @@ class TestGetOverloadedLines:
         )
         assert result == ["L1"]
 
-    def test_excludes_pre_existing_overloads_not_worsened(self):
+    def test_excludes_pre_existing_overloads_not_impacted(self):
         lines = pd.DataFrame({"i1": [100.0], "i2": [0.0]}, index=["L1"])
         limits = _limits({"L1": 50.0})
         net = _mock_network(lines_df=lines, limits_df=limits)
-        # In N-state the line was already at 100 → not worsened, excluded.
+        # In N-state the line was already at 100 → the action did not
+        # move it outside the symmetric ±2 % band → not_impacted, excluded.
         result = overloads.get_overloaded_lines(
             net,
             n_state_currents={"L1": 100.0},
@@ -225,6 +231,21 @@ class TestGetOverloadedLines:
         # N-state was 100 → 200 exceeds 100 * (1 + 0.02) → kept.
         result = overloads.get_overloaded_lines(
             net, n_state_currents={"L1": 100.0}, monitoring_factor=0.95,
+        )
+        assert result == ["L1"]
+
+    def test_keeps_pre_existing_overloads_when_significantly_improved(self):
+        # Symmetric impact rule: a line whose pre-existing overload is
+        # significantly *reduced* by the action is in the action's
+        # sensitive area and must remain monitored.
+        lines = pd.DataFrame({"i1": [80.0], "i2": [0.0]}, index=["L1"])
+        limits = _limits({"L1": 50.0})
+        net = _mock_network(lines_df=lines, limits_df=limits)
+        # N-state was 100 (rho=2.0) → action brought it to 80 (rho=1.6),
+        # well below 100 * (1 - 0.02) → kept by the symmetric rule.
+        result = overloads.get_overloaded_lines(
+            net, n_state_currents={"L1": 100.0}, monitoring_factor=0.95,
+            worsening_threshold=0.02,
         )
         assert result == ["L1"]
 

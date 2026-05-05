@@ -188,20 +188,39 @@ def build_care_mask(
 
     Rules:
       1. Must be in ``lines_we_care_about`` AND ``branches_with_limits``.
-      2. Exclude pre-existing N-state overloads unless the action worsens them.
+      2. Exclude pre-existing N-state overloads UNLESS the action moved
+         the line outside the symmetric ``±worsening_threshold`` band
+         around its N value (``not_impacted``). Lines whose rho barely
+         changes belong to "other issues" and should not pollute the
+         action's max_rho; lines whose rho moved significantly — in
+         either direction — belong to the action's sensitive area and
+         must remain monitored, even when they were already overloaded.
       3. Always force-include lines at ``lines_overloaded_ids`` (active monitoring).
+
+    NOTE: ``action_rho`` and ``base_rho`` come from grid2op observations,
+    where ``obs.rho`` is already pre-scaled by the monitoring factor:
+    ``obs.rho = current / (permanent_limit * monitoring_factor)``. So
+    ``obs.rho >= 1.0`` already means "at or above the monitoring
+    threshold", and the comparison MUST use 1.0 — not
+    ``monitoring_factor`` — otherwise we double-apply the factor and
+    flag lines as overloaded at ``mf**2 ≈ 90.25 %`` of the permanent
+    limit instead of 95 %. The ``monitoring_factor`` parameter is kept
+    only because it sets the symmetric-impact band scale via
+    ``worsening_threshold`` and for parity with the diagram-side
+    ``get_overloaded_lines``, which compares pypowsybl currents (NOT
+    pre-scaled) against ``limit * monitoring_factor``.
 
     Falls back to an all-False mask if numpy comparisons fail (legacy tests
     pass MagicMocks for observations).
     """
     mask = np.isin(action_names, list(lines_we_care_about))
     mask &= np.isin(action_names, list(branches_with_limits))
-    mf = float(monitoring_factor)
     wt = float(worsening_threshold)
+    OBS_RHO_OVERLOAD_THRESHOLD = 1.0  # see docstring — obs.rho is mf-scaled
     try:
-        pre_existing = base_rho >= mf
-        not_worsened = action_rho <= base_rho * (1 + wt)
-        mask &= ~(pre_existing & not_worsened)
+        pre_existing = base_rho >= OBS_RHO_OVERLOAD_THRESHOLD
+        not_impacted = (action_rho >= base_rho * (1 - wt)) & (action_rho <= base_rho * (1 + wt))
+        mask &= ~(pre_existing & not_impacted)
     except Exception as e:
         logger.warning("build_care_mask: vectorised comparison failed (mock context?): %s", e)
         mask = np.zeros(len(action_names), dtype=bool)
@@ -240,16 +259,19 @@ def resolve_lines_overloaded(
     action_names = _to_1d(obs_simu_defaut.name_line)
     action_rho = _to_1d(obs_simu_defaut.rho)
     base_rho = _to_1d(obs_n.rho)
-    mf = float(monitoring_factor)
     wt = float(worsening_threshold)
+    # obs.rho is already pre-scaled by monitoring_factor — see
+    # ``build_care_mask`` docstring. Threshold is 1.0, not mf.
+    OBS_RHO_OVERLOAD_THRESHOLD = 1.0
 
     mask = np.isin(action_names, list(lines_we_care_about))
     mask &= np.isin(action_names, list(branches_with_limits))
     try:
-        rho_mask = action_rho >= mf
-        pre_existing = base_rho >= mf
-        not_worsened = action_rho <= base_rho * (1 + wt)
-        mask &= rho_mask & ~(pre_existing & not_worsened)
+        rho_mask = action_rho >= OBS_RHO_OVERLOAD_THRESHOLD
+        pre_existing = base_rho >= OBS_RHO_OVERLOAD_THRESHOLD
+        # Symmetric impact rule — see ``build_care_mask`` for rationale.
+        not_impacted = (action_rho >= base_rho * (1 - wt)) & (action_rho <= base_rho * (1 + wt))
+        mask &= rho_mask & ~(pre_existing & not_impacted)
     except Exception as e:
         logger.warning("resolve_lines_overloaded: vectorised comparison failed: %s", e)
         mask = np.zeros(len(action_names), dtype=bool)
@@ -343,7 +365,9 @@ def compute_action_metrics(
     try:
         monitored_rho = action_rho[care_mask]
         monitored_names = action_names[care_mask]
-        overload_mask = monitored_rho >= mf
+        # obs.rho is mf-scaled — see ``build_care_mask`` docstring — so
+        # the "overloaded" boundary on ``monitored_rho`` is 1.0, not mf.
+        overload_mask = monitored_rho >= 1.0
         result["lines_overloaded_after"] = monitored_names[overload_mask].tolist()
         if len(monitored_rho) > 0:
             result["max_rho"] = float(np.max(monitored_rho)) * mf

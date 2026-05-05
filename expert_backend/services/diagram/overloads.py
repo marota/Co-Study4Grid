@@ -84,10 +84,19 @@ def get_overloaded_lines(
     Rules:
       1. Only elements with a permanent current limit are monitored.
       2. Restricted to ``lines_we_care_about`` when provided.
-      3. An element is "overloaded" when ``max_i > limit * monitoring_factor``.
+      3. An element is "overloaded" when ``max_i >= limit * monitoring_factor``.
+         The ``>=`` comparison aligns the N Overloads UI panel with the
+         backend simulation filter (``simulation_helpers.build_care_mask``)
+         which uses ``base_rho >= mf``. Without this alignment a line
+         sitting just at the threshold would surface as "no N overload"
+         in the UI but be silently filtered as "pre-existing overload"
+         by the simulation.
       4. When ``n_state_currents`` is provided, pre-existing overloads
          (elements already overloaded in N) are excluded UNLESS the
-         current increased by more than ``worsening_threshold`` (relative).
+         current moved outside the symmetric ``±worsening_threshold``
+         band around its N value. This keeps lines in the action's
+         sensitive area (whether worsened or improved) while still
+         filtering out lines that belong to other issues.
 
     Returns a sanitised list by default; with ``with_rho=True`` returns
     ``(names, rhos)`` parallel lists.
@@ -116,12 +125,16 @@ def get_overloaded_lines(
                 continue
 
             max_i = max_i_arr[j]
-            if max_i > limit * monitoring_factor:
+            if max_i >= limit * monitoring_factor:
                 if n_state_currents is not None and element_id in n_state_currents:
                     n_max_i = n_state_currents[element_id]
-                    if n_max_i > limit * monitoring_factor:
-                        # Was already overloaded in N — only keep if worsened
-                        if max_i <= n_max_i * (1 + worsening_threshold):
+                    if n_max_i >= limit * monitoring_factor:
+                        # Was already overloaded in N — keep only if the
+                        # action moved the line outside the symmetric
+                        # ±worsening_threshold band around its N value.
+                        lower = n_max_i * (1 - worsening_threshold)
+                        upper = n_max_i * (1 + worsening_threshold)
+                        if lower <= max_i <= upper:
                             continue
                 overloaded.append(element_id)
                 overloaded_rho.append(float(max_i / limit) if limit else 0.0)

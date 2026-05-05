@@ -73,51 +73,63 @@ class TestVectorizedMonitoringLogic:
             assert not mask[1] # 0.950 (Exactly at threshold)
             assert mask[2]     # 0.951 (Just above)
 
-    def test_care_mask_logic_with_worsening_threshold(self):
-        """Detailed check of the complex care_mask used in simulate_manual_action."""
+    def test_care_mask_logic_with_impact_threshold(self):
+        """Detailed check of the symmetric impact-based care_mask used in
+        simulate_manual_action. A pre-existing overload is excluded only
+        when the contingency leaves it inside the ±impact_threshold band
+        around its N value (i.e. the line is unaffected by the contingency
+        and the issue belongs to other root causes).
+        """
         service = RecommenderService()
-        line_names = ["PRE_EXISTING", "NEW_OVERLOAD", "IMPROVED", "STABLE"]
-        
+        line_names = ["PRE_EXISTING", "NEW_OVERLOAD", "IMPROVED", "STABLE", "INERT_PREEXISTING"]
+
         # N state
         # PRE_EXISTING: 1.1 (already overloaded)
         # NEW_OVERLOAD: 0.8 (healthy)
         # IMPROVED: 1.2 (already overloaded)
         # STABLE: 0.5 (healthy)
-        obs_n = self._make_obs([1.1, 0.8, 1.2, 0.5], line_names)
-        
+        # INERT_PREEXISTING: 1.0 (already overloaded)
+        obs_n = self._make_obs([1.1, 0.8, 1.2, 0.5, 1.0], line_names)
+
         # N-1 state (after contingency)
-        # PRE_EXISTING: 1.15 (worsened from 1.1)
+        # PRE_EXISTING: 1.15 (worsened from 1.1, ratio=1.045 → outside +2% band)
         # NEW_OVERLOAD: 1.05 (now overloaded)
-        # IMPROVED: 1.1 (improved from 1.2)
+        # IMPROVED: 1.1 (improved from 1.2, ratio=0.917 → outside -2% band)
         # STABLE: 0.55 (worsened but still healthy)
-        obs_n1 = self._make_obs([1.15, 1.05, 1.1, 0.55], line_names)
-        
+        # INERT_PREEXISTING: 1.005 (barely changed, ratio=1.005 → inside band)
+        obs_n1 = self._make_obs([1.15, 1.05, 1.1, 0.55, 1.005], line_names)
+
         with patch.object(config, 'MONITORING_FACTOR_THERMAL_LIMITS', 0.95), \
              patch.object(config, 'PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD', 0.02):
-            
+
             rho_n = np.atleast_1d(obs_n.rho).astype(float)
             rho_n1 = np.atleast_1d(obs_n1.rho).astype(float)
-            
-            # Logic from RecommenderService:
-            was_overloaded = rho_n > config.MONITORING_FACTOR_THERMAL_LIMITS
-            is_overloaded = rho_n1 > config.MONITORING_FACTOR_THERMAL_LIMITS
-            ratio = rho_n1 / np.maximum(rho_n, 1e-9)
-            worsened = ratio > (1.0 + config.PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD)
-            
-            # CARE MASK: (is_overloaded & ~was_overloaded) | (is_overloaded & was_overloaded & worsened)
-            care_mask = (is_overloaded & ~was_overloaded) | (is_overloaded & was_overloaded & worsened)
-            
-            # PRE_EXISTING: Overloaded in both. Ratio = 1.15/1.1 = 1.045 > 1.02. SHOULD BE TRUE.
+
+            mf = config.MONITORING_FACTOR_THERMAL_LIMITS
+            wt = config.PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD
+
+            was_overloaded = rho_n > mf
+            is_overloaded = rho_n1 > mf
+            # Symmetric impact rule — see services.simulation_helpers.
+            impacted = (rho_n1 < rho_n * (1 - wt)) | (rho_n1 > rho_n * (1 + wt))
+
+            care_mask = (is_overloaded & ~was_overloaded) | (is_overloaded & was_overloaded & impacted)
+
+            # PRE_EXISTING: Overloaded in both, ratio 1.045 > 1.02. → TRUE.
             assert care_mask[0] == True
-            
-            # NEW_OVERLOAD: Healthy in N, Overloaded in N-1. SHOULD BE TRUE.
+
+            # NEW_OVERLOAD: Healthy in N, Overloaded in N-1. → TRUE.
             assert care_mask[1] == True
-            
-            # IMPROVED: Overloaded in both. Ratio = 1.1/1.2 = 0.91 < 1.02. SHOULD BE FALSE.
-            assert care_mask[2] == False
-            
-            # STABLE: Healthy in both. SHOULD BE FALSE.
+
+            # IMPROVED: Overloaded in both, ratio 0.917 < 0.98. Symmetric
+            # rule keeps it because the contingency clearly *impacted* it. → TRUE.
+            assert care_mask[2] == True
+
+            # STABLE: Healthy in both. → FALSE.
             assert care_mask[3] == False
+
+            # INERT_PREEXISTING: Overloaded in both, ratio 1.005 inside band. → FALSE.
+            assert care_mask[4] == False
 
     def test_mask_integrity_with_real_thermal_limits(self):
         """Ensure care_mask respects branches_with_limits (thermal limits)."""
