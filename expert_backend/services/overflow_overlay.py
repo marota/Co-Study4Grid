@@ -384,6 +384,16 @@ def _build_overlay_block() -> str:
   // Overview NAD pin's edge-midpoint anchor for branch actions —
   // disco / reco / max_rho_line all land on the line's middle, not
   // on either endpoint.
+  //
+  // Graphviz draws each edge as a quadratic / cubic Bézier ``<path>``;
+  // the *visual* midpoint of that curve is generally NOT the geometric
+  // midpoint between the two endpoint nodes (e.g. parallel edges,
+  // bundled lines, or any edge that bows around an obstacle). We use
+  // the SVG DOM ``getTotalLength()`` / ``getPointAtLength()`` to land
+  // exactly on the half-way point of the rendered path, projected into
+  // the overlay layer's coordinate system. Falls back to the
+  // bbox-midpoint of the source/target nodes when the path query
+  // fails — same behaviour as before.
   function edgeCentre(lineNames, layer) {{
     const root = getRoot(getSvg());
     if (!root || !lineNames || !lineNames.length) return null;
@@ -392,6 +402,30 @@ def _build_overlay_block() -> str:
       const safe = (window.CSS && CSS.escape) ? CSS.escape(name) : name.replace(/(["\\\\])/g, '\\\\$1');
       const edge = root.querySelector('.edge[data-attr-name="' + safe + '"]');
       if (!edge) continue;
+
+      // Preferred path: walk the actual edge path's mid-arc.
+      const path = edge.querySelector('path');
+      if (path && typeof path.getTotalLength === 'function'
+          && typeof path.getPointAtLength === 'function') {{
+        try {{
+          const total = path.getTotalLength();
+          if (total > 0 && Number.isFinite(total)) {{
+            const pt = path.getPointAtLength(total / 2);
+            if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {{
+              const projected = projectToLayer(path, layer, pt.x, pt.y);
+              if (projected) {{
+                return {{ x: projected.x, y: projected.y, ref: null }};
+              }}
+            }}
+          }}
+        }} catch (e) {{
+          // Fall through to bbox-midpoint fallback below.
+        }}
+      }}
+
+      // Fallback: midpoint between the two endpoint NODE bbox
+      // centres. Used when the edge has no <path> child or the
+      // browser's path-length APIs are unavailable.
       const src = edge.getAttribute('data-source');
       const tgt = edge.getAttribute('data-target');
       if (!src || !tgt) continue;
@@ -595,34 +629,207 @@ def _build_overlay_block() -> str:
     return g;
   }}
 
+  // Fan out pins that resolved to (almost) the same anchor so they
+  // don't stack on top of each other. Mirrors ``fanOutColocatedPins``
+  // in ``frontend/src/utils/svg/actionPinData.ts`` — same hash key
+  // (round to 0.01) and same evenly-spaced angular fan starting at
+  // the top.  Mutates the ``positions`` map in place.
+  function fanOutColocated(positions, baseR) {{
+    const offsetRadius = (baseR || 14) * 1.6;
+    const groups = new Map();
+    for (const [id, p] of positions) {{
+      const key = Math.round(p.x * 100) + ':' + Math.round(p.y * 100);
+      const arr = groups.get(key);
+      if (arr) arr.push(id);
+      else groups.set(key, [id]);
+    }}
+    for (const ids of groups.values()) {{
+      if (ids.length < 2) continue;
+      const angleStep = (2 * Math.PI) / ids.length;
+      ids.forEach((id, i) => {{
+        const angle = -Math.PI / 2 + i * angleStep;
+        const p = positions.get(id);
+        positions.set(id, {{
+          x: p.x + offsetRadius * Math.cos(angle),
+          y: p.y + offsetRadius * Math.sin(angle),
+          ref: p.ref,
+        }});
+      }});
+    }}
+  }}
+
+  // Quadratic-Bézier midpoint identical to ``curveMidpoint`` in
+  // ``actionPinData.ts``: control point offset perpendicular to the
+  // chord by ``dist * offsetFraction``, midpoint at t=0.5.
+  function combinedCurveMidpoint(p1, p2, offsetFraction) {{
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const f = (typeof offsetFraction === 'number') ? offsetFraction : 0.3;
+    const ctrlX = (p1.x + p2.x) / 2 + (-dy / dist) * dist * f;
+    const ctrlY = (p1.y + p2.y) / 2 + (dx / dist) * dist * f;
+    const t = 0.5;
+    const midX = (1 - t) * (1 - t) * p1.x + 2 * t * (1 - t) * ctrlX + t * t * p2.x;
+    const midY = (1 - t) * (1 - t) * p1.y + 2 * t * (1 - t) * ctrlY + t * t * p2.y;
+    return {{ ctrlX: ctrlX, ctrlY: ctrlY, midX: midX, midY: midY }};
+  }}
+
+  // Severity → solid fill colour, matching ``severityFill`` in
+  // ``frontend/src/styles/tokens.ts``. Used to colour the dashed
+  // connector curve between a combined pin and its constituents.
+  const SEVERITY_FILL = {{
+    green:  '#16a34a',
+    orange: '#f97316',
+    red:    '#dc2626',
+    grey:   '#6b7280',
+  }};
+
   function render() {{
     const layer = ensureLayer();
     if (!layer) return;
     while (layer.firstChild) layer.removeChild(layer.firstChild);
     cachedR = null;  // Re-sample radius after every render.
-    let drawn = 0;
-    if (lastVisible && lastPins.length) {{
-      for (const pin of lastPins) {{
-        // Branch actions (disco / reco / max_rho_line) anchor at
-        // the midpoint of the matching edge — same rule the Action
-        // Overview pins follow. Falls back to a single-node anchor
-        // when the edge isn't drawn (e.g. a line filtered out by
-        // the recommender's keep_overloads_components).
-        let centre = null;
-        if (Array.isArray(pin.lineNames) && pin.lineNames.length) {{
-          centre = edgeCentre(pin.lineNames, layer);
-        }}
-        if (!centre) {{
-          const candidates = [pin.substation].concat(
-            Array.isArray(pin.nodeCandidates) ? pin.nodeCandidates : []
-          );
-          centre = nodeCentre(candidates, layer);
-        }}
-        if (!centre) continue;
-        layer.appendChild(buildPin(pin, centre, layer));
-        drawn += 1;
+    if (!(lastVisible && lastPins.length)) {{
+      updatePinCounter(0);
+      return;
+    }}
+
+    // Pass 1 — split unitary vs combined and resolve each unitary
+    // pin's anchor (edge mid-arc preferred, node fallback).
+    const baseR = basePinRadius(layer);
+    const unitary = [];
+    const combined = [];
+    const positions = new Map();   // pin.actionId -> position record
+    for (const pin of lastPins) {{
+      if (pin && pin.isCombined && pin.action1Id && pin.action2Id) {{
+        combined.push(pin);
+        continue;
+      }}
+      let centre = null;
+      if (Array.isArray(pin.lineNames) && pin.lineNames.length) {{
+        centre = edgeCentre(pin.lineNames, layer);
+      }}
+      if (!centre) {{
+        const candidates = [pin.substation].concat(
+          Array.isArray(pin.nodeCandidates) ? pin.nodeCandidates : []
+        );
+        centre = nodeCentre(candidates, layer);
+      }}
+      if (!centre) continue;
+      positions.set(pin.actionId, centre);
+      unitary.push(pin);
+    }}
+
+    // Pass 2 — fan out colocated pins so duplicates don't occlude
+    // each other. Same rule the Action Overview applies via
+    // ``fanOutColocatedPins``.
+    fanOutColocated(positions, baseR);
+
+    // Pass 3 — collect ids that participate in any combined pin so
+    // their unitary glyph reads as "context" instead of a peer.
+    const dimmedConstituents = new Set();
+    for (const cp of combined) {{
+      const p1 = positions.get(cp.action1Id);
+      const p2 = positions.get(cp.action2Id);
+      if (p1 && p2) {{
+        dimmedConstituents.add(cp.action1Id);
+        dimmedConstituents.add(cp.action2Id);
       }}
     }}
+
+    let drawn = 0;
+
+    // Render combined-pin dashed connectors first so the unitary
+    // pins draw on top of the curve at its endpoints.
+    for (const cp of combined) {{
+      const p1 = positions.get(cp.action1Id);
+      const p2 = positions.get(cp.action2Id);
+      if (!p1 || !p2) continue;
+      const {{ ctrlX, ctrlY, midX, midY }} = combinedCurveMidpoint(p1, p2, 0.3);
+      const stroke = SEVERITY_FILL[cp.severity] || SEVERITY_FILL.grey;
+      const sw = Math.max(2, baseR * 0.18);
+
+      const svgNs = 'http://www.w3.org/2000/svg';
+      const curve = document.createElementNS(svgNs, 'path');
+      curve.setAttribute('class', 'cs4g-overflow-combined-curve');
+      curve.setAttribute('d',
+        'M ' + p1.x + ' ' + p1.y +
+        ' Q ' + ctrlX + ' ' + ctrlY +
+        ' ' + p2.x + ' ' + p2.y);
+      curve.setAttribute('fill', 'none');
+      curve.setAttribute('stroke', stroke);
+      curve.setAttribute('stroke-width', String(sw));
+      curve.setAttribute('stroke-dasharray', String(sw * 2.5) + ' ' + String(sw * 1.5));
+      curve.setAttribute('stroke-linecap', 'round');
+      curve.setAttribute('pointer-events', 'none');
+      curve.setAttribute('opacity', '0.85');
+      layer.appendChild(curve);
+
+      // Combined pin sits at the curve midpoint. Wrap as a normal
+      // pin descriptor so ``buildPin`` reuses the click / dblclick
+      // semantics — the parent receives ``cs4g:pin-clicked`` /
+      // ``cs4g:pin-double-clicked`` keyed on the pair id.
+      const pinDesc = {{
+        actionId: cp.actionId,
+        substation: cp.substation || '',
+        label: cp.label,
+        severity: cp.severity,
+        title: cp.title || cp.actionId,
+        isSelected: !!cp.isSelected,
+        isRejected: !!cp.isRejected,
+      }};
+      const g = buildPin(pinDesc, {{ x: midX, y: midY }}, layer);
+      g.setAttribute('data-combined-pair', '1');
+
+      // "+" badge on top of the body, mirroring renderCombinedPin
+      // in ``actionPinRender.ts``.
+      const r = baseR;
+      const tail = r * 0.9;
+      const badgeCy = -r - tail - r * 0.95;
+      const body = g.querySelector('.cs4g-pin-body') || g;
+      const badge = document.createElementNS(svgNs, 'circle');
+      badge.setAttribute('cx', '0');
+      badge.setAttribute('cy', String(badgeCy));
+      badge.setAttribute('r', String(r * 0.35));
+      badge.setAttribute('fill', stroke);
+      badge.setAttribute('stroke', 'white');
+      badge.setAttribute('stroke-width', String(r * 0.06));
+      badge.setAttribute('pointer-events', 'none');
+      body.appendChild(badge);
+      const plus = document.createElementNS(svgNs, 'text');
+      plus.setAttribute('x', '0');
+      plus.setAttribute('y', String(badgeCy));
+      plus.setAttribute('text-anchor', 'middle');
+      plus.setAttribute('dominant-baseline', 'central');
+      plus.setAttribute('font-size', String(r * 0.5));
+      plus.setAttribute('font-weight', '900');
+      plus.setAttribute('font-family', 'system-ui, -apple-system, Arial, sans-serif');
+      plus.setAttribute('fill', 'white');
+      plus.setAttribute('pointer-events', 'none');
+      plus.textContent = '+';
+      body.appendChild(plus);
+
+      layer.appendChild(g);
+      drawn += 1;
+    }}
+
+    // Render unitary pins. Constituents of any combined pair are
+    // dimmed so the combined pin reads as the primary actor.
+    for (const pin of unitary) {{
+      const centre = positions.get(pin.actionId);
+      if (!centre) continue;
+      const g = buildPin(pin, centre, layer);
+      if (dimmedConstituents.has(pin.actionId) && !pin.unsimulated) {{
+        // Lighter than full opacity but visibly heavier than the
+        // un-simulated 0.5 dim — mirrors the "context" feel the
+        // Action Overview applies to combined-pin constituents.
+        g.setAttribute('opacity', '0.55');
+        g.setAttribute('data-combined-constituent', '1');
+      }}
+      layer.appendChild(g);
+      drawn += 1;
+    }}
+
     updatePinCounter(drawn);
   }}
 

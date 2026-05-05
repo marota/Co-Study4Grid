@@ -298,6 +298,59 @@ class TestInjectOverlay:
         assert "typeof pin.title === 'string' && pin.title" in out
         assert ": pin.actionId," in out
 
+    def test_edge_midpoint_uses_getPointAtLength_on_curved_path(self) -> None:
+        """Branch-action pins land on the actual visual midpoint of
+        the curved graphviz edge path, NOT on the geometric mean of
+        the two endpoint nodes. Without ``getPointAtLength`` a
+        bow-shaped edge (parallel transformer, line skirting an
+        obstacle) puts the pin off-curve.
+        """
+        out = inject_overlay(_BASE_HTML)
+        # Preferred path uses the SVG ``<path>``'s mid-arc.
+        assert "edge.querySelector('path')" in out
+        assert "path.getTotalLength()" in out
+        assert "path.getPointAtLength(total / 2)" in out
+        # The bbox-midpoint formula remains as a fallback for paths
+        # that don't expose getTotalLength (jsdom older builds).
+        assert "(sp.x + tp.x) / 2" in out
+
+    def test_combined_pin_curve_connector_is_injected(self) -> None:
+        """Pins flagged ``isCombined: true`` cause the overlay to
+        draw a dashed quadratic-Bézier connector between the two
+        constituent unitary pins and place the combined pin at the
+        curve midpoint, mirroring the Action Overview NAD's
+        ``renderCombinedPin`` behaviour."""
+        out = inject_overlay(_BASE_HTML)
+        # Combined-pin branching is recognised in the render loop.
+        assert "pin.isCombined && pin.action1Id && pin.action2Id" in out
+        # Quadratic-Bézier midpoint helper mirroring curveMidpoint
+        # in actionPinData.ts.
+        assert "function combinedCurveMidpoint(p1, p2, offsetFraction)" in out
+        # Dashed connector path with the SVG-quadratic ``Q ctrl`` form.
+        assert "cs4g-overflow-combined-curve" in out
+        assert "stroke-dasharray" in out
+        # "+" badge mirroring the Action Overview's combined-pin badge.
+        assert "plus.textContent = '+';" in out
+
+    def test_combined_pin_dims_unitary_constituents(self) -> None:
+        """When a combined pin's two halves resolve, the unitary
+        pins themselves are rendered with a reduced opacity so the
+        combined glyph reads as the primary actor."""
+        out = inject_overlay(_BASE_HTML)
+        assert "dimmedConstituents" in out
+        assert "data-combined-constituent" in out
+        assert "setAttribute('opacity', '0.55')" in out
+
+    def test_pins_fan_out_when_colocated(self) -> None:
+        """Two pins resolving to the same anchor must be spread on a
+        small circle around the anchor so they remain individually
+        clickable. Mirrors ``fanOutColocatedPins`` in actionPinData.ts."""
+        out = inject_overlay(_BASE_HTML)
+        assert "function fanOutColocated(positions, baseR)" in out
+        # Same hash key the Action Overview uses (round * 100).
+        assert "Math.round(p.x * 100) + ':' + Math.round(p.y * 100)" in out
+        assert "(2 * Math.PI) / ids.length" in out
+
     def test_unsimulated_pin_dblclick_kicks_off_manual_simulation(self) -> None:
         """Un-simulated pins do NOT open the SLD overlay on dblclick;
         they post a distinct message that the parent routes through
