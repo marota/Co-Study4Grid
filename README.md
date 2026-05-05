@@ -118,24 +118,30 @@ Co-Study4Grid/
 │       ├── network_service.py       # Network loading and queries (pypowsybl)
 │       ├── recommender_service.py   # Analysis orchestration, PDF/SVG generation
 │       ├── diagram_mixin.py  +  diagram/    # NAD/SLD orchestrator + 7 helpers
-│       ├── analysis_mixin.py +  analysis/   # Two-step analysis + 4 helpers
+│       ├── analysis_mixin.py +  analysis/   # Two-step analysis + 5 helpers
+│       │                                    # (incl. overflow_geo_transform — 0.7.0)
 │       ├── simulation_mixin.py + simulation_helpers.py  # Manual + combined actions
+│       ├── overflow_overlay.py      # Interactive overflow viewer overlay (0.7.0)
 │       └── sanitize.py              # NumPy → native-Python JSON coercion
 ├── frontend/                    # React + TypeScript + Vite frontend
 │   ├── dist-standalone/             # Auto-generated single-file UI bundle
 │   │                                # (npm run build:standalone)
 │   └── src/
-│       ├── App.tsx                  # State orchestration hub (~1150 lines)
+│       ├── App.tsx                  # State orchestration hub (~1400 lines)
 │       ├── api.ts                   # Axios HTTP client
 │       ├── types.ts                 # Shared TypeScript interfaces
+│       ├── styles/                  # Design-token palette: tokens.{css,ts}
+│       │                            # (single source of truth, gate-enforced)
 │       ├── hooks/                   # useSettings / useAnalysis / useDiagrams /
-│       │                            # useN1Fetch / useDiagramHighlights / …
+│       │                            # useN1Fetch / useDiagramHighlights /
+│       │                            # useOverflowIframe / …
 │       ├── utils/                   # svgUtils (barrel) + svg/* submodules,
 │       │                            # svgPatch, actionTypes, sessionUtils,
 │       │                            # interactionLogger, mergeAnalysisResult, …
 │       └── components/              # Header, ActionFeed, VisualizationPanel,
 │                                    # OverloadPanel, CombinedActionsModal,
 │                                    # AppSidebar, SidebarSummary, StatusToasts,
+│                                    # NoticesPanel, DiagramLegend,
 │                                    # ActionTypeFilterChips, modals/, …
 ├── standalone_interface_legacy.html # DECOMMISSIONED frozen snapshot (do not edit)
 ├── docs/                        # features/, performance/, architecture/,
@@ -223,6 +229,7 @@ Open the Vite dev-server URL shown in the terminal (typically `http://localhost:
 | `GET`  | `/api/voltage-levels` | List voltage levels in the network |
 | `GET`  | `/api/nominal-voltages` | Map voltage level IDs to nominal voltages (kV) |
 | `GET`  | `/api/element-voltage-levels` | Resolve an equipment ID to its voltage level IDs |
+| `GET`  | `/api/voltage-level-substations` | Map voltage level IDs to their parent substation IDs |
 | `GET`  | `/api/actions` | Return all available action IDs and descriptions |
 
 ### Analysis
@@ -248,7 +255,8 @@ Open the Vite dev-server URL shown in the terminal (typically `http://localhost:
 | `POST` | `/api/n1-sld` | SLD in N-1 state with flow deltas |
 | `POST` | `/api/action-variant-sld` | SLD in post-action state |
 | `POST` | `/api/simulate-and-variant-diagram` | NDJSON stream: `{type:"metrics"}` then `{type:"diagram"}` so sidebar updates ahead of the SVG |
-| `GET`  | `/results/pdf/{filename}` | Serve generated overflow PDFs from `Overflow_Graph/` |
+| `POST` | `/api/regenerate-overflow-graph` | Toggle the overflow graph between hierarchical and geo layout (per-study cache, 0.7.0) |
+| `GET`  | `/results/pdf/{filename}` | Serve overflow viewer files (interactive HTML by default, PDF on legacy installs) |
 
 ---
 
