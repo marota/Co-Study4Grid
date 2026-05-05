@@ -52,6 +52,17 @@ export interface OverflowPin {
     action1Id?: string;
     action2Id?: string;
     /**
+     * When true the unitary pin failed the active overview filter
+     * (severity / threshold / action-type) but is kept on the graph
+     * because a passing combined-action pin references it as one
+     * of its constituents. Mirrors the
+     * ``ActionPinInfo.dimmedByFilter`` flag in
+     * ``actionPinData.ts:39``. The overlay renders dimmedByFilter
+     * pins with a reduced opacity so they read as context for the
+     * combined glyph rather than as first-class actions.
+     */
+    dimmedByFilter?: boolean;
+    /**
      * Primary anchor — substation id when the overflow graph nodes are
      * substations, otherwise the first matching voltage-level id. The
      * overlay JS tries this name first against ``data-name`` and falls
@@ -302,81 +313,132 @@ export const buildOverflowPinPayload = (
     // When no substation set is provided, accept every resolved one.
     const knownSet = overflowSubstations ?? new Set<string>();
     const acceptAny = !overflowSubstations;
-    const out: OverflowPin[] = [];
-    const unitaryIds = new Set<string>();
+
+    // Three-pass pipeline mirroring ``ActionOverviewDiagram`` (the
+    // ``pins``/``combinedPins`` memos at component.tsx:314-380):
+    //
+    //   1. Build every unitary anchor UNFILTERED so combined pins
+    //      have endpoints to anchor on even when one half would
+    //      fail the active severity / threshold / action-type chip.
+    //   2. Determine which combined actions pass the filter; their
+    //      two unitary ids form the ``protectedIds`` set.
+    //   3. Re-filter the unitary list:
+    //        - passes filter            → emit at full strength,
+    //        - fails but in protectedIds → emit with dimmedByFilter,
+    //        - fails and unprotected     → drop entirely.
+    //   4. Emit combined-pin descriptors for the passing combined
+    //      actions. The overlay JS computes their midpoint client-
+    //      side from the constituent positions.
+
+    interface UnitaryDraft {
+        actionId: string;
+        details: ActionDetail;
+        anchor: ResolvedAnchor;
+    }
+    const unitaryDrafts: UnitaryDraft[] = [];
+    const unitaryDraftIds = new Set<string>();
     for (const [actionId, details] of Object.entries(actions)) {
-        // Combined-action entries (key contains ``+``) are emitted
-        // separately at the end of the loop with both constituent
-        // ids attached. The overlay computes their position
-        // client-side from the unitary anchors.
         if (actionId.includes('+')) continue;
-        // Action-Overview filters: severity category, max-loading
-        // threshold, action-type chip. Identical to the rules
-        // applied by ``ActionOverviewDiagram`` and ``ActionFeed`` so
-        // the three views stay in lock-step.
-        if (overviewFilters) {
-            if (!actionPassesOverviewFilter(
-                details, monitoringFactor,
-                overviewFilters.categories, overviewFilters.threshold,
-            )) continue;
-            if (!matchesActionTypeFilter(
-                overviewFilters.actionType,
-                actionId, details.description_unitaire, null,
-            )) continue;
-        }
         const anchor = resolveActionSubstation(
             actionId, details, metaIndex, vlToSubstation,
             acceptAny ? new Set(Object.values(vlToSubstation)) : knownSet,
         );
         if (!anchor) continue;
-        unitaryIds.add(actionId);
-        out.push({
-            actionId,
-            substation: anchor.substation,
-            // Carry the VL ids so the overlay JS can fall back to them
-            // when the graph is keyed by voltage level rather than
-            // substation. Filter out the substation itself to avoid
-            // re-trying it.
-            nodeCandidates: anchor.vlIds.filter(v => v !== anchor.substation),
-            // Branch actions: pin lands at the midpoint of the edge
-            // matching one of these line names — same anchoring logic
-            // as the Action Overview NAD pin layer.
-            lineNames: anchor.lineNames,
-            label: formatPinLabel(details),
-            severity: computeActionSeverity(details, monitoringFactor),
-            isSelected: selectedActionIds.has(actionId),
-            isRejected: rejectedActionIds.has(actionId),
-        });
+        unitaryDrafts.push({ actionId, details, anchor });
+        unitaryDraftIds.add(actionId);
     }
 
-    // Combined-action pins. Mirrors ``buildCombinedActionPins`` in
-    // ``actionPinData.ts``: every ``actions[id]`` whose key holds a
-    // single ``+`` and whose two halves both resolved to a unitary
-    // pin emits a combined descriptor. The overlay JS draws a
-    // dashed Bézier connector between the constituent anchors and
-    // places the combined pin at the curve midpoint.
+    // ``passesAll`` mirrors the same name in ActionOverviewDiagram —
+    // category + threshold AND the single-select action-type chip.
+    const passesAll = (id: string, det: ActionDetail): boolean => {
+        if (!overviewFilters) return true;
+        if (!actionPassesOverviewFilter(
+            det, monitoringFactor,
+            overviewFilters.categories, overviewFilters.threshold,
+        )) return false;
+        return matchesActionTypeFilter(
+            overviewFilters.actionType,
+            id, det.description_unitaire, null,
+        );
+    };
+
+    // A combined pin passes the type chip if EITHER constituent
+    // matches — combined actions are inherently multi-type and
+    // hiding a pair because one side doesn't match would surprise
+    // the operator. (Identical rule to ``combinedPassesTypeFilter``
+    // in ActionOverviewDiagram.)
+    const combinedPassesTypeFilter = (id1: string, id2: string): boolean => {
+        if (!overviewFilters || overviewFilters.actionType === 'all') return true;
+        const d1 = actions[id1];
+        const d2 = actions[id2];
+        return (
+            (d1 ? matchesActionTypeFilter(
+                overviewFilters.actionType, id1, d1.description_unitaire, null,
+            ) : false)
+            || (d2 ? matchesActionTypeFilter(
+                overviewFilters.actionType, id2, d2.description_unitaire, null,
+            ) : false)
+        );
+    };
+
+    // Pass 2 — find combined actions that pass the filter and
+    // build the protected-id set.
+    interface CombinedDraft {
+        actionId: string;
+        details: ActionDetail;
+        action1Id: string;
+        action2Id: string;
+    }
+    const combinedDrafts: CombinedDraft[] = [];
+    const protectedIds = new Set<string>();
     for (const [actionId, details] of Object.entries(actions)) {
         if (!actionId.includes('+')) continue;
         const parts = actionId.split('+');
         if (parts.length !== 2) continue;
         const [id1, id2] = parts;
-        if (!unitaryIds.has(id1) || !unitaryIds.has(id2)) continue;
+        if (!unitaryDraftIds.has(id1) || !unitaryDraftIds.has(id2)) continue;
         if (overviewFilters) {
             if (!actionPassesOverviewFilter(
                 details, monitoringFactor,
                 overviewFilters.categories, overviewFilters.threshold,
             )) continue;
+            if (!combinedPassesTypeFilter(id1, id2)) continue;
         }
+        combinedDrafts.push({ actionId, details, action1Id: id1, action2Id: id2 });
+        protectedIds.add(id1);
+        protectedIds.add(id2);
+    }
+
+    // Pass 3 — emit the unitary pins, dimming the protected fails.
+    const out: OverflowPin[] = [];
+    for (const u of unitaryDrafts) {
+        const passes = passesAll(u.actionId, u.details);
+        if (!passes && !protectedIds.has(u.actionId)) continue;
         out.push({
-            actionId,
+            actionId: u.actionId,
+            substation: u.anchor.substation,
+            nodeCandidates: u.anchor.vlIds.filter(v => v !== u.anchor.substation),
+            lineNames: u.anchor.lineNames,
+            label: formatPinLabel(u.details),
+            severity: computeActionSeverity(u.details, monitoringFactor),
+            isSelected: selectedActionIds.has(u.actionId),
+            isRejected: rejectedActionIds.has(u.actionId),
+            ...(passes ? {} : { dimmedByFilter: true }),
+        });
+    }
+
+    // Pass 4 — emit the combined-pin descriptors.
+    for (const cp of combinedDrafts) {
+        out.push({
+            actionId: cp.actionId,
             isCombined: true,
-            action1Id: id1,
-            action2Id: id2,
+            action1Id: cp.action1Id,
+            action2Id: cp.action2Id,
             substation: '',
-            label: formatPinLabel(details),
-            severity: computeActionSeverity(details, monitoringFactor),
-            isSelected: selectedActionIds.has(actionId),
-            isRejected: rejectedActionIds.has(actionId),
+            label: formatPinLabel(cp.details),
+            severity: computeActionSeverity(cp.details, monitoringFactor),
+            isSelected: selectedActionIds.has(cp.actionId),
+            isRejected: rejectedActionIds.has(cp.actionId),
         });
     }
     return out;

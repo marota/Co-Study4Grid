@@ -374,6 +374,96 @@ describe('buildOverflowPinPayload — anchor priority', () => {
         );
         expect(out.some(p => p.isCombined)).toBe(false);
     });
+
+    it('keeps a passing combined pin even when one constituent fails the threshold (dimmed, not dropped)', () => {
+        // Mirrors the user-reported bug: ``ls_b`` is above
+        // ``Max loading`` so the unitary chip would normally hide
+        // it, but the combined pair ``ls_a+ls_b`` is below the
+        // threshold. The Action Overview pipeline (the
+        // ``protectedIds`` set in
+        // ActionOverviewDiagram.tsx:332) emits the combined pin
+        // AND keeps the failing constituent visible with
+        // ``dimmedByFilter: true``.
+        const actions: Record<string, ActionDetail> = {
+            ls_a: {
+                description_unitaire: 'load shedding A',
+                max_rho: 0.40,
+                load_shedding_details: [
+                    { load_name: 'L1', voltage_level_id: 'VLA', shedded_mw: 10 },
+                ],
+            } as unknown as ActionDetail,
+            ls_b: {
+                description_unitaire: 'load shedding B',
+                max_rho: 1.20,
+                load_shedding_details: [
+                    { load_name: 'L2', voltage_level_id: 'VLB', shedded_mw: 12 },
+                ],
+            } as unknown as ActionDetail,
+            'ls_a+ls_b': {
+                description_unitaire: 'combined LS',
+                max_rho: 0.70,
+            } as unknown as ActionDetail,
+        };
+        const meta = makeMetaIndex(
+            { VLA: { equipmentId: 'VLA' }, VLB: { equipmentId: 'VLB' } },
+            {},
+        );
+        const filters: ActionOverviewFilters = {
+            ...DEFAULT_ACTION_OVERVIEW_FILTERS,
+            threshold: 1.0,
+        };
+        const out = buildOverflowPinPayload(
+            actions, meta, { VLA: 'SUB_A', VLB: 'SUB_B' }, 0.95,
+            new Set(), new Set(), undefined, filters,
+        );
+        const byId = new Map(out.map(p => [p.actionId, p]));
+        expect(byId.get('ls_a+ls_b')?.isCombined).toBe(true);
+        const aPin = byId.get('ls_a');
+        expect(aPin).toBeDefined();
+        expect(aPin?.dimmedByFilter).toBeFalsy();
+        const bPin = byId.get('ls_b');
+        expect(bPin).toBeDefined();
+        expect(bPin?.dimmedByFilter).toBe(true);
+    });
+
+    it('drops both combined pin AND failing constituents when the combined itself fails the filter', () => {
+        const actions: Record<string, ActionDetail> = {
+            ls_a: {
+                description_unitaire: 'load shedding A',
+                max_rho: 0.40,
+                load_shedding_details: [
+                    { load_name: 'L1', voltage_level_id: 'VLA', shedded_mw: 10 },
+                ],
+            } as unknown as ActionDetail,
+            ls_b: {
+                description_unitaire: 'load shedding B',
+                max_rho: 1.20,
+                load_shedding_details: [
+                    { load_name: 'L2', voltage_level_id: 'VLB', shedded_mw: 12 },
+                ],
+            } as unknown as ActionDetail,
+            'ls_a+ls_b': {
+                description_unitaire: 'combined LS',
+                max_rho: 1.30,
+            } as unknown as ActionDetail,
+        };
+        const meta = makeMetaIndex(
+            { VLA: { equipmentId: 'VLA' }, VLB: { equipmentId: 'VLB' } },
+            {},
+        );
+        const filters: ActionOverviewFilters = {
+            ...DEFAULT_ACTION_OVERVIEW_FILTERS,
+            threshold: 1.0,
+        };
+        const out = buildOverflowPinPayload(
+            actions, meta, { VLA: 'SUB_A', VLB: 'SUB_B' }, 0.95,
+            new Set(), new Set(), undefined, filters,
+        );
+        const ids = out.map(p => p.actionId);
+        expect(ids).toContain('ls_a');
+        expect(ids).not.toContain('ls_b');
+        expect(ids).not.toContain('ls_a+ls_b');
+    });
 });
 
 // ---------------------------------------------------------------------
