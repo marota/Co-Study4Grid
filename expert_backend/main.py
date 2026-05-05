@@ -235,13 +235,13 @@ def serve_overflow_artifact(filename: str) -> Response:
     return FileResponse(str(candidate))
 
 @app.get("/api/user-config")
-def get_user_config():
+def get_user_config() -> dict:
     """Return the persisted user configuration."""
     return _load_user_config()
 
 
 @app.post("/api/user-config")
-def save_user_config(config: dict = Body(...)):
+def save_user_config(config: dict = Body(...)) -> dict:
     """Save user configuration to the active config file."""
     try:
         _save_user_config(config)
@@ -251,13 +251,13 @@ def save_user_config(config: dict = Body(...)):
 
 
 @app.get("/api/config-file-path")
-def get_config_file_path():
+def get_config_file_path() -> dict:
     """Return the currently active config file path."""
     return {"config_file_path": str(_get_active_config_path())}
 
 
 @app.post("/api/config-file-path")
-def set_config_file_path(path: str = Body(..., embed=True)):
+def set_config_file_path(path: str = Body(..., embed=True)) -> dict:
     """
     Change the active config file path.
     If the target file doesn't exist it is created from defaults.
@@ -343,7 +343,7 @@ class SaveSessionRequest(BaseModel):
 last_network_path = None
 
 @app.post("/api/config")
-def update_config(config: ConfigRequest):
+def update_config(config: ConfigRequest) -> dict:
     global last_network_path
     try:
         # Always reload network and reset recommender caches to ensure clean state.
@@ -409,7 +409,7 @@ def update_config(config: ConfigRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/branches")
-def get_branches():
+def get_branches() -> dict:
     try:
         branches = network_service.get_disconnectable_elements()
         name_map = network_service.get_element_names()
@@ -418,7 +418,7 @@ def get_branches():
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/voltage-levels")
-def get_voltage_levels():
+def get_voltage_levels() -> dict:
     try:
         voltage_levels = network_service.get_voltage_levels()
         name_map = network_service.get_voltage_level_names()
@@ -427,7 +427,7 @@ def get_voltage_levels():
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/nominal-voltages")
-def get_nominal_voltages():
+def get_nominal_voltages() -> dict:
     """Return VL ID → nominal voltage (kV) mapping and sorted unique kV values."""
     try:
         mapping = network_service.get_nominal_voltages()
@@ -438,7 +438,7 @@ def get_nominal_voltages():
 
 
 @app.get("/api/voltage-level-substations")
-def get_voltage_level_substations():
+def get_voltage_level_substations() -> dict:
     """Return ``{vl_id: substation_id}`` for all voltage levels.
 
     Frontend uses this to anchor action-overview pins on the overflow
@@ -451,7 +451,7 @@ def get_voltage_level_substations():
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/pick-path")
-def pick_path(type: str = Query("file", enum=["file", "dir"])):
+def pick_path(type: str = Query("file", enum=["file", "dir"])) -> dict:
     """
     Opens a native OS file or directory picker and returns the selected path.
     Uses a subprocess to avoid tkinter/display issues in the main thread.
@@ -500,7 +500,7 @@ if path:
         return {"path": "", "error": str(e)}
 
 @app.post("/api/save-session")
-def save_session(request: SaveSessionRequest):
+def save_session(request: SaveSessionRequest) -> dict:
     """
     Saves a session folder to the configured output directory.
     Creates <output_folder_path>/<session_name>/ and writes:
@@ -549,7 +549,7 @@ def save_session(request: SaveSessionRequest):
     }
 
 @app.get("/api/list-sessions")
-def list_sessions(folder_path: str = Query(...)):
+def list_sessions(folder_path: str = Query(...)) -> dict:
     """List available session folders inside the given output folder.
     Returns session names sorted most-recent first (by folder name timestamp)."""
     if not folder_path or not os.path.isdir(folder_path):
@@ -570,7 +570,7 @@ def list_sessions(folder_path: str = Query(...)):
     return {"sessions": sessions}
 
 @app.post("/api/load-session")
-def load_session(folder_path: str = Body(...), session_name: str = Body(...)):
+def load_session(folder_path: str = Body(...), session_name: str = Body(...)) -> dict:
     """Read and return the contents of a session.json file.
     Also restores the overflow PDF into Overflow_Graph/ if found in the session folder."""
     import json as json_module
@@ -616,7 +616,7 @@ def load_session(folder_path: str = Body(...), session_name: str = Body(...)):
         raise HTTPException(status_code=400, detail=f"Failed to read session: {e}")
 
 @app.post("/api/restore-analysis-context")
-def restore_analysis_context(request: RestoreAnalysisContextRequest):
+def restore_analysis_context(request: RestoreAnalysisContextRequest) -> dict:
     """Restore analysis context from a saved session so that subsequent
     simulate_manual_action calls use the same monitored lines."""
     try:
@@ -637,7 +637,7 @@ def restore_analysis_context(request: RestoreAnalysisContextRequest):
 from fastapi.responses import StreamingResponse
 import json
 @app.post("/api/run-analysis")
-async def run_analysis(request: AnalysisRequest):
+async def run_analysis(request: AnalysisRequest) -> StreamingResponse:
     def event_generator():
         try:
             for event in recommender_service.run_analysis(request.disconnected_element):
@@ -653,7 +653,7 @@ async def run_analysis(request: AnalysisRequest):
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 @app.post("/api/run-analysis-step1")
-async def run_analysis_step1(request: AnalysisRequest):
+async def run_analysis_step1(request: AnalysisRequest) -> dict:
     try:
         result = recommender_service.run_analysis_step1(request.disconnected_element)
         return result
@@ -662,7 +662,7 @@ async def run_analysis_step1(request: AnalysisRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/run-analysis-step2")
-async def run_analysis_step2(request: AnalysisStep2Request):
+async def run_analysis_step2(request: AnalysisStep2Request) -> StreamingResponse:
     def event_generator():
         try:
             for event in recommender_service.run_analysis_step2(
@@ -682,7 +682,7 @@ async def run_analysis_step2(request: AnalysisStep2Request):
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 @app.post("/api/regenerate-overflow-graph")
-def regenerate_overflow_graph(request: RegenerateOverflowGraphRequest):
+def regenerate_overflow_graph(request: RegenerateOverflowGraphRequest) -> dict:
     """Regenerate (or serve from cache) the overflow graph in the
     requested layout mode (hierarchical / geo). Returns
     ``{pdf_url, pdf_path, mode, cached}``. Intended to be called after
@@ -701,7 +701,7 @@ def regenerate_overflow_graph(request: RegenerateOverflowGraphRequest):
     return result
 
 @app.get("/api/network-diagram")
-def get_network_diagram(http_request: Request, format: str = Query("json")):
+def get_network_diagram(http_request: Request, format: str = Query("json")) -> Response:
     """Base-state NAD for the loaded network.
 
     `format=text` returns the raw SVG body prefixed by a single-line
@@ -727,7 +727,7 @@ def get_network_diagram(http_request: Request, format: str = Query("json")):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/n1-diagram")
-def get_n1_diagram(request: AnalysisRequest, http_request: Request):
+def get_n1_diagram(request: AnalysisRequest, http_request: Request) -> Response:
     try:
         diagram = recommender_service.get_n1_diagram(request.disconnected_element)
         return _maybe_gzip_json(diagram, http_request)
@@ -736,7 +736,7 @@ def get_n1_diagram(request: AnalysisRequest, http_request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/action-variant-diagram")
-def get_action_variant_diagram(request: ActionVariantRequest, http_request: Request):
+def get_action_variant_diagram(request: ActionVariantRequest, http_request: Request) -> Response:
     """Generate a NAD for the network state after applying a remedial action.
 
     Requires a prior call to /api/run-analysis so the observation is available.
@@ -751,7 +751,7 @@ def get_action_variant_diagram(request: ActionVariantRequest, http_request: Requ
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/n1-diagram-patch")
-def get_n1_diagram_patch(request: AnalysisRequest, http_request: Request):
+def get_n1_diagram_patch(request: AnalysisRequest, http_request: Request) -> Response:
     """Return an SVG-less patch payload that the frontend applies to a
     clone of the N-state NAD to produce the N-1 view.
 
@@ -767,7 +767,7 @@ def get_n1_diagram_patch(request: AnalysisRequest, http_request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/action-variant-diagram-patch")
-def get_action_variant_diagram_patch(request: ActionVariantRequest, http_request: Request):
+def get_action_variant_diagram_patch(request: ActionVariantRequest, http_request: Request) -> Response:
     """Return an SVG-less patch payload for applying a remedial action on
     top of the already-loaded N-1 (or N) SVG DOM.
 
@@ -784,7 +784,7 @@ def get_action_variant_diagram_patch(request: ActionVariantRequest, http_request
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/element-voltage-levels")
-def get_element_voltage_levels(element_id: str = Query(...)):
+def get_element_voltage_levels(element_id: str = Query(...)) -> dict:
     """Resolve an equipment ID to its voltage level IDs."""
     try:
         vls = network_service.get_element_voltage_levels(element_id)
@@ -792,7 +792,7 @@ def get_element_voltage_levels(element_id: str = Query(...)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 @app.post("/api/focused-diagram")
-def get_focused_diagram(request: FocusedDiagramRequest, http_request: Request):
+def get_focused_diagram(request: FocusedDiagramRequest, http_request: Request) -> Response:
     """Generate a NAD focused on a specific element's voltage levels.
 
     If disconnected_element is provided, generates the N-1 state.
@@ -829,7 +829,7 @@ class ActionVariantFocusedRequest(BaseModel):
     depth: int = 1
 
 @app.post("/api/action-variant-focused-diagram")
-def get_action_variant_focused_diagram(request: ActionVariantFocusedRequest, http_request: Request):
+def get_action_variant_focused_diagram(request: ActionVariantFocusedRequest, http_request: Request) -> Response:
     """Generate a focused NAD for a specific VL in the post-action network state."""
     try:
         vl_ids = network_service.get_element_voltage_levels(request.element_id)
@@ -853,7 +853,7 @@ class ActionVariantSldRequest(BaseModel):
     voltage_level_id: str
 
 @app.post("/api/action-variant-sld")
-def get_action_variant_sld(request: ActionVariantSldRequest, http_request: Request):
+def get_action_variant_sld(request: ActionVariantSldRequest, http_request: Request) -> Response:
     """Generate a Single Line Diagram (SLD) for a voltage level in the post-action network state."""
     try:
         diagram = recommender_service.get_action_variant_sld(
@@ -871,7 +871,7 @@ class NSldRequest(BaseModel):
     voltage_level_id: str
 
 @app.post("/api/n-sld")
-def get_n_sld(request: NSldRequest, http_request: Request):
+def get_n_sld(request: NSldRequest, http_request: Request) -> Response:
     """Generate a Single Line Diagram (SLD) for a voltage level in the base network state."""
     try:
         diagram = recommender_service.get_n_sld(request.voltage_level_id)
@@ -887,7 +887,7 @@ class N1SldRequest(BaseModel):
     voltage_level_id: str
 
 @app.post("/api/n1-sld")
-def get_n1_sld(request: N1SldRequest, http_request: Request):
+def get_n1_sld(request: N1SldRequest, http_request: Request) -> Response:
     """Generate a Single Line Diagram (SLD) for a voltage level in the N-1 network state."""
     try:
         diagram = recommender_service.get_n1_sld(
@@ -902,7 +902,7 @@ def get_n1_sld(request: N1SldRequest, http_request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/actions")
-def get_actions(http_request: Request):
+def get_actions(http_request: Request) -> Response:
     """Return all available action IDs and descriptions from the loaded dictionary."""
     try:
         actions = recommender_service.get_all_action_ids()
@@ -911,7 +911,7 @@ def get_actions(http_request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/simulate-manual-action")
-def simulate_manual_action(request: ManualActionRequest):
+def simulate_manual_action(request: ManualActionRequest) -> dict:
     """Simulate a specific action from the loaded dictionary against a contingency."""
     try:
         result = recommender_service.simulate_manual_action(
@@ -940,7 +940,7 @@ class SimulateAndVariantDiagramRequest(BaseModel):
 
 
 @app.post("/api/simulate-and-variant-diagram")
-async def simulate_and_variant_diagram(request: SimulateAndVariantDiagramRequest):
+async def simulate_and_variant_diagram(request: SimulateAndVariantDiagramRequest) -> StreamingResponse:
     """Simulate a manual action and return its post-action NAD in one streamed call.
 
     NDJSON stream with two events (in order):
@@ -991,7 +991,7 @@ async def simulate_and_variant_diagram(request: SimulateAndVariantDiagramRequest
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 @app.post("/api/compute-superposition")
-def compute_superposition(request: ComputeSuperpositionRequest):
+def compute_superposition(request: ComputeSuperpositionRequest) -> dict:
     """Compute the combined effect of two actions using the superposition theorem."""
     try:
         result = recommender_service.compute_superposition(

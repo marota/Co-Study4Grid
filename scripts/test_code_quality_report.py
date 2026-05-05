@@ -87,5 +87,15 @@ def test_build_report_against_repo_root():
     assert report.frontend.ts_ignores == 0
 
 
+def test_all_functions_populated():
+    """`all_functions` exposes every backend function for the gate."""
+    report = build_report()
+    # Every entry in the top-5 must also appear in `all_functions`.
+    assert len(report.backend.all_functions) >= len(report.backend.longest_functions)
+    top_keys = {(fn.file, fn.name) for fn in report.backend.longest_functions}
+    all_keys = {(fn.file, fn.name) for fn in report.backend.all_functions}
+    assert top_keys.issubset(all_keys)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
