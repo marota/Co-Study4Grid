@@ -78,10 +78,30 @@ heuristic re-derivation from colours / shapes.
 | `is_hub=True`          | `set_hubs_shape(...)` (auto)            | `Hubs` layer                 |
 | `in_red_loop=True`     | `tag_red_loops(lines, nodes)`            | `Red-loop paths` layer       |
 | `on_constrained_path=True` | `tag_constrained_path(lines, nodes)` | `Constrained path` layer     |
+| `prod_or_load="prod"` + `value`  | `build_nodes` (auto)              | `Production nodes` layer (≥ 1 MW floor) |
+| `prod_or_load="load"` + `value`  | `build_nodes` (auto)              | `Consumption nodes` layer (≥ 1 MW floor) |
 
 Hubs are auto-tagged with `in_red_loop` AND `on_constrained_path`
 so they always show up under those layers regardless of how the
 recommender's lists are built.
+
+`prod_or_load` is written on **every** node by upstream `build_nodes`
+(see `alphaDeesp/core/graphs/power_flow_graph.py` and the
+simulator-specific `build_nodes_v2` helpers in
+`alphaDeesp/core/{grid2op,powsybl,pypownet}/*Simulation.py`). The
+sign of `prod_minus_load` decides the kind:
+
+* `prod_minus_load > 0` → `prod_or_load="prod"`, fillcolor `coral`
+* `prod_minus_load < 0` → `prod_or_load="load"`, fillcolor `lightblue`
+* `prod_minus_load == 0` → `prod_or_load="load"`, fillcolor `#ffffed`
+  (the white "passive substation" placeholder — every node carries
+  this even when it has neither prod nor load)
+
+The viewer therefore filters on `abs(value) >= _PROD_LOAD_VALUE_FLOOR_MW`
+(1 MW by default) when populating the Production / Consumption layers
+so the placeholder zero-balance nodes don't flood the Consumption
+toggle. Bumping the floor is an
+`alphaDeesp/core/interactive_html.py` knob.
 
 ### 2.2 Edge attributes
 
@@ -110,11 +130,17 @@ graph before serialising.
 
 The viewer's sidebar groups layers into three labelled sections:
 
-| Section                          | Layers                                                                               |
-|----------------------------------|--------------------------------------------------------------------------------------|
-| **Structural Paths**             | Constrained path, Red-loop paths                                                     |
-| **Individual entities properties** | Reconnectable, Non-reconnectable, Swapped flow, Overloads, Low margin lines, Hubs |
-| **Flow redispatch values**       | Positive, Negative, Null                                                             |
+| Section                          | Layers                                                                                                       |
+|----------------------------------|--------------------------------------------------------------------------------------------------------------|
+| **Structural Paths**             | Constrained path, Red-loop paths                                                                             |
+| **Individual entities properties** | Reconnectable, Non-reconnectable, Swapped flow, Overloads, Low margin lines, Hubs, Production nodes, Consumption nodes |
+| **Flow redispatch values**       | Positive, Negative, Null                                                                                     |
+
+Production / Consumption nodes carry no edges — they are pure
+node-only filters driven by `prod_or_load` + `value`. The sidebar
+swatch is a small filled circle in the matching node fillcolor
+(coral for prod, lightblue for load) so the visual mapping
+between the swatch and the actual nodes on the canvas is direct.
 
 ### Section ordering
 
