@@ -408,8 +408,8 @@ The single-file HTML distribution is now produced by
 It compiles from the same `frontend/src/` source tree, so save/reload
 logic is inherited automatically (no manual mirroring). The former
 hand-maintained `standalone_interface.html` was decommissioned
-2026-04-20 (renamed to `standalone_interface_legacy.html`, untracked
-via `.gitignore`, kept on disk for reference).
+2026-04-20 (renamed to `standalone_interface_legacy.html` and committed
+as a frozen snapshot — do NOT edit further).
 
 ---
 

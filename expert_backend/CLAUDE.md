@@ -46,6 +46,15 @@ expert_backend/
 │   ├── simulation_helpers.py      # PR #104 decomposition — 14 stateless
 │   │                              # helpers (setpoint math, PST parsing, care
 │   │                              # mask, metrics, result serialisation, …)
+│   ├── overflow_overlay.py        # PR #116 (0.7.0) — pin / filter overlay
+│   │                              # injector for the interactive HTML overflow
+│   │                              # viewer. `inject_overlay(html)` grafts the
+│   │                              # cs4g `<style>` + `<script>` block (and
+│   │                              # pinGlyph.js) before `</body>` of the
+│   │                              # upstream alphaDeesp viewer so the served
+│   │                              # iframe carries the same pin layer / chip
+│   │                              # filters / SLD double-click bridge as the
+│   │                              # React Action Overview tab.
 │   └── sanitize.py                # NumPy → native-Python recursive coercion
 │                                  # (`sanitize_for_json`)
 └── tests/                     # pytest suite — see tests/CLAUDE.md

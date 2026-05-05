@@ -2,14 +2,17 @@
 
 > **Status: SHIPPED (historical plan).**
 > Both refactor waves have landed and this document is preserved as
-> the commit-trail log, not a live plan. App.tsx is now ~1150 lines
-> (down from 2100) and is the state-orchestration hub described in
-> `frontend/CLAUDE.md`. For the current architecture, start with
+> the commit-trail log, not a live plan. App.tsx is now ~1400 lines
+> (down from 2100; the post-0.7.0 hooks `useOverflowIframe` /
+> `useDiagramHighlights` and the design-token migration nudged it
+> back up from the 1150 floor reached after PR #109). It is the
+> state-orchestration hub described in `frontend/CLAUDE.md`. For
+> the current architecture, start with
 > [`frontend/CLAUDE.md`](../../frontend/CLAUDE.md); for the latest
 > extraction round (Phase 2 hook extraction — `useN1Fetch`,
 > `useDiagramHighlights`, `AppSidebar`, `SidebarSummary`,
 > `StatusToasts`) see the App.tsx refactor-history table at the
-> bottom of that file and the 0.6.5 entry in
+> bottom of that file and the 0.6.5 / 0.7.0 entries in
 > [`CHANGELOG.md`](../../CHANGELOG.md).
 >
 > Completed waves:

@@ -487,7 +487,7 @@ export const buildOverflowUnsimulatedPinPayload = (
         max_rho: null,
         max_rho_line: '',
         is_rho_reduction: false,
-    } as unknown as ActionDetail;
+    };
     const activeType = overviewFilters?.actionType ?? 'all';
     const out: OverflowPin[] = [];
     const seen = new Set<string>();

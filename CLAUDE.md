@@ -12,7 +12,7 @@ Co-Study4Grid is a full-stack web application for **power grid contingency analy
 Co-Study4Grid/
 ├── CLAUDE.md                  # This file — project overview + standalone parity audit
 ├── README.md                  # User-facing project description + quick start
-├── CHANGELOG.md               # Per-release changelog (current: 0.6.5)
+├── CHANGELOG.md               # Per-release changelog (current: 0.7.0)
 ├── CONTRIBUTING.md            # Contributor setup, code-quality gate
 ├── pyproject.toml             # Python project metadata + ruff config (E9/F ruleset)
 ├── pytest.ini                 # Pytest config (testpaths = expert_backend/tests)
@@ -28,9 +28,13 @@ Co-Study4Grid/
 │   │   ├── analysis_mixin.py      # Two-step analysis orchestrator — delegates to services/analysis/
 │   │   ├── simulation_mixin.py    # Manual-action + superposition orchestrator
 │   │   ├── simulation_helpers.py  # Stateless helpers extracted from simulation_mixin (PR #104)
+│   │   ├── overflow_overlay.py    # Pin / filter overlay injector for the interactive
+│   │   │                          # HTML overflow viewer (PR #116, 0.7.0)
 │   │   ├── sanitize.py            # NumPy → native-Python recursive coercion
 │   │   ├── analysis/              # PR #104 decomposition — action_enrichment,
-│   │   │                          # mw_start_scoring, analysis_runner, pdf_watcher
+│   │   │                          # mw_start_scoring, analysis_runner, pdf_watcher,
+│   │   │                          # overflow_geo_transform (PR #116 — geo-layout SVG
+│   │   │                          # transform for /api/regenerate-overflow-graph)
 │   │   └── diagram/               # PR #104 decomposition — layout_cache, nad_params,
 │   │                              # nad_render, sld_render, overloads, flows, deltas
 │   └── tests/                 # pytest suite — see tests/CLAUDE.md for the mock layer
@@ -39,21 +43,33 @@ Co-Study4Grid/
 │   ├── package.json, vite.config.ts, vite.config.standalone.ts,
 │   │                          # eslint.config.js, tsconfig*.json
 │   └── src/
-│       ├── App.tsx                # State orchestration hub (~1150 lines)
+│       ├── App.tsx                # State orchestration hub (~1400 lines)
 │       ├── api.ts                 # Axios HTTP client (base URL: 127.0.0.1:8000)
 │       ├── types.ts               # All TypeScript interfaces (one file)
+│       ├── styles/                # Design-token palette (PR #120, 0.7.0):
+│       │                          # tokens.css (CSS custom properties) +
+│       │                          # tokens.ts (typed colors / space / text /
+│       │                          # radius / pinColors* constants). Single
+│       │                          # source of truth for the entire UI; the
+│       │                          # code-quality gate enforces zero hex
+│       │                          # literals outside these two files.
 │       ├── hooks/                 # useSettings / useActions / useAnalysis / useDiagrams /
 │       │                          # useSession / useDetachedTabs / useTiedTabsSync /
 │       │                          # usePanZoom / useSldOverlay / useN1Fetch (svgPatch fast-
 │       │                          # path + full fallback) / useDiagramHighlights (per-tab
-│       │                          # highlight pipeline + Flow/Impacts view-mode state)
+│       │                          # highlight pipeline + Flow/Impacts view-mode state) /
+│       │                          # useOverflowIframe (PR #116 — iframe lifecycle, layer
+│       │                          # toggles, postMessage bridge, pin overlay payload)
 │       ├── components/            # Header, ActionFeed, ActionCard, ActionCardPopover,
 │       │                          # ActionSearchDropdown, ActionTypeFilterChips,
 │       │                          # ActionOverviewDiagram, AppSidebar, SidebarSummary,
 │       │                          # StatusToasts, VisualizationPanel, OverloadPanel,
 │       │                          # CombinedActionsModal, ComputedPairsTable,
 │       │                          # ExplorePairsTab, SldOverlay, DetachableTabHost,
-│       │                          # MemoizedSvgContainer, ErrorBoundary
+│       │                          # MemoizedSvgContainer, ErrorBoundary, NoticesPanel
+│       │                          # (PR #122 tier system), DiagramLegend (PR #122),
+│       │                          # InspectSearchField + DetachedPlaceholder (PR #116
+│       │                          # — extracted from VisualizationPanel)
 │       │                          # + modals/ (SettingsModal, ReloadSessionModal,
 │       │                          #            ConfirmationDialog)
 │       └── utils/                 # svgUtils (barrel re-exporting utils/svg/*),
@@ -64,7 +80,10 @@ Co-Study4Grid/
 │                                  # fileRegistry (structure regression guard)
 │           └── svg/               # PR #104 decomposition — idMap, metadataIndex,
 │                                  # svgBoost, fitRect, deltaVisuals, actionPinData,
-│                                  # actionPinRender, highlights
+│                                  # actionPinRender, highlights, vlTitles (PR #118 —
+│                                  # VL-name title-tooltip injector), overflowPinPayload
+│                                  # + overflowOverlayRender + pinGlyph (PR #116 —
+│                                  # iframe-overlay pin pipeline)
 ├── standalone_interface_legacy.html  # DECOMMISSIONED 2026-04-20 — hand-maintained
 │                              # single-file mirror frozen at its last version and
 │                              # tracked here for reference only. Replaced by the
@@ -216,6 +235,7 @@ Both scripts run in CI (`.github/workflows/code-quality.yml` and
 | GET  | `/api/voltage-levels` | List voltage levels in the network |
 | GET  | `/api/nominal-voltages` | Map voltage level IDs to nominal voltages (kV) |
 | GET  | `/api/element-voltage-levels` | Resolve equipment ID to its voltage level IDs |
+| GET  | `/api/voltage-level-substations` | Map voltage level IDs to their parent substation IDs (used by the SLD overlay and overflow pin pipeline) |
 | POST | `/api/run-analysis` | Run full N-1 contingency analysis (streaming NDJSON, legacy) |
 | POST | `/api/run-analysis-step1` | Two-step analysis Part 1: detect overloads |
 | POST | `/api/run-analysis-step2` | Two-step analysis Part 2: resolve with actions (streaming NDJSON) |
@@ -251,6 +271,7 @@ Both scripts run in CI (`.github/workflows/code-quality.yml` and
 - **JSON sanitization**: NumPy types are recursively converted to native Python types via `sanitize_for_json()`
 - **Mixin → helper-package decomposition (PR #104 / #106)**: `DiagramMixin`, `AnalysisMixin` and `SimulationMixin` are thin orchestrators. Pure numerics live in `services/diagram/`, `services/analysis/` and `services/simulation_helpers.py` respectively — dependency-injected so existing `@patch` tests keep working.
 - **SVG DOM recycling (PR #108)**: patch endpoints (`/api/n1-diagram-patch`, `/api/action-variant-diagram-patch`) return per-branch deltas + optional VL-subtree splices so the frontend can clone the already-mounted N-state SVG instead of re-downloading the full NAD (~80 % faster tab switches on large grids).
+- **Interactive overflow viewer (PR #116, 0.7.0)**: `services/overflow_overlay.py` injects a Co-Study4Grid pin / filter overlay (`<style>` + `<script>` block) into the upstream `expert_op4grid_recommender` HTML viewer before serving it from `/results/pdf/{filename}`. `services/analysis/overflow_geo_transform.py` is a pure lxml transform that rewrites the hierarchical-layout SVG to geographic coordinates for the `/api/regenerate-overflow-graph` toggle; the geo cache is per-study and cleared on `reset()`.
 - **Shared diagram helpers**: `RecommenderService` uses `_load_network()`, `_load_layout()`, `_default_nad_parameters()`, and `_generate_diagram()` to deduplicate diagram generation logic across endpoints
 - **Focused diagrams**: The `/api/focused-diagram` endpoint resolves an element to its voltage levels and generates a sub-diagram with configurable depth, useful for inspecting specific parts of large grids
 - **Ruff-gated**: `pyproject.toml` configures a narrow `E9` + `F` ruleset (real bugs only); stylistic rules deliberately off
@@ -259,11 +280,13 @@ Both scripts run in CI (`.github/workflows/code-quality.yml` and
 - **Strict TypeScript**: `strict: true`, `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`
 - **Functional components** with React hooks; no external state management library
 - **Inline styles**: Components use inline `style` objects rather than CSS modules or utility classes
+- **Design tokens (PR #120, 0.7.0)**: every colour / spacing / typography / radius value lives in `frontend/src/styles/tokens.{css,ts}`. Inline `style` objects import the typed `colors` / `space` / `text` / `radius` constants from `tokens.ts`; stylesheet rules use `var(--…)` from `tokens.css`. Raw SVG attribute setters (`element.setAttribute('fill', …)`) import the hex-valued `pinColors` / `pinChrome` constants because browsers don't reliably resolve `var(--…)` inside SVG presentation attributes. **The code-quality gate enforces zero hex literals outside the two token files.**
 - **Component architecture (Phase 2 hook extraction, PR #109)**:
-  - `App.tsx` (~1150 lines) is the **state orchestration hub** — it wires all hooks together and handles cross-hook logic (e.g., `handleApplySettings`). It should NOT contain large JSX blocks.
+  - `App.tsx` (~1400 lines) is the **state orchestration hub** — it wires all hooks together and handles cross-hook logic (e.g., `handleApplySettings`). It should NOT contain large JSX blocks.
   - **Presentational components** live in `components/` and `components/modals/`. They receive data and callbacks via typed props; all business logic stays in `App.tsx` or in hooks.
   - `hooks/useN1Fetch.ts` owns the N-1 diagram fetch pipeline (svgPatch fast-path + `/api/n1-diagram` fallback + contingency-change confirm routing).
   - `hooks/useDiagramHighlights.ts` owns the per-tab SVG highlight pipeline (overload halos, contingency highlight, action targets, delta visuals) + per-tab Flow/Impacts view-mode state.
+  - `hooks/useOverflowIframe.ts` (PR #116, 0.7.0) owns the interactive overflow viewer — iframe lifecycle, layer-toggle state, hierarchical ↔ geo layout switch, postMessage bridge to the host, and the action-pin overlay payload computation.
   - `useSettings.ts` exposes `SettingsState` (all settings values + setters), which is passed wholesale to `SettingsModal` to avoid 30+ prop-drilling.
 - **SVG DOM recycling (PR #108)**: `utils/svgPatch.ts` clones the already-mounted N-state `SVGSVGElement` and patches only per-branch deltas on N-1 / action tab switches, saving a 12–28 MB SVG re-download and re-parse.
 - **Props-based data flow**: State lifted to `App.tsx`, passed down via props
@@ -356,7 +379,7 @@ and delta-vs-previous commits — lives in
 document is the working record of the parity project and is
 updated as fixes land.
 
-Quick status summary (2026-04-24):
+Quick status summary (2026-05-05):
 
 - Canonical distribution is now the auto-generated
   `frontend/dist-standalone/standalone.html`

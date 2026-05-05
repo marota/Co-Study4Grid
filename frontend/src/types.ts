@@ -623,3 +623,81 @@ export interface UnsimulatedActionScoreInfo {
     /** Highest score in the type bucket. */
     maxScoreInType: number;
 }
+
+// =====================================================================
+// Overflow-iframe postMessage envelope
+// =====================================================================
+//
+// The interactive overflow viewer (PR 116, 0.7.0) is loaded in an
+// iframe and communicates with the React parent via `window.postMessage`.
+// `MessageEvent.data` is `any` by default, so prior to typing this
+// envelope every field access in `useOverflowIframe.ts` was an
+// untyped property lookup. The discriminated union below lets the
+// hook narrow each branch with `msg.type === ...` and access the
+// payload fields with full type safety.
+//
+// IframeToParent — messages emitted by `services/overflow_overlay.py`
+// (pinGlyph.js + the overlay <script> block) and consumed by
+// `useOverflowIframe.ts`'s `onMessage` listener.
+// ParentToIframe — messages posted by the parent into the iframe
+// `contentWindow` to broadcast pin payloads / filter chip state.
+
+/** Pin-bounding rectangle in iframe-screen pixels. */
+export interface OverflowIframeScreenRect {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+}
+
+export type IframeToParentMessage =
+    | { type: 'cs4g:overlay-ready' }
+    | {
+        type: 'cs4g:pin-clicked';
+        actionId: string;
+        screenRect?: OverflowIframeScreenRect;
+    }
+    | {
+        type: 'cs4g:pin-double-clicked';
+        actionId: string;
+        substation: string;
+    }
+    | {
+        type: 'cs4g:overflow-unsimulated-pin-double-clicked';
+        actionId: string;
+    }
+    | {
+        type: 'cs4g:overflow-filter-changed';
+        filters: ActionOverviewFilters;
+    }
+    | {
+        type: 'cs4g:overflow-layer-toggled';
+        key: string;
+        label: string;
+        visible: boolean;
+    }
+    | {
+        type: 'cs4g:overflow-select-all-layers';
+        visible: boolean;
+    }
+    | {
+        type: 'cs4g:overflow-node-double-clicked';
+        name: string;
+    };
+
+/** Discriminator literal for every message the iframe can emit. */
+export type IframeToParentMessageType = IframeToParentMessage['type'];
+
+export type ParentToIframeMessage =
+    | {
+        type: 'cs4g:pins';
+        visible: boolean;
+        // Loosely typed because OverflowPin is a util-package type
+        // and types.ts must not pull in util/* (circular import risk).
+        // The util ensures the shape; this entry only flags the slot.
+        pins: ReadonlyArray<unknown>;
+    }
+    | {
+        type: 'cs4g:filters';
+        filters: ActionOverviewFilters;
+    };

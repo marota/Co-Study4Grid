@@ -5,10 +5,26 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import React from 'react';
-import type { ActionOverviewFilters } from '../types';
+import type {
+    ActionOverviewFilters,
+    IframeToParentMessage,
+    ParentToIframeMessage,
+} from '../types';
 import { interactionLogger } from '../utils/interactionLogger';
 import { decidePopoverPlacement } from '../utils/popoverPlacement';
 import type { OverflowPin } from '../utils/svg/overflowPinPayload';
+
+/**
+ * Runtime guard for the iframe → parent envelope. Verifies the shape
+ * against the discriminated union in `types.ts` so the consuming
+ * branches can rely on typed access.
+ */
+function isIframeMessage(value: unknown): value is IframeToParentMessage {
+    if (!value || typeof value !== 'object') return false;
+    const t = (value as { type?: unknown }).type;
+    if (typeof t !== 'string' || !t.startsWith('cs4g:')) return false;
+    return true;
+}
 
 export interface OverflowIframePopoverPin {
     id: string;
@@ -89,101 +105,106 @@ export function useOverflowIframe(args: UseOverflowIframeArgs): OverflowIframeSt
 
     React.useEffect(() => {
         const onMessage = (ev: MessageEvent) => {
-            const msg = ev?.data;
-            if (!msg || typeof msg !== 'object') return;
-            if (msg.type === 'cs4g:overlay-ready') {
-                setOverlayReady(true);
-            } else if (msg.type === 'cs4g:pin-clicked' && typeof msg.actionId === 'string') {
-                // Single click on an overflow pin mirrors the
-                // Action-Overview pin: focus the feed card on the
-                // matching action (`onOverflowPinPreview`) AND show
-                // a floating ActionCardPopover anchored on the pin.
-                // It must NOT call `onActionSelect`, which would
-                // switch the active tab to the action variant diagram
-                // and stop the operator from completing a double-click
-                // drill into the SLD overlay.
-                if (onOverflowPinPreview) onOverflowPinPreview(msg.actionId);
-                interactionLogger.record('overflow_pin_clicked', { actionId: msg.actionId });
-                // The pin's bounding rect is in iframe-screen pixels;
-                // translate to parent-screen pixels by adding the
-                // iframe's own offset so the popover lands on the
-                // correct spot in the parent document.
-                const iframeEl = overflowIframeRef.current;
-                const rect = msg.screenRect;
-                if (iframeEl && rect && typeof rect === 'object') {
-                    const ifRect = iframeEl.getBoundingClientRect();
-                    const cx = ifRect.left + (rect.left ?? 0) + (rect.width ?? 0) / 2;
-                    const cy = ifRect.top + (rect.top ?? 0) + (rect.height ?? 0) / 2;
-                    const viewport = {
-                        width: window.innerWidth,
-                        height: window.innerHeight,
-                    };
-                    const placement = decidePopoverPlacement(cx, cy, viewport);
-                    setOverflowPopoverPin({
-                        id: msg.actionId,
-                        screenX: cx,
-                        screenY: cy,
-                        ...placement,
+            if (!isIframeMessage(ev?.data)) return;
+            const msg = ev.data;
+            switch (msg.type) {
+                case 'cs4g:overlay-ready':
+                    setOverlayReady(true);
+                    break;
+                case 'cs4g:pin-clicked': {
+                    // Single click on an overflow pin mirrors the
+                    // Action-Overview pin: focus the feed card on the
+                    // matching action AND show a floating
+                    // ActionCardPopover anchored on the pin. Must NOT
+                    // call `onActionSelect` — that would switch the
+                    // active tab and prevent a follow-up double-click
+                    // drill into the SLD overlay.
+                    if (onOverflowPinPreview) onOverflowPinPreview(msg.actionId);
+                    interactionLogger.record('overflow_pin_clicked', { actionId: msg.actionId });
+                    // The pin's bounding rect is in iframe-screen
+                    // pixels; translate to parent-screen pixels by
+                    // adding the iframe's own offset so the popover
+                    // lands on the correct spot in the parent document.
+                    const iframeEl = overflowIframeRef.current;
+                    const rect = msg.screenRect;
+                    if (iframeEl && rect) {
+                        const ifRect = iframeEl.getBoundingClientRect();
+                        const cx = ifRect.left + rect.left + rect.width / 2;
+                        const cy = ifRect.top + rect.top + rect.height / 2;
+                        const viewport = {
+                            width: window.innerWidth,
+                            height: window.innerHeight,
+                        };
+                        const placement = decidePopoverPlacement(cx, cy, viewport);
+                        setOverflowPopoverPin({
+                            id: msg.actionId,
+                            screenX: cx,
+                            screenY: cy,
+                            ...placement,
+                        });
+                        setOverflowPopoverViewport(viewport);
+                    }
+                    break;
+                }
+                case 'cs4g:pin-double-clicked':
+                    // Drill into the SLD on the action sub-tab for
+                    // that substation. Double-click cancels any open
+                    // preview popover so the SLD overlay takes focus.
+                    setOverflowPopoverPin(null);
+                    setOverflowPopoverViewport(null);
+                    if (onOverflowPinDoubleClick) {
+                        onOverflowPinDoubleClick(msg.actionId, msg.substation);
+                    }
+                    break;
+                case 'cs4g:overflow-unsimulated-pin-double-clicked':
+                    // Double-click on an un-simulated overflow pin
+                    // kicks off a manual simulation — same path the
+                    // Action Overview's renderUnsimulatedPin double-
+                    // click takes through
+                    // `handleSimulateUnsimulatedAction`. Drop the
+                    // popover first; the simulation will replace
+                    // this pin with a real one.
+                    setOverflowPopoverPin(null);
+                    setOverflowPopoverViewport(null);
+                    if (onSimulateUnsimulatedAction) {
+                        onSimulateUnsimulatedAction(msg.actionId);
+                    }
+                    interactionLogger.record('overview_unsimulated_pin_simulated', {
+                        action_id: msg.actionId,
                     });
-                    setOverflowPopoverViewport(viewport);
-                }
-            } else if (msg.type === 'cs4g:pin-double-clicked'
-                && typeof msg.actionId === 'string'
-                && typeof msg.substation === 'string') {
-                // Drill into the SLD on the action sub-tab for that
-                // substation. Logging happens in the parent handler so
-                // the event is suppressed when the action is not
-                // actually known to the result.
-                // Double click cancels any open preview popover so the
-                // SLD overlay takes the focus on the way in.
-                setOverflowPopoverPin(null);
-                setOverflowPopoverViewport(null);
-                if (onOverflowPinDoubleClick) {
-                    onOverflowPinDoubleClick(msg.actionId, msg.substation);
-                }
-            } else if (msg.type === 'cs4g:overflow-unsimulated-pin-double-clicked'
-                && typeof msg.actionId === 'string') {
-                // Double-click on an un-simulated overflow pin kicks
-                // off a manual simulation — same path the Action
-                // Overview's renderUnsimulatedPin double-click takes
-                // through ``handleSimulateUnsimulatedAction``. Drop
-                // any popover open over the previous pin first; the
-                // simulation will replace this pin with a real one.
-                setOverflowPopoverPin(null);
-                setOverflowPopoverViewport(null);
-                if (onSimulateUnsimulatedAction) {
-                    onSimulateUnsimulatedAction(msg.actionId);
-                }
-                interactionLogger.record('overview_unsimulated_pin_simulated', {
-                    action_id: msg.actionId,
-                });
-            } else if (msg.type === 'cs4g:overflow-filter-changed'
-                && msg.filters && typeof msg.filters === 'object') {
-                // The iframe sidebar carries a copy of the Action-
-                // Overview filter chips. When the operator changes
-                // one there we forward the new state up so the
-                // parent's shared ``overviewFilters`` (which also
-                // drives the Action Feed and the Action Overview
-                // NAD pins) stays in lock-step with the iframe's UI.
-                if (onOverviewFiltersChange) {
-                    onOverviewFiltersChange(msg.filters);
-                }
-                interactionLogger.record('overview_filter_changed', {
-                    kind: 'overflow_iframe',
-                });
-            } else if (msg.type === 'cs4g:overflow-layer-toggled') {
-                interactionLogger.record('overflow_layer_toggled', {
-                    key: msg.key, label: msg.label, visible: !!msg.visible,
-                });
-            } else if (msg.type === 'cs4g:overflow-select-all-layers') {
-                interactionLogger.record('overflow_select_all_layers', { visible: !!msg.visible });
-            } else if (msg.type === 'cs4g:overflow-node-double-clicked' && typeof msg.name === 'string') {
-                // The overflow graph node double-click opens the SLD
-                // overlay for that voltage level (or substation, depending
-                // on the backend). The parent's `onVlOpen` handler routes
-                // through the same path used by the NAD double-click.
-                if (onVlOpen) onVlOpen(msg.name);
-                interactionLogger.record('overflow_node_double_clicked', { name: msg.name });
+                    break;
+                case 'cs4g:overflow-filter-changed':
+                    // The iframe sidebar carries a copy of the
+                    // Action-Overview filter chips. Forward changes
+                    // so the parent's shared `overviewFilters` (which
+                    // also drives the Action Feed and the Action
+                    // Overview NAD pins) stays in lock-step.
+                    if (onOverviewFiltersChange) {
+                        onOverviewFiltersChange(msg.filters);
+                    }
+                    interactionLogger.record('overview_filter_changed', {
+                        kind: 'overflow_iframe',
+                    });
+                    break;
+                case 'cs4g:overflow-layer-toggled':
+                    interactionLogger.record('overflow_layer_toggled', {
+                        key: msg.key, label: msg.label, visible: msg.visible,
+                    });
+                    break;
+                case 'cs4g:overflow-select-all-layers':
+                    interactionLogger.record('overflow_select_all_layers', {
+                        visible: msg.visible,
+                    });
+                    break;
+                case 'cs4g:overflow-node-double-clicked':
+                    // The overflow graph node double-click opens the
+                    // SLD overlay for that voltage level (or
+                    // substation, depending on the backend). The
+                    // parent's `onVlOpen` handler routes through the
+                    // same path used by the NAD double-click.
+                    if (onVlOpen) onVlOpen(msg.name);
+                    interactionLogger.record('overflow_node_double_clicked', { name: msg.name });
+                    break;
             }
         };
         window.addEventListener('message', onMessage);
@@ -234,11 +255,12 @@ export function useOverflowIframe(args: UseOverflowIframeArgs): OverflowIframeSt
         const iframe = overflowIframeRef.current;
         if (!iframe || !iframe.contentWindow) return;
         if (!overlayReady) return;
-        iframe.contentWindow.postMessage({
+        const msg: ParentToIframeMessage = {
             type: 'cs4g:pins',
             visible: !!overflowPinsEnabled,
             pins: overflowPinsEnabled ? (overflowPins ?? []) : [],
-        }, '*');
+        };
+        iframe.contentWindow.postMessage(msg, '*');
     }, [overlayReady, overflowPinsEnabled, overflowPins]);
 
     // Broadcast the current Action-Overview filter state into the
@@ -251,10 +273,11 @@ export function useOverflowIframe(args: UseOverflowIframeArgs): OverflowIframeSt
         if (!iframe || !iframe.contentWindow) return;
         if (!overlayReady) return;
         if (!overviewFilters) return;
-        iframe.contentWindow.postMessage({
+        const msg: ParentToIframeMessage = {
             type: 'cs4g:filters',
             filters: overviewFilters,
-        }, '*');
+        };
+        iframe.contentWindow.postMessage(msg, '*');
     }, [overlayReady, overviewFilters]);
 
     return {

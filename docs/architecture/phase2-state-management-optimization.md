@@ -24,8 +24,10 @@ tradeoff notes.
 > The sections below are preserved as the original design record
 > for Phase 1 (App.tsx ≈ 650 lines). Line numbers and the
 > wrapper-function inventory reflect that snapshot and are out of
-> date — `App.tsx` is now ≈ 1150 lines after PR #109. Start from
-> `frontend/CLAUDE.md` for the current shape.
+> date — `App.tsx` is now ≈ 1400 lines after the 0.7.0 work
+> (PR #109 dropped it to ~1150; the interactive overflow viewer +
+> design-token migration + tier warning system pushed it back up).
+> Start from `frontend/CLAUDE.md` for the current shape.
 
 ---
 

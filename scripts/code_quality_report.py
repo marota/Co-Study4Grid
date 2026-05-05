@@ -123,6 +123,7 @@ class BackendReport:
     modules: list[FileMetric] = field(default_factory=list)
     largest_module: FileMetric | None = None
     longest_functions: list[FunctionMetric] = field(default_factory=list)
+    all_functions: list[FunctionMetric] = field(default_factory=list)
     total_lines: int = 0
     print_calls: int = 0
     traceback_prints: int = 0
@@ -195,7 +196,12 @@ def iter_frontend_styled_sources() -> list[Path]:
     return sorted(files)
 
 
-def extract_longest_functions(path: Path, top_n: int = 5) -> list[FunctionMetric]:
+def extract_all_functions(path: Path) -> list[FunctionMetric]:
+    """Return every top-level + nested function in `path` with its LoC.
+
+    Used by both the per-file top-N display and the function-LoC gate
+    in `check_code_quality.py` (which iterates the full list).
+    """
     try:
         src = path.read_text(encoding="utf-8")
     except OSError:
@@ -217,13 +223,17 @@ def extract_longest_functions(path: Path, top_n: int = 5) -> list[FunctionMetric
                     lines=length,
                 )
             )
+    return out
+
+
+def extract_longest_functions(path: Path, top_n: int = 5) -> list[FunctionMetric]:
+    out = extract_all_functions(path)
     out.sort(key=lambda m: m.lines, reverse=True)
     return out[:top_n]
 
 
 def scan_backend() -> BackendReport:
     rep = BackendReport()
-    longest: list[FunctionMetric] = []
     for path in iter_backend_modules():
         rel = str(path.relative_to(REPO_ROOT))
         lines = count_lines(path)
@@ -244,13 +254,13 @@ def scan_backend() -> BackendReport:
         rep.traceback_prints += tracebacks
         rep.silent_excepts += silent
 
-        longest.extend(extract_longest_functions(path, top_n=3))
+        rep.all_functions.extend(extract_all_functions(path))
 
     rep.modules.sort(key=lambda m: m.lines, reverse=True)
     if rep.modules:
         rep.largest_module = rep.modules[0]
-    longest.sort(key=lambda m: m.lines, reverse=True)
-    rep.longest_functions = longest[:5]
+    rep.all_functions.sort(key=lambda m: m.lines, reverse=True)
+    rep.longest_functions = rep.all_functions[:5]
 
     if BACKEND_TEST_ROOT.is_dir():
         rep.test_files = sum(

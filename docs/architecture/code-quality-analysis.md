@@ -1,7 +1,7 @@
 # Code Quality & Maintainability Analysis
 
 **Date:** 2026-04-11
-**Last updated:** 2026-04-20
+**Last updated:** 2026-05-05
 **Scope:** Full repository diagnostic — backend, frontend, repo structure, security, testing
 
 > **Continuous reporting (new 2026-04-20):**
@@ -661,4 +661,321 @@ _augment_superposition_result  81
 Every diagram-related function fell out of the top-5. Next natural
 candidates: `update_config` (orchestrator in
 `recommender_service.py`), then the simulation helpers.
+
+---
+
+## 14. Delta — 2026-05-05 (post-0.7.0 review)
+
+Quality review covering the **104 commits across 16 PRs (#105–#131)**
+landed on top of 0.6.5, headlined by the 0.7.0 release: interactive
+overflow analysis (PRs #116, #122–#127), PyPSA-EUR European-wide grid
+(PRs #112, #117), design-token migration (PR #120), tiered notice
+system (PR #122), progressive-disclosure ActionCard (PR #121), VL-names
+toggle (PR #118), and the overflow-pin layer pipeline (PRs #128–#131).
+
+### 14.1 Quality gate — still green
+
+`python scripts/check_code_quality.py` exits 0 at HEAD. Every
+hard ceiling holds:
+
+| Metric | Ceiling | HEAD |
+|--------|---------|------|
+| `print(` calls in backend sources | 0 | **0** |
+| `traceback.print_exc()` | 0 | **0** |
+| Silent `except Exception: pass` | 0 | **0** |
+| Backend module LoC | 1200 | **1115** (`diagram_mixin.py`) |
+| Frontend component LoC | 1500 | **1342** (`VisualizationPanel.tsx`) |
+| Frontend util LoC | 2000 | **1807** (`utils/svgUtils.ts` — exempt barrel) |
+| `any` in frontend source | 0 | **0** |
+| `@ts-ignore` directives | 0 | **0** |
+| Hex literals outside `tokens.{css,ts}` | 0 | **0** ← **NEW gate** (PR #120) |
+
+The hex-literal ceiling (`FRONTEND_HEX_LITERAL_MAX = 0`) is the most
+significant gate addition since the last review. Every colour in the
+React source now flows through `frontend/src/styles/tokens.{css,ts}`.
+
+### 14.2 Metrics summary (HEAD vs 2026-04-21 baseline)
+
+```
+Backend (expert_backend/)
+  Source files (non-test):     24    (was 9   — +5 services + 11 helpers in subpackages)
+  Total lines:                 8,931 (was 5,491 — +63 %)
+  Largest module:              diagram_mixin.py (1,115 lines, ~7 % under ceiling)
+  Test files:                  48    (was 41)
+
+Frontend (frontend/src/)
+  Source files (non-test):     62    (was 37)
+  Total lines:                 19,180 (was 14,872 — +29 %)
+  Largest component:           App.tsx (1,399 lines, exempt) ; VisualizationPanel
+                               1,342 (active under 1,500 ceiling, ex-1,654 pre-extraction)
+  Test files:                  59    (was 43)
+  any types / @ts-ignore:      0 / 0
+  `as unknown as` casts:       18    (was 15)  ← +3 regression
+  `Record<string, unknown>`:   39    (was 37)  ← +2 regression
+  Hex literals (non-token):    0     (was uncounted; PR #120 zeroed it)
+```
+
+Backend and frontend each grew ~30–60 % in raw LoC, driven entirely
+by net-new feature surface (overflow viewer overlay, design-token
+migration, NoticesPanel, DiagramLegend, action-pin pipeline). No
+existing module crossed its ceiling; the few that came close
+(`VisualizationPanel.tsx`) were proactively decomposed to stay
+under the gate.
+
+### 14.3 Top-5 longest functions
+
+```
+expert_backend/services/overflow_overlay.py
+  _build_overlay_block                          832    (template f-string — see §14.4)
+expert_backend/services/analysis/overflow_geo_transform.py
+  transform_html                                290
+expert_backend/services/diagram_mixin.py
+  get_action_variant_diagram_patch              259
+expert_backend/services/simulation_mixin.py
+  simulate_manual_action                        186    (was 146 — +40 from inlined reco_)
+expert_backend/services/recommender_service.py
+  update_config                                 184    (was 166 — +18; new overflow config)
+```
+
+`simulate_manual_action` and `update_config` both grew between
+deltas (vs. §6 baseline of 146 / 166). Both still well below the
+function-level threshold the gate enforces today (the gate is on
+*module* size, not function size), but they're trending up. Worth a
+defensive pass before the next release if either crosses 200 lines.
+
+### 14.4 New large module: `services/overflow_overlay.py` (950 LoC)
+
+PR #116 added the iframe overlay injector that grafts the
+Co-Study4Grid pin layer + filter chips onto the upstream
+`alphaDeesp/core/interactive_html.py` viewer. The module is 950 lines
+total but the body is **one 832-line f-string** producing the
+`<style>…</style><script>…</script>` block injected before the iframe
+`</body>`. AST sees it as a single function (`_build_overlay_block`);
+in practice it is template content, not control flow.
+
+**Trade-off accepted:** the alternative would be a separate `.css` +
+`.js` asset served alongside the iframe, but the f-string keeps the
+overlay self-contained and matches how the upstream HTML is shipped
+(everything inlined). Code-quality gate passes (the module is below
+the 1,200-line backend ceiling; the function-size threshold isn't
+gated). **Action item:** if the overlay grows further, consider
+extracting the static CSS / JS to sibling files and `Path.read_text()`
+them in. Coverage is provided indirectly by
+`utils/svg/overflowOverlayRender.test.ts` and the iframe smoke tests
+in `expert_backend/tests/test_overflow_html_dim_logic.py`.
+
+### 14.5 Architecture additions since 2026-04-21
+
+#### Backend
+- `services/overflow_overlay.py` — pin / filter overlay injector
+  for the interactive HTML viewer.
+- `services/analysis/overflow_geo_transform.py` — pure lxml
+  transform repositioning hierarchical-layout SVG to geo coords for
+  the `/api/regenerate-overflow-graph` toggle.
+- New endpoint `/api/regenerate-overflow-graph` and
+  `/api/voltage-level-substations`.
+
+#### Frontend
+- `src/styles/tokens.{css,ts}` — design-token palette (colours,
+  spacing, typography, radius) consumed everywhere; gate enforces
+  no hex literals outside these two files.
+- New components: `NoticesPanel`, `DiagramLegend`,
+  `InspectSearchField`, `DetachedPlaceholder`, `ActionCardPopover`,
+  `ActionTypeFilterChips`, `AppSidebar`, `SidebarSummary`,
+  `StatusToasts`.
+- New hook: `useOverflowIframe.ts` — owns the iframe lifecycle,
+  layer-toggle state, layout-mode toggle, postMessage bridge, and
+  pin overlay payload computation; extracted from
+  `VisualizationPanel.tsx` to bring it back under the 1,500-line
+  ceiling (1,654 → 1,342).
+- New SVG utils: `utils/svg/vlTitles.ts`,
+  `utils/svg/overflowPinPayload.ts`,
+  `utils/svg/overflowOverlayRender.ts`, `utils/svg/pinGlyph.{js,ts}`.
+
+### 14.6 Documentation freshness
+
+- `CHANGELOG.md` — current. 0.7.0 entry comprehensive (PR-by-PR
+  attribution).
+- `README.md` — current. Already references 0.7.0, design tokens,
+  interactive overflow, PyPSA-EUR, ~1000 specs.
+- Root `CLAUDE.md` — **drift fixed in this pass**: bumped the
+  changelog reference from 0.6.5 to 0.7.0; added
+  `overflow_overlay.py` and `overflow_geo_transform.py` to the
+  backend tree; added `styles/tokens.{css,ts}`,
+  `components/NoticesPanel`, `DiagramLegend`, `InspectSearchField`,
+  `DetachedPlaceholder`, `ActionCardPopover`, `useOverflowIframe`,
+  and the new svg utils to the frontend tree; added
+  `/api/regenerate-overflow-graph` and
+  `/api/voltage-level-substations` to the API table.
+- `expert_backend/CLAUDE.md` — listed `overflow_overlay.py` in this
+  pass; the rest was already current (overflow_geo_transform was
+  already documented in §"Analysis").
+- `frontend/CLAUDE.md` — already documents the design-token rule
+  (§"Code style"). No drift.
+
+### 14.7 Concerns and recommendations
+
+#### Open
+
+1. **Function-level size drift**: `simulate_manual_action` (146 →
+   186) and `update_config` (166 → 184) both grew. Add a
+   function-line ceiling (e.g. 250) to the gate to lock in the
+   April decompositions; this prevents inline-feature bloat from
+   eroding them. Low effort, high value.
+
+2. **`as unknown as` and `Record<string, unknown>` regressions**:
+   +3 and +2 occurrences respectively since April. Origin: new
+   overflow-iframe payload glue (postMessage bridge, layer-toggle
+   payload). These are at integration boundaries (iframe
+   ↔ React) so they're *defensible*, but the trend is unhealthy.
+   Define typed message-payload interfaces in `types.ts` for the
+   `cs4g:overflow-*` postMessage envelope.
+
+3. **`_build_overlay_block` (832 lines)**: see §14.4. Acceptable
+   today, ratchet trigger for the next release if it grows.
+
+4. **Function return-type annotations on FastAPI handlers** —
+   carried over from §3.3. The OpenAPI schema would benefit; this
+   is still the highest-leverage Python typing pass available.
+
+#### Closed since last delta
+
+- ~~Frontend hex-literal sprawl~~ ✅ design-token migration (PR #120)
+  lands a zero-hex ceiling.
+- ~~`VisualizationPanel.tsx` size pressure~~ ✅ extracted
+  `InspectSearchField`, `DetachedPlaceholder`, and
+  `useOverflowIframe` (1,654 → 1,342).
+- ~~Manual graphviz install required for overflow viewer~~ ✅ PR #126
+  auto-installs the `dot` binary cross-platform on package install.
+- ~~Build extras vanished after PEP 621 migration~~ ✅ PR #127
+  restored `[quality]` extras under `optional-dependencies`.
+
+### 14.8 Suggested follow-ups for the next pass
+
+1. ~~Add `FUNCTION_LOC_MAX = 250` to `check_code_quality.py`~~ ✅
+   Landed in this pass — see §15.1.
+2. ~~Type the `cs4g:overflow-*` postMessage envelope in `types.ts`~~
+   ✅ Landed in this pass — see §15.2.
+3. ~~Add return type annotations to all `@app.{get,post}` handlers
+   in `main.py`~~ ✅ Landed in this pass — see §15.3.
+4. If the overflow overlay grows again, split
+   `_build_overlay_block` into sibling `overlay.css` / `overlay.js`
+   files and inline at runtime via `Path.read_text()`. **Deferred
+   until the overlay needs to grow** — exempt from the new
+   function-LoC ceiling per §15.1.
+
+---
+
+## 15. Delta — 2026-05-05 (follow-up: §14.8 recommendations)
+
+Three of the four §14.8 follow-ups landed in the same pass that
+opened §14. The fourth (overlay split) is deferred per its own
+trigger condition.
+
+### 15.1 Function-LoC ceiling — backend gate
+
+`scripts/check_code_quality.py` now enforces
+``BACKEND_FUNCTION_MAX = 250``. Implementation details:
+
+- ``code_quality_report.py`` was extended with
+  ``extract_all_functions(path)`` returning every backend function
+  with its LoC; the gate iterates the full list (was: top-5 only).
+- The new ``BackendReport.all_functions`` field is populated for
+  every scan and a focused unit test
+  (``test_all_functions_populated``) guards the wiring.
+- ``BACKEND_FUNCTION_EXEMPTIONS`` allows three pre-existing
+  overruns through the gate:
+  - ``services/overflow_overlay.py::_build_overlay_block`` (832
+    lines — template f-string, not control flow; see §14.4).
+  - ``services/analysis/overflow_geo_transform.py::transform_html``
+    (290 lines — single-pass lxml transform).
+  - ``services/diagram_mixin.py::get_action_variant_diagram_patch``
+    (259 lines).
+
+Trend-watch §14.7's list of drifting functions
+(``simulate_manual_action`` 186, ``update_config`` 184) now have
+a hard ceiling at 250: any growth past that fails the gate.
+
+### 15.2 Typed postMessage envelope (frontend)
+
+`frontend/src/types.ts` gained a discriminated-union envelope for
+the iframe ↔ parent postMessage bridge between the React shell and
+the interactive overflow viewer:
+
+- ``IframeToParentMessage`` — covers
+  ``cs4g:overlay-ready``, ``cs4g:pin-clicked``,
+  ``cs4g:pin-double-clicked``,
+  ``cs4g:overflow-unsimulated-pin-double-clicked``,
+  ``cs4g:overflow-filter-changed``,
+  ``cs4g:overflow-layer-toggled``,
+  ``cs4g:overflow-select-all-layers``,
+  ``cs4g:overflow-node-double-clicked``.
+- ``ParentToIframeMessage`` — covers ``cs4g:pins`` and
+  ``cs4g:filters``.
+- ``OverflowIframeScreenRect`` — pin bounding rect in iframe
+  coordinates.
+
+`useOverflowIframe.ts` was migrated to:
+- Validate inbound messages with a single ``isIframeMessage``
+  guard, then narrow per-branch via ``switch (msg.type)``. Each
+  case now accesses payload fields with full type safety (no
+  ``typeof msg.x === 'string'`` runtime guards inline; the
+  envelope union enforces them at compile time).
+- Type the parent → iframe ``postMessage`` call sites against
+  ``ParentToIframeMessage``, so an envelope-shape regression in
+  ``services/overflow_overlay.py`` would surface as a TypeScript
+  error here.
+
+Side benefit: caught one unnecessary ``as unknown as ActionDetail``
+in ``utils/svg/overflowPinPayload.ts:490`` (the stub object already
+satisfied the required-fields contract). Dropped it in the same
+pass; ``as unknown as`` count goes 18 → 17.
+
+Future: when the overlay grows new message types, add a branch to
+``IframeToParentMessage`` first; TypeScript's exhaustiveness check
+then forces the consumer to handle it.
+
+### 15.3 FastAPI handler return annotations
+
+Every ``@app.{get,post,put}`` handler in ``expert_backend/main.py``
+now carries a return-type annotation. Three categories:
+
+- **JSON-returning handlers (19)** — ``-> dict``. Covers
+  ``user-config``, ``config-file-path``, ``config``, ``branches``,
+  ``voltage-levels``, ``nominal-voltages``,
+  ``voltage-level-substations``, ``pick-path``, ``save-session``,
+  ``list-sessions``, ``load-session``, ``restore-analysis-context``,
+  ``run-analysis-step1``, ``regenerate-overflow-graph``,
+  ``element-voltage-levels``, ``actions``,
+  ``simulate-manual-action``, ``compute-superposition``,
+  ``update_config``.
+- **Per-endpoint-gzip handlers (10)** — ``-> Response``. Covers
+  every diagram / SLD endpoint plus ``actions``: they all wrap
+  ``_maybe_gzip_json`` / ``_maybe_gzip_svg_text`` which return
+  ``Response``.
+- **NDJSON streaming handlers (3)** — ``-> StreamingResponse``.
+  Covers ``run-analysis``, ``run-analysis-step2``,
+  ``simulate-and-variant-diagram``.
+
+The pre-existing ``serve_overflow_artifact`` already had the
+correct ``-> Response`` annotation.
+
+OpenAPI consequence: ``GET /openapi.json`` now reflects the
+return shapes for every handler. Useful for downstream
+client-generation tooling.
+
+### 15.4 Verification
+
+- ``ruff check expert_backend`` — clean.
+- ``python scripts/check_code_quality.py`` — green (modules,
+  functions, hex literals, smells all under ceiling).
+- ``python -m pytest scripts/test_code_quality_report.py`` —
+  8 / 8 pass (one new test guards the function-list wiring).
+- ``npx tsc --noEmit`` — no errors.
+- ``npx vitest run`` — 1,260 / 1,260 pass.
+- ``python -m pytest expert_backend/tests`` — 674 / 674 pass when
+  the documented test-pollution failures are isolated (same 19
+  pre-existing failures as the §13 baseline; no new regressions).
+
+
 

@@ -19,6 +19,7 @@ Thresholds (see also CONTRIBUTING.md):
 | `traceback.print_exc()` calls in backend   |  0  |
 | Bare `except Exception: pass` patterns     |  0  |
 | Backend module size (lines)                | 1200|
+| Backend function size (lines)              |  250|
 | Frontend component size (lines)            | 1500|
 | `any` type annotations in frontend source  |  0  |
 | `@ts-ignore` directives in frontend source |  0  |
@@ -27,7 +28,10 @@ Thresholds (see also CONTRIBUTING.md):
 `App.tsx` is exempt from the frontend size ceiling — it is the state
 orchestration hub by design. `tokens.css` and `tokens.ts` are the
 token-source-of-truth files and are exempt from the hex-literal
-count.
+count. A small allowlist of legacy backend functions (the iframe
+overlay template, the lxml geo-layout transform, and the action-
+variant patch builder) is exempt from the function-size ceiling
+until they are decomposed; new offenders are not welcome.
 
 The hex-literal ceiling is now zero — every colour in frontend
 source must come from a named token in
@@ -44,8 +48,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from code_quality_report import build_report  # type: ignore[import-not-found]
 
 BACKEND_MODULE_MAX = 1200
+BACKEND_FUNCTION_MAX = 250
 FRONTEND_COMPONENT_MAX = 1500
 FRONTEND_UTIL_MAX = 2000
+
+# Functions exempt from `BACKEND_FUNCTION_MAX`. The first is a
+# template f-string that produces the iframe overlay's <style>+<script>
+# block; AST sees it as a 832-line function, but it is template content.
+# The other two are pre-existing 0.7.0 overruns kept in the allowlist
+# until they get decomposed — new entries are NOT welcome here.
+BACKEND_FUNCTION_EXEMPTIONS = {
+    "expert_backend/services/overflow_overlay.py::_build_overlay_block",
+    "expert_backend/services/analysis/overflow_geo_transform.py::transform_html",
+    "expert_backend/services/diagram_mixin.py::get_action_variant_diagram_patch",
+}
 # Ceiling on hex color literals in frontend source. The
 # token-source-of-truth files (`frontend/src/styles/tokens.css` and
 # `frontend/src/styles/tokens.ts`) are exempt — they ARE the named
@@ -84,6 +100,15 @@ def main() -> int:
             errors.append(
                 f"backend: `{mod.path}` is {mod.lines} lines "
                 f"(ceiling {BACKEND_MODULE_MAX}) — split into focused modules"
+            )
+    for fn in be.all_functions:
+        key = f"{fn.file}::{fn.name}"
+        if key in BACKEND_FUNCTION_EXEMPTIONS:
+            continue
+        if fn.lines > BACKEND_FUNCTION_MAX:
+            errors.append(
+                f"backend: `{fn.file}::{fn.name}` is {fn.lines} lines "
+                f"(ceiling {BACKEND_FUNCTION_MAX}) — extract helpers"
             )
 
     fe = report.frontend

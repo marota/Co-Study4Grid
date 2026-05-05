@@ -28,7 +28,7 @@ frontend/
 ├── public/
 └── src/
     ├── main.tsx              # React entry (StrictMode)
-    ├── App.tsx               # State orchestration hub (~1150 lines)
+    ├── App.tsx               # State orchestration hub (~1400 lines)
     ├── App.*.test.tsx        # App-level integration tests by domain
     ├── App.css / index.css   # Global + app styles
     ├── api.ts                # Axios HTTP client (single object literal)
@@ -403,10 +403,15 @@ what has been extracted and what remains deferred.
 | N-1 diagram fetch effect (svgPatch fast-path + `/api/n1-diagram` fallback + contingency-change confirm routing) | `hooks/useN1Fetch.ts` | ~120 |
 | `applyHighlightsForTab` + driving effect + per-tab `detachedViewModes` state + `viewModeForTab` / `handleViewModeChangeForTab` | `hooks/useDiagramHighlights.ts` | ~155 |
 
-Net: **1575 → ~1150 lines**. App.tsx remains the state orchestration
-hub (wires hooks together, routes cross-hook handlers) — the
-extractions removed only pure presentational JSX and two
-self-contained effect pipelines.
+Net: **1575 → ~1150 lines** at PR #109. App.tsx remains the state
+orchestration hub (wires hooks together, routes cross-hook handlers)
+— the extractions removed only pure presentational JSX and two
+self-contained effect pipelines. Subsequent 0.7.0 work
+(`useOverflowIframe`, the `cs4g:overflow-*` postMessage envelope
+wiring, design-token migration glue, and the action-pin overflow
+handlers) brought App.tsx back up to ~1400 lines; it remains exempt
+from the component-size ceiling and is still the state-orchestration
+hub.
 
 ### Deferred
 

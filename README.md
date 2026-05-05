@@ -24,12 +24,28 @@
 
 ### Visualization
 - **Four synchronized tabs** — *Network N*, *Contingency N-1*, *Remedial Action*, *Overflow Analysis* — rendered as pypowsybl Network-Area Diagrams (NAD) with flow-delta overlays.
-- **Detachable tabs** (PR #86): pop any visualization tab out into a second browser window for dual-monitor workflows, with per-window pan/zoom, tie/untie, and automatic reattach. See [`docs/features/detachable-viz-tabs.md`](docs/features/detachable-viz-tabs.md).
+- **Interactive overflow analysis** (PRs #116, #122–#127): the legacy static PDF is replaced by a same-origin HTML viewer with a layer-toggle sidebar (Constrained path, Red-loop, Overloads, Hubs, Reconnectable, Production / Consumption nodes, flow polarities), a hierarchical ↔ geographic layout switch backed by a per-study cache, and a double-click → SLD drill-down on any node. See [`docs/features/interactive-overflow-analysis.md`](docs/features/interactive-overflow-analysis.md).
+- **Action pin overview** (PR #105 + #116): the post-contingency NAD doubles as a Google-Maps-style overview where every remedial action becomes a coloured pin anchored on the grid asset it targets. Pins reflect triage decisions (gold star = selected, red cross = rejected, dashed-curve = simulated combined pair, dimmed-dashed `?` = scored-but-unsimulated). The same pin overlay is mirrored on top of the interactive overflow viewer, kept in lock-step via `postMessage` so a single-click anywhere previews the action card and a double-click drills into the SLD or kicks off a manual simulation. See [`docs/features/action-overview-diagram.md`](docs/features/action-overview-diagram.md).
 - **Single-Line Diagrams (SLD)** for voltage levels in N, N-1, and post-action states, with persistent highlight of impacted switches and coupling breakers (PR #63).
 - **Focused sub-diagrams**: auto-generate a NAD centered on a specific element with configurable depth — useful for inspecting parts of 10k-branch grids.
 - **Robust highlighting**: contingencies, overloads and impacted assets are drawn as clone-based halos that survive pan, zoom, SLD overlay, and action-target dimming.
 - **Auto-zoom** on contingency, newly overloaded line, or action target; pinned sticky feed summary and overload-click to jump to the N-1 tab (PR #88).
 - **Zoom-tier level-of-detail** (PR #76): labels, nodes and flow arrows are dynamically boosted proportional to `sqrt(diagramSize / referenceSize)`, so large grids remain legible at any zoom.
+- **Voltage-level names toggle** (PR #118): a `🏷 VL` chip flips visibility of the pypowsybl VL labels with a native `<title>` tooltip fallback so cluttered grids stay readable.
+
+### Efficient interactions
+Co-Study4Grid is built around the operator's ability to triage hundreds of remedial actions quickly. The UI is wired so a single click, a chip, or a keystroke replaces a multi-step menu walk.
+
+- **Synchronized filter chips** (PRs #105 / #109 / #116 / #129): one `ActionOverviewFilters` state — severity categories (Solves / Low margin / Still overloaded / Divergent-or-islanded), max-loading threshold slider, `Show unsimulated` toggle, and action-type chips (DISCO / RECO / LS / RC / OPEN / CLOSE / PST) — drives the Action Feed sidebar, the Action Overview pin layer, **and** the overflow-graph pin overlay simultaneously. Hide a card in any view, it disappears from the others.
+- **Click-to-inspect with auto-zoom + impacted-asset halos**: clicking an `ActionCard` in the sidebar feed (or a pin via its popover) selects the action, fetches its post-action NAD, **auto-zooms onto the action target and the lines it affects**, and paints clone-based halos on every impacted asset (action target, contingency, newly overloaded / relieved lines, action-induced topology changes). The same auto-fit logic runs on contingency selection and on overload-row clicks in the sidebar — no manual pan/zoom needed to check whether a candidate action lands where the operator expects.
+- **Pin-driven workflow**: single-click a pin → `ActionCardPopover` opens anchored on the pin (no tab switch); double-click → drills into the SLD overlay for that voltage level; double-click an unsimulated pin → kicks off a manual simulation through `simulate_manual_action`. Same gesture grammar on the Action Overview NAD, the overflow viewer, and the Action Feed cards.
+- **Simulate any action on demand** — from three surfaces: (1) the **action-score table** in the *Manual Selection* dropdown (every scored-but-not-yet-simulated action becomes a one-click `Simulate` row, with a *"Make a first guess"* shortcut when no analysis is loaded yet); (2) the **un-simulated pin layer** on both the Action Overview NAD and the overflow viewer (dimmed dashed pins, double-click triggers the same code path); (3) any **manual action ID** typed into the dropdown's free-text field. Reconnection (`reco_*`) and load-shedding / curtailment / PST actions are auto-built on the fly when missing from the dictionary, so the operator can compose mixed disconnect + reconnect studies without editing the action JSON.
+- **Combined-action explorer** (PRs #62, #114): the *Computed Pairs* / *Explore Pairs* modal proposes pairs sorted by predicted `target_max_rho`, runs fast superposition first, and offers a one-click full simulation when the operator wants ground truth — load shedding and curtailment can mix freely with topology actions.
+- **Inspect search field** (PR #116) on every viz tab: type any branch / VL / load / generator ID and the view auto-focuses + halos the asset, with focused sub-diagrams a click away.
+- **Detachable tabs** (PR #86): pop any visualization tab into a second browser window for dual-monitor studies, with per-window pan/zoom, tie/untie, and automatic reattach. The detached window inherits the same filter and pin state.
+- **Tiered notice system + diagram legend** (PR #122): the sidebar `Notices` pill ranks issues by severity (info / warning / critical) and the new `DiagramLegend` sits inside the Visualization panel so colour codes are always one glance away — no scrolling through docs to recall what a halo means.
+- **Progressive-disclosure ActionCard** (PR #121): severity icons drive a glanceable card summary; topology / load-shed / curtailment details collapse by default and expand on demand, so a feed of 50 actions still fits one screen.
+- **Replay-ready interaction log**: every click, chip toggle, simulation, save, and reload is recorded with correlation IDs in `interaction_log.json`, suitable for both deterministic browser-automation replay and UI benchmarking. Full schema in [Sessions & replay](#sessions--replay) below.
 
 ### Sessions & replay
 - **Save Results** / **Reload Session**: export the complete analysis state (config, contingency, actions with status tags, combined pairs, overflow PDF, loading ratios) to a timestamped session folder. See [`docs/features/save-results.md`](docs/features/save-results.md).
@@ -118,24 +134,30 @@ Co-Study4Grid/
 │       ├── network_service.py       # Network loading and queries (pypowsybl)
 │       ├── recommender_service.py   # Analysis orchestration, PDF/SVG generation
 │       ├── diagram_mixin.py  +  diagram/    # NAD/SLD orchestrator + 7 helpers
-│       ├── analysis_mixin.py +  analysis/   # Two-step analysis + 4 helpers
+│       ├── analysis_mixin.py +  analysis/   # Two-step analysis + 5 helpers
+│       │                                    # (incl. overflow_geo_transform — 0.7.0)
 │       ├── simulation_mixin.py + simulation_helpers.py  # Manual + combined actions
+│       ├── overflow_overlay.py      # Interactive overflow viewer overlay (0.7.0)
 │       └── sanitize.py              # NumPy → native-Python JSON coercion
 ├── frontend/                    # React + TypeScript + Vite frontend
 │   ├── dist-standalone/             # Auto-generated single-file UI bundle
 │   │                                # (npm run build:standalone)
 │   └── src/
-│       ├── App.tsx                  # State orchestration hub (~1150 lines)
+│       ├── App.tsx                  # State orchestration hub (~1400 lines)
 │       ├── api.ts                   # Axios HTTP client
 │       ├── types.ts                 # Shared TypeScript interfaces
+│       ├── styles/                  # Design-token palette: tokens.{css,ts}
+│       │                            # (single source of truth, gate-enforced)
 │       ├── hooks/                   # useSettings / useAnalysis / useDiagrams /
-│       │                            # useN1Fetch / useDiagramHighlights / …
+│       │                            # useN1Fetch / useDiagramHighlights /
+│       │                            # useOverflowIframe / …
 │       ├── utils/                   # svgUtils (barrel) + svg/* submodules,
 │       │                            # svgPatch, actionTypes, sessionUtils,
 │       │                            # interactionLogger, mergeAnalysisResult, …
 │       └── components/              # Header, ActionFeed, VisualizationPanel,
 │                                    # OverloadPanel, CombinedActionsModal,
 │                                    # AppSidebar, SidebarSummary, StatusToasts,
+│                                    # NoticesPanel, DiagramLegend,
 │                                    # ActionTypeFilterChips, modals/, …
 ├── standalone_interface_legacy.html # DECOMMISSIONED frozen snapshot (do not edit)
 ├── docs/                        # features/, performance/, architecture/,
@@ -223,6 +245,7 @@ Open the Vite dev-server URL shown in the terminal (typically `http://localhost:
 | `GET`  | `/api/voltage-levels` | List voltage levels in the network |
 | `GET`  | `/api/nominal-voltages` | Map voltage level IDs to nominal voltages (kV) |
 | `GET`  | `/api/element-voltage-levels` | Resolve an equipment ID to its voltage level IDs |
+| `GET`  | `/api/voltage-level-substations` | Map voltage level IDs to their parent substation IDs |
 | `GET`  | `/api/actions` | Return all available action IDs and descriptions |
 
 ### Analysis
@@ -248,7 +271,8 @@ Open the Vite dev-server URL shown in the terminal (typically `http://localhost:
 | `POST` | `/api/n1-sld` | SLD in N-1 state with flow deltas |
 | `POST` | `/api/action-variant-sld` | SLD in post-action state |
 | `POST` | `/api/simulate-and-variant-diagram` | NDJSON stream: `{type:"metrics"}` then `{type:"diagram"}` so sidebar updates ahead of the SVG |
-| `GET`  | `/results/pdf/{filename}` | Serve generated overflow PDFs from `Overflow_Graph/` |
+| `POST` | `/api/regenerate-overflow-graph` | Toggle the overflow graph between hierarchical and geo layout (per-study cache, 0.7.0) |
+| `GET`  | `/results/pdf/{filename}` | Serve overflow viewer files (interactive HTML by default, PDF on legacy installs) |
 
 ---
 

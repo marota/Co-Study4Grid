@@ -32,7 +32,8 @@ docs/
 |------|-------|
 | [`save-results.md`](features/save-results.md) | Session save/reload contract + regression-guard matrix. |
 | [`interaction-logging.md`](features/interaction-logging.md) | Replay-ready event log contract. |
-| [`action-overview-diagram.md`](features/action-overview-diagram.md) | Map-pin overlay on N-1 NAD showing prioritized actions. |
+| [`action-overview-diagram.md`](features/action-overview-diagram.md) | Map-pin overlay on N-1 NAD + the interactive overflow viewer; filter chips + un-simulated pin pipeline. |
+| [`interactive-overflow-analysis.md`](features/interactive-overflow-analysis.md) | Iframe overflow viewer (0.7.0): layer toggles, hierarchical ↔ geo layout, pin overlay injection, postMessage envelope. |
 | [`detachable-viz-tabs.md`](features/detachable-viz-tabs.md) | Pop viz tabs into standalone windows; tied/detached sync. |
 | [`combined-actions.md`](features/combined-actions.md) | Dual-action simulation via superposition (fast) + full sim (exact). |
 | [`state-reset-and-confirmation-dialogs.md`](features/state-reset-and-confirmation-dialogs.md) | State-reset guards when switching contingencies / reloading. |
@@ -60,10 +61,10 @@ folder's index for the full list.
 
 | File | Topic |
 |------|-------|
-| [`app-refactoring-plan.md`](architecture/app-refactoring-plan.md) | Extract custom hooks from `App.tsx` (in progress). |
-| [`phase2-state-management-optimization.md`](architecture/phase2-state-management-optimization.md) | Memoize wrapper functions with `useCallback` (proposed). |
-| [`code-quality-analysis.md`](architecture/code-quality-analysis.md) | 2026-04 codebase audit: TS A, tests A+, Python type hints C−. |
-| [`development-cycle.md`](architecture/development-cycle.md) | Chronological retrospective of the 4 development phases (minimal end-to-end → features → consolidation → PyPSA-EUR dataset). |
+| [`app-refactoring-plan.md`](architecture/app-refactoring-plan.md) | Historical: Phase 1 + Phase 2 hook extraction from `App.tsx` (shipped). |
+| [`phase2-state-management-optimization.md`](architecture/phase2-state-management-optimization.md) | Memoize wrapper functions with `useCallback` (shipped 0.5.0). |
+| [`code-quality-analysis.md`](architecture/code-quality-analysis.md) | Continuous audit; latest deltas (§14–15) cover the 0.7.0 release + the function-LoC ceiling, postMessage envelope, FastAPI return-type follow-ups. |
+| [`development-cycle.md`](architecture/development-cycle.md) | Chronological retrospective covering the four development phases through 0.7.0 (minimal end-to-end → features → consolidation → PyPSA-EUR + interactive overflow). |
 
 ## Proposals (`proposals/`)
 
