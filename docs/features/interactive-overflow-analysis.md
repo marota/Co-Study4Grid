@@ -445,6 +445,17 @@ the simulated-pin builder but:
   layer (exported from `actionPinData.ts` for cross-module reuse).
   Multi-line content: `"<id> — not yet simulated (double-click to
   run)\nType: …\nScore: … — rank N of M (max …)\nMW start: …\n…"`.
+- Accepts the same optional `overviewFilters` argument as the
+  simulated builder. When `overviewFilters.actionType !== 'all'`
+  ids that don't match the active type chip are skipped before
+  anchor resolution — mirroring the Action Overview's
+  `unsimulatedPins` memo (`ActionOverviewDiagram.tsx:383-397`).
+  The match precedence is identical: prefer `scoreInfo[id].type`
+  when supplied, fall back to id-based heuristics in
+  `classifyActionType`. Without this the Overflow Analysis tab's
+  ACTION PINS FILTERS chip row would appear inert because the
+  unsimulated layer is usually the dominant pin set on the graph
+  (regression fix 2026-05-05).
 
 #### Wire-format addition
 
@@ -609,6 +620,16 @@ parameter. When passed, each action is dropped if either:
 `App.tsx` always passes `overviewFilters` to the builder, so the
 overflow pin set is filtered identically to the Action Overview pin
 set.
+
+**Unsimulated pins honour the same chip.** `buildOverflowUnsimulatedPinPayload`
+also receives `overviewFilters` and applies the action-type chip
+before anchor resolution — mirroring the Action Overview's
+`unsimulatedPins` memo. Without this, the iframe's chip row would
+filter only the simulated layer while the (typically larger)
+unsimulated layer stayed on screen, making the chip appear inert
+(regression fix 2026-05-05). The `App.tsx` memo therefore tracks
+the full `overviewFilters` object in its dependency array so an
+`actionType` change triggers a rebuild + re-broadcast to the iframe.
 
 The `showUnsimulated` field is the **gate** for the un-simulated
 pin layer (§6.10): when `true`, `App.tsx` invokes

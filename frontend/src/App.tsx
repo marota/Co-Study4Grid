@@ -440,9 +440,11 @@ function App() {
           diagrams.n1MetaIndex ?? null,
           vlToSubstation,
           unsimulatedActionInfo,
+          undefined,
+          overviewFilters,
         )
       : [],
-    [overflowPinsAvailable, overviewFilters?.showUnsimulated,
+    [overflowPinsAvailable, overviewFilters,
      unsimulatedActionIds, unsimulatedActionInfo,
      result?.actions, diagrams.n1MetaIndex, vlToSubstation],
   );

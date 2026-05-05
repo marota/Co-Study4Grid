@@ -455,6 +455,14 @@ export const buildOverflowPinPayload = (
  *
  * Items already in ``simulatedIds`` are skipped (they're rendered
  * by ``buildOverflowPinPayload`` instead).
+ *
+ * When ``overviewFilters.actionType`` is provided and not ``'all'``,
+ * ids that don't match the active type chip (DISCO / RECO / LS /
+ * OPEN / CLOSE / PST / RC) are dropped — mirroring the Action
+ * Overview's ``unsimulatedPins`` memo so the chip filter behaves
+ * consistently across both tabs. Like the Overview, we prefer the
+ * score-info ``type`` field when available and fall back to
+ * id-based heuristics in ``classifyActionType``.
  */
 export const buildOverflowUnsimulatedPinPayload = (
     scoredActionIds: readonly string[],
@@ -463,6 +471,7 @@ export const buildOverflowUnsimulatedPinPayload = (
     vlToSubstation: Readonly<Record<string, string>>,
     scoreInfo?: Readonly<Record<string, UnsimulatedActionScoreInfo>>,
     overflowSubstations?: ReadonlySet<string>,
+    overviewFilters?: ActionOverviewFilters,
 ): OverflowPin[] => {
     if (!metaIndex || scoredActionIds.length === 0) return [];
     const knownSet = overflowSubstations ?? new Set<string>();
@@ -479,6 +488,7 @@ export const buildOverflowUnsimulatedPinPayload = (
         max_rho_line: '',
         is_rho_reduction: false,
     } as unknown as ActionDetail;
+    const activeType = overviewFilters?.actionType ?? 'all';
     const out: OverflowPin[] = [];
     const seen = new Set<string>();
     for (const rawId of scoredActionIds) {
@@ -486,6 +496,12 @@ export const buildOverflowUnsimulatedPinPayload = (
         if (!id || seen.has(id)) continue;
         seen.add(id);
         if (simulatedIds.has(id)) continue;
+        // Action-type chip filter — same rule as the Action Overview
+        // (`ActionOverviewDiagram.tsx` `unsimulatedPins` memo).
+        if (activeType !== 'all') {
+            const scoreType = scoreInfo?.[id]?.type ?? null;
+            if (!matchesActionTypeFilter(activeType, id, null, scoreType)) continue;
+        }
         const anchor = resolveActionSubstation(
             id, stub, metaIndex, vlToSubstation,
             acceptAny ? new Set(Object.values(vlToSubstation)) : knownSet,
