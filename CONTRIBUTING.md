@@ -15,6 +15,36 @@ pip install --no-deps expert_op4grid_recommender
 uvicorn expert_backend.main:app --host 0.0.0.0 --port 8000
 ```
 
+#### System prerequisite — Graphviz (`dot`)
+
+The overflow-graph rendering pipeline shells out to Graphviz's
+`dot` binary. `pip install` attempts a best-effort auto-install via
+the platform's package manager (apt / dnf / pacman / apk on Linux,
+Homebrew or MacPorts on macOS, Chocolatey / winget / Scoop on
+Windows); set `COSTUDY4GRID_SKIP_GRAPHVIZ_INSTALL=1` to opt out.
+Modern wheel-based installs may skip the `setup.py` post-install
+hook — re-run it manually with the bundled console script if
+`dot -V` fails:
+
+```bash
+costudy4grid-install-graphviz
+```
+
+If the auto-install can't elevate (no `sudo`, locked package DB,
+unsupported package manager), install Graphviz by hand:
+
+| Platform                | Command                                           |
+|-------------------------|---------------------------------------------------|
+| Debian / Ubuntu         | `sudo apt-get install graphviz`                   |
+| RHEL / Fedora           | `sudo dnf install graphviz` (or `yum`)            |
+| Arch                    | `sudo pacman -S graphviz`                         |
+| Alpine                  | `sudo apk add graphviz`                           |
+| macOS (Homebrew)        | `brew install graphviz`                           |
+| macOS (MacPorts)        | `sudo port install graphviz`                      |
+| Windows (Chocolatey)    | `choco install graphviz`                          |
+| Windows (winget)        | `winget install Graphviz.Graphviz`                |
+| Windows (Scoop)         | `scoop install graphviz`                          |
+
 ### Frontend
 
 ```bash

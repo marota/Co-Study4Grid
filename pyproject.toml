@@ -32,6 +32,11 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "python-multipart",
+    # Required by the overflow-graph rendering pipeline. ``pydot`` is the
+    # Python wrapper; the ``dot`` system binary it shells out to is
+    # installed best-effort by ``setup.py`` via ``scripts/install_graphviz.py``
+    # (see also the ``costudy4grid-install-graphviz`` console script).
+    "pydot",
 ]
 
 [project.optional-dependencies]
@@ -45,6 +50,11 @@ quality = [
     "ruff>=0.6",
     "radon>=6.0",
 ]
+
+[project.scripts]
+# Manual fallback when the post-install hook can't elevate to install
+# the Graphviz ``dot`` binary on a user's machine.
+costudy4grid-install-graphviz = "expert_backend.install_graphviz:ensure_dot"
 
 [tool.setuptools.packages.find]
 where = ["."]
