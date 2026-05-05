@@ -322,7 +322,7 @@ The factory returns an `<g class="cs4g-pin">` element with:
 
 ### 6.4 Anchoring math (overlay-side)
 
-`overflow_overlay.py` provides three helpers:
+`overflow_overlay.py` provides four helpers:
 
 - `projectToLayer(node, layer, lx, ly)` — composes
   `layer.getCTM().inverse() × node.getCTM()` to map a point from a
@@ -336,10 +336,21 @@ The factory returns an `<g class="cs4g-pin">` element with:
   *top-edge* centre (so the pin tip touches the node and the body
   floats above the label).
 - `edgeCentre(lineNames, layer)` — looks up
-  `[data-attr-name="<line>"]`, reads `data-source` / `data-target`,
-  finds those two nodes and returns the midpoint of their
-  projected centres. Tried BEFORE `nodeCentre` when the pin
-  payload carries `lineNames`.
+  `[data-attr-name="<line>"]` and prefers the **visual mid-arc of
+  the rendered Bézier path** via `path.getTotalLength()` +
+  `path.getPointAtLength(len/2)`, projected back into the layer's
+  coord system. Falls back to the bbox-midpoint of the
+  `data-source` / `data-target` node pair when the SVG length APIs
+  are unavailable. Tried BEFORE `nodeCentre` when the pin payload
+  carries `lineNames`. (The geometric midpoint between endpoint
+  nodes was off-curve for any edge graphviz draws as a curve —
+  parallel transformers, lines bowing around obstacles — and put
+  pins like ``reco_CHALOL31LOUHA`` on a different line entirely.)
+- `fanOutColocated(positions, baseR)` — final pass that spreads
+  pins resolving to the same anchor on a small circle around it
+  (radius `1.6 * baseR`). Same hash key + angular fan as
+  `frontend/src/utils/svg/actionPinData.ts:fanOutColocatedPins`,
+  so duplicates stay individually clickable.
 
 ### 6.5 Pin radius
 
@@ -477,6 +488,92 @@ Single click is unchanged: `cs4g:pin-clicked` still triggers the
 feed-focus + popover behaviour, which works for unsimulated pins
 because `ActionCardPopover` accepts a "score-only" descriptor.
 
+### 6.11 Combined-action pins + `dimmedByFilter` constituents
+
+Combined-action entries — actions whose id contains ``+`` (e.g.
+``disco_BEON L31P.SAO+reco_GEN.PY762``) — are rendered as a
+**dashed Bézier connector** between the two unitary halves with a
+combined glyph (severity-coloured ``+`` badge) at the curve
+midpoint. Identical visual contract to ``CombinedPinInfo`` /
+``renderCombinedPin`` on the Action Overview NAD.
+
+#### Wire-format addition
+
+```ts
+interface OverflowPin {
+    /* …existing fields… */
+    /** Combined pair: place pin at the midpoint of a curve. */
+    isCombined?: boolean;
+    action1Id?: string;
+    action2Id?: string;
+    /** Unitary pin failed the filter but kept as a constituent
+     *  of a passing combined pin — render dimmed. */
+    dimmedByFilter?: boolean;
+}
+```
+
+#### Three-pass payload pipeline (`buildOverflowPinPayload`)
+
+Mirrors ``ActionOverviewDiagram`` (the ``pins`` / ``combinedPins``
+memos at component.tsx:285-380) byte-for-byte:
+
+1. **Build every unitary anchor UNFILTERED** so combined pins
+   always have endpoints to anchor on, even when one half would
+   fail the active severity / threshold / action-type chip on its
+   own.
+2. **Determine which combined actions pass the filter**. A
+   combined pair passes the *type chip* if EITHER constituent
+   matches (combined actions are inherently multi-type and hiding
+   the pair because one side doesn't match would surprise the
+   operator). The constituent ids of every passing combined pin
+   form the ``protectedIds`` set.
+3. **Re-filter the unitary list**:
+     - passes filter            → emit at full strength,
+     - fails but in protectedIds → emit with ``dimmedByFilter: true``,
+     - fails and unprotected     → drop entirely.
+4. **Emit combined-pin descriptors** for the passing combined
+   actions. The overlay JS computes their midpoint client-side
+   from the constituent positions.
+
+This is the difference between "combined pin disappears as soon
+as one constituent fails the threshold" (the wrong UX, fixed) and
+"combined pin survives, the failing constituent is shown dimmed
+as context for the combined glyph" (the Action-Overview rule).
+
+#### Overlay rendering (combined connector)
+
+For each ``isCombined`` pin the overlay:
+
+- Looks up the two constituent positions (after the
+  ``fanOutColocated`` pass).
+- Calls ``combinedCurveMidpoint(p1, p2, 0.3)`` — quadratic-Bézier
+  control point offset perpendicular to the chord by
+  ``dist * 0.3`` (identical math to ``curveMidpoint`` in
+  ``actionPinData.ts``).
+- Draws a dashed ``<path class="cs4g-overflow-combined-curve">``
+  between the constituents using the combined pin's severity
+  colour at ``opacity: 0.85``.
+- Renders the combined pin at the curve midpoint via the shared
+  ``buildPin`` factory, then appends a ``+`` badge above the
+  bubble (severity-filled circle + white "+" text).
+
+For each ``dimmedByFilter`` unitary pin the overlay sets
+``opacity: 0.35`` + ``data-dimmed-by-filter="true"`` on the pin
+``<g>`` — same contract as the ``dimmedByFilter`` branch in
+``frontend/src/utils/svg/actionPinRender.ts``.
+
+The combined-pin loop (and the unitary loop) are wrapped in
+``try / catch`` so a single malformed descriptor cannot abort
+``render()`` — every passing pin still draws.
+
+#### What the overlay does NOT do
+
+- **Auto-dim every constituent** of any combined pair. Dimming is
+  driven exclusively by the active filter (severity / threshold /
+  action-type) — same rule the React Action Overview applies. A
+  constituent the operator explicitly kept above their loading
+  threshold reads at full strength.
+
 ---
 
 ## 7. Action-pin filter sync
@@ -541,6 +638,17 @@ The panel mirrors every Action Overview filter chip:
 - A `📌 N` pin counter in the section header showing the number of
   pins currently *rendered* (post-anchor-resolution count, mirroring
   `overview-pin-counter`).
+
+**Chip visual** — mirrors the React `CategoryToggle` component
+(`frontend/src/components/ActionOverviewDiagram.tsx:1265`): no
+blue solid fill on the *selected* chip; visual differentiation
+comes from dimming the *unselected* ones (`opacity: 0.65`,
+muted-grey background) and tinting the active chip's border to
+its swatch colour (palette matches `pinGlyph.js:SEVERITY_FILL`
+exactly so the chip family reads with the pin glyph). Replaces
+the legacy `background: #1d4ed8; color: #fff` solid-fill rule —
+the iframe sidebar and the React Action-Overview filter row now
+read identically.
 
 ### 7.4 Bidirectional sync
 
