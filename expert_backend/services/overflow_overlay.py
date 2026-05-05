@@ -131,14 +131,32 @@ def _build_overlay_block() -> str:
     width: 10px; height: 10px; border-radius: 2px;
     border: 1px solid #ccc; display: inline-block; flex-shrink: 0;
   }}
+  /* Filter chips mirror the CategoryToggle component
+     (frontend/src/components/ActionOverviewDiagram.tsx:1265): no
+     blue solid fill on the *selected* chip — visual differentiation
+     comes from dimming the *unselected* ones (lower opacity + muted
+     background) and tinting the active chip's border to its swatch
+     colour. Keeps the iframe sidebar consistent with the React
+     Action-Overview filter row. */
   #cs4g-filters .chip {{
-    padding: 2px 6px; border-radius: 4px;
-    border: 1px solid #ccc; cursor: pointer; user-select: none;
-    background: #fff; font-size: 11px;
+    padding: 2px 8px; border-radius: 12px;
+    border: 1px solid #d1d5db; cursor: pointer; user-select: none;
+    background: #f3f4f6; color: #6b7280;
+    font-size: 12px; opacity: 0.65;
+    display: inline-flex; align-items: center; gap: 4px;
+    transition: opacity 0.15s ease, background 0.15s ease;
   }}
   #cs4g-filters .chip[aria-pressed="true"] {{
-    background: #1d4ed8; color: #fff; border-color: #1d4ed8;
+    background: #fff; color: #111827; opacity: 1;
   }}
+  /* Severity chip border picks up the swatch colour when active —
+     palette matches pinGlyph.js:SEVERITY_FILL exactly so the chip
+     reads as the same family as the pin glyph. */
+  #cs4g-filters .chip[data-category="green"][aria-pressed="true"]  {{ border-color: #28a745; }}
+  #cs4g-filters .chip[data-category="orange"][aria-pressed="true"] {{ border-color: #f0ad4e; }}
+  #cs4g-filters .chip[data-category="red"][aria-pressed="true"]    {{ border-color: #dc3545; }}
+  #cs4g-filters .chip[data-category="grey"][aria-pressed="true"]   {{ border-color: #9ca3af; }}
+  #cs4g-filters .chip[aria-pressed="false"] .swatch {{ opacity: 0.5; }}
   #cs4g-filters .threshold input {{
     width: 48px; padding: 1px 4px; font-size: 11px;
     border: 1px solid #ccc; border-radius: 3px;
@@ -725,17 +743,15 @@ def _build_overlay_block() -> str:
     // ``fanOutColocatedPins``.
     fanOutColocated(positions, baseR);
 
-    // Pass 3 — collect ids that participate in any combined pin so
-    // their unitary glyph reads as "context" instead of a peer.
-    const dimmedConstituents = new Set();
-    for (const cp of combined) {{
-      const p1 = positions.get(cp.action1Id);
-      const p2 = positions.get(cp.action2Id);
-      if (p1 && p2) {{
-        dimmedConstituents.add(cp.action1Id);
-        dimmedConstituents.add(cp.action2Id);
-      }}
-    }}
+    // NB. The Action-Overview pin layer does NOT auto-dim the
+    // unitary constituents of a combined pin — dimming there is
+    // driven exclusively by the active filter (severity category /
+    // max-loading threshold / action-type chip). We follow the same
+    // contract here: a unitary pin's opacity is the filter pipeline's
+    // job, not the combined-pin renderer's. The previous auto-dim
+    // pass that lived here was removed so an operator can read the
+    // constituent's own loading rate at full strength even while a
+    // combined pair is highlighted.
 
     let drawn = 0;
     const svgNs = 'http://www.w3.org/2000/svg';
@@ -823,20 +839,16 @@ def _build_overlay_block() -> str:
       }}
     }}
 
-    // Render unitary pins. Constituents of any combined pair are
-    // dimmed so the combined glyph reads as the primary actor.
+    // Render unitary pins at their natural strength. Filter-driven
+    // dimming (max-loading threshold, category toggle, action-type
+    // chip) is applied later by ``renderFilterState`` via the
+    // shared opacity logic — same contract as the Action Overview's
+    // ``renderUnitaryPin``.
     for (const pin of unitary) {{
       try {{
         const centre = positions.get(pin.actionId);
         if (!centre) continue;
         const g = buildPin(pin, centre, layer);
-        if (dimmedConstituents.has(pin.actionId) && !pin.unsimulated) {{
-          // Lighter than full opacity but visibly heavier than the
-          // un-simulated 0.5 dim — mirrors the "context" feel the
-          // Action Overview applies to combined-pin constituents.
-          g.setAttribute('opacity', '0.55');
-          g.setAttribute('data-combined-constituent', '1');
-        }}
         layer.appendChild(g);
         drawn += 1;
       }} catch (e) {{

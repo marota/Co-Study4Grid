@@ -332,14 +332,36 @@ class TestInjectOverlay:
         # "+" badge mirroring the Action Overview's combined-pin badge.
         assert "plus.textContent = '+';" in out
 
-    def test_combined_pin_dims_unitary_constituents(self) -> None:
-        """When a combined pin's two halves resolve, the unitary
-        pins themselves are rendered with a reduced opacity so the
-        combined glyph reads as the primary actor."""
+    def test_combined_pin_does_not_auto_dim_unitary_constituents(self) -> None:
+        """The Action-Overview pin layer applies dimming through the
+        active filter pipeline (severity category / max-loading
+        threshold / action-type chip), NOT as a side effect of a
+        combined pair being present. The iframe overlay follows the
+        same contract: the unitary render loop must NOT carry an
+        automatic opacity / data-combined-constituent override —
+        that would over-dim a constituent the operator explicitly
+        kept above their loading threshold."""
         out = inject_overlay(_BASE_HTML)
-        assert "dimmedConstituents" in out
-        assert "data-combined-constituent" in out
-        assert "setAttribute('opacity', '0.55')" in out
+        assert "dimmedConstituents" not in out
+        assert "data-combined-constituent" not in out
+        # The unitary render loop defers dimming to renderFilterState.
+        assert "renderFilterState" in out
+
+    def test_filter_chips_drop_blue_solid_fill_for_dim_unselected_style(self) -> None:
+        """The iframe sidebar filter chips mirror the
+        ``CategoryToggle`` component in the React Action Overview:
+        no blue solid fill on the *selected* chip, dim the
+        *unselected* ones (lower opacity + muted background) and
+        tint the active chip's border to its swatch colour."""
+        out = inject_overlay(_BASE_HTML)
+        # Legacy blue-fill rule must be gone.
+        assert "background: #1d4ed8; color: #fff" not in out
+        # New rule: dim unselected, swatch-coloured border on
+        # active per-category chips.
+        assert "opacity: 0.65" in out
+        assert ".chip[data-category=\"green\"][aria-pressed=\"true\"]" in out
+        assert ".chip[data-category=\"red\"][aria-pressed=\"true\"]" in out
+        assert ".chip[aria-pressed=\"false\"] .swatch" in out
 
     def test_pins_fan_out_when_colocated(self) -> None:
         """Two pins resolving to the same anchor must be spread on a

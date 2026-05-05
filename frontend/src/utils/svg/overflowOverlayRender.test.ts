@@ -243,11 +243,14 @@ describe('overflow overlay — render() actually attaches pin glyphs', () => {
         expect(ids).toContain('a+b');
         // Dashed connector path between the two constituents.
         expect(layer.querySelector('.cs4g-overflow-combined-curve')).not.toBeNull();
-        // Constituent pins are flagged for dimming.
-        const constituents = Array.from(layer.querySelectorAll(
+        // Constituents are NOT auto-dimmed. The Action Overview pin
+        // layer's contract is "filter pipeline owns dimming, the
+        // combined-pin renderer doesn't touch unitary opacity" —
+        // the overflow overlay now follows the same rule (was
+        // data-combined-constituent="1" + opacity 0.55 in 0.7.0).
+        expect(layer.querySelectorAll(
             '[data-combined-constituent="1"]',
-        )).map(el => el.getAttribute('data-action-id'));
-        expect(constituents).toEqual(expect.arrayContaining(['a', 'b']));
+        )).toHaveLength(0);
 
         cleanup();
     });
