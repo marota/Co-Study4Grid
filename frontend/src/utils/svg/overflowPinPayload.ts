@@ -37,6 +37,21 @@ import { matchesActionTypeFilter } from '../actionTypes';
 export interface OverflowPin {
     actionId: string;
     /**
+     * Marks combined-action pins (action ids containing ``+``). The
+     * overlay places one such pin at the midpoint of a curved Bézier
+     * connector drawn between the two unitary constituent pins —
+     * mirroring the Action Overview NAD's ``CombinedPinInfo`` layer
+     * (see ``actionPinData.buildCombinedActionPins`` /
+     * ``actionPinRender.renderCombinedPin``). When set, ``action1Id``
+     * + ``action2Id`` MUST also be populated; ``substation`` /
+     * ``lineNames`` / ``nodeCandidates`` are ignored — the combined
+     * pin's position is derived from the constituent positions
+     * client-side.
+     */
+    isCombined?: boolean;
+    action1Id?: string;
+    action2Id?: string;
+    /**
      * Primary anchor — substation id when the overflow graph nodes are
      * substations, otherwise the first matching voltage-level id. The
      * overlay JS tries this name first against ``data-name`` and falls
@@ -288,7 +303,13 @@ export const buildOverflowPinPayload = (
     const knownSet = overflowSubstations ?? new Set<string>();
     const acceptAny = !overflowSubstations;
     const out: OverflowPin[] = [];
+    const unitaryIds = new Set<string>();
     for (const [actionId, details] of Object.entries(actions)) {
+        // Combined-action entries (key contains ``+``) are emitted
+        // separately at the end of the loop with both constituent
+        // ids attached. The overlay computes their position
+        // client-side from the unitary anchors.
+        if (actionId.includes('+')) continue;
         // Action-Overview filters: severity category, max-loading
         // threshold, action-type chip. Identical to the rules
         // applied by ``ActionOverviewDiagram`` and ``ActionFeed`` so
@@ -308,6 +329,7 @@ export const buildOverflowPinPayload = (
             acceptAny ? new Set(Object.values(vlToSubstation)) : knownSet,
         );
         if (!anchor) continue;
+        unitaryIds.add(actionId);
         out.push({
             actionId,
             substation: anchor.substation,
@@ -320,6 +342,37 @@ export const buildOverflowPinPayload = (
             // matching one of these line names — same anchoring logic
             // as the Action Overview NAD pin layer.
             lineNames: anchor.lineNames,
+            label: formatPinLabel(details),
+            severity: computeActionSeverity(details, monitoringFactor),
+            isSelected: selectedActionIds.has(actionId),
+            isRejected: rejectedActionIds.has(actionId),
+        });
+    }
+
+    // Combined-action pins. Mirrors ``buildCombinedActionPins`` in
+    // ``actionPinData.ts``: every ``actions[id]`` whose key holds a
+    // single ``+`` and whose two halves both resolved to a unitary
+    // pin emits a combined descriptor. The overlay JS draws a
+    // dashed Bézier connector between the constituent anchors and
+    // places the combined pin at the curve midpoint.
+    for (const [actionId, details] of Object.entries(actions)) {
+        if (!actionId.includes('+')) continue;
+        const parts = actionId.split('+');
+        if (parts.length !== 2) continue;
+        const [id1, id2] = parts;
+        if (!unitaryIds.has(id1) || !unitaryIds.has(id2)) continue;
+        if (overviewFilters) {
+            if (!actionPassesOverviewFilter(
+                details, monitoringFactor,
+                overviewFilters.categories, overviewFilters.threshold,
+            )) continue;
+        }
+        out.push({
+            actionId,
+            isCombined: true,
+            action1Id: id1,
+            action2Id: id2,
+            substation: '',
             label: formatPinLabel(details),
             severity: computeActionSeverity(details, monitoringFactor),
             isSelected: selectedActionIds.has(actionId),

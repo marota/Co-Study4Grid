@@ -306,6 +306,74 @@ describe('buildOverflowPinPayload — anchor priority', () => {
         expect(out).toHaveLength(1);
         expect(out[0].lineNames).toContain('LINE_AB');
     });
+
+    it('combined-action key (id1+id2) emits an isCombined descriptor with both halves', () => {
+        // A simulated combined pair has its own ``actions`` entry
+        // whose key carries ``+``. The overflow overlay places the
+        // combined pin at the midpoint of a curve drawn between the
+        // two unitary pins, so the descriptor must carry the ids of
+        // both halves and skip the per-edge anchor logic.
+        const actions: Record<string, ActionDetail> = {
+            ls_a: {
+                description_unitaire: 'load shedding A',
+                max_rho: 0.4,
+                load_shedding_details: [
+                    { load_name: 'L1', voltage_level_id: 'VLA', shedded_mw: 10 },
+                ],
+            } as unknown as ActionDetail,
+            ls_b: {
+                description_unitaire: 'load shedding B',
+                max_rho: 0.5,
+                load_shedding_details: [
+                    { load_name: 'L2', voltage_level_id: 'VLB', shedded_mw: 12 },
+                ],
+            } as unknown as ActionDetail,
+            'ls_a+ls_b': {
+                description_unitaire: 'combined LS',
+                max_rho: 0.7,
+            } as unknown as ActionDetail,
+        };
+        const meta = makeMetaIndex(
+            { VLA: { equipmentId: 'VLA' }, VLB: { equipmentId: 'VLB' } },
+            {},
+        );
+        const out = buildOverflowPinPayload(
+            actions, meta, { VLA: 'SUB_A', VLB: 'SUB_B' }, 0.95,
+            new Set(), new Set(),
+        );
+        const combined = out.filter(p => p.isCombined);
+        expect(combined).toHaveLength(1);
+        expect(combined[0].action1Id).toBe('ls_a');
+        expect(combined[0].action2Id).toBe('ls_b');
+        expect(combined[0].actionId).toBe('ls_a+ls_b');
+        // Unitary halves must also be in the payload — the overlay
+        // draws the connector between THEIR positions.
+        expect(out.some(p => p.actionId === 'ls_a' && !p.isCombined)).toBe(true);
+        expect(out.some(p => p.actionId === 'ls_b' && !p.isCombined)).toBe(true);
+    });
+
+    it('combined-action descriptor is dropped when one half does not resolve', () => {
+        const actions: Record<string, ActionDetail> = {
+            // Only ls_a resolves — ls_b has no anchor (no metadata for VLB).
+            ls_a: {
+                description_unitaire: 'load shedding A',
+                max_rho: 0.4,
+                load_shedding_details: [
+                    { load_name: 'L1', voltage_level_id: 'VLA', shedded_mw: 10 },
+                ],
+            } as unknown as ActionDetail,
+            'ls_a+ls_b': {
+                description_unitaire: 'combined LS',
+                max_rho: 0.7,
+            } as unknown as ActionDetail,
+        };
+        const meta = makeMetaIndex({ VLA: { equipmentId: 'VLA' } }, {});
+        const out = buildOverflowPinPayload(
+            actions, meta, { VLA: 'SUB_A' }, 0.95,
+            new Set(), new Set(),
+        );
+        expect(out.some(p => p.isCombined)).toBe(false);
+    });
 });
 
 // ---------------------------------------------------------------------
