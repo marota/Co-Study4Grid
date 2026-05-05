@@ -711,4 +711,83 @@ describe('buildOverflowUnsimulatedPinPayload', () => {
             'load_shedding_V1 — not yet simulated (double-click to run)',
         );
     });
+
+    it('action-type chip drops unsimulated ids of other types (LS-only filter)', () => {
+        // Regression for the Overflow Analysis pin filter bug: the
+        // ACTION PINS FILTERS chip row (DISCO / RECO / LS / OPEN /
+        // CLOSE / PST) must filter unsimulated pins the same way the
+        // Action Overview's `unsimulatedPins` memo does — otherwise
+        // the operator sees pins for action types they explicitly
+        // hid. Fixed by passing `overviewFilters` through to the
+        // builder.
+        const out = buildOverflowUnsimulatedPinPayload(
+            ['load_shedding_V1', 'disco_LINE_AB'],
+            new Set(),
+            meta,
+            { V1: 'SUB_A', V2: 'SUB_B' },
+            undefined,
+            undefined,
+            {
+                categories: { green: true, orange: true, red: true, grey: true },
+                threshold: 200,
+                actionType: 'ls',
+                showUnsimulated: true,
+            },
+        );
+        expect(out.map(p => p.actionId)).toEqual(['load_shedding_V1']);
+    });
+
+    it('action-type chip prefers scoreInfo.type over id-based heuristics', () => {
+        // When the score-info supplies a type, that wins over the
+        // id-based `classifyActionType` fallback — same precedence
+        // ActionOverviewDiagram applies. Use a load_shedding score-
+        // type on an id whose tokens ("ambiguous_id_V1") would not
+        // otherwise classify as `ls`.
+        const out = buildOverflowUnsimulatedPinPayload(
+            ['ambiguous_id_V1'],
+            new Set(),
+            meta,
+            { V1: 'SUB_A' },
+            {
+                ambiguous_id_V1: {
+                    type: 'load_shedding',
+                    score: 0.5,
+                    mwStart: 10,
+                    tapStart: null,
+                    rankInType: 1,
+                    countInType: 1,
+                    maxScoreInType: 0.5,
+                },
+            },
+            undefined,
+            {
+                categories: { green: true, orange: true, red: true, grey: true },
+                threshold: 200,
+                actionType: 'ls',
+                showUnsimulated: true,
+            },
+        );
+        expect(out).toHaveLength(1);
+        expect(out[0].actionId).toBe('ambiguous_id_V1');
+    });
+
+    it('action-type chip set to "all" keeps every unsimulated pin (no filter)', () => {
+        const out = buildOverflowUnsimulatedPinPayload(
+            ['load_shedding_V1', 'disco_LINE_AB'],
+            new Set(),
+            meta,
+            { V1: 'SUB_A', V2: 'SUB_B' },
+            undefined,
+            undefined,
+            {
+                categories: { green: true, orange: true, red: true, grey: true },
+                threshold: 200,
+                actionType: 'all',
+                showUnsimulated: true,
+            },
+        );
+        expect(out.map(p => p.actionId).sort()).toEqual(
+            ['disco_LINE_AB', 'load_shedding_V1'],
+        );
+    });
 });
