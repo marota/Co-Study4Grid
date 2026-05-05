@@ -7,7 +7,14 @@ on:
     branches: [ main ]
 
 jobs:
+  # ------------------------------------------------------------------
+  # Fast lane: every backend test that does NOT need the graphviz
+  # `dot` binary. Skips the system-package install entirely (which
+  # used to hang for ~8 minutes on the Azure apt mirror) and runs the
+  # ~720 pytest items in ~15 seconds.
+  # ------------------------------------------------------------------
   test-backend:
+    name: Backend tests (no graphviz)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,15 +22,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - name: Install Graphviz (provides ``dot``)
-        run: sudo apt-get update && sudo apt-get install -y graphviz
+          cache: 'pip'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install ".[test]"
           pip install --no-deps expert_op4grid_recommender
-      - name: Run Pytest
-        run: pytest
+      - name: Run Pytest (excluding graphviz-dependent tests)
+        run: pytest --ignore=expert_backend/tests/test_overflow_html_dim_logic.py
 
   test-frontend:
     runs-on: ubuntu-latest
@@ -47,3 +53,39 @@ jobs:
         run: |
           cd frontend
           npm run lint
+
+  # ------------------------------------------------------------------
+  # Slow lane: the small subset of backend tests that exercise the
+  # upstream interactive-HTML viewer through pydot → graphviz `dot`.
+  # Gated behind the fast lanes so a regression in non-graphviz code
+  # is reported in ~1 minute, and only the prod/load-layer fixtures
+  # pay the (cached) apt install cost.
+  #
+  # `awalsh128/cache-apt-pkgs-action` caches the resolved .deb files
+  # across runs — first run is ~30 s, subsequent runs restore from
+  # cache in ~5 s, vs. the ~8 minutes the bare `apt-get update` was
+  # taking on the Azure mirror.
+  # ------------------------------------------------------------------
+  test-backend-graphviz:
+    name: Backend tests requiring graphviz
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: 'pip'
+      - name: Install Graphviz (cached apt)
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: graphviz
+          version: 1.0
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[test]"
+          pip install --no-deps expert_op4grid_recommender
+      - name: Run graphviz-dependent Pytest subset
+        run: pytest expert_backend/tests/test_overflow_html_dim_logic.py
