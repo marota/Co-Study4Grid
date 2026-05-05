@@ -46,15 +46,15 @@ test = [
     "lxml",
     "pandas",
 ]
+quality = [
+    "ruff>=0.6",
+    "radon>=6.0",
+]
 
 [project.scripts]
 # Manual fallback when the post-install hook can't elevate to install
 # the Graphviz ``dot`` binary on a user's machine.
 costudy4grid-install-graphviz = "expert_backend.install_graphviz:ensure_dot"
-quality = [
-    "ruff>=0.6",
-    "radon>=6.0",
-]
 
 [tool.setuptools.packages.find]
 where = ["."]
