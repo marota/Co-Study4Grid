@@ -674,15 +674,15 @@ def _build_overlay_block() -> str:
     return {{ ctrlX: ctrlX, ctrlY: ctrlY, midX: midX, midY: midY }};
   }}
 
-  // Severity → solid fill colour, matching ``severityFill`` in
-  // ``frontend/src/styles/tokens.ts``. Used to colour the dashed
-  // connector curve between a combined pin and its constituents.
-  const SEVERITY_FILL = {{
-    green:  '#16a34a',
-    orange: '#f97316',
-    red:    '#dc2626',
-    grey:   '#6b7280',
-  }};
+  // The shared ``pinGlyph.js`` block above already declares
+  // ``const SEVERITY_FILL`` at the top of this same IIFE
+  // (pinGlyph.js:33). Re-declaring it here was a duplicate
+  // ``const`` and the JS engine threw ``Identifier 'SEVERITY_FILL'
+  // has already been declared`` at parse time, silently disabling
+  // the entire overlay script — every pin disappeared from the
+  // graph in 0.7.0 until this duplicate was removed. We reuse the
+  // upstream constant for the dashed connector curve between a
+  // combined pin and its unitary constituents.
 
   function render() {{
     const layer = ensureLayer();
