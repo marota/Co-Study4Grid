@@ -839,16 +839,22 @@ def _build_overlay_block() -> str:
       }}
     }}
 
-    // Render unitary pins at their natural strength. Filter-driven
-    // dimming (max-loading threshold, category toggle, action-type
-    // chip) is applied later by ``renderFilterState`` via the
-    // shared opacity logic — same contract as the Action Overview's
-    // ``renderUnitaryPin``.
+    // Render unitary pins. Pins flagged ``dimmedByFilter`` by the
+    // payload builder failed the active overview filter but were
+    // kept on the wire because a passing combined-action pin
+    // references them — render with reduced opacity so they read
+    // as "context for the combined glyph" instead of as first-class
+    // actions. Same contract as the ``dimmedByFilter`` branch in
+    // ``renderUnitaryPin`` (frontend/src/utils/svg/actionPinRender.ts).
     for (const pin of unitary) {{
       try {{
         const centre = positions.get(pin.actionId);
         if (!centre) continue;
         const g = buildPin(pin, centre, layer);
+        if (pin.dimmedByFilter && !pin.unsimulated) {{
+          g.setAttribute('opacity', '0.35');
+          g.setAttribute('data-dimmed-by-filter', 'true');
+        }}
         layer.appendChild(g);
         drawn += 1;
       }} catch (e) {{
