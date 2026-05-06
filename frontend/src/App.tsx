@@ -81,11 +81,6 @@ function App() {
    * ``selectedContingency`` and triggers the diagram fetch.
    */
   const [pendingContingency, setPendingContingency] = useState<string[]>([]);
-  /**
-   * Free-text input value for the contingency selector — what the user
-   * is typing right now (auto-completed against the branch list).
-   */
-  const [contingencyInput, setContingencyInput] = useState<string>('');
   const [branches, setBranches] = useState<string[]>([]);
   const [voltageLevels, setVoltageLevels] = useState<string[]>([]);
   /** ID → human-readable name for branches (lines + transformers) and VLs. */
@@ -253,34 +248,6 @@ function App() {
     return { unsimulatedActionIds: ids, unsimulatedActionInfo: info };
   }, [analysis.result?.action_scores, analysis.result?.actions]);
 
-  const contingencyOptions = useMemo(() => {
-    const q = contingencyInput.toUpperCase();
-    const alreadyPicked = new Set(pendingContingency);
-    const opts: string[] = [];
-    if (!q) {
-      for (const b of branches) {
-        if (alreadyPicked.has(b)) continue;
-        opts.push(b);
-        if (opts.length >= 50) break;
-      }
-    } else {
-      for (const b of branches) {
-        if (alreadyPicked.has(b)) continue;
-        const name = nameMap[b] || '';
-        if (b.toUpperCase().includes(q) || name.toUpperCase().includes(q)) {
-          opts.push(b);
-          if (opts.length >= 50) break;
-        }
-      }
-    }
-    // Show "DisplayName (ID)" as the visible label so the user sees real names,
-    // while `value` stays the raw ID that gets submitted.
-    return opts.map(b => {
-      const name = nameMap[b];
-      return <option key={b} value={b} label={name ? `${name}  —  ${b}` : b} />;
-    });
-  }, [branches, contingencyInput, nameMap, pendingContingency]);
-
   const recommenderConfig = useMemo<RecommenderDisplayConfig>(() => ({
     minLineReconnections, minCloseCoupling, minOpenCoupling,
     minLineDisconnections, minPst, minLoadShedding,
@@ -419,7 +386,6 @@ function App() {
     diagrams.lastZoomState.current = { query: '', branch: '' };
     setSelectedContingency([]);
     setPendingContingency([]);
-    setContingencyInput('');
     setShowMonitoringWarning(false);
     setVlToSubstation({});
     setOverflowPinsEnabled(false);
@@ -873,7 +839,6 @@ function App() {
       setNameMap({ ...branchRes.name_map, ...vlRes.name_map });
       setSelectedContingency([]);
       setPendingContingency([]);
-      setContingencyInput('');
 
       diagrams.setNominalVoltageMap(nomVRes.mapping);
       diagrams.setUniqueVoltages(nomVRes.unique_kv);
@@ -941,7 +906,6 @@ function App() {
       setNameMap({ ...branchRes.name_map, ...vlRes.name_map });
       setSelectedContingency([]);
       setPendingContingency([]);
-      setContingencyInput('');
 
       diagrams.setNominalVoltageMap(nomVRes.mapping);
       diagrams.setUniqueVoltages(nomVRes.unique_kv);
@@ -998,7 +962,6 @@ function App() {
         : [];
       setSelectedContingency(pending);
       setPendingContingency(pending);
-      setContingencyInput('');
     } else if (confirmDialog.type === 'applySettings') {
       applySettingsImmediate();
     } else if (confirmDialog.type === 'changeNetwork') {
@@ -1074,35 +1037,25 @@ function App() {
 
   // ===== Extracted JSX callbacks (stable references for React.memo) =====
 
-  const handleContingencyChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setContingencyInput(e.target.value);
-  }, []);
-
   /**
-   * Add the typed-in element (or the value coming back from a datalist
-   * pick) to the pending-contingency list. Idempotent — duplicate
-   * adds are ignored. Element IDs unknown to the loaded network are
-   * silently rejected (the input is cleared so the user notices).
+   * Replace the pending list with whatever the multi-select dropdown
+   * currently shows. We diff against the previous pending list to
+   * emit a single ``contingency_element_added`` /
+   * ``contingency_element_removed`` event per change so the
+   * interaction log stays replay-friendly even when the user picks
+   * several elements before pressing Apply.
    */
-  const handleContingencyAddElement = useCallback((rawId?: string) => {
-    const id = (rawId ?? contingencyInput).trim();
-    if (!id) return;
-    if (branches.length > 0 && !branches.includes(id)) {
-      setError(`Unknown element: ${id}`);
-      return;
+  const handlePendingContingencyChange = useCallback((next: string[]) => {
+    const prev = pendingContingency;
+    const prevSet = new Set(prev);
+    const nextSet = new Set(next);
+    for (const id of next) {
+      if (!prevSet.has(id)) interactionLogger.record('contingency_element_added', { element: id });
     }
-    if (pendingContingency.includes(id)) {
-      setContingencyInput('');
-      return;
+    for (const id of prev) {
+      if (!nextSet.has(id)) interactionLogger.record('contingency_element_removed', { element: id });
     }
-    interactionLogger.record('contingency_element_added', { element: id });
-    setPendingContingency([...pendingContingency, id]);
-    setContingencyInput('');
-  }, [contingencyInput, pendingContingency, branches, setError]);
-
-  const handleContingencyRemoveElement = useCallback((id: string) => {
-    interactionLogger.record('contingency_element_removed', { element: id });
-    setPendingContingency(pendingContingency.filter(e => e !== id));
+    setPendingContingency(next);
   }, [pendingContingency]);
 
   /**
@@ -1114,14 +1067,12 @@ function App() {
     const next = [...pendingContingency];
     interactionLogger.record('contingency_applied', { elements: next });
     setSelectedContingency(next);
-    setContingencyInput('');
   }, [pendingContingency]);
 
   const handleContingencyClear = useCallback(() => {
     interactionLogger.record('contingency_cleared', {});
     setPendingContingency([]);
     setSelectedContingency([]);
-    setContingencyInput('');
   }, []);
 
   const handleDismissWarning = useCallback(() => {
@@ -1328,16 +1279,12 @@ function App() {
         <AppSidebar
           selectedContingency={selectedContingency}
           pendingContingency={pendingContingency}
-          contingencyInput={contingencyInput}
           branches={branches}
           nameMap={nameMap}
           n1LinesOverloaded={n1Diagram?.lines_overloaded}
           n1LinesOverloadedRho={n1Diagram?.lines_overloaded_rho}
           selectedOverloads={selectedOverloads}
-          contingencyOptions={contingencyOptions}
-          onContingencyChange={handleContingencyChange}
-          onContingencyAddElement={handleContingencyAddElement}
-          onContingencyRemoveElement={handleContingencyRemoveElement}
+          onPendingContingencyChange={handlePendingContingencyChange}
           onContingencyApply={handleContingencyApply}
           onContingencyClear={handleContingencyClear}
           displayName={displayName}
