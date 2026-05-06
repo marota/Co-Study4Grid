@@ -72,15 +72,18 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
    `.nad-vl-nodes` / `.nad-label-nodes`. Cover both shapes (and the
    inline `nad-label-box` divs that some pypowsybl builds emit at the
    SVG root without a foreignObject wrapper) so the toggle works across
-   all networks. `!important` overrides pypowsybl's own inline `<style>`
-   block, which is appended to the document AFTER App.css when the SVG
-   is injected by `replaceChildren(svg)`. */
+   all networks. `.nad-text-edges` hides the connector tick that links
+   each voltage-level node to its label box — without it the label is
+   gone but a dangling line remains. `!important` overrides pypowsybl's
+   own inline `<style>` block, which is appended to the document AFTER
+   App.css when the SVG is injected by `replaceChildren(svg)`. */
 .svg-container.nad-hide-vl-labels .nad-text-nodes,
 .svg-container.nad-hide-vl-labels foreignObject.nad-text-nodes,
 .svg-container.nad-hide-vl-labels .nad-vl-nodes foreignObject,
 .svg-container.nad-hide-vl-labels .nad-label-nodes foreignObject,
 .svg-container.nad-hide-vl-labels .nad-label-nodes,
-.svg-container.nad-hide-vl-labels .nad-label-box {
+.svg-container.nad-hide-vl-labels .nad-label-box,
+.svg-container.nad-hide-vl-labels .nad-text-edges {
     display: none !important;
 }
 
