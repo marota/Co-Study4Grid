@@ -9,6 +9,7 @@ import gzip
 import json as json_module
 import logging
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -454,8 +455,54 @@ def get_voltage_level_substations() -> dict:
 def pick_path(type: str = Query("file", enum=["file", "dir"])) -> dict:
     """
     Opens a native OS file or directory picker and returns the selected path.
-    Uses a subprocess to avoid tkinter/display issues in the main thread.
+
+    macOS uses AppleScript via ``osascript`` — no Python GUI deps required and
+    the dialog reliably comes to the foreground. tkinter on macOS is often
+    missing from system Python builds and the ``-topmost`` workaround behaves
+    inconsistently. Other platforms keep the tkinter subprocess path.
     """
+    try:
+        if platform.system() == "Darwin":
+            return _pick_path_macos(type)
+        return _pick_path_tkinter(type)
+    except subprocess.TimeoutExpired:
+        return {"path": "", "error": "File picker timed out (no selection made)."}
+    except Exception as e:
+        logger.warning("Error picking path: %s", e)
+        return {"path": "", "error": str(e)}
+
+
+def _pick_path_macos(kind: str) -> dict:
+    """Open the native macOS file/folder picker via ``osascript``."""
+    if kind == "dir":
+        applescript = 'POSIX path of (choose folder with prompt "Select folder")'
+    else:
+        applescript = 'POSIX path of (choose file with prompt "Select file")'
+    try:
+        proc = subprocess.run(
+            ["osascript", "-e", applescript],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except FileNotFoundError:
+        return {"path": "", "error": "osascript not available — paste the path manually."}
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        # User-cancel surfaces as a non-zero exit with the canonical
+        # AppleScript "User canceled" / error code -128. Treat it as an
+        # empty selection so the frontend doesn't pop a noisy alert.
+        if "User canceled" in stderr or "User cancelled" in stderr or "(-128)" in stderr:
+            return {"path": ""}
+        return {
+            "path": "",
+            "error": stderr or f"osascript exited with status {proc.returncode}",
+        }
+    return {"path": proc.stdout.strip()}
+
+
+def _pick_path_tkinter(kind: str) -> dict:
+    """Open the native picker via a tkinter subprocess. Used on Linux/Windows."""
     # Keep the root window tiny and topmost instead of withdrawing it:
     # withdraw() makes -topmost a no-op on some window managers, so the
     # filedialog can end up hidden behind the browser. We briefly lift
@@ -470,7 +517,7 @@ root.attributes('-topmost', True)
 root.lift()
 root.focus_force()
 root.update()
-if "{type}" == "dir":
+if "{kind}" == "dir":
     path = filedialog.askdirectory(parent=root)
 else:
     path = filedialog.askopenfilename(parent=root)
@@ -478,26 +525,20 @@ root.destroy()
 if path:
     print(path)
 """
-    try:
-        # Run the script with the same python interpreter as the server.
-        # Capture stderr separately so tkinter import / display errors can
-        # be surfaced to the frontend instead of being silently swallowed.
-        proc = subprocess.run(
-            [sys.executable, "-c", script],
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-        if proc.returncode != 0:
-            err = (proc.stderr or "").strip() or f"file picker exited with status {proc.returncode}"
-            logger.warning("Error picking path: %s", err)
-            return {"path": "", "error": err}
-        return {"path": proc.stdout.strip()}
-    except subprocess.TimeoutExpired:
-        return {"path": "", "error": "File picker timed out (no selection made)."}
-    except Exception as e:
-        logger.warning("Error picking path: %s", e)
-        return {"path": "", "error": str(e)}
+    # Run the script with the same python interpreter as the server.
+    # Capture stderr separately so tkinter import / display errors can
+    # be surfaced to the frontend instead of being silently swallowed.
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if proc.returncode != 0:
+        err = (proc.stderr or "").strip() or f"file picker exited with status {proc.returncode}"
+        logger.warning("Error picking path: %s", err)
+        return {"path": "", "error": err}
+    return {"path": proc.stdout.strip()}
 
 @app.post("/api/save-session")
 def save_session(request: SaveSessionRequest) -> dict:

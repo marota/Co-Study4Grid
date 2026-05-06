@@ -164,5 +164,71 @@ describe('useSettings — interaction logging', () => {
             expect(setter).toHaveBeenCalledWith('/tmp/x.xiidm');
             alertSpy.mockRestore();
         });
+
+        it('hints at backend version mismatch when the request 404s', async () => {
+            // axios error shape with response.status — what the user
+            // hits when the picker endpoint isn't on the running
+            // backend (stale instance, mismatched code).
+            const { api } = await import('../api');
+            const axiosLike = Object.assign(new Error('Request failed with status code 404'), {
+                response: { status: 404 },
+            });
+            (api.pickPath as ReturnType<typeof vi.fn>).mockRejectedValue(axiosLike);
+            const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
+
+            const { result } = renderHook(() => useSettings());
+            await act(async () => {
+                await result.current.pickSettingsPath('file', vi.fn());
+            });
+
+            expect(alertSpy).toHaveBeenCalledTimes(1);
+            const message = alertSpy.mock.calls[0][0] as string;
+            expect(message).toContain('Request failed with status code 404');
+            expect(message).toContain('http://127.0.0.1:8000');
+            expect(message).toMatch(/restart it after pulling the latest code/);
+            alertSpy.mockRestore();
+        });
+
+        it('hints at backend not running when the request fails with a network error', async () => {
+            const { api } = await import('../api');
+            const axiosLike = Object.assign(new Error('Network Error'), {
+                code: 'ERR_NETWORK',
+            });
+            (api.pickPath as ReturnType<typeof vi.fn>).mockRejectedValue(axiosLike);
+            const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
+
+            const { result } = renderHook(() => useSettings());
+            await act(async () => {
+                await result.current.pickSettingsPath('file', vi.fn());
+            });
+
+            expect(alertSpy).toHaveBeenCalledTimes(1);
+            const message = alertSpy.mock.calls[0][0] as string;
+            expect(message).toContain('http://127.0.0.1:8000');
+            alertSpy.mockRestore();
+        });
+
+        it('does not add the backend hint for backend-reported errors (e.g. tkinter missing)', async () => {
+            // When the backend itself returns 200 with an `error` field
+            // (the picker subprocess died, tkinter missing, …) the
+            // problem isn't transport — surfacing the backend hint
+            // would be misleading. api.pickPath rethrows the error
+            // string as a plain Error, no `response` attached.
+            const { api } = await import('../api');
+            (api.pickPath as ReturnType<typeof vi.fn>).mockRejectedValue(
+                new Error('No module named tkinter'),
+            );
+            const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
+
+            const { result } = renderHook(() => useSettings());
+            await act(async () => {
+                await result.current.pickSettingsPath('file', vi.fn());
+            });
+
+            const message = alertSpy.mock.calls[0][0] as string;
+            expect(message).toContain('No module named tkinter');
+            expect(message).not.toContain('http://127.0.0.1:8000');
+            alertSpy.mockRestore();
+        });
     });
 });
