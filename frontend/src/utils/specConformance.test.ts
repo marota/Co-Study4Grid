@@ -56,7 +56,6 @@ const SPEC: Record<string, SpecRow> = {
   contingency_element_added:      { required: new Set(['element']) },
   contingency_element_removed:    { required: new Set(['element']) },
   contingency_applied:            { required: new Set(['elements']) },
-  contingency_cleared:            { required: new Set() },
   // --- Two-Step Analysis ---
   analysis_step1_started:         { required: new Set(['element']) },
   overload_toggled:               { required: new Set(['overload', 'selected']) },

@@ -1069,12 +1069,6 @@ function App() {
     setSelectedContingency(next);
   }, [pendingContingency]);
 
-  const handleContingencyClear = useCallback(() => {
-    interactionLogger.record('contingency_cleared', {});
-    setPendingContingency([]);
-    setSelectedContingency([]);
-  }, []);
-
   const handleDismissWarning = useCallback(() => {
     setShowMonitoringWarning(false);
   }, [setShowMonitoringWarning]);
@@ -1286,7 +1280,6 @@ function App() {
           selectedOverloads={selectedOverloads}
           onPendingContingencyChange={handlePendingContingencyChange}
           onContingencyApply={handleContingencyApply}
-          onContingencyClear={handleContingencyClear}
           displayName={displayName}
           onContingencyZoom={handleZoomOnActiveTab}
           onOverloadClick={wrappedAssetClick as (actionId: string, assetName: string, tab: 'n' | 'contingency') => void}

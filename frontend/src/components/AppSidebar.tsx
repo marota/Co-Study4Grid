@@ -30,8 +30,6 @@ interface AppSidebarProps {
   onPendingContingencyChange: (next: string[]) => void;
   /** Commit ``pendingContingency`` as the applied contingency. */
   onContingencyApply: () => void;
-  /** Discard the entire pending list and the applied contingency. */
-  onContingencyClear: () => void;
   displayName: (id: string) => string;
   onContingencyZoom: (assetName: string) => void;
   onOverloadClick: (actionId: string, assetName: string, tab: 'n' | 'contingency') => void;
@@ -72,7 +70,6 @@ export default function AppSidebar({
   selectedOverloads,
   onPendingContingencyChange,
   onContingencyApply,
-  onContingencyClear,
   displayName,
   onContingencyZoom,
   onOverloadClick,
@@ -120,7 +117,34 @@ export default function AppSidebar({
       <div style={{ flex: 1, overflowY: 'auto', padding: space[4], minHeight: 0, display: 'flex', flexDirection: 'column', gap: space[4] }}>
         {branches.length > 0 && (
           <div style={{ flexShrink: 0, padding: `${space[3]} ${space[4]}`, background: colors.surface, borderRadius: radius.lg, border: `1px solid ${colors.border}`, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-            <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>🎯 Select Contingency</label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space[2], marginBottom: '5px' }}>
+              <label style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>🎯 Select Contingency</label>
+              <button
+                type="button"
+                onClick={onContingencyApply}
+                disabled={pendingContingency.length === 0 || !dirty}
+                title={
+                  pendingContingency.length === 0
+                    ? 'Pick at least one element first'
+                    : dirty
+                      ? `Trigger contingency (${pendingContingency.length} element${pendingContingency.length > 1 ? 's' : ''})`
+                      : 'Already triggered'
+                }
+                style={{
+                  padding: `${space[1]} ${space[3]}`,
+                  background: pendingContingency.length === 0 || !dirty ? colors.disabled : colors.accent,
+                  color: colors.textOnBrand,
+                  border: 'none',
+                  borderRadius: radius.sm,
+                  cursor: pendingContingency.length === 0 || !dirty ? 'not-allowed' : 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '0.78rem',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                ▶ Trigger
+              </button>
+            </div>
             <Select<ContingencyOption, true>
               isMulti
               isClearable={false}
@@ -159,56 +183,6 @@ export default function AppSidebar({
                 menu: (base) => ({ ...base, zIndex: 30 }),
               }}
             />
-
-            <div style={{ marginTop: space[2], display: 'flex', gap: space[1], alignItems: 'center' }}>
-              <button
-                type="button"
-                onClick={onContingencyApply}
-                disabled={pendingContingency.length === 0 || !dirty}
-                title={
-                  pendingContingency.length === 0
-                    ? 'Pick at least one element first'
-                    : dirty
-                      ? `Apply contingency (${pendingContingency.length} element${pendingContingency.length > 1 ? 's' : ''})`
-                      : 'Already applied'
-                }
-                style={{
-                  padding: `${space[1]} ${space[3]}`,
-                  background: pendingContingency.length === 0 || !dirty ? colors.disabled : colors.accent,
-                  color: colors.textOnBrand,
-                  border: 'none',
-                  borderRadius: radius.sm,
-                  cursor: pendingContingency.length === 0 || !dirty ? 'not-allowed' : 'pointer',
-                  fontWeight: 'bold',
-                  fontSize: '0.78rem',
-                }}
-              >
-                ✓ Apply contingency
-              </button>
-              {(pendingContingency.length > 0 || selectedContingency.length > 0) && (
-                <button
-                  type="button"
-                  onClick={onContingencyClear}
-                  title="Clear the pending list and the applied contingency"
-                  style={{
-                    padding: `${space[1]} ${space[2]}`,
-                    background: 'transparent',
-                    color: colors.textSecondary,
-                    border: `1px solid ${colors.border}`,
-                    borderRadius: radius.sm,
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                  }}
-                >
-                  Clear
-                </button>
-              )}
-              {dirty && pendingContingency.length > 0 && (
-                <span style={{ fontSize: '0.7rem', color: colors.textSecondary, fontStyle: 'italic' }}>
-                  {selectedContingency.length === 0 ? 'not applied' : 'unsaved changes'}
-                </span>
-              )}
-            </div>
           </div>
         )}
         {children}

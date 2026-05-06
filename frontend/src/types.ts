@@ -500,7 +500,6 @@ export type InteractionType =
     | 'contingency_element_added'
     | 'contingency_element_removed'
     | 'contingency_applied'
-    | 'contingency_cleared'
     // Two-Step Analysis
     | 'analysis_step1_started'
     | 'analysis_step1_completed'
