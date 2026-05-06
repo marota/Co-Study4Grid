@@ -324,6 +324,15 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
         return inspectableItems.filter(b => b.toUpperCase().includes(q)).slice(0, 50);
     }, [inspectableItems, inspectQuery]);
 
+    // Tab label adapts to the size of the applied contingency: N-1 for
+    // a single disconnected element, N-2 / N-K for multi-element
+    // studies, and a bare "Contingency" while no element is committed.
+    const contingencyTabLabel = useMemo(() => {
+        const k = selectedContingency.length;
+        if (k <= 0) return 'Contingency';
+        return `Contingency (N-${k})`;
+    }, [selectedContingency]);
+
     // When a tab is portaled into a secondary window we inject a small
     // floating header with a Reattach button. This is the ONLY thing the
     // popup-specific wrapper adds on top of the regular tab content — the
@@ -612,7 +621,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                 {(
                     [
                         { id: 'n' as TabId, label: 'Network (N)' as React.ReactNode, available: !!nDiagram?.svg, accentColor: colors.brand, dimColor: colors.chromeSoft, placeholder: 'Configure a network path in Settings to load the base-case diagram.' },
-                        { id: 'contingency' as TabId, label: 'Contingency (N-1)' as React.ReactNode, available: !!n1Diagram?.svg, accentColor: colors.danger, dimColor: colors.borderStrong, placeholder: 'Select a contingency element from the dropdown to view the N-1 state.' },
+                        { id: 'contingency' as TabId, label: contingencyTabLabel as React.ReactNode, available: !!n1Diagram?.svg, accentColor: colors.danger, dimColor: colors.borderStrong, placeholder: 'Trigger a contingency from the dropdown to view the post-contingency state.' },
                         // When no card is selected, the Remedial Action tab hosts the
                         // action-overview view (pins over the N-1 network). It is considered
                         // "available" as soon as the N-1 diagram has loaded, so the tab is no
@@ -1097,7 +1106,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         width: '100%', height: '100%',
                         position: 'absolute', top: 0, left: 0,
                     }}>
-                        {detachedTabs['contingency'] && renderDetachedHeader('contingency', 'Contingency (N-1)', colors.danger)}
+                        {detachedTabs['contingency'] && renderDetachedHeader('contingency', contingencyTabLabel, colors.danger)}
                         {/* Convergence warning banner */}
                         {n1Diagram && n1Diagram.lf_converged === false && (
                             <div style={{
@@ -1131,7 +1140,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         )}
                     </div>
                 </DetachableTabHost>
-                {activeTab === 'contingency' && detachedTabs['contingency'] && renderDetachedPlaceholder('contingency', 'Contingency (N-1)', colors.danger)}
+                {activeTab === 'contingency' && detachedTabs['contingency'] && renderDetachedPlaceholder('contingency', contingencyTabLabel, colors.danger)}
 
                 {/* Action Variant Container — always mounted, but `display: none`
                     when inactive so its SVG does not enter Blink's layout tree.

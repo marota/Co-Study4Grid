@@ -89,7 +89,7 @@ export default function SidebarSummary({
                   textAlign: 'left',
                 }}
               >
-                🔍 {displayName(id)}
+                {displayName(id)}
               </button>
             </React.Fragment>
           ))}
