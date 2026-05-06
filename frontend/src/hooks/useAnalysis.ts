@@ -31,7 +31,7 @@ export interface AnalysisState {
   prevResultRef: MutableRefObject<AnalysisResult | null>;
 
   handleRunAnalysis: (
-    selectedBranch: string,
+    selectedContingency: string[],
     clearContingencyState: () => void,
     setSuggestedByRecommenderIds: Dispatch<SetStateAction<Set<string>>>,
     setActiveTab?: (tab: TabId) => void
@@ -62,24 +62,24 @@ export function useAnalysis(): AnalysisState {
   const [monitorDeselected, setMonitorDeselected] = useState(false);
 
   const handleRunAnalysis = useCallback(async (
-    selectedBranch: string,
+    selectedContingency: string[],
     clearContingencyState: () => void,
     setSuggestedByRecommenderIds: (fn: (prev: Set<string>) => Set<string>) => void,
     setActiveTab?: (tab: TabId) => void
   ) => {
-    if (!selectedBranch) return;
+    if (!selectedContingency || selectedContingency.length === 0) return;
     clearContingencyState();
     setAnalysisLoading(true);
     setError('');
     setInfoMessage('');
 
-    const step1CorrId = interactionLogger.record('analysis_step1_started', { element: selectedBranch });
+    const step1CorrId = interactionLogger.record('analysis_step1_started', { element: selectedContingency.join('+') });
     const step1StartTs = new Date().toISOString();
 
     try {
       // Step 1: Detection
       const { api } = await import('../api');
-      const res1 = await api.runAnalysisStep1(selectedBranch);
+      const res1 = await api.runAnalysisStep1(selectedContingency);
       if (!res1.can_proceed) {
         setError(res1.message || 'Analysis cannot proceed.');
         if (res1.message) setInfoMessage(res1.message);
@@ -122,7 +122,7 @@ export function useAnalysis(): AnalysisState {
       // Replay contract (docs/features/interaction-logging.md):
       //   { element, selected_overloads, all_overloads, monitor_deselected }
       const step2CorrId = interactionLogger.record('analysis_step2_started', {
-        element: selectedBranch,
+        element: selectedContingency.join('+'),
         selected_overloads: toResolve,
         all_overloads: detected,
         monitor_deselected: monitorDeselected,

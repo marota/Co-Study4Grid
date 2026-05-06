@@ -361,8 +361,14 @@ class AnalysisMixin:
     # Public entry points — two-step + legacy single-step.
     # ------------------------------------------------------------------
 
-    def run_analysis_step1(self, disconnected_element: str):
-        """Step 1 — contingency simulation + overload detection."""
+    def run_analysis_step1(self, disconnected_elements):
+        """Step 1 — contingency simulation + overload detection.
+
+        ``disconnected_elements`` may be a single string (legacy) or a
+        list of element IDs to disconnect simultaneously, enabling
+        N-K (multi-element) contingency studies.
+        """
+        norm = self._normalize_contingency_elements(disconnected_elements)
         # Variant guard: drain the NAD prefetch + pin to N before grid2op
         # starts switching variants on the shared Network.
         # See docs/performance/history/grid2op-shared-network.md.
@@ -371,13 +377,13 @@ class AnalysisMixin:
             res_step1, context = run_analysis_step1(
                 analysis_date=config.DATE,
                 current_timestep=config.TIMESTEP,
-                current_lines_defaut=[disconnected_element],
+                current_lines_defaut=list(norm),
                 backend=Backend.PYPOWSYBL,
                 fast_mode=getattr(config, "PYPOWSYBL_FAST_MODE", True),
                 dict_action=self._dict_action,
                 prebuilt_env_context=self._cached_env_context,
             )
-            self._last_disconnected_element = disconnected_element
+            self._last_disconnected_elements = list(norm)
 
             if res_step1 is not None:
                 self._analysis_context = None
@@ -583,8 +589,13 @@ class AnalysisMixin:
             )
         return context
 
-    def run_analysis(self, disconnected_element: str):
-        """Legacy single-step analysis — streams ``pdf`` then ``result`` NDJSON events."""
+    def run_analysis(self, disconnected_elements):
+        """Legacy single-step analysis — streams ``pdf`` then ``result`` NDJSON events.
+
+        Accepts a single element ID (legacy) or a list of element IDs
+        for N-K contingencies.
+        """
+        norm = self._normalize_contingency_elements(disconnected_elements)
         # Variant guard — grid2op will switch variants on the shared
         # Network as soon as the worker kicks in.
         self._ensure_n_state_ready()
@@ -596,7 +607,7 @@ class AnalysisMixin:
         # ``expert_backend.services.analysis_mixin.run_analysis`` remain
         # effective after the extraction.
         for event in run_with_pdf_polling(
-            disconnected_element, save_folder, runner_fn=run_analysis
+            list(norm), save_folder, runner_fn=run_analysis
         ):
             if event.get("_final"):
                 final_payload = event
@@ -614,7 +625,7 @@ class AnalysisMixin:
         latest_pdf = final_payload["latest_pdf"]
 
         self._last_result = result
-        self._last_disconnected_element = disconnected_element
+        self._last_disconnected_elements = list(norm)
 
         if result is None:
             enriched_actions: dict = {}

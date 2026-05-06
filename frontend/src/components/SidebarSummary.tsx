@@ -10,13 +10,14 @@ import { colors, space, text } from '../styles/tokens';
 import NoticesPanel, { type Notice } from './NoticesPanel';
 
 interface SidebarSummaryProps {
-  selectedBranch: string;
+  /** Currently APPLIED contingency — list of element IDs disconnected. */
+  selectedContingency: string[];
   n1LinesOverloaded: string[] | undefined;
   n1LinesOverloadedRho: number[] | undefined;
   selectedOverloads: Set<string> | null | undefined;
   displayName: (id: string) => string;
   onContingencyZoom: (assetName: string) => void;
-  onOverloadClick: (actionId: string, assetName: string, tab: 'n' | 'n-1') => void;
+  onOverloadClick: (actionId: string, assetName: string, tab: 'n' | 'contingency') => void;
   /** Background notices; rendered as a NoticesPanel pill anchored
    *  top-right of the strip so the contingency / N-1 lines and the
    *  notices share one horizontal band rather than stacking. */
@@ -32,7 +33,7 @@ interface SidebarSummaryProps {
  * state is present.
  */
 export default function SidebarSummary({
-  selectedBranch,
+  selectedContingency,
   n1LinesOverloaded,
   n1LinesOverloadedRho,
   selectedOverloads,
@@ -43,7 +44,8 @@ export default function SidebarSummary({
 }: SidebarSummaryProps) {
   const hasOverloads = (n1LinesOverloaded?.length ?? 0) > 0;
   const hasNotices = (notices?.length ?? 0) > 0;
-  if (!selectedBranch && !hasOverloads && !hasNotices) return null;
+  const hasContingency = selectedContingency.length > 0;
+  if (!hasContingency && !hasOverloads && !hasNotices) return null;
 
   return (
     <div
@@ -63,32 +65,39 @@ export default function SidebarSummary({
       }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
-      {selectedBranch && (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: space[1] }}>
-          <span style={{ color: colors.textSecondary, fontWeight: 600, whiteSpace: 'nowrap' }}>🎯 Contingency:</span>
-          <button
-            onClick={(e) => { e.stopPropagation(); onContingencyZoom(selectedBranch); }}
-            title={`Zoom to ${selectedBranch} in the current diagram`}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 0,
-              fontSize: text.xs,
-              color: colors.brand,
-              fontWeight: 600,
-              textDecoration: 'underline dotted',
-              wordBreak: 'break-word',
-              textAlign: 'left',
-            }}
-          >
-            🔍 {displayName(selectedBranch)}
-          </button>
+      {hasContingency && (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: space[1], flexWrap: 'wrap' }}>
+          <span style={{ color: colors.textSecondary, fontWeight: 600, whiteSpace: 'nowrap' }}>
+            🎯 Contingency{selectedContingency.length > 1 ? ` (N-${selectedContingency.length})` : ''}:
+          </span>
+          {selectedContingency.map((id, i) => (
+            <React.Fragment key={id}>
+              {i > 0 && <span style={{ color: colors.textSecondary }}>, </span>}
+              <button
+                onClick={(e) => { e.stopPropagation(); onContingencyZoom(id); }}
+                title={`Zoom to ${id} in the current diagram`}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  fontSize: text.xs,
+                  color: colors.brand,
+                  fontWeight: 600,
+                  textDecoration: 'underline dotted',
+                  wordBreak: 'break-word',
+                  textAlign: 'left',
+                }}
+              >
+                🔍 {displayName(id)}
+              </button>
+            </React.Fragment>
+          ))}
         </div>
       )}
       {hasOverloads && (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: space[1] }}>
-          <span style={{ color: colors.dangerStrong, fontWeight: 600, whiteSpace: 'nowrap' }}>⚠️ N-1:</span>
+          <span style={{ color: colors.dangerStrong, fontWeight: 600, whiteSpace: 'nowrap' }}>⚠️ Contingency:</span>
           <span style={{ wordBreak: 'break-word' }}>
             {n1LinesOverloaded!.map((name, i) => {
               const rho = n1LinesOverloadedRho?.[i];
@@ -98,8 +107,8 @@ export default function SidebarSummary({
                 <React.Fragment key={name}>
                   {i > 0 && ', '}
                   <button
-                    onClick={(e) => { e.stopPropagation(); onOverloadClick('', name, 'n-1'); }}
-                    title={`Open N-1 tab and zoom to ${name}`}
+                    onClick={(e) => { e.stopPropagation(); onOverloadClick('', name, 'contingency'); }}
+                    title={`Open Contingency tab and zoom to ${name}`}
                     style={{
                       background: 'none',
                       border: 'none',

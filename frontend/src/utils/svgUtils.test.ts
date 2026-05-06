@@ -1318,7 +1318,7 @@ describe('Highlight Layering', () => {
         it('N-1 tab call-order (contingency → overload) stacks contingency below overload', () => {
             const container = buildNAD();
 
-            // Exact order of useDiagramHighlights.applyHighlightsForTab('n-1'):
+            // Exact order of useDiagramHighlights.applyHighlightsForTab('contingency'):
             applyContingencyHighlight(container, metaIndex, 'CONT_LINE');
             applyOverloadedHighlights(container, metaIndex, ['OVL_LINE']);
 

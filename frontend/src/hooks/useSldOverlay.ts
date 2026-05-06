@@ -13,7 +13,12 @@ import { interactionLogger } from '../utils/interactionLogger';
 export interface SldOverlayState {
     vlOverlay: VlOverlay | null;
     setVlOverlay: (v: VlOverlay | null) => void;
-    selectedBranchForSld: MutableRefObject<string>;
+    /**
+     * Currently-applied contingency (list of element IDs). The SLD
+     * fetcher reads from this ref so the overlay re-renders against
+     * the same contingency the rest of the UI is showing.
+     */
+    selectedContingencyForSld: MutableRefObject<string[]>;
     handleVlDoubleClick: (actionId: string, vlName: string, forceTab?: SldTab) => void;
     handleOverlaySldTabChange: (sldTab: SldTab) => void;
     handleOverlayClose: () => void;
@@ -41,14 +46,14 @@ export interface SldOverlayState {
  */
 export function useSldOverlay(activeTab: TabId, liveSelectedActionId?: string | null): SldOverlayState {
     const [vlOverlay, setVlOverlay] = useState<VlOverlay | null>(null);
-    const selectedBranchForSld = useRef('');
+    const selectedContingencyForSld = useRef<string[]>([]);
     // Mirror the selectedActionId into a ref so the fetch closure
     // can read the latest value without being re-created on every
     // action change — keeping `fetchSldVariant`'s identity stable.
     const selectedActionIdRef = useRef<string | null | undefined>(liveSelectedActionId);
     useEffect(() => { selectedActionIdRef.current = liveSelectedActionId; }, [liveSelectedActionId]);
 
-    const fetchSldVariant = useCallback(async (vlName: string, actionId: string | null, sldTab: SldTab, selectedBranch: string) => {
+    const fetchSldVariant = useCallback(async (vlName: string, actionId: string | null, sldTab: SldTab, contingencyElements: string[]) => {
         setVlOverlay(prev => prev ? { ...prev, loading: true, error: null, tab: sldTab } : null);
         try {
             let svgData: string;
@@ -62,8 +67,8 @@ export function useSldOverlay(activeTab: TabId, liveSelectedActionId?: string | 
                 const res = await api.getNSld(vlName);
                 svgData = res.svg;
                 metaData = res.sld_metadata ?? null;
-            } else if (sldTab === 'n-1') {
-                const res = await api.getN1Sld(selectedBranch, vlName);
+            } else if (sldTab === 'contingency') {
+                const res = await api.getContingencySld(contingencyElements, vlName);
                 svgData = res.svg;
                 metaData = res.sld_metadata ?? null;
                 flowDeltas = res.flow_deltas;
@@ -127,11 +132,11 @@ export function useSldOverlay(activeTab: TabId, liveSelectedActionId?: string | 
         // double-click) jump straight to a specific sub-tab regardless
         // of the current main-window tab. Without it we infer from
         // ``activeTab`` so the SLD opens on the matching variant.
-        // When the parent tab is neither 'n' nor 'n-1' (e.g. 'overflow'
+        // When the parent tab is neither 'n' nor 'contingency' (e.g. 'overflow'
         // or 'overview') we'd previously default to 'action' — but
         // that strands the user on a "No action selected" placeholder
         // whenever no actionId is in flight (typical for an overflow-
-        // graph node click that isn't a pin). Fall back to 'n-1' in
+        // graph node click that isn't a pin). Fall back to 'contingency' in
         // that case so the operator sees the contingency state the
         // overflow graph was built from.
         let initialTab: SldTab;
@@ -139,21 +144,21 @@ export function useSldOverlay(activeTab: TabId, liveSelectedActionId?: string | 
             initialTab = forceTab;
         } else if (activeTab === 'n') {
             initialTab = 'n';
-        } else if (activeTab === 'n-1') {
-            initialTab = 'n-1';
+        } else if (activeTab === 'contingency') {
+            initialTab = 'contingency';
         } else if (actionId) {
             initialTab = 'action';
         } else {
-            initialTab = 'n-1';
+            initialTab = 'contingency';
         }
         setVlOverlay({ vlName, actionId, svg: null, sldMetadata: null, loading: true, error: null, tab: initialTab });
-        fetchSldVariant(vlName, actionId, initialTab, selectedBranchForSld.current);
+        fetchSldVariant(vlName, actionId, initialTab, selectedContingencyForSld.current);
     }, [activeTab, fetchSldVariant]);
 
     const handleOverlaySldTabChange = useCallback((sldTab: SldTab) => {
         if (!vlOverlay) return;
         interactionLogger.record('sld_overlay_tab_changed', { tab: sldTab, vl_name: vlOverlay.vlName });
-        fetchSldVariant(vlOverlay.vlName, vlOverlay.actionId, sldTab, selectedBranchForSld.current);
+        fetchSldVariant(vlOverlay.vlName, vlOverlay.actionId, sldTab, selectedContingencyForSld.current);
     }, [vlOverlay, fetchSldVariant]);
 
     const handleOverlayClose = useCallback(() => {
@@ -163,13 +168,13 @@ export function useSldOverlay(activeTab: TabId, liveSelectedActionId?: string | 
 
     const refreshCurrentIfAction = useCallback((actionId: string) => {
         if (!vlOverlay || vlOverlay.actionId !== actionId) return;
-        fetchSldVariant(vlOverlay.vlName, vlOverlay.actionId, vlOverlay.tab, selectedBranchForSld.current);
+        fetchSldVariant(vlOverlay.vlName, vlOverlay.actionId, vlOverlay.tab, selectedContingencyForSld.current);
     }, [vlOverlay, fetchSldVariant]);
 
     return {
         vlOverlay,
         setVlOverlay,
-        selectedBranchForSld,
+        selectedContingencyForSld,
         handleVlDoubleClick,
         handleOverlaySldTabChange,
         handleOverlayClose,

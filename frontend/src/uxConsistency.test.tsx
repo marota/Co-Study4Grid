@@ -450,7 +450,7 @@ describe('UX consistency — Recommendation #5 (diagram legend)', () => {
     });
 
     it('mounts a Legend pill on the Contingency (N-1) tab when the diagram is loaded', () => {
-        renderPanel('n-1');
+        renderPanel('contingency');
         expect(screen.getByTestId('diagram-legend-pill-n-1')).toBeInTheDocument();
     });
 
@@ -500,7 +500,7 @@ describe('UX consistency — source-text invariants', () => {
     it('VisualizationPanel.tsx wires <DiagramLegend /> for n / n-1 / action', () => {
         const src = readSource('components/VisualizationPanel.tsx');
         expect(src).toMatch(/<DiagramLegend\s+tabId="n"/);
-        expect(src).toMatch(/<DiagramLegend\s+tabId="n-1"/);
+        expect(src).toMatch(/<DiagramLegend\s+tabId="contingency"/);
         expect(src).toMatch(/<DiagramLegend\s+tabId="action"/);
     });
 });

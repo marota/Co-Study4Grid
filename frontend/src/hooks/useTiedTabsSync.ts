@@ -39,7 +39,7 @@ export type PZInstance = ReturnType<typeof usePanZoom>;
 
 export interface PZMap {
     'n': PZInstance;
-    'n-1': PZInstance;
+    'contingency': PZInstance;
     'action': PZInstance;
 }
 
@@ -77,9 +77,9 @@ export function useTiedTabsSync(
     // Snapshot of each tab's previous viewBox so we can tell which
     // side a change originated from — and therefore pick the
     // correct mirror direction (popup → main or main → popup).
-    const prevVbsRef = useRef<Record<'n' | 'n-1' | 'action', ViewBox | null>>({
+    const prevVbsRef = useRef<Record<'n' | 'contingency' | 'action', ViewBox | null>>({
         'n': null,
-        'n-1': null,
+        'contingency': null,
         'action': null,
     });
     // Snapshot of the tied set from the previous effect run so we
@@ -128,7 +128,7 @@ export function useTiedTabsSync(
     // Extract viewBoxes into locals so the effect deps list remains
     // shallow and ESLint-friendly.
     const nVb = pzMap['n'].viewBox;
-    const n1Vb = pzMap['n-1'].viewBox;
+    const n1Vb = pzMap['contingency'].viewBox;
     const actionVb = pzMap['action'].viewBox;
 
     // ViewBox equality helper. Used to skip mirror writes that
@@ -148,13 +148,13 @@ export function useTiedTabsSync(
         // the latest values.
         const prev = prevVbsRef.current;
         const currentNVb = pzMap['n'].viewBox;
-        const currentN1Vb = pzMap['n-1'].viewBox;
+        const currentN1Vb = pzMap['contingency'].viewBox;
         const currentActionVb = pzMap['action'].viewBox;
 
         const commitSnapshot = () => {
             prevVbsRef.current = {
                 'n': currentNVb,
-                'n-1': currentN1Vb,
+                'contingency': currentN1Vb,
                 'action': currentActionVb,
             };
         };
@@ -191,7 +191,7 @@ export function useTiedTabsSync(
         // whether a given tab was updated in this render cycle.
         const changedTabs: TabId[] = [];
         if (currentNVb !== prev['n']) changedTabs.push('n');
-        if (currentN1Vb !== prev['n-1']) changedTabs.push('n-1');
+        if (currentN1Vb !== prev['contingency']) changedTabs.push('contingency');
         if (currentActionVb !== prev['action']) changedTabs.push('action');
 
         commitSnapshot();
@@ -215,12 +215,12 @@ export function useTiedTabsSync(
             if (!detachedTabs[newTab]) continue;
             if (newTab === activeTab) continue;
             const seedVb = newTab === 'n' ? currentNVb
-                : newTab === 'n-1' ? currentN1Vb
+                : newTab === 'contingency' ? currentN1Vb
                     : newTab === 'action' ? currentActionVb
                         : null;
             if (!seedVb) continue;
             const targetPZ = activeTab === 'n' ? pzMap['n']
-                : activeTab === 'n-1' ? pzMap['n-1']
+                : activeTab === 'contingency' ? pzMap['contingency']
                     : activeTab === 'action' ? pzMap['action']
                         : null;
             mirror(targetPZ, seedVb);
@@ -230,7 +230,7 @@ export function useTiedTabsSync(
 
         for (const changed of changedTabs) {
             const changedVb = changed === 'n' ? currentNVb
-                : changed === 'n-1' ? currentN1Vb
+                : changed === 'contingency' ? currentN1Vb
                     : currentActionVb;
             if (!changedVb) continue;
 
@@ -238,7 +238,7 @@ export function useTiedTabsSync(
             // — mirror it into the main window's currently-active tab.
             if (tiedTabs.has(changed) && detachedTabs[changed] && changed !== activeTab) {
                 const targetPZ = activeTab === 'n' ? pzMap['n']
-                    : activeTab === 'n-1' ? pzMap['n-1']
+                    : activeTab === 'contingency' ? pzMap['contingency']
                         : activeTab === 'action' ? pzMap['action']
                             : null;
                 mirror(targetPZ, changedVb);
@@ -253,7 +253,7 @@ export function useTiedTabsSync(
                     if (!detachedTabs[tiedTab]) continue;
                     if (tiedTab === activeTab) continue;
                     const targetPZ = tiedTab === 'n' ? pzMap['n']
-                        : tiedTab === 'n-1' ? pzMap['n-1']
+                        : tiedTab === 'contingency' ? pzMap['contingency']
                             : tiedTab === 'action' ? pzMap['action']
                                 : null;
                     mirror(targetPZ, changedVb);

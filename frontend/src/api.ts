@@ -106,10 +106,10 @@ export const api = {
         const svg = body.slice(nl + 1);
         return { ...header, svg } as DiagramData & { svg: string };
     },
-    getN1Diagram: async (disconnectedElement: string): Promise<DiagramData & { svg: string }> => {
+    getContingencyDiagram: async (disconnectedElements: string[]): Promise<DiagramData & { svg: string }> => {
         const response = await axios.post<DiagramData & { svg: string }>(
-            `${API_BASE_URL}/api/n1-diagram`,
-            { disconnected_element: disconnectedElement }
+            `${API_BASE_URL}/api/contingency-diagram`,
+            { disconnected_elements: disconnectedElements }
         );
         return response.data;
     },
@@ -121,15 +121,16 @@ export const api = {
         return response.data;
     },
     /**
-     * SVG-less patch payload for the N-1 state. Use to patch a clone of
-     * the N-state SVG DOM instead of fetching a fresh ~20 MB NAD. Fall
-     * back to `getN1Diagram` on any error or when the base N SVG is not
-     * yet loaded. See docs/performance/history/svg-dom-recycling.md.
+     * SVG-less patch payload for the contingency state. Use to patch a
+     * clone of the N-state SVG DOM instead of fetching a fresh ~20 MB
+     * NAD. Fall back to ``getContingencyDiagram`` on any error or when
+     * the base N SVG is not yet loaded. See
+     * ``docs/performance/history/svg-dom-recycling.md``.
      */
-    getN1DiagramPatch: async (disconnectedElement: string): Promise<DiagramPatch> => {
+    getContingencyDiagramPatch: async (disconnectedElements: string[]): Promise<DiagramPatch> => {
         const response = await axios.post<DiagramPatch>(
-            `${API_BASE_URL}/api/n1-diagram-patch`,
-            { disconnected_element: disconnectedElement }
+            `${API_BASE_URL}/api/contingency-diagram-patch`,
+            { disconnected_elements: disconnectedElements }
         );
         return response.data;
     },
@@ -152,7 +153,7 @@ export const api = {
         );
         return response.data.actions;
     },
-    simulateManualAction: async (actionId: string, disconnectedElement: string, actionContent?: Record<string, unknown> | null, linesOverloaded?: string[] | null, targetMw?: number | null, targetTap?: number | null): Promise<{
+    simulateManualAction: async (actionId: string, disconnectedElements: string[], actionContent?: Record<string, unknown> | null, linesOverloaded?: string[] | null, targetMw?: number | null, targetTap?: number | null): Promise<{
         action_id: string;
         description_unitaire: string;
         rho_before: number[] | null;
@@ -174,14 +175,14 @@ export const api = {
 
         const response = await axios.post(
             `${API_BASE_URL}/api/simulate-manual-action`,
-            { action_id: actionId, disconnected_element: disconnectedElement, action_content: actionContent ?? null, lines_overloaded: linesOverloaded ?? null, target_mw: targetMw ?? null, target_tap: targetTap ?? null }
+            { action_id: actionId, disconnected_elements: disconnectedElements, action_content: actionContent ?? null, lines_overloaded: linesOverloaded ?? null, target_mw: targetMw ?? null, target_tap: targetTap ?? null }
         );
         return response.data;
     },
-    computeSuperposition: async (action1_id: string, action2_id: string, disconnectedElement: string): Promise<import('./types').CombinedAction> => {
+    computeSuperposition: async (action1_id: string, action2_id: string, disconnectedElements: string[]): Promise<import('./types').CombinedAction> => {
         const response = await axios.post(
             `${API_BASE_URL}/api/compute-superposition`,
-            { action1_id, action2_id, disconnected_element: disconnectedElement }
+            { action1_id, action2_id, disconnected_elements: disconnectedElements }
         );
         return response.data;
     },
@@ -231,10 +232,10 @@ export const api = {
         );
         return response.data;
     },
-    getN1Sld: async (disconnectedElement: string, voltageLevelId: string): Promise<{ svg: string; sld_metadata: string | null; voltage_level_id: string; flow_deltas?: Record<string, FlowDelta>; reactive_flow_deltas?: Record<string, FlowDelta>; asset_deltas?: Record<string, AssetDelta> }> => {
+    getContingencySld: async (disconnectedElements: string[], voltageLevelId: string): Promise<{ svg: string; sld_metadata: string | null; voltage_level_id: string; flow_deltas?: Record<string, FlowDelta>; reactive_flow_deltas?: Record<string, FlowDelta>; asset_deltas?: Record<string, AssetDelta> }> => {
         const response = await axios.post<{ svg: string; sld_metadata: string | null; voltage_level_id: string; flow_deltas?: Record<string, FlowDelta>; reactive_flow_deltas?: Record<string, FlowDelta>; asset_deltas?: Record<string, AssetDelta> }>(
-            `${API_BASE_URL}/api/n1-sld`,
-            { disconnected_element: disconnectedElement, voltage_level_id: voltageLevelId }
+            `${API_BASE_URL}/api/contingency-sld`,
+            { disconnected_elements: disconnectedElements, voltage_level_id: voltageLevelId }
         );
         return response.data;
     },
@@ -271,15 +272,15 @@ export const api = {
      */
     restoreAnalysisContext: async (params: {
         lines_we_care_about?: string[] | null;
-        disconnected_element?: string | null;
+        disconnected_elements?: string[] | null;
         lines_overloaded?: string[] | null;
         computed_pairs?: Record<string, unknown> | null;
     }): Promise<{ status: string; lines_we_care_about_count: number; computed_pairs_count: number }> => {
         const response = await axios.post(`${API_BASE_URL}/api/restore-analysis-context`, params);
         return response.data;
     },
-    runAnalysisStep1: async (disconnected_element: string): Promise<{ lines_overloaded: string[]; message: string; can_proceed: boolean }> => {
-        const response = await axios.post(`${API_BASE_URL}/api/run-analysis-step1`, { disconnected_element });
+    runAnalysisStep1: async (disconnectedElements: string[]): Promise<{ lines_overloaded: string[]; message: string; can_proceed: boolean }> => {
+        const response = await axios.post(`${API_BASE_URL}/api/run-analysis-step1`, { disconnected_elements: disconnectedElements });
         return response.data;
     },
     runAnalysisStep2Stream: async (params: {
@@ -310,7 +311,7 @@ export const api = {
      */
     simulateAndVariantDiagramStream: async (params: {
         action_id: string;
-        disconnected_element: string;
+        disconnected_elements: string[];
         action_content?: Record<string, unknown> | null;
         lines_overloaded?: string[] | null;
         target_mw?: number | null;
@@ -322,7 +323,7 @@ export const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 action_id: params.action_id,
-                disconnected_element: params.disconnected_element,
+                disconnected_elements: params.disconnected_elements,
                 action_content: params.action_content ?? null,
                 lines_overloaded: params.lines_overloaded ?? null,
                 target_mw: params.target_mw ?? null,

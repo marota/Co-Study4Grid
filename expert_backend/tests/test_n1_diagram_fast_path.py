@@ -9,7 +9,7 @@
 
 Guards three correctness invariants of the perf patches:
 
-1. **LF-status cache**: `_get_n1_variant` populates
+1. **LF-status cache**: `_get_contingency_variant` populates
    `_lf_status_by_variant[variant_id]` after running the AC LF.
    `get_n1_diagram` reads this cache instead of re-running the LF
    to compute `lf_converged` / `lf_status`.
@@ -39,7 +39,7 @@ from expert_backend.services.diagram_mixin import DiagramMixin
 # ===========================================================================
 
 class TestLfStatusCachePopulation:
-    """`_get_n1_variant` must store LF status under the variant id."""
+    """`_get_contingency_variant` must store LF status under the variant id."""
 
     @patch.object(RecommenderService, '_run_ac_with_fallback')
     @patch.object(RecommenderService, '_get_n_variant')
@@ -56,9 +56,9 @@ class TestLfStatusCachePopulation:
         result = SimpleNamespace(status=SimpleNamespace(name="CONVERGED"))
         mock_run_ac.return_value = [result]
 
-        service._get_n1_variant("ARGIAL71CANTE")
+        service._get_contingency_variant("ARGIAL71CANTE")
 
-        variant_id = "N_1_state_ARGIAL71CANTE"
+        variant_id = "contingency_state_ARGIAL71CANTE"
         assert variant_id in service._lf_status_by_variant
         cached = service._lf_status_by_variant[variant_id]
         assert cached["converged"] is True
@@ -85,9 +85,9 @@ class TestLfStatusCachePopulation:
         result = SimpleNamespace(status=SimpleNamespace(name="FAILED"))
         mock_run_ac.return_value = [result]
 
-        service._get_n1_variant("BAD_CONTINGENCY")
+        service._get_contingency_variant("BAD_CONTINGENCY")
 
-        variant_id = "N_1_state_BAD_CONTINGENCY"
+        variant_id = "contingency_state_BAD_CONTINGENCY"
         cached = service._lf_status_by_variant[variant_id]
         assert cached["converged"] is False
         assert cached["lf_status"] == "FAILED"
@@ -103,23 +103,23 @@ class TestLfStatusCachePopulation:
         be preserved verbatim."""
         service = RecommenderService()
         service._lf_status_by_variant = {
-            "N_1_state_ARGIAL71CANTE": {
+            "contingency_state_ARGIAL71CANTE": {
                 "converged": True,
                 "lf_status": "CONVERGED",
             }
         }
 
         n = MagicMock()
-        n.get_variant_ids.return_value = ["N_1_state_ARGIAL71CANTE"]
+        n.get_variant_ids.return_value = ["contingency_state_ARGIAL71CANTE"]
         mock_get_net.return_value = n
 
-        service._get_n1_variant("ARGIAL71CANTE")
+        service._get_contingency_variant("ARGIAL71CANTE")
 
         # LF must NOT have been re-run
         mock_run_ac.assert_not_called()
         # Cache entry preserved verbatim
         assert (
-            service._lf_status_by_variant["N_1_state_ARGIAL71CANTE"]["lf_status"]
+            service._lf_status_by_variant["contingency_state_ARGIAL71CANTE"]["lf_status"]
             == "CONVERGED"
         )
 
@@ -156,18 +156,18 @@ class TestLfStatusCacheIsolationAcrossContingencies:
         diverged = SimpleNamespace(status=SimpleNamespace(name="FAILED"))
         mock_run_ac.side_effect = [[converged], [diverged]]
 
-        service._get_n1_variant("DISCO_A")
-        service._get_n1_variant("DISCO_B")
+        service._get_contingency_variant("DISCO_A")
+        service._get_contingency_variant("DISCO_B")
 
-        assert service._lf_status_by_variant["N_1_state_DISCO_A"]["converged"] is True
-        assert service._lf_status_by_variant["N_1_state_DISCO_B"]["converged"] is False
+        assert service._lf_status_by_variant["contingency_state_DISCO_A"]["converged"] is True
+        assert service._lf_status_by_variant["contingency_state_DISCO_B"]["converged"] is False
         # Assert A's entry was NOT overwritten when B was created
         assert (
-            service._lf_status_by_variant["N_1_state_DISCO_A"]["lf_status"]
+            service._lf_status_by_variant["contingency_state_DISCO_A"]["lf_status"]
             == "CONVERGED"
         )
         assert (
-            service._lf_status_by_variant["N_1_state_DISCO_B"]["lf_status"]
+            service._lf_status_by_variant["contingency_state_DISCO_B"]["lf_status"]
             == "FAILED"
         )
 
@@ -188,8 +188,8 @@ class TestGetN1DiagramReadsLfCache:
         service._base_network = n  # skip _get_base_network side effects
         service._get_base_network = MagicMock(return_value=n)
 
-        n1_variant_id = "N_1_state_ARGIAL71CANTE"
-        service._get_n1_variant = MagicMock(return_value=n1_variant_id)
+        n1_variant_id = "contingency_state_ARGIAL71CANTE"
+        service._get_contingency_variant = MagicMock(return_value=n1_variant_id)
         service._run_ac_with_fallback = MagicMock()
 
         # Populate the LF status cache directly
@@ -217,7 +217,7 @@ class TestGetN1DiagramReadsLfCache:
     def test_cached_status_skips_ac_lf_rerun(self):
         service, _n, _vid = self._make_mixin_with_stubs()
 
-        diagram = service.get_n1_diagram("ARGIAL71CANTE")
+        diagram = service.get_contingency_diagram("ARGIAL71CANTE")
 
         # The whole point of the cache: no AC LF re-run for the
         # sole purpose of extracting `converged` / `lf_status`.
@@ -236,7 +236,7 @@ class TestGetN1DiagramReadsLfCache:
         result = SimpleNamespace(status=SimpleNamespace(name="CONVERGED"))
         service._run_ac_with_fallback = MagicMock(return_value=[result])
 
-        diagram = service.get_n1_diagram("ARGIAL71CANTE")
+        diagram = service.get_contingency_diagram("ARGIAL71CANTE")
 
         service._run_ac_with_fallback.assert_called_once()
         assert diagram["lf_converged"] is True

@@ -126,9 +126,13 @@ SPEC_DETAILS: dict[str, dict] = {
     "settings_applied":        _spec_row(_CONFIG_FIELDS),
     "settings_cancelled":      _spec_row(set()),
     "path_picked":             _spec_row({"type", "path"}),
-    # --- Contingency ---
-    "contingency_selected":    _spec_row({"element"}),
-    "contingency_confirmed":   _spec_row({"type"}, optional={"pending_branch"}),
+    # --- Contingency (single + N-K multi-element) ---
+    "contingency_selected":         _spec_row({"element"}),
+    "contingency_confirmed":        _spec_row({"type"}, optional={"pending_branch"}),
+    "contingency_element_added":    _spec_row({"element"}),
+    "contingency_element_removed":  _spec_row({"element"}),
+    "contingency_applied":          _spec_row({"elements"}),
+    "contingency_cleared":          _spec_row(set()),
     # --- Two-Step Analysis ---
     "analysis_step1_started":   _spec_row({"element"}),
     "analysis_step1_completed": _spec_row({

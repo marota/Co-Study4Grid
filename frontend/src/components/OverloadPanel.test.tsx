@@ -76,7 +76,7 @@ describe('OverloadPanel', () => {
         );
 
         await user.click(screen.getByText('LINE_B'));
-        expect(onAssetClick).toHaveBeenCalledWith('', 'LINE_B', 'n-1');
+        expect(onAssetClick).toHaveBeenCalledWith('', 'LINE_B', 'contingency');
     });
 
     it('renders loading percentages next to overload names when rho is provided', () => {

@@ -85,7 +85,7 @@ def analysis_results(scenario_data):
     # `_base_network` (and thus any N-1 variants cached on it) plus the
     # cached LF / observation state. Without it, N-1 variants cloned by
     # earlier test modules on the same `bare_env_small_grid_test` network
-    # are reused under the cache-by-variant-id path in `_get_n1_variant`,
+    # are reused under the cache-by-variant-id path in `_get_contingency_variant`,
     # which caused a small drift in the flow deltas measured below when
     # the full pytest suite ran in file order (see README / CI note).
     # Then load the network so `self.network` is available for the
@@ -114,7 +114,7 @@ def test_independent_actions_simulation(scenario_data, analysis_results):
     contingency = scenario_data["contingency"]
 
     # Re-simulate N-1 matching RecommenderService.get_action_variant_diagram logic
-    n1_flows = recommender_service._get_n1_flows(contingency)
+    n1_flows = recommender_service._get_contingency_flows(contingency)
 
     # We test each action listed in the baseline independently
     for aid, baseline in scenario_data["actions"].items():
@@ -208,7 +208,7 @@ def test_vielmp6_sld_matching(scenario_data, analysis_results):
     assert target_action is not None, "No VIELMP6 action found in analysis results"
 
     # Compute flow deltas
-    n1_flows = recommender_service._get_n1_flows(contingency)
+    n1_flows = recommender_service._get_contingency_flows(contingency)
 
     obs_after = prioritized[target_action]["observation"]
     nm = obs_after._network_manager

@@ -139,8 +139,9 @@ export interface DiagramsState {
   vlOverlay: VlOverlay | null;
   setVlOverlay: (v: VlOverlay | null) => void;
 
-  // Branch refs
-  committedBranchRef: MutableRefObject<string>;
+  // Contingency refs
+  /** Last APPLIED contingency (list of element IDs). Empty = N state. */
+  committedBranchRef: MutableRefObject<string[]>;
   restoringSessionRef: MutableRefObject<boolean>;
   lastZoomState: MutableRefObject<{ query: string; branch: string }>;
   actionSyncSourceRef: MutableRefObject<ViewBox | null>;
@@ -157,7 +158,7 @@ export interface DiagramsState {
   handleActionSelect: (
     actionId: string | null,
     result: AnalysisResult | null,
-    selectedBranch: string,
+    selectedContingency: string[],
     voltageLevelsLength: number,
     setResult: Dispatch<SetStateAction<AnalysisResult | null>>,
     setError: (v: string) => void,
@@ -172,7 +173,7 @@ export interface DiagramsState {
   handleAssetClick: (
     actionId: string,
     assetName: string,
-    tab: 'action' | 'n' | 'n-1',
+    tab: 'action' | 'n' | 'contingency',
     selectedActionId: string | null,
     handleActionSelectFn: (actionId: string | null) => void,
   ) => void;
@@ -181,8 +182,10 @@ export interface DiagramsState {
   // Computed
   inspectableItems: string[];
 
-  // Internal ref for SLD selectedBranch
-  selectedBranchForSld: MutableRefObject<string>;
+  // Internal ref carrying the currently-applied contingency for SLD
+  // overlay re-fetches. Holds the element-ID list directly so the
+  // SLD endpoint can drive both the legacy N-1 and N-K cases.
+  selectedContingencyForSld: MutableRefObject<string[]>;
 
   // Cache primer — ActionFeed calls this with the diagram event from the
   // streamed simulate-and-variant-diagram endpoint. A subsequent click
@@ -202,7 +205,7 @@ export interface DiagramsState {
 export function useDiagrams(
   branches: string[],
   voltageLevels: string[],
-  selectedBranch: string,
+  selectedContingency: string[],
   // Optional map of tabs that are currently "detached" into a secondary
   // browser window. A detached tab must be treated as interactive for
   // pan/zoom purposes even though it is not the `activeTab` in the main
@@ -311,7 +314,7 @@ export function useDiagrams(
   const n1PZ = usePanZoom(
     n1SvgContainerRef,
     n1Diagram?.originalViewBox,
-    activeTab === 'n-1' || !!detachedTabs?.['n-1'],
+    activeTab === 'contingency' || !!detachedTabs?.['contingency'],
   );
   const actionPZ = usePanZoom(
     actionSvgContainerRef,
@@ -341,8 +344,8 @@ export function useDiagrams(
   // carry the target forward into the effect.
   const inspectFocusTabRef = useRef<TabId | null>(null);
 
-  // Branch refs
-  const committedBranchRef = useRef('');
+  // Contingency refs
+  const committedBranchRef = useRef<string[]>([]);
   const restoringSessionRef = useRef(false);
 
   // Action-variant diagram cache. Populated by ActionFeed when it adds or
@@ -359,9 +362,12 @@ export function useDiagrams(
   // the contingency changes so a stale post-action NAD from a previous
   // N-1 can't leak through.
   const actionDiagramCacheRef = useRef<Map<string, DiagramData>>(new Map());
+  // Joined string for the dependency check — useEffect needs a stable
+  // primitive, but the contingency state is a list.
+  const selectedContingencyKey = selectedContingency.join('+');
   useEffect(() => {
     actionDiagramCacheRef.current.clear();
-  }, [selectedBranch]);
+  }, [selectedContingencyKey]);
 
   // Tracks the last actionId the user clicked. Written synchronously
   // at the top of `handleActionSelect`, read after each async await
@@ -395,7 +401,15 @@ export function useDiagrams(
   // SLD that was opened from the N or N-1 tab (the stored
   // vlOverlay.actionId is '' in that case).
   const sldOverlay = useSldOverlay(activeTab, selectedActionId);
-  const { vlOverlay, setVlOverlay, selectedBranchForSld, handleVlDoubleClick, handleOverlaySldTabChange, handleOverlayClose, refreshCurrentIfAction: refreshSldIfAction } = sldOverlay;
+  const {
+    vlOverlay,
+    setVlOverlay,
+    selectedContingencyForSld,
+    handleVlDoubleClick,
+    handleOverlaySldTabChange,
+    handleOverlayClose,
+    refreshCurrentIfAction: refreshSldIfAction,
+  } = sldOverlay;
 
   // Metadata
   const nMetaIndex = useMemo(() => buildMetadataIndex(nDiagram?.metadata), [nDiagram?.metadata]);
@@ -444,7 +458,7 @@ export function useDiagrams(
   const handleActionSelect = useCallback(async (
     actionId: string | null,
     result: AnalysisResult | null,
-    selectedBranch: string,
+    selectedContingencyArg: string[],
     voltageLevelsLength: number,
     setResult: React.Dispatch<React.SetStateAction<AnalysisResult | null>>,
     setError: (v: string) => void,
@@ -474,7 +488,7 @@ export function useDiagrams(
     // action tab is inline in the main window, `activeTab === 'action'`
     // tells us the user is currently looking at the action diagram and
     // `actionPZ.viewBox` is the right source. When the action tab is
-    // DETACHED into a popup, `activeTab` is 'n' or 'n-1' (the main
+    // DETACHED into a popup, `activeTab` is 'n' or 'contingency' (the main
     // window's current tab) but the popup is still showing the action
     // diagram — so `actionPZ.viewBox` is STILL the correct source and
     // we must use it even though `activeTab` is not 'action'. Without
@@ -587,7 +601,7 @@ export function useDiagrams(
       const { svg, viewBox } = processSvg(res.svg, voltageLevelsLength);
       setActionDiagram({ ...res, svg, originalViewBox: viewBox });
     } catch {
-      if (selectedBranch) {
+      if (selectedContingencyArg.length > 0) {
         // Fallback path: action isn't in the recommender's prioritised list yet
         // so the backend has no post-action observation cached. Previously this
         // was a two-shot HTTP call (simulateManualAction then getActionVariantDiagram),
@@ -613,7 +627,7 @@ export function useDiagrams(
 
           const response = await api.simulateAndVariantDiagramStream({
             action_id: actionId,
-            disconnected_element: selectedBranch,
+            disconnected_elements: selectedContingencyArg,
             action_content: actionContent,
             lines_overloaded: linesOvl,
           });
@@ -775,13 +789,13 @@ export function useDiagrams(
     if (prevTab === 'overflow' || activeTab === 'overflow') return;
 
     const sourceVB = prevTab === 'n' ? nPZ.viewBox
-      : prevTab === 'n-1' ? n1PZ.viewBox
+      : prevTab === 'contingency' ? n1PZ.viewBox
         : prevTab === 'action' ? actionPZ.viewBox
           : null;
     if (!sourceVB) return;
 
     if (activeTab === 'n') nPZ.setViewBox(sourceVB);
-    else if (activeTab === 'n-1') n1PZ.setViewBox(sourceVB);
+    else if (activeTab === 'contingency') n1PZ.setViewBox(sourceVB);
     else if (activeTab === 'action') actionPZ.setViewBox(sourceVB);
   }, [activeTab, nPZ, n1PZ, actionPZ]);
 
@@ -805,7 +819,7 @@ export function useDiagrams(
   const handleAssetClick = useCallback((
     actionId: string,
     assetName: string,
-    tab: 'action' | 'n' | 'n-1' = 'action',
+    tab: 'action' | 'n' | 'contingency' = 'action',
     currentSelectedActionId: string | null,
     handleActionSelectFn: (actionId: string | null) => void,
   ) => {
@@ -827,8 +841,8 @@ export function useDiagrams(
 
     if (tab === 'n') {
       if (!isTabDetached) setActiveTab('n');
-    } else if (tab === 'n-1') {
-      if (!isTabDetached) setActiveTab('n-1');
+    } else if (tab === 'contingency') {
+      if (!isTabDetached) setActiveTab('contingency');
     } else if (actionId !== currentSelectedActionId) {
       // Selecting a different action card. `handleActionSelect`
       // already has its own detached-tab guard (it refrains from
@@ -982,7 +996,7 @@ export function useDiagrams(
   // the user expands the range back out.
   const prevFilterHadHidden = useRef<Record<TabId, boolean>>({
     n: false,
-    'n-1': false,
+    'contingency': false,
     action: false,
     overflow: false,
   });
@@ -1054,18 +1068,18 @@ export function useDiagrams(
       if (activeTab === 'n' || activeTab === 'overflow') {
         applyVoltageFilter('n', nSvgContainerRef.current, nMetaIndex);
         staleVoltageFilter.current.delete('n');
-        staleVoltageFilter.current.add('n-1');
+        staleVoltageFilter.current.add('contingency');
         staleVoltageFilter.current.add('action');
-      } else if (activeTab === 'n-1') {
-        applyVoltageFilter('n-1', n1SvgContainerRef.current, n1MetaIndex);
-        staleVoltageFilter.current.delete('n-1');
+      } else if (activeTab === 'contingency') {
+        applyVoltageFilter('contingency', n1SvgContainerRef.current, n1MetaIndex);
+        staleVoltageFilter.current.delete('contingency');
         staleVoltageFilter.current.add('n');
         staleVoltageFilter.current.add('action');
       } else if (activeTab === 'action') {
         applyVoltageFilter('action', actionSvgContainerRef.current, actionMetaIndex);
         staleVoltageFilter.current.delete('action');
         staleVoltageFilter.current.add('n');
-        staleVoltageFilter.current.add('n-1');
+        staleVoltageFilter.current.add('contingency');
       }
     };
 
@@ -1087,16 +1101,21 @@ export function useDiagrams(
     const focusTab = inspectFocusTabRef.current ?? activeTab;
     if (focusTab === 'overflow') return;
 
+    // For zoom-target purposes the contingency is summarised as its
+    // first element — multi-element contingencies don't have a
+    // single anchor target on the NAD anyway. Using the joined key
+    // would still work but the zoom helpers expect a single id.
+    const contingencyAnchor = selectedContingency[0] || '';
     const queryChanged = inspectQuery !== lastZoomState.current.query;
-    const branchChanged = !inspectQuery && selectedBranch !== lastZoomState.current.branch;
+    const branchChanged = !inspectQuery && contingencyAnchor !== lastZoomState.current.branch;
 
     if (!queryChanged && !branchChanged) return;
 
-    const targetId = inspectQuery || selectedBranch;
+    const targetId = inspectQuery || contingencyAnchor;
 
     // Cleared inspect → reset view
     if (!targetId && queryChanged) {
-      lastZoomState.current = { query: inspectQuery, branch: selectedBranch };
+      lastZoomState.current = { query: inspectQuery, branch: contingencyAnchor };
       handleManualReset(focusTab);
       // Clear the focus override once the query has been consumed.
       inspectFocusTabRef.current = null;
@@ -1110,24 +1129,25 @@ export function useDiagrams(
     // Datalist selection sets the input to the full exact value → match fires.
     if (!knownItemsSet.has(targetId)) return;
 
-    // Branch changes should zoom on the N-1 tab, not N.
-    // In the same render cycle, setActiveTab('n-1') is batched but
-    // not committed — this effect still sees activeTab='n'. Skip here;
-    // the effect re-runs when activeTab changes to 'n-1'.
+    // Branch changes should zoom on the contingency tab, not N.
+    // In the same render cycle, setActiveTab('contingency') is batched
+    // but not committed — this effect still sees activeTab='n'. Skip
+    // here; the effect re-runs when activeTab changes to 'contingency'.
     if (branchChanged && focusTab === 'n') return;
 
     // Only consume the zoom intent when the container has SVG content.
-    // If not ready (e.g. N-1 still loading), skip — the effect re-runs
-    // when the diagram changes, and branchChanged will still be true.
+    // If not ready (e.g. contingency NAD still loading), skip — the
+    // effect re-runs when the diagram changes, and branchChanged will
+    // still be true.
     const container = focusTab === 'action' ? actionSvgContainerRef.current
       : focusTab === 'n' ? nSvgContainerRef.current : n1SvgContainerRef.current;
     if (!container || !container.querySelector('svg')) return;
 
-    lastZoomState.current = { query: inspectQuery, branch: selectedBranch };
+    lastZoomState.current = { query: inspectQuery, branch: contingencyAnchor };
     zoomToElement(targetId, focusTab);
     inspectFocusTabRef.current = null;
 
-  }, [activeTab, nDiagram, n1Diagram, actionDiagram, inspectQuery, selectedBranch, handleManualReset, zoomToElement, knownItemsSet]);
+  }, [activeTab, nDiagram, n1Diagram, actionDiagram, inspectQuery, selectedContingency, handleManualReset, zoomToElement, knownItemsSet]);
 
   return useMemo(() => ({
     activeTab, setActiveTab,
@@ -1167,7 +1187,7 @@ export function useDiagrams(
     handleAssetClick,
     zoomToElement,
     inspectableItems,
-    selectedBranchForSld,
+    selectedContingencyForSld,
     primeActionDiagram,
     refreshSldIfAction,
   }), [
@@ -1183,7 +1203,7 @@ export function useDiagrams(
     handleManualZoomIn, handleManualZoomOut, handleManualReset,
     handleVlDoubleClick, handleOverlaySldTabChange, handleOverlayClose,
     handleAssetClick, zoomToElement, inspectableItems,
-    selectedBranchForSld, setVlOverlay,
+    selectedContingencyForSld, setVlOverlay,
     setInspectQueryForTab,
     primeActionDiagram,
     refreshSldIfAction,

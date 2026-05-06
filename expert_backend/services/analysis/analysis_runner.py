@@ -43,16 +43,26 @@ _POLL_INTERVAL_S = 0.5
 
 
 def _make_worker(
-    disconnected_element: str,
+    disconnected_elements,
     shared_state: dict[str, Any],
     runner_fn: Callable,
 ) -> Callable[[], None]:
     """Return a zero-arg worker that populates ``shared_state``.
 
+    ``disconnected_elements`` may be a single string (legacy single-
+    element contingency) or an iterable of element IDs for N-K
+    contingencies — both are normalised to a list before forwarding to
+    the discovery engine's ``current_lines_defaut`` parameter.
+
     Returned as a closure (not a bound method) so callers that mock
     ``threading.Thread`` and invoke ``target()`` with no args — the
     pre-extraction shape in legacy tests — keep working.
     """
+    if isinstance(disconnected_elements, str):
+        elements_list = [disconnected_elements] if disconnected_elements else []
+    else:
+        elements_list = [e for e in (disconnected_elements or []) if e]
+
     def worker() -> None:
         try:
             # Attempt 1: AC
@@ -62,7 +72,7 @@ def _make_worker(
                 res = runner_fn(
                     analysis_date=None,
                     current_timestep=0,
-                    current_lines_defaut=[disconnected_element],
+                    current_lines_defaut=list(elements_list),
                     backend=Backend.PYPOWSYBL,
                 )
             shared_state["result"] = res
@@ -81,7 +91,7 @@ def _make_worker(
                         res = runner_fn(
                             analysis_date=None,
                             current_timestep=0,
-                            current_lines_defaut=[disconnected_element],
+                            current_lines_defaut=list(elements_list),
                             backend=Backend.PYPOWSYBL,
                         )
                     shared_state["result"] = res
@@ -101,7 +111,7 @@ def _make_worker(
 
 
 def run_with_pdf_polling(
-    disconnected_element: str,
+    disconnected_elements,
     save_folder: str,
     runner_fn: Callable | None = None,
 ) -> Generator[dict, None, None]:
@@ -133,7 +143,7 @@ def run_with_pdf_polling(
         "latest_pdf": None,
     }
 
-    worker = _make_worker(disconnected_element, shared_state, runner_fn)
+    worker = _make_worker(disconnected_elements, shared_state, runner_fn)
     thread = threading.Thread(target=worker, name="AnalysisWorker")
     thread.start()
 

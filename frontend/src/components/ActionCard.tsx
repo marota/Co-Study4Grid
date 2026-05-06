@@ -27,7 +27,7 @@ interface ActionCardProps {
     onActionSelect: (actionId: string | null) => void;
     onActionFavorite: (actionId: string) => void;
     onActionReject: (actionId: string) => void;
-    onAssetClick: (actionId: string, assetName: string, tab?: 'action' | 'n-1') => void;
+    onAssetClick: (actionId: string, assetName: string, tab?: 'action' | 'contingency') => void;
     onVlDoubleClick?: (actionId: string, vlName: string) => void;
     onCardEditMwChange: (actionId: string, value: string) => void;
     onCardEditTapChange: (actionId: string, value: string) => void;
@@ -118,7 +118,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
             ? { border: colors.danger, badgeBg: colors.danger, badgeText: colors.textOnBrand, label: 'islanded', kind: 'islanded' as SeverityKind }
             : severityColors[severity];
 
-    const renderRho = (arr: number[] | null, actionId: string, tab: 'action' | 'n-1' = 'action'): React.ReactNode => {
+    const renderRho = (arr: number[] | null, actionId: string, tab: 'action' | 'contingency' = 'action'): React.ReactNode => {
         if (!arr || arr.length === 0) return '—';
         return arr.map((v, i) => {
             const lineName = linesOverloaded[i] || `line ${i}`;

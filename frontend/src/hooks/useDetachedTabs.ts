@@ -30,7 +30,7 @@ const DEFAULT_POPUP_FEATURES = 'popup=yes,width=1100,height=800,resizable=yes,sc
 
 const TAB_TITLES: Record<TabId, string> = {
     'n': 'Network (N)',
-    'n-1': 'Contingency (N-1)',
+    'contingency': 'Contingency (N-1)',
     'action': 'Remedial Action',
     'overflow': 'Overflow Analysis',
 };

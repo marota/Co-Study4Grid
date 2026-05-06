@@ -25,7 +25,12 @@ export interface ConfigRequest {
 }
 
 export interface AnalysisRequest {
-    disconnected_element: string;
+    /**
+     * Ordered list of element IDs to disconnect simultaneously. A
+     * single-item list is the legacy N-1 case; longer lists drive
+     * N-K (multi-element) contingency studies.
+     */
+    disconnected_elements: string[];
 }
 
 export interface ActionTopology {
@@ -283,12 +288,12 @@ export interface DiagramPatch {
         edge_fragments?: Record<string, { svg: string; sub_svg_id: string }>;
     }>;
     meta?: {
-        base_state?: 'N' | 'N-1';
+        base_state?: 'N' | 'contingency';
         elapsed_ms?: number;
     };
 }
 
-export type TabId = 'n' | 'n-1' | 'action' | 'overflow';
+export type TabId = 'n' | 'contingency' | 'action' | 'overflow';
 
 export interface SettingsBackup {
     // Paths tab (new)
@@ -330,7 +335,7 @@ export interface AvailableAction {
     type?: string;
 }
 
-export type SldTab = 'n' | 'n-1' | 'action';
+export type SldTab = 'n' | 'contingency' | 'action';
 
 // SLD metadata feeder node: maps SVG element IDs to network equipment IDs.
 // Comes from pypowsybl's GraphMetadata (feederNodes array).
@@ -424,7 +429,15 @@ export interface SessionResult {
         pypowsybl_fast_mode: boolean;
     };
     contingency: {
-        disconnected_element: string;
+        /**
+         * Ordered list of element IDs disconnected for this study.
+         * Older session dumps may carry a single ``disconnected_element``
+         * (string) under the same shape — the loader promotes it to a
+         * 1-element list before pushing into React state.
+         */
+        disconnected_elements: string[];
+        /** Legacy single-element field — read-only backward compat. */
+        disconnected_element?: string;
         selected_overloads: string[];
         monitor_deselected: boolean;
     };
@@ -481,9 +494,13 @@ export type InteractionType =
     | 'settings_applied'
     | 'settings_cancelled'
     | 'path_picked'
-    // Contingency Selection
+    // Contingency Selection (multi-element / N-K)
     | 'contingency_selected'
     | 'contingency_confirmed'
+    | 'contingency_element_added'
+    | 'contingency_element_removed'
+    | 'contingency_applied'
+    | 'contingency_cleared'
     // Two-Step Analysis
     | 'analysis_step1_started'
     | 'analysis_step1_completed'

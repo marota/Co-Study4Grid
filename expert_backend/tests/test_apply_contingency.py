@@ -10,7 +10,7 @@ Regression guard. ``pypowsybl.network.disconnect()`` silently returns
 ``False`` on some grids (small test grids, certain RTE xiidm exports)
 when the equipment's terminals don't expose the breaker model the
 high-level API expects. The previous ``try / except Exception`` in
-``_get_n1_variant`` caught only raised exceptions, missed the False
+``_get_contingency_variant`` caught only raised exceptions, missed the False
 return, and left the N-1 variant identical to N — every overload-
 dependent UI element (sidebar N-1 overloads, orange halos on the N-1
 diagram) then reported "no overloads" even when step1 (which runs
@@ -44,7 +44,7 @@ def _make_net(disconnect_return, line_ids=("LINE_A",), tfo_ids=()):
 def test_disconnect_success_skips_fallback():
     service = RecommenderService()
     net = _make_net(disconnect_return=True)
-    assert service._apply_contingency(net, "LINE_A") is True
+    assert service._apply_contingency_element(net, "LINE_A") is True
     net.disconnect.assert_called_once_with("LINE_A")
     net.update_lines.assert_not_called()
     net.update_2_windings_transformers.assert_not_called()
@@ -57,7 +57,7 @@ def test_falls_back_to_update_lines_when_disconnect_returns_false():
     orange halos."""
     service = RecommenderService()
     net = _make_net(disconnect_return=False)
-    assert service._apply_contingency(net, "LINE_A") is True
+    assert service._apply_contingency_element(net, "LINE_A") is True
     net.update_lines.assert_called_once_with(
         id="LINE_A", connected1=False, connected2=False
     )
@@ -67,7 +67,7 @@ def test_falls_back_to_update_lines_when_disconnect_returns_false():
 def test_falls_back_to_update_2wt_for_transformer():
     service = RecommenderService()
     net = _make_net(disconnect_return=False, line_ids=(), tfo_ids=("TRAFO_1",))
-    assert service._apply_contingency(net, "TRAFO_1") is True
+    assert service._apply_contingency_element(net, "TRAFO_1") is True
     net.update_2_windings_transformers.assert_called_once_with(
         id="TRAFO_1", connected1=False, connected2=False
     )
@@ -78,7 +78,7 @@ def test_disconnect_exception_also_triggers_fallback():
     service = RecommenderService()
     net = _make_net(disconnect_return=False)
     net.disconnect = MagicMock(side_effect=RuntimeError("boom"))
-    assert service._apply_contingency(net, "LINE_A") is True
+    assert service._apply_contingency_element(net, "LINE_A") is True
     net.update_lines.assert_called_once()
 
 
@@ -87,6 +87,6 @@ def test_returns_false_when_element_not_found():
     False so the caller can surface the issue."""
     service = RecommenderService()
     net = _make_net(disconnect_return=False, line_ids=(), tfo_ids=())
-    assert service._apply_contingency(net, "MYSTERY_X") is False
+    assert service._apply_contingency_element(net, "MYSTERY_X") is False
     net.update_lines.assert_not_called()
     net.update_2_windings_transformers.assert_not_called()

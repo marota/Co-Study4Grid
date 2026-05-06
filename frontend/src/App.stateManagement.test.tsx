@@ -334,7 +334,7 @@ describe('Phase 2: State Management Optimization', () => {
 
       await waitFor(() => {
         const lastViz = vizPanelRenderLog[vizPanelRenderLog.length - 1];
-        expect(lastViz.activeTab).toBe('n-1');
+        expect(lastViz.activeTab).toBe('contingency');
       });
 
       // Select second branch → should stay on n-1 tab (not flash to n)
@@ -342,8 +342,8 @@ describe('Phase 2: State Management Optimization', () => {
 
       await waitFor(() => {
         const lastViz = vizPanelRenderLog[vizPanelRenderLog.length - 1];
-        // activeTab must be 'n-1' after contingency switch, NOT 'n'
-        expect(lastViz.activeTab).toBe('n-1');
+        // activeTab must be 'contingency' after contingency switch, NOT 'n'
+        expect(lastViz.activeTab).toBe('contingency');
       });
     });
 

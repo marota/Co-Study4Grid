@@ -202,7 +202,7 @@ describe('SldOverlay', () => {
         // from result.lines_overloaded (N-1 state), independent of any
         // action's lines_overloaded_after.
         it('still highlights N-1 overloads on the N-1 tab', () => {
-            const vlOverlay = buildHighlightOverlay('n-1');
+            const vlOverlay = buildHighlightOverlay('contingency');
             const result = {
                 actions: {},
                 lines_overloaded: ['LINE_N1'],
@@ -337,7 +337,7 @@ describe('SldOverlay', () => {
             }),
             loading: false,
             error: null,
-            tab: 'n-1' as SldTab,
+            tab: 'contingency' as SldTab,
         });
 
         const result = {

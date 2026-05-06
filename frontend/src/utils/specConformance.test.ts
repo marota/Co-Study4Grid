@@ -50,9 +50,13 @@ const SPEC: Record<string, SpecRow> = {
   settings_applied:               { required: CONFIG_FIELDS },
   settings_cancelled:             { required: new Set() },
   path_picked:                    { required: new Set(['type', 'path']) },
-  // --- Contingency ---
+  // --- Contingency (single + N-K multi-element) ---
   contingency_selected:           { required: new Set(['element']) },
   contingency_confirmed:          { required: new Set(['type']), optional: new Set(['pending_branch']) },
+  contingency_element_added:      { required: new Set(['element']) },
+  contingency_element_removed:    { required: new Set(['element']) },
+  contingency_applied:            { required: new Set(['elements']) },
+  contingency_cleared:            { required: new Set() },
   // --- Two-Step Analysis ---
   analysis_step1_started:         { required: new Set(['element']) },
   overload_toggled:               { required: new Set(['overload', 'selected']) },

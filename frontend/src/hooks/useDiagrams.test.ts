@@ -146,26 +146,26 @@ describe('useDiagrams — interaction logging', () => {
         interactionLogger.clear();
 
         act(() => {
-            result.current.handleOverlaySldTabChange('n-1');
+            result.current.handleOverlaySldTabChange('contingency');
         });
 
         const log = interactionLogger.getLog();
         expect(log).toHaveLength(1);
         expect(log[0].type).toBe('sld_overlay_tab_changed');
-        expect(log[0].details).toEqual({ tab: 'n-1', vl_name: 'VL_400' });
+        expect(log[0].details).toEqual({ tab: 'contingency', vl_name: 'VL_400' });
     });
 
     it('logs asset_clicked when handleAssetClick is called', () => {
         const { result } = renderHook(() => useDiagrams([], [], ''));
 
         act(() => {
-            result.current.handleAssetClick('act_5', 'LINE_XY', 'n-1', null, vi.fn());
+            result.current.handleAssetClick('act_5', 'LINE_XY', 'contingency', null, vi.fn());
         });
 
         const log = interactionLogger.getLog();
         expect(log).toHaveLength(1);
         expect(log[0].type).toBe('asset_clicked');
-        expect(log[0].details).toEqual({ action_id: 'act_5', asset_name: 'LINE_XY', tab: 'n-1' });
+        expect(log[0].details).toEqual({ action_id: 'act_5', asset_name: 'LINE_XY', tab: 'contingency' });
     });
 
     it('logs action_deselected when re-selecting the same action', async () => {
@@ -446,7 +446,7 @@ describe('useDiagrams — interaction logging', () => {
         it('tolerates each detached-tab key variant without throwing', () => {
             const maps: Array<Partial<Record<string, unknown>>> = [
                 { n: { window: {}, mountNode: document.createElement('div') } },
-                { 'n-1': { window: {}, mountNode: document.createElement('div') } },
+                { 'contingency': { window: {}, mountNode: document.createElement('div') } },
                 { action: { window: {}, mountNode: document.createElement('div') } },
                 { overflow: { window: {}, mountNode: document.createElement('div') } },
             ];
@@ -481,8 +481,8 @@ describe('useDiagrams — interaction logging', () => {
 
                 // User parked the main window on the N-1 tab while the
                 // action tab is open in a popup.
-                act(() => { result.current.setActiveTab('n-1'); });
-                expect(result.current.activeTab).toBe('n-1');
+                act(() => { result.current.setActiveTab('contingency'); });
+                expect(result.current.activeTab).toBe('contingency');
 
                 // Re-render with the same detached map so the ref mirror
                 // is up-to-date before the callback fires.
@@ -494,14 +494,14 @@ describe('useDiagrams — interaction logging', () => {
 
                 // selection moved, but main-window activeTab is unchanged.
                 expect(result.current.selectedActionId).toBe('act_42');
-                expect(result.current.activeTab).toBe('n-1');
+                expect(result.current.activeTab).toBe('contingency');
             });
 
             it('still switches activeTab to "action" when the action tab is NOT detached', async () => {
                 const { result } = renderHook(() => useDiagrams([], [], '', {}));
 
-                act(() => { result.current.setActiveTab('n-1'); });
-                expect(result.current.activeTab).toBe('n-1');
+                act(() => { result.current.setActiveTab('contingency'); });
+                expect(result.current.activeTab).toBe('contingency');
 
                 await act(async () => {
                     await result.current.handleActionSelect('act_99', null, '', 0, vi.fn(), vi.fn());
@@ -538,7 +538,7 @@ describe('useDiagrams — interaction logging', () => {
                 expect(result.current.activeTab).toBe('n');
             });
 
-            it('does NOT switch main window to "n-1" on deselect when action tab is detached', async () => {
+            it('does NOT switch main window to "contingency" on deselect when action tab is detached', async () => {
                 const { result, rerender } = renderHook(
                     ({ dt }: { dt: Record<string, unknown> }) => useDiagrams([], [], '', dt),
                     {
@@ -622,7 +622,7 @@ describe('useDiagrams — interaction logging', () => {
                 // User parked the main window on N-1; the action tab
                 // lives in a popup and currently shows 'act_prev' at a
                 // zoomed-in viewBox.
-                act(() => { result.current.setActiveTab('n-1'); });
+                act(() => { result.current.setActiveTab('contingency'); });
                 act(() => { result.current.setSelectedActionId('act_prev'); });
                 act(() => { result.current.actionPZ.setViewBox(zoomedVb); });
                 rerender({ dt: { action: { window: {}, mountNode: document.createElement('div') } } });
@@ -641,7 +641,7 @@ describe('useDiagrams — interaction logging', () => {
                 // Main window stayed on N-1 (covered by a previous test,
                 // but double-checked here as the precondition for the
                 // zoom-preserve branch).
-                expect(result.current.activeTab).toBe('n-1');
+                expect(result.current.activeTab).toBe('contingency');
                 // The captured viewBox was re-applied — NOT the native
                 // one from the freshly loaded SVG.
                 expect(result.current.actionPZ.viewBox).toEqual(zoomedVb);
@@ -696,7 +696,7 @@ describe('useDiagrams — interaction logging', () => {
                 // Main window on N-1 with a viewBox, action tab
                 // detached but the user has NOT yet selected an
                 // action — so actionPZ.viewBox is still null.
-                act(() => { result.current.setActiveTab('n-1'); });
+                act(() => { result.current.setActiveTab('contingency'); });
                 act(() => { result.current.n1PZ.setViewBox(n1Vb); });
                 rerender({ dt: { action: { window: {}, mountNode: document.createElement('div') } } });
                 expect(result.current.actionPZ.viewBox).toBeNull();
@@ -733,7 +733,7 @@ describe('useDiagrams — interaction logging', () => {
                 );
 
                 // Main window on N-1, action tab in popup showing 'act_1'.
-                act(() => { result.current.setActiveTab('n-1'); });
+                act(() => { result.current.setActiveTab('contingency'); });
                 act(() => { result.current.setSelectedActionId('act_1'); });
                 rerender({ dt: { action: { window: {}, mountNode: document.createElement('div') } } });
 
@@ -743,7 +743,7 @@ describe('useDiagrams — interaction logging', () => {
                 });
 
                 // Main-window activeTab unchanged.
-                expect(result.current.activeTab).toBe('n-1');
+                expect(result.current.activeTab).toBe('contingency');
                 // And the inspect query is set (drives the auto-zoom
                 // on the detached action tab).
                 expect(result.current.inspectQuery).toBe('LINE_XY');
@@ -753,7 +753,7 @@ describe('useDiagrams — interaction logging', () => {
                 const { result } = renderHook(() => useDiagrams([], [], '', {}));
 
                 act(() => { result.current.setSelectedActionId('act_1'); });
-                act(() => { result.current.setActiveTab('n-1'); });
+                act(() => { result.current.setActiveTab('contingency'); });
 
                 act(() => {
                     result.current.handleAssetClick('act_1', 'LINE_XY', 'action', 'act_1', vi.fn());
@@ -785,38 +785,38 @@ describe('useDiagrams — interaction logging', () => {
                 expect(result.current.inspectQuery).toBe('LINE_N');
             });
 
-            it('does NOT switch activeTab to "n-1" when clicking an asset targeting a detached N-1 tab', () => {
+            it('does NOT switch activeTab to "contingency" when clicking an asset targeting a detached N-1 tab', () => {
                 const { result, rerender } = renderHook(
                     ({ dt }: { dt: Record<string, unknown> }) => useDiagrams([], [], '', dt),
                     {
                         initialProps: {
-                            dt: { 'n-1': { window: {}, mountNode: document.createElement('div') } } as Record<string, unknown>,
+                            dt: { 'contingency': { window: {}, mountNode: document.createElement('div') } } as Record<string, unknown>,
                         },
                     },
                 );
 
                 act(() => { result.current.setActiveTab('action'); });
                 act(() => { result.current.setSelectedActionId('act_1'); });
-                rerender({ dt: { 'n-1': { window: {}, mountNode: document.createElement('div') } } });
+                rerender({ dt: { 'contingency': { window: {}, mountNode: document.createElement('div') } } });
 
                 act(() => {
-                    result.current.handleAssetClick('', 'LINE_N1', 'n-1', 'act_1', vi.fn());
+                    result.current.handleAssetClick('', 'LINE_N1', 'contingency', 'act_1', vi.fn());
                 });
 
                 expect(result.current.activeTab).toBe('action');
                 expect(result.current.inspectQuery).toBe('LINE_N1');
             });
 
-            it('still switches activeTab to "n-1" when clicking an asset targeting an INLINE N-1 tab', () => {
+            it('still switches activeTab to "contingency" when clicking an asset targeting an INLINE N-1 tab', () => {
                 const { result } = renderHook(() => useDiagrams([], [], '', {}));
 
                 act(() => { result.current.setActiveTab('action'); });
 
                 act(() => {
-                    result.current.handleAssetClick('', 'LINE_N1', 'n-1', null, vi.fn());
+                    result.current.handleAssetClick('', 'LINE_N1', 'contingency', null, vi.fn());
                 });
 
-                expect(result.current.activeTab).toBe('n-1');
+                expect(result.current.activeTab).toBe('contingency');
             });
 
             it('still forwards to handleActionSelect (which has its own detached guard) when clicking an asset on a DIFFERENT action while the action tab is detached', () => {
@@ -831,7 +831,7 @@ describe('useDiagrams — interaction logging', () => {
                 );
 
                 act(() => { result.current.setSelectedActionId('act_prev'); });
-                act(() => { result.current.setActiveTab('n-1'); });
+                act(() => { result.current.setActiveTab('contingency'); });
                 rerender({ dt: { action: { window: {}, mountNode: document.createElement('div') } } });
 
                 act(() => {
@@ -844,7 +844,7 @@ describe('useDiagrams — interaction logging', () => {
                 // activeTab switch lives in handleActionSelect itself
                 // (tested elsewhere in this file).
                 expect(handleActionSelectFn).toHaveBeenCalledWith('act_new');
-                expect(result.current.activeTab).toBe('n-1');
+                expect(result.current.activeTab).toBe('contingency');
             });
         });
 
