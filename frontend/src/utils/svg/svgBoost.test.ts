@@ -25,14 +25,19 @@ describe('boostSvgForLargeGrid', () => {
         expect(boostSvgForLargeGrid(stableSvg, vb, 1000)).toBe(stableSvg);
     });
 
-    it('applies scale transforms to circle parents when ratio exceeds threshold', () => {
+    it('applies a milder scale to circle parents than to edge-info groups', () => {
         const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20000 20000">'
-            + '<g><circle cx="10" cy="10" r="5"/></g></svg>';
+            + '<g><circle cx="10" cy="10" r="5"/></g>'
+            + '<g class="nad-edge-infos"><g transform="translate(50,50)"/></g></svg>';
         const vb = { x: 0, y: 0, w: 20000, h: 20000 };
         const out = boostSvgForLargeGrid(svg, vb, 1000);
         expect(out).not.toBe(svg);
-        // Scale math: ratio=16 > 3 → boost = sqrt(16/3).
-        expect(out).toMatch(/translate\(10,10\) scale\(2\.31\)/);
+        // ratio = 16 > 3, so boost = sqrt(16/3) ≈ 2.31. Node circles get the
+        // damped factor sqrt(boost) ≈ 1.52 to avoid pushing neighbouring
+        // nodes into each other on dense grids; edge-info groups (flow
+        // arrows + values) keep the full boost so flow text stays readable.
+        expect(out).toMatch(/translate\(10,10\) scale\(1\.52\)/);
+        expect(out).toMatch(/translate\(50,50\) scale\(2\.31\)/);
     });
 });
 

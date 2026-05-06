@@ -15,5 +15,6 @@
     "monitoring_factor": 0.95,
     "pre_existing_overload_threshold": 0.02,
     "ignore_reconnections": false,
-    "pypowsybl_fast_mode": true
+    "pypowsybl_fast_mode": true,
+    "force_layout": false
 }
