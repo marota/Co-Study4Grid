@@ -40,7 +40,7 @@ const createDefaultProps = (overrides: Record<string, unknown> = {}) => ({
     onZoomIn: vi.fn(),
     onZoomOut: vi.fn(),
     hasBranches: false,
-    selectedBranch: '',
+    selectedContingency: [],
     vlOverlay: null,
     onOverlayClose: vi.fn(),
     onOverlaySldTabChange: vi.fn(),
@@ -58,13 +58,15 @@ describe('VisualizationPanel', () => {
         expect(screen.getByText('Network (N)')).toBeInTheDocument();
     });
 
-    it('always renders N-1 tab (even without branch selected)', () => {
+    it('always renders the Contingency tab (even without branch selected)', () => {
         render(<VisualizationPanel {...createDefaultProps()} />);
-        expect(screen.getByText('Contingency (N-1)')).toBeInTheDocument();
+        // No applied contingency yet → bare ``Contingency`` label
+        // (the ``(N-K)`` suffix is appended once the user triggers).
+        expect(screen.getByText('Contingency')).toBeInTheDocument();
     });
 
-    it('renders N-1 tab when branch is selected', () => {
-        render(<VisualizationPanel {...createDefaultProps({ selectedBranch: 'LINE_A' })} />);
+    it('renders Contingency tab as N-1 when a single branch is applied', () => {
+        render(<VisualizationPanel {...createDefaultProps({ selectedContingency: ['LINE_A'] })} />);
         expect(screen.getByText('Contingency (N-1)')).toBeInTheDocument();
     });
 
@@ -104,7 +106,7 @@ describe('VisualizationPanel', () => {
     it('calls onTabChange when N-1 tab is clicked', async () => {
         const user = userEvent.setup();
         const onTabChange = vi.fn();
-        render(<VisualizationPanel {...createDefaultProps({ selectedBranch: 'LINE_A', onTabChange })} />);
+        render(<VisualizationPanel {...createDefaultProps({ selectedContingency: ['LINE_A'], onTabChange })} />);
 
         await user.click(screen.getByText('Contingency (N-1)'));
         expect(onTabChange).toHaveBeenCalledWith('contingency');
@@ -118,7 +120,7 @@ describe('VisualizationPanel', () => {
     it('shows N-1 loading message', () => {
         render(<VisualizationPanel {...createDefaultProps({
             activeTab: 'contingency',
-            selectedBranch: 'LINE_A',
+            selectedContingency: ['LINE_A'],
             n1Loading: true,
         })} />);
         expect(screen.getByText('Generating N-1 Diagram...')).toBeInTheDocument();
@@ -400,7 +402,7 @@ describe('VisualizationPanel', () => {
         };
         render(<VisualizationPanel {...createDefaultProps({
             activeTab: 'contingency',
-            selectedBranch: 'LINE_A',
+            selectedContingency: ['LINE_A'],
             n1Diagram,
         })} />);
         expect(screen.getByText(/MAX_ITERATION_REACHED/)).toBeInTheDocument();
@@ -626,9 +628,9 @@ describe('VisualizationPanel', () => {
         it('keeps N-1 container mounted even before n1Diagram loads', () => {
             const { container } = render(<VisualizationPanel {...createDefaultProps({
                 activeTab: 'contingency',
-                selectedBranch: 'LINE_A',
+                selectedContingency: ['LINE_A'],
             })} />);
-            expect(container.querySelector('#n-1-svg-container')).toBeInTheDocument();
+            expect(container.querySelector('#contingency-svg-container')).toBeInTheDocument();
             // Prompt message shown as overlay
             expect(screen.getByText(/Select a contingency element/)).toBeInTheDocument();
         });
@@ -636,11 +638,11 @@ describe('VisualizationPanel', () => {
         it('keeps N-1 container mounted while n1Loading is true (overlays loading message)', () => {
             const { container } = render(<VisualizationPanel {...createDefaultProps({
                 activeTab: 'contingency',
-                selectedBranch: 'LINE_A',
+                selectedContingency: ['LINE_A'],
                 n1Loading: true,
             })} />);
             // Container still present — not unmounted by loading state
-            expect(container.querySelector('#n-1-svg-container')).toBeInTheDocument();
+            expect(container.querySelector('#contingency-svg-container')).toBeInTheDocument();
             // Loading message overlay shown
             expect(screen.getByText('Generating N-1 Diagram...')).toBeInTheDocument();
         });
@@ -665,10 +667,10 @@ describe('VisualizationPanel', () => {
         it('does NOT unmount N-1 container when transitioning loading → loaded', () => {
             const { container, rerender } = render(<VisualizationPanel {...createDefaultProps({
                 activeTab: 'contingency',
-                selectedBranch: 'LINE_A',
+                selectedContingency: ['LINE_A'],
                 n1Loading: true,
             })} />);
-            const loadingContainer = container.querySelector('#n-1-svg-container');
+            const loadingContainer = container.querySelector('#contingency-svg-container');
             expect(loadingContainer).toBeInTheDocument();
 
             // Simulate fetchN1 completing
@@ -678,13 +680,13 @@ describe('VisualizationPanel', () => {
             };
             rerender(<VisualizationPanel {...createDefaultProps({
                 activeTab: 'contingency',
-                selectedBranch: 'LINE_A',
+                selectedContingency: ['LINE_A'],
                 n1Loading: false,
                 n1Diagram,
             })} />);
 
             // Same container div — NOT a fresh remount
-            const loadedContainer = container.querySelector('#n-1-svg-container');
+            const loadedContainer = container.querySelector('#contingency-svg-container');
             expect(loadedContainer).toBeInTheDocument();
             expect(loadedContainer).toBe(loadingContainer);
             // Loading overlay gone

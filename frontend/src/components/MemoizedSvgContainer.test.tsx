@@ -29,7 +29,7 @@ describe('MemoizedSvgContainer', () => {
         const { container } = render(
             <MemoizedSvgContainer svg="" containerRef={containerRef} display="none" tabId="contingency" />
         );
-        const el = container.querySelector('#n-1-svg-container') as HTMLElement;
+        const el = container.querySelector('#contingency-svg-container') as HTMLElement;
         expect(el.style.display).toBe('none');
     });
 
@@ -108,7 +108,7 @@ describe('MemoizedSvgContainer', () => {
 
         // Exactly one injection should have fired (the update), not two
         const injectionCalls = consoleSpy.mock.calls.filter(
-            call => typeof call[0] === 'string' && call[0].includes('[SVG] DOM injection for n-1')
+            call => typeof call[0] === 'string' && call[0].includes('[SVG] DOM injection for contingency')
         );
         expect(injectionCalls.length).toBe(1);
         expect(containerRef.current?.innerHTML).toContain('<rect');

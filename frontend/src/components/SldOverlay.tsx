@@ -854,7 +854,9 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                                     cursor: vlOverlay.loading ? 'wait' : 'pointer',
                                 }}
                             >
-                                {tabMode.toUpperCase()}
+                                {tabMode === 'contingency'
+                                    ? (selectedContingency.length > 1 ? `N-${selectedContingency.length}` : 'N-1')
+                                    : tabMode.toUpperCase()}
                             </button>
                         ))}
                     </div>

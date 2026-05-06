@@ -33,7 +33,7 @@ describe('SldOverlay', () => {
         onOverlaySldTabChange: vi.fn(),
         n1Diagram: null as DiagramData | null,
         actionDiagram: null as DiagramData | null,
-        selectedBranch: '',
+        selectedContingency: [],
         result: null as AnalysisResult | null,
     };
 
@@ -182,7 +182,7 @@ describe('SldOverlay', () => {
             } as unknown as AnalysisResult;
 
             const { container } = render(
-                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedContingency={["L_FAULTY"]} />,
             );
 
             const highlights = container.querySelectorAll('.sld-highlight-overloaded');
@@ -213,7 +213,7 @@ describe('SldOverlay', () => {
             } as unknown as AnalysisResult;
 
             const { container } = render(
-                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedContingency={["L_FAULTY"]} />,
             );
 
             expect(container.querySelector('#cell_n1.sld-highlight-overloaded-original')).toBeTruthy();
@@ -243,7 +243,7 @@ describe('SldOverlay', () => {
             } as unknown as AnalysisResult;
 
             const { container } = render(
-                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedContingency={["L_FAULTY"]} />,
             );
 
             expect(
@@ -278,7 +278,7 @@ describe('SldOverlay', () => {
             } as unknown as AnalysisResult;
 
             const { container } = render(
-                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedContingency={["L_FAULTY"]} />,
             );
 
             expect(container.querySelector('#cell_n1.sld-highlight-overloaded-original')).toBeTruthy();
@@ -309,7 +309,7 @@ describe('SldOverlay', () => {
             } as unknown as AnalysisResult;
 
             const { container } = render(
-                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedContingency={["L_FAULTY"]} />,
             );
             expect(container.querySelectorAll('.sld-highlight-overloaded').length).toBe(0);
         });
@@ -352,7 +352,7 @@ describe('SldOverlay', () => {
         it('replants highlight clones after they are wiped from the DOM', () => {
             const vlOverlay = buildOverlay();
             const { container, rerender } = render(
-                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedContingency={["L_FAULTY"]} />,
             );
             // Initial render plants exactly one overload clone for cell_n1.
             expect(container.querySelectorAll('.sld-highlight-clone.sld-highlight-overloaded').length).toBe(1);
@@ -367,7 +367,7 @@ describe('SldOverlay', () => {
             // updating) must replant the clones, even though no
             // highlight-relevant prop changed.
             rerender(
-                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedContingency={["L_FAULTY"]} />,
             );
             expect(container.querySelectorAll('.sld-highlight-clone.sld-highlight-overloaded').length).toBe(1);
             expect(container.querySelector('#cell_n1.sld-highlight-overloaded-original')).toBeTruthy();
@@ -376,14 +376,14 @@ describe('SldOverlay', () => {
         it('does not duplicate clones when a render fires but nothing changed', () => {
             const vlOverlay = buildOverlay();
             const { container, rerender } = render(
-                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />,
+                <SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedContingency={["L_FAULTY"]} />,
             );
             // Multiple rerenders with no DOM wipeout must NOT stack up
             // additional clones — the signature guard keeps the effect
             // idempotent.
-            rerender(<SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />);
-            rerender(<SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />);
-            rerender(<SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedBranch="L_FAULTY" />);
+            rerender(<SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedContingency={["L_FAULTY"]} />);
+            rerender(<SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedContingency={["L_FAULTY"]} />);
+            rerender(<SldOverlay {...defaultProps} vlOverlay={vlOverlay} result={result} selectedContingency={["L_FAULTY"]} />);
             expect(container.querySelectorAll('.sld-highlight-clone.sld-highlight-overloaded').length).toBe(1);
         });
     });

@@ -105,7 +105,7 @@ const mockApi = vi.hoisted(() => ({
   getNominalVoltages: vi.fn().mockResolvedValue({ mapping: {}, unique_kv: [63, 225] }),
   getVoltageLevelSubstations: vi.fn().mockResolvedValue({ mapping: {} }),
   getNetworkDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
-  getN1Diagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] }),
+  getContingencyDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] }),
   pickPath: vi.fn(),
   runAnalysisStep1: vi.fn().mockResolvedValue({ can_proceed: true, lines_overloaded: ['LINE_OL1'] }),
   runAnalysisStep2Stream: vi.fn(),
@@ -118,7 +118,7 @@ const mockApi = vi.hoisted(() => ({
   saveUserConfig: vi.fn().mockResolvedValue({}),
   setConfigFilePath: vi.fn().mockResolvedValue({ config_file_path: '/home/user/data/config.json', config: {} }),
   getNSld: vi.fn(),
-  getN1Sld: vi.fn(),
+  getContingencySld: vi.fn(),
   getActionVariantSld: vi.fn(),
 }));
 
@@ -144,16 +144,21 @@ async function renderAndLoadStudy() {
   }, { timeout: 5000 });
 }
 
-// Helper: select a valid branch by typing the full name
+// Helper: pick ``branchName`` from the react-select multi-select
+// then click the Trigger button to commit the contingency.
 async function selectBranch(branchName: string) {
-  const input = screen.getByPlaceholderText('Search line/bus...');
+  const combobox = screen.getByRole('combobox');
   await act(async () => {
-    await userEvent.clear(input);
-    await userEvent.type(input, branchName);
+    await userEvent.click(combobox);
+    await userEvent.type(combobox, branchName);
+    await userEvent.keyboard('{Enter}');
   });
-  // Wait for N-1 diagram fetch to complete
+  const trigger = await screen.findByRole('button', { name: /Trigger/ });
+  await act(async () => {
+    await userEvent.click(trigger);
+  });
   await waitFor(() => {
-    expect(mockApi.getN1Diagram).toHaveBeenCalledWith(branchName);
+    expect(mockApi.getContingencyDiagram).toHaveBeenCalledWith([branchName]);
   });
 }
 
@@ -299,7 +304,7 @@ describe('Full State Reset on Load Study', () => {
     await renderAndLoadStudy();
     await selectBranch('BRANCH_A');
 
-    expect(screen.getByPlaceholderText('Search line/bus...')).toHaveValue('BRANCH_A');
+    expect(document.querySelector('.cs4g-contingency__multi-value__label')?.textContent).toBe('BRANCH_A');
 
     mockApi.updateConfig.mockClear();
     mockApi.getBranches.mockClear();
@@ -320,7 +325,7 @@ describe('Full State Reset on Load Study', () => {
     });
 
     // Branch input should be cleared
-    expect(screen.getByPlaceholderText('Search line/bus...')).toHaveValue('');
+    expect(document.querySelector('.cs4g-contingency__multi-value__label')).toBeNull();
   });
 
   it('clears branch selection after confirming Load Study with analysis state', async () => {
@@ -328,7 +333,7 @@ describe('Full State Reset on Load Study', () => {
     await selectBranch('BRANCH_A');
     await runAnalysis();
 
-    expect(screen.getByPlaceholderText('Search line/bus...')).toHaveValue('BRANCH_A');
+    expect(document.querySelector('.cs4g-contingency__multi-value__label')?.textContent).toBe('BRANCH_A');
 
     mockApi.updateConfig.mockClear();
     mockApi.getBranches.mockClear();
@@ -356,7 +361,7 @@ describe('Full State Reset on Load Study', () => {
     });
 
     // Branch input must be cleared after reset
-    expect(screen.getByPlaceholderText('Search line/bus...')).toHaveValue('');
+    expect(document.querySelector('.cs4g-contingency__multi-value__label')).toBeNull();
   });
 
   it('re-fetches branches after Load Study reset', async () => {
@@ -436,7 +441,7 @@ describe('Full State Reset on Apply Settings', () => {
     await renderAndLoadStudy();
     await selectBranch('BRANCH_A');
 
-    expect(screen.getByPlaceholderText('Search line/bus...')).toHaveValue('BRANCH_A');
+    expect(document.querySelector('.cs4g-contingency__multi-value__label')?.textContent).toBe('BRANCH_A');
 
     mockApi.updateConfig.mockClear();
 
@@ -447,7 +452,7 @@ describe('Full State Reset on Apply Settings', () => {
       expect(mockApi.updateConfig).toHaveBeenCalled();
     });
 
-    expect(screen.getByPlaceholderText('Search line/bus...')).toHaveValue('');
+    expect(document.querySelector('.cs4g-contingency__multi-value__label')).toBeNull();
     expect(screen.queryByText('Apply')).not.toBeInTheDocument();
   });
 
@@ -456,7 +461,7 @@ describe('Full State Reset on Apply Settings', () => {
     await selectBranch('BRANCH_A');
     await runAnalysis();
 
-    expect(screen.getByPlaceholderText('Search line/bus...')).toHaveValue('BRANCH_A');
+    expect(document.querySelector('.cs4g-contingency__multi-value__label')?.textContent).toBe('BRANCH_A');
 
     mockApi.updateConfig.mockClear();
 
@@ -467,7 +472,7 @@ describe('Full State Reset on Apply Settings', () => {
       expect(mockApi.updateConfig).toHaveBeenCalled();
     });
 
-    expect(screen.getByPlaceholderText('Search line/bus...')).toHaveValue('');
+    expect(document.querySelector('.cs4g-contingency__multi-value__label')).toBeNull();
     expect(screen.queryByText('Apply')).not.toBeInTheDocument();
   });
 
@@ -672,7 +677,7 @@ describe('Apply Settings Confirmation', () => {
     expect(mockApi.updateConfig).not.toHaveBeenCalled();
     expect(screen.getByText('Apply')).toBeInTheDocument();
     // The contingency selection must also still be intact.
-    expect(screen.getByPlaceholderText('Search line/bus...')).toHaveValue('BRANCH_A');
+    expect(document.querySelector('.cs4g-contingency__multi-value__label')?.textContent).toBe('BRANCH_A');
   });
 });
 

@@ -34,9 +34,9 @@ describe('useSldOverlay', () => {
         expect(result.current.vlOverlay).toBeNull();
     });
 
-    it('initializes selectedBranchForSld ref with empty string', () => {
+    it('initializes selectedContingencyForSld ref with an empty list', () => {
         const { result } = renderHook(() => useSldOverlay('n'));
-        expect(result.current.selectedBranchForSld.current).toBe('');
+        expect(result.current.selectedContingencyForSld.current).toEqual([]);
     });
 
     it('handleVlDoubleClick sets vlOverlay with loading state', () => {

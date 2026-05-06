@@ -22,7 +22,7 @@ describe('Header', () => {
         onCommitNetworkPath: vi.fn(),
         configLoading: false,
         result: null,
-        selectedBranch: '',
+        selectedContingency: [],
         sessionRestoring: false,
         onPickSettingsPath: vi.fn(),
         onLoadStudy: vi.fn(),

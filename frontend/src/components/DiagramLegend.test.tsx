@@ -35,7 +35,7 @@ describe('DiagramLegend', () => {
     it('shows the contingency entry on the N-1 tab', async () => {
         const user = userEvent.setup();
         render(<DiagramLegend tabId="contingency" />);
-        await user.click(screen.getByTestId('diagram-legend-pill-n-1'));
+        await user.click(screen.getByTestId('diagram-legend-pill-contingency'));
         expect(screen.getByText('Contingency')).toBeInTheDocument();
         // Action target only relevant on the action tab.
         expect(screen.queryByText('Action target')).not.toBeInTheDocument();

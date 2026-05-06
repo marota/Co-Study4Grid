@@ -115,7 +115,7 @@ const mockApi = vi.hoisted(() => ({
   getNominalVoltages: vi.fn().mockResolvedValue({ mapping: {}, unique_kv: [63, 225] }),
   getVoltageLevelSubstations: vi.fn().mockResolvedValue({ mapping: {} }),
   getNetworkDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
-  getN1Diagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] }),
+  getContingencyDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] }),
   pickPath: vi.fn(),
   runAnalysisStep1: vi.fn().mockResolvedValue({ can_proceed: true, lines_overloaded: ['LINE_OL1'] }),
   runAnalysisStep2Stream: vi.fn(),
@@ -128,7 +128,7 @@ const mockApi = vi.hoisted(() => ({
   saveUserConfig: vi.fn().mockResolvedValue({}),
   setConfigFilePath: vi.fn().mockResolvedValue({ config_file_path: '/home/user/data/config.json', config: {} }),
   getNSld: vi.fn(),
-  getN1Sld: vi.fn(),
+  getContingencySld: vi.fn(),
   getActionVariantSld: vi.fn(),
 }));
 
@@ -154,16 +154,32 @@ async function renderAndLoadStudy() {
   }, { timeout: 5000 });
 }
 
-// Helper: select a valid branch by typing the full name
-async function selectBranch(branchName: string) {
-  const input = screen.getByPlaceholderText('Search line/bus...');
+// Helper: add ``branchName`` to the pending contingency by typing it
+// into the react-select multi-select and pressing Enter to confirm
+// the highlighted option.
+async function pickBranch(branchName: string) {
+  const combobox = screen.getByRole('combobox');
   await act(async () => {
-    await userEvent.clear(input);
-    await userEvent.type(input, branchName);
+    await userEvent.click(combobox);
+    await userEvent.type(combobox, branchName);
+    await userEvent.keyboard('{Enter}');
   });
-  // Wait for N-1 diagram fetch to complete
+}
+
+// Helper: click the Trigger button to commit the pending list.
+async function triggerContingency() {
+  const trigger = await screen.findByRole('button', { name: /Trigger/ });
+  await act(async () => {
+    await userEvent.click(trigger);
+  });
+}
+
+// Helper: full pick + trigger + wait for the contingency-diagram fetch.
+async function selectBranch(branchName: string) {
+  await pickBranch(branchName);
+  await triggerContingency();
   await waitFor(() => {
-    expect(mockApi.getN1Diagram).toHaveBeenCalledWith(branchName);
+    expect(mockApi.getContingencyDiagram).toHaveBeenCalledWith([branchName]);
   });
 }
 
@@ -211,15 +227,12 @@ describe('Contingency Change Confirmation', () => {
     await selectBranch('BRANCH_A');
 
     // Now switch to BRANCH_B — no analysis has been run, so no dialog
-    mockApi.getN1Diagram.mockClear();
-    const input = screen.getByPlaceholderText('Search line/bus...');
-    await act(async () => {
-      await userEvent.clear(input);
-      await userEvent.type(input, 'BRANCH_B');
-    });
+    mockApi.getContingencyDiagram.mockClear();
+    await pickBranch('BRANCH_B');
+    await triggerContingency();
 
     await waitFor(() => {
-      expect(mockApi.getN1Diagram).toHaveBeenCalledWith('BRANCH_B');
+      expect(mockApi.getContingencyDiagram).toHaveBeenCalledWith(['BRANCH_A', 'BRANCH_B']);
     });
 
     // No dialog should appear
@@ -232,9 +245,8 @@ describe('Contingency Change Confirmation', () => {
     await runAnalysis();
 
     // Now switch to BRANCH_B — should trigger dialog
-    const input = screen.getByPlaceholderText('Search line/bus...');
-    await userEvent.clear(input);
-    await userEvent.type(input, 'BRANCH_B');
+    await pickBranch('BRANCH_B');
+    await triggerContingency();
 
     await waitFor(() => {
       expect(screen.getByText('Change Contingency?')).toBeInTheDocument();
@@ -246,16 +258,15 @@ describe('Contingency Change Confirmation', () => {
     await selectBranch('BRANCH_A');
     await runAnalysis();
 
-    const input = screen.getByPlaceholderText('Search line/bus...');
-    await userEvent.clear(input);
-    await userEvent.type(input, 'BRANCH_B');
+    await pickBranch('BRANCH_B');
+    await triggerContingency();
 
     await screen.findByText('Change Contingency?');
     const confirmBtn = screen.getByText('Confirm');
     await userEvent.click(confirmBtn);
 
     await waitFor(() => {
-      expect(mockApi.getN1Diagram).toHaveBeenCalledWith('BRANCH_B');
+      expect(mockApi.getContingencyDiagram).toHaveBeenCalledWith(['BRANCH_A', 'BRANCH_B']);
     });
     expect(screen.queryByText('Change Contingency?')).not.toBeInTheDocument();
   });
@@ -265,18 +276,19 @@ describe('Contingency Change Confirmation', () => {
     await selectBranch('BRANCH_A');
     await runAnalysis();
 
-    const input = screen.getByPlaceholderText('Search line/bus...');
-    await userEvent.clear(input);
-    await userEvent.type(input, 'BRANCH_B');
+    await pickBranch('BRANCH_B');
+    await triggerContingency();
 
     await screen.findByText('Change Contingency?');
     const cancelBtn = screen.getByText('Cancel');
     await userEvent.click(cancelBtn);
 
-    // Should NOT have called N-1 for BRANCH_B
-    expect(mockApi.getN1Diagram).not.toHaveBeenCalledWith('BRANCH_B');
-    // Input should revert to BRANCH_A
-    expect(input).toHaveValue('BRANCH_A');
+    // Should NOT have called the diagram fetch with the new pair
+    expect(mockApi.getContingencyDiagram).not.toHaveBeenCalledWith(['BRANCH_A', 'BRANCH_B']);
+    // The applied contingency stays at BRANCH_A — its chip is still
+    // visible in the multi-select. (Use getAllByText since the chip
+    // and the sidebar-summary link both surface the name.)
+    expect(screen.getAllByText('BRANCH_A').length).toBeGreaterThan(0);
   });
 
   it('does not trigger dialog for partial/invalid branch text', async () => {
@@ -284,14 +296,15 @@ describe('Contingency Change Confirmation', () => {
     await selectBranch('BRANCH_A');
     await runAnalysis();
 
-    const input = screen.getByPlaceholderText('Search line/bus...');
-    // Type something that doesn't match a full branch
-    await userEvent.clear(input);
-    await userEvent.type(input, 'INVALID_NAME');
+    // Type something that doesn't match a full branch and DON'T press
+    // Enter — react-select keeps it as raw input text; no chip is added.
+    const combobox = screen.getByRole('combobox');
+    await userEvent.click(combobox);
+    await userEvent.type(combobox, 'INVALID_NAME');
 
-    // No dialog should appear for invalid/partial names (assuming selection only happens on full match in selectBranch-like logic)
-    // Actually, App.tsx handles the branch change. 
-    // If the input value doesn't match an existing branch in the list, the useEffect might not trigger.
+    // No dialog should appear for partial / invalid names — nothing
+    // is committed to the pending list until a real option is picked
+    // and the Trigger button is clicked.
     expect(screen.queryByText('Change Contingency?')).not.toBeInTheDocument();
   });
 });
@@ -310,7 +323,7 @@ describe('Overload Clearing Logic', () => {
     mockApi.getNominalVoltages.mockResolvedValue({ mapping: {}, unique_kv: [63, 225] });
     mockApi.getVoltageLevelSubstations.mockResolvedValue({ mapping: {} });
     mockApi.getNetworkDiagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null });
-    mockApi.getN1Diagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] });
+    mockApi.getContingencyDiagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] });
     mockApi.runAnalysisStep1.mockResolvedValue({ can_proceed: true, lines_overloaded: ['LINE_OL1'] });
     mockApi.getActionVariantDiagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null });
 
@@ -322,12 +335,12 @@ describe('Overload Clearing Logic', () => {
     await renderAndLoadStudy();
 
     // 1. Select BRANCH_A with overloads
-    mockApi.getN1Diagram.mockResolvedValueOnce({
+    mockApi.getContingencyDiagram.mockResolvedValueOnce({
       svg: '<svg></svg>',
       lines_overloaded: ['OL_1', 'OL_2']
     });
-    const input = screen.getByPlaceholderText('Search line/bus...');
-    fireEvent.change(input, { target: { value: 'BRANCH_A' } });
+    await pickBranch('BRANCH_A');
+    await triggerContingency();
 
     await waitFor(() => {
       expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-n1-ol-count', '2');
@@ -337,9 +350,11 @@ describe('Overload Clearing Logic', () => {
     // Run analysis to create state
     await runAnalysis();
 
-    // 2. Select BRANCH_B (triggers confirmation dialog)
-    await userEvent.clear(input);
-    await userEvent.type(input, 'BRANCH_B');
+    // 2. Select BRANCH_B (triggers confirmation dialog because the
+    // applied contingency now changes from [BRANCH_A] to
+    // [BRANCH_A, BRANCH_B] while analysis state still exists).
+    await pickBranch('BRANCH_B');
+    await triggerContingency();
 
     await waitFor(() => {
       expect(screen.getByText('Change Contingency?')).toBeInTheDocument();
@@ -499,13 +514,13 @@ describe('N-1 overload state is populated before action analysis', () => {
     mockApi.getNominalVoltages.mockResolvedValue({ mapping: {}, unique_kv: [63, 225] });
     mockApi.getVoltageLevelSubstations.mockResolvedValue({ mapping: {} });
     mockApi.getNetworkDiagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null });
-    mockApi.getN1Diagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] });
+    mockApi.getContingencyDiagram.mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] });
     localStorage.clear();
     vi.unstubAllGlobals();
   });
 
   it('exposes N-1 overloads + a default selection set as soon as the N-1 diagram loads (no analysis yet)', async () => {
-    mockApi.getN1Diagram.mockResolvedValueOnce({
+    mockApi.getContingencyDiagram.mockResolvedValueOnce({
       svg: '<svg></svg>',
       metadata: null,
       lines_overloaded: ['LINE_OL_A', 'LINE_OL_B'],
@@ -530,7 +545,7 @@ describe('N-1 overload state is populated before action analysis', () => {
   });
 
   it('replaces the overload selection when switching contingencies without running analysis', async () => {
-    mockApi.getN1Diagram.mockResolvedValueOnce({
+    mockApi.getContingencyDiagram.mockResolvedValueOnce({
       svg: '<svg></svg>',
       metadata: null,
       lines_overloaded: ['LINE_OL_A', 'LINE_OL_B'],
@@ -543,20 +558,19 @@ describe('N-1 overload state is populated before action analysis', () => {
       expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-n1-ol-count', '2');
     });
 
-    mockApi.getN1Diagram.mockResolvedValueOnce({
+    mockApi.getContingencyDiagram.mockResolvedValueOnce({
       svg: '<svg></svg>',
       metadata: null,
       lines_overloaded: ['LINE_OL_C'],
     });
 
-    const input = screen.getByPlaceholderText('Search line/bus...');
-    await act(async () => {
-      await userEvent.clear(input);
-      await userEvent.type(input, 'BRANCH_B');
-    });
+    await pickBranch('BRANCH_B');
+    await triggerContingency();
 
     await waitFor(() => {
-      expect(mockApi.getN1Diagram).toHaveBeenCalledWith('BRANCH_B');
+      // Multi-element contingency now applies, so the diagram fetch
+      // carries both branches in the order the user added them.
+      expect(mockApi.getContingencyDiagram).toHaveBeenCalledWith(['BRANCH_A', 'BRANCH_B']);
       expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-n1-ol-count', '1');
       expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-sel-ol-count', '1');
     });

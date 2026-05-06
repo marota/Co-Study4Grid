@@ -44,7 +44,7 @@ vi.mock('../utils/sessionUtils', () => ({
     buildSessionResult: vi.fn().mockReturnValue({
         saved_at: '2026-03-27T12:00:00.000Z',
         configuration: {},
-        contingency: { disconnected_element: '', selected_overloads: [], monitor_deselected: false },
+        contingency: { disconnected_elements: [], selected_overloads: [], monitor_deselected: false },
         overloads: { n_overloads: [], n1_overloads: [], resolved_overloads: [] },
         overflow_graph: null,
         analysis: null,
@@ -67,7 +67,7 @@ describe('useSession — interaction logging', () => {
         minPst: 1, minLoadShedding: 0, minRenewableCurtailmentActions: 0, nPrioritizedActions: 10,
         linesMonitoringPath: '', monitoringFactor: 0.95, preExistingOverloadThreshold: 0.02,
         ignoreReconnections: false, pypowsyblFastMode: true,
-        selectedBranch: 'LINE_A', selectedOverloads: new Set(['OL1']), monitorDeselected: false,
+        selectedContingency: ['LINE_A'], selectedOverloads: new Set(['OL1']), monitorDeselected: false,
         nOverloads: [] as string[], n1Overloads: ['OL1'],
         result: null,
         selectedActionIds: new Set<string>(), rejectedActionIds: new Set<string>(),
@@ -103,7 +103,7 @@ describe('useSession — interaction logging', () => {
         vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
 
         await act(async () => {
-            await result.current.handleSaveResults(makeSaveParams({ outputFolderPath: '', selectedBranch: '' }));
+            await result.current.handleSaveResults(makeSaveParams({ outputFolderPath: '', selectedContingency: [] }));
         });
 
         const log = interactionLogger.getLog();
@@ -176,7 +176,7 @@ describe('useSession — interaction logging', () => {
         const { result } = renderHook(() => useSession());
 
         await act(async () => {
-            await result.current.handleSaveResults(makeSaveParams({ networkPath: '', actionPath: '', selectedBranch: '' }));
+            await result.current.handleSaveResults(makeSaveParams({ networkPath: '', actionPath: '', selectedContingency: [] }));
         });
 
         expect(buildSessionResult).toHaveBeenCalledTimes(1);
@@ -262,7 +262,7 @@ describe('useSession — handleRestoreSession', () => {
         restoringSessionRef: { current: false },
         committedBranchRef: { current: '' },
         committedNetworkPathRef: { current: '' },
-        setSelectedBranch: vi.fn(),
+        setSelectedContingency: vi.fn(),
         setInfoMessage: vi.fn(),
         setError: vi.fn(),
         ...overrides,
@@ -294,7 +294,7 @@ describe('useSession — handleRestoreSession', () => {
             pypowsybl_fast_mode: false,
         },
         contingency: {
-            disconnected_element: 'LINE_A',
+            disconnected_elements: ['LINE_A'],
             selected_overloads: ['LINE_OL1', 'LINE_OL2'],
             monitor_deselected: true,
         },
@@ -442,7 +442,7 @@ describe('useSession — handleRestoreSession', () => {
         expect(ctx.committedNetworkPathRef.current).toBe('');
     });
 
-    it('sets restoringSessionRef BEFORE setSelectedBranch so the N-1 fetch effect bypasses its hasAnalysisState short-circuit (regression)', async () => {
+    it('sets restoringSessionRef BEFORE setSelectedContingency so the N-1 fetch effect bypasses its hasAnalysisState short-circuit (regression)', async () => {
         // Without the ref being flipped to `true` first, the N-1
         // useEffect in App.tsx short-circuits the second a session
         // with existing analysis state is restored — because the
@@ -451,7 +451,7 @@ describe('useSession — handleRestoreSession', () => {
         // fetch needed". The ref lets the gate distinguish
         // "already-analyzed this branch" from "session just
         // restored, still need N-1 diagram". Verified here via the
-        // call-order of the ref-set vs the setSelectedBranch call.
+        // call-order of the ref-set vs the setSelectedContingency call.
         const order: string[] = [];
         const ctx = makeCtx();
         const restoringRef = { current: false };
@@ -464,35 +464,35 @@ describe('useSession — handleRestoreSession', () => {
             configurable: true,
         });
         ctx.restoringSessionRef = restoringRef as unknown as typeof ctx.restoringSessionRef;
-        const committedBranchRef = { current: '' };
+        const committedBranchRef = { current: [] as string[] };
         Object.defineProperty(committedBranchRef, 'current', {
-            set(v: string) {
-                order.push(`committedBranchRef=${v}`);
+            set(v: string[]) {
+                order.push(`committedBranchRef=${(v ?? []).join('+')}`);
                 Object.defineProperty(this, '_v', { value: v, writable: true, configurable: true });
             },
-            get() { return (this as unknown as { _v?: string })._v ?? ''; },
+            get() { return (this as unknown as { _v?: string[] })._v ?? []; },
             configurable: true,
         });
         ctx.committedBranchRef = committedBranchRef as unknown as typeof ctx.committedBranchRef;
-        ctx.setSelectedBranch = vi.fn(() => order.push('setSelectedBranch'));
+        ctx.setSelectedContingency = vi.fn(() => order.push('setSelectedContingency'));
 
         mockLoadSession.mockResolvedValue(makeSession({
-            contingency: { disconnected_element: 'LINE_A', selected_overloads: [], monitor_deselected: false },
+            contingency: { disconnected_elements: ['LINE_A'], selected_overloads: [], monitor_deselected: false },
         }));
         const { result } = renderHook(() => useSession());
         await act(async () => {
             await result.current.handleRestoreSession('session_ref_order', ctx);
         });
 
-        // The ref must flip to true before setSelectedBranch is called,
+        // The ref must flip to true before setSelectedContingency is called,
         // otherwise the N-1 effect sees `restoringSessionRef.current === false`
         // and wipes the just-restored analysis state.
         const refIdx = order.indexOf('restoringSessionRef=true');
-        const branchIdx = order.indexOf('setSelectedBranch');
+        const branchIdx = order.indexOf('setSelectedContingency');
         expect(refIdx).toBeGreaterThanOrEqual(0);
         expect(branchIdx).toBeGreaterThanOrEqual(0);
         expect(refIdx).toBeLessThan(branchIdx);
-        expect(committedBranchRef.current).toBe('LINE_A');
+        expect(committedBranchRef.current).toEqual(['LINE_A']);
     });
 
     it('surfaces backend errors via ctx.setError and leaves the ref empty', async () => {
@@ -716,7 +716,7 @@ describe('useSession — handleRestoreSession', () => {
         expect(mockRestoreAnalysisContext).toHaveBeenCalledOnce();
         expect(mockRestoreAnalysisContext).toHaveBeenCalledWith({
             lines_we_care_about: ['LINE_MON1', 'LINE_MON2', 'LINE_MON3'],
-            disconnected_element: 'LINE_A',
+            disconnected_elements: ['LINE_A'],
             lines_overloaded: ['LINE_OL1'],
             computed_pairs: { 'act_a+act_b': { max_rho: 0.87 } },
         });

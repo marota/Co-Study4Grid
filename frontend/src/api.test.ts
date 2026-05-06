@@ -118,15 +118,15 @@ describe('api client', () => {
         });
     });
 
-    describe('getN1Diagram', () => {
-        it('sends POST with disconnected element', async () => {
+    describe('getContingencyDiagram', () => {
+        it('sends POST with the disconnected-elements list', async () => {
             const diagramData = { svg: '<svg/>', metadata: '{}', lf_converged: true };
             mockedAxios.post.mockResolvedValue({ data: diagramData });
 
-            const result = await api.getN1Diagram('LINE_A');
+            const result = await api.getContingencyDiagram(['LINE_A']);
             expect(mockedAxios.post).toHaveBeenCalledWith(
-                'http://127.0.0.1:8000/api/n1-diagram',
-                { disconnected_element: 'LINE_A' },
+                'http://127.0.0.1:8000/api/contingency-diagram',
+                { disconnected_elements: ['LINE_A'] },
             );
             expect(result).toEqual(diagramData);
         });
@@ -160,7 +160,7 @@ describe('api client', () => {
     });
 
     describe('simulateManualAction', () => {
-        it('sends POST with action_id and disconnected_element', async () => {
+        it('sends POST with action_id and the disconnected-elements list', async () => {
             const responseData = {
                 action_id: 'act_1',
                 description_unitaire: 'Open line',
@@ -173,10 +173,10 @@ describe('api client', () => {
             };
             mockedAxios.post.mockResolvedValue({ data: responseData });
 
-            const result = await api.simulateManualAction('act_1', 'LINE_B');
+            const result = await api.simulateManualAction('act_1', ['LINE_B']);
             expect(mockedAxios.post).toHaveBeenCalledWith(
                 'http://127.0.0.1:8000/api/simulate-manual-action',
-                { action_id: 'act_1', disconnected_element: 'LINE_B', action_content: null, lines_overloaded: null, target_mw: null, target_tap: null },
+                { action_id: 'act_1', disconnected_elements: ['LINE_B'], action_content: null, lines_overloaded: null, target_mw: null, target_tap: null },
             );
             expect(result).toEqual(responseData);
         });
@@ -220,7 +220,7 @@ describe('api client', () => {
     });
 
     describe('runAnalysisStep1', () => {
-        it('sends POST with disconnected element and returns detection result', async () => {
+        it('sends POST with the disconnected-elements list and returns detection result', async () => {
             const responseData = {
                 lines_overloaded: ['LINE_A', 'LINE_B'],
                 message: 'Detected 2 overloads',
@@ -228,10 +228,10 @@ describe('api client', () => {
             };
             mockedAxios.post.mockResolvedValue({ data: responseData });
 
-            const result = await api.runAnalysisStep1('LINE_X');
+            const result = await api.runAnalysisStep1(['LINE_X']);
             expect(mockedAxios.post).toHaveBeenCalledWith(
                 'http://127.0.0.1:8000/api/run-analysis-step1',
-                { disconnected_element: 'LINE_X' },
+                { disconnected_elements: ['LINE_X'] },
             );
             expect(result).toEqual(responseData);
         });
@@ -244,7 +244,7 @@ describe('api client', () => {
             };
             mockedAxios.post.mockResolvedValue({ data: responseData });
 
-            const result = await api.runAnalysisStep1('LINE_Y');
+            const result = await api.runAnalysisStep1(['LINE_Y']);
             expect(result.can_proceed).toBe(false);
             expect(result.lines_overloaded).toEqual([]);
         });
@@ -377,7 +377,7 @@ describe('api client', () => {
 
             const params = {
                 lines_we_care_about: ['LINE_MON1', 'LINE_MON2', 'LINE_MON3'],
-                disconnected_element: 'LINE_A',
+                disconnected_elements: ['LINE_A'],
                 lines_overloaded: ['LINE_OL1'],
                 computed_pairs: null,
             };
