@@ -18,9 +18,9 @@ interface SidebarSummaryProps {
   displayName: (id: string) => string;
   onContingencyZoom: (assetName: string) => void;
   onOverloadClick: (actionId: string, assetName: string, tab: 'n' | 'contingency') => void;
-  /** Background notices; rendered as a NoticesPanel pill anchored
-   *  top-right of the strip so the contingency / N-1 lines and the
-   *  notices share one horizontal band rather than stacking. */
+  /** Background notices; rendered as a NoticesPanel pill on its
+   *  own line above the contingency / overload rows so the pill
+   *  doesn't get crowded by the wrap-prone element list. */
   notices?: Notice[];
 }
 
@@ -28,9 +28,9 @@ interface SidebarSummaryProps {
  * Compact sticky strip at the top of the sidebar that keeps the
  * clickable fields of interest visible while the rest of the sidebar
  * scrolls. Shows the selected contingency (with zoom-to shortcut)
- * and the N-1 overloaded lines (with per-line navigation + rho
- * percentages). Rendered only when at least one of those pieces of
- * state is present.
+ * and the contingency-state overloaded lines (with per-line
+ * navigation + rho percentages). Rendered only when at least one of
+ * those pieces of state is present.
  */
 export default function SidebarSummary({
   selectedContingency,
@@ -59,12 +59,16 @@ export default function SidebarSummary({
         lineHeight: 1.5,
         boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        gap: space[2],
+        gap: space.half,
       }}
     >
-      <div style={{ flex: 1, minWidth: 0 }}>
+      {hasNotices && (
+        <div style={{ flexShrink: 0 }}>
+          <NoticesPanel notices={notices!} />
+        </div>
+      )}
       {hasContingency && (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: space[1], flexWrap: 'wrap' }}>
           <span style={{ color: colors.textSecondary, fontWeight: 600, whiteSpace: 'nowrap' }}>
@@ -131,12 +135,6 @@ export default function SidebarSummary({
               );
             })}
           </span>
-        </div>
-      )}
-      </div>
-      {hasNotices && (
-        <div style={{ flexShrink: 0, marginTop: 1 }}>
-          <NoticesPanel notices={notices!} />
         </div>
       )}
     </div>
