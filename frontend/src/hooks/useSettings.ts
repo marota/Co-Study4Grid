@@ -237,10 +237,23 @@ export function useSettings(): SettingsState {
       // open (e.g. tkinter unavailable on a headless server). Previously
       // this was silently logged to the console and looked like a broken
       // button.
-      const message = e instanceof Error ? e.message : 'Failed to open file picker';
+      const baseMessage = e instanceof Error ? e.message : 'Failed to open file picker';
+      // Transport-level failures (404 / connection refused / network
+      // error) almost always mean the backend isn't running on
+      // http://127.0.0.1:8000 OR is an out-of-date instance that
+      // pre-dates the /api/pick-path endpoint. Hint at the most
+      // common fix instead of just echoing the axios error.
+      const axiosErr = e as { response?: { status?: number }, code?: string };
+      const status = axiosErr?.response?.status;
+      const isNetworkError = !axiosErr?.response && (axiosErr?.code === 'ERR_NETWORK' || /Network Error/i.test(baseMessage));
+      const isMissingEndpoint = status === 404;
+      const hint = (isNetworkError || isMissingEndpoint)
+        ? '\n\nIs the Co-Study4Grid backend running on http://127.0.0.1:8000? '
+            + 'If it is, it may be an outdated instance — restart it after pulling the latest code.'
+        : '';
       console.error('Failed to open file picker:', e);
       alert(
-        `Unable to open the native file picker:\n${message}\n\n` +
+        `Unable to open the native file picker:\n${baseMessage}${hint}\n\n` +
         'Paste the path into the text field manually instead.'
       );
     }

@@ -1448,3 +1448,86 @@ class TestRegenerateOverflowGraph:
         )
         assert response.status_code == 200
         assert "pdf_url" not in response.json()
+
+
+class TestPickPath:
+    """Native file/folder picker — must succeed on macOS via osascript
+    (no tkinter dependency) and on other platforms via the existing
+    tkinter subprocess. The endpoint always returns 200 with a body
+    of {"path": ...} or {"path": "", "error": ...}; it never relies
+    on transport-level errors to surface a failure to the frontend."""
+
+    def test_macos_file_picker_uses_osascript(self, client):
+        completed = MagicMock(returncode=0, stdout="/Users/me/grid.xiidm\n", stderr="")
+        with patch("expert_backend.main.platform.system", return_value="Darwin"), \
+             patch("expert_backend.main.subprocess.run", return_value=completed) as run:
+            response = client.get("/api/pick-path?type=file")
+        assert response.status_code == 200
+        assert response.json() == {"path": "/Users/me/grid.xiidm"}
+        # The dispatcher must invoke osascript with the file-picker prompt.
+        argv = run.call_args.args[0]
+        assert argv[0] == "osascript"
+        assert any("choose file" in a for a in argv)
+
+    def test_macos_dir_picker_uses_osascript(self, client):
+        completed = MagicMock(returncode=0, stdout="/Users/me/output\n", stderr="")
+        with patch("expert_backend.main.platform.system", return_value="Darwin"), \
+             patch("expert_backend.main.subprocess.run", return_value=completed) as run:
+            response = client.get("/api/pick-path?type=dir")
+        assert response.status_code == 200
+        assert response.json() == {"path": "/Users/me/output"}
+        argv = run.call_args.args[0]
+        assert argv[0] == "osascript"
+        assert any("choose folder" in a for a in argv)
+
+    def test_macos_user_cancel_is_silent(self, client):
+        # AppleScript exits with code 1 + stderr "User canceled. (-128)"
+        # when the user dismisses the dialog. The frontend must NOT see
+        # an `error` field — it would pop a noisy alert for a benign
+        # cancel gesture.
+        cancelled = MagicMock(
+            returncode=1,
+            stdout="",
+            stderr="0:55: execution error: User canceled. (-128)",
+        )
+        with patch("expert_backend.main.platform.system", return_value="Darwin"), \
+             patch("expert_backend.main.subprocess.run", return_value=cancelled):
+            response = client.get("/api/pick-path?type=file")
+        assert response.status_code == 200
+        assert response.json() == {"path": ""}
+
+    def test_macos_real_failure_surfaces_error(self, client):
+        failed = MagicMock(
+            returncode=1, stdout="", stderr="syntax error: unexpected end of file",
+        )
+        with patch("expert_backend.main.platform.system", return_value="Darwin"), \
+             patch("expert_backend.main.subprocess.run", return_value=failed):
+            response = client.get("/api/pick-path?type=file")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["path"] == ""
+        assert "syntax error" in body["error"]
+
+    def test_macos_osascript_missing_falls_back_to_error(self, client):
+        # If osascript is absent (extremely rare on macOS), surface a
+        # helpful error instead of crashing the route.
+        with patch("expert_backend.main.platform.system", return_value="Darwin"), \
+             patch("expert_backend.main.subprocess.run", side_effect=FileNotFoundError("osascript")):
+            response = client.get("/api/pick-path?type=file")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["path"] == ""
+        assert "osascript" in body["error"]
+
+    def test_non_macos_uses_tkinter_subprocess(self, client):
+        completed = MagicMock(returncode=0, stdout="/home/user/grid.xiidm\n", stderr="")
+        with patch("expert_backend.main.platform.system", return_value="Linux"), \
+             patch("expert_backend.main.subprocess.run", return_value=completed) as run:
+            response = client.get("/api/pick-path?type=file")
+        assert response.status_code == 200
+        assert response.json() == {"path": "/home/user/grid.xiidm"}
+        # tkinter path runs the python interpreter, NOT osascript.
+        argv = run.call_args.args[0]
+        assert argv[0] != "osascript"
+        # The inlined script must contain the tkinter import.
+        assert any("import tkinter" in a for a in argv)

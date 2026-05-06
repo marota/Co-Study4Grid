@@ -41,6 +41,11 @@ interface ActionSearchDropdownProps {
     onResimulateTap: (actionId: string, newTap: number) => void;
     onShowTooltip: (e: React.MouseEvent, content: React.ReactNode) => void;
     onHideTooltip: () => void;
+    /** When true, render as a wide centered overlay (mirroring the
+     *  Combine Actions modal layout) so the score table has room for
+     *  its action ID, MW Start and Score columns. Used when scoring
+     *  data is available after running an analysis. */
+    wide?: boolean;
 }
 
 const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
@@ -67,24 +72,60 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
     onResimulateTap,
     onShowTooltip,
     onHideTooltip,
+    wide = false,
 }) => {
+    const dropdownStyle: React.CSSProperties = wide
+        ? {
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '80vw',
+            maxWidth: '80vw',
+            maxHeight: '85vh',
+            zIndex: 10000,
+            backgroundColor: colors.surface,
+            border: `1px solid ${colors.border}`,
+            borderRadius: '12px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+        }
+        : {
+            position: 'absolute',
+            top: '100%',
+            right: 0,
+            left: 0,
+            zIndex: 100,
+            backgroundColor: colors.surface,
+            border: `1px solid ${colors.border}`,
+            borderRadius: '8px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+            marginTop: '4px',
+            overflow: 'hidden',
+        };
+    const listStyle: React.CSSProperties = wide
+        ? { flex: 1, overflowY: 'auto', minHeight: 0 }
+        : { maxHeight: '250px', overflowY: 'auto' };
     return (
-        <div
-            ref={dropdownRef}
-            style={{
-                position: 'absolute',
-                top: '100%',
-                right: 0,
-                left: 0,
-                zIndex: 100,
-                backgroundColor: colors.surface,
-                border: `1px solid ${colors.border}`,
-                borderRadius: '8px',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-                marginTop: '4px',
-                overflow: 'hidden',
-            }}
-        >
+        <>
+            {wide && (
+                <div
+                    data-testid="manual-selection-backdrop"
+                    style={{
+                        position: 'fixed',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        backgroundColor: 'rgba(0,0,0,0.5)',
+                        zIndex: 9999,
+                    }}
+                />
+            )}
+            <div
+                ref={dropdownRef}
+                data-testid={wide ? 'manual-selection-wide' : 'manual-selection-dropdown'}
+                style={dropdownStyle}
+            >
             <div style={{ padding: '8px' }}>
                 <input
                     ref={searchInputRef}
@@ -119,7 +160,7 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                     {error}
                 </div>
             )}
-            <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+            <div style={listStyle}>
                 {loadingActions ? (
                     <div style={{ padding: '10px', textAlign: 'center', color: colors.textTertiary, fontSize: '13px' }}>
                         Loading actions...
@@ -235,7 +276,8 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                     </>
                 )}
             </div>
-        </div>
+            </div>
+        </>
     );
 };
 

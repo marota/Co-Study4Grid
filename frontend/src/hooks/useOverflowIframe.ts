@@ -53,6 +53,14 @@ interface UseOverflowIframeArgs {
     onSimulateUnsimulatedAction?: (actionId: string) => void;
     onOverviewFiltersChange?: (filters: ActionOverviewFilters) => void;
     onVlOpen?: (vlId: string) => void;
+    /** When the overflow tab is detached into a secondary popup, the
+     *  iframe's `window.parent.postMessage(...)` calls land on the
+     *  popup window — not the main React window where this hook lives.
+     *  Pass the popup window here so the message handler is also bound
+     *  to it; without this, every iframe→parent event (overlay-ready,
+     *  pin clicks, filter changes, …) is dropped after a layout switch
+     *  remounts the iframe inside the popup. */
+    detachedWindow?: Window | null;
 }
 
 /**
@@ -84,6 +92,7 @@ export function useOverflowIframe(args: UseOverflowIframeArgs): OverflowIframeSt
         onSimulateUnsimulatedAction,
         onOverviewFiltersChange,
         onVlOpen,
+        detachedWindow,
     } = args;
 
     const overflowIframeRef = React.useRef<HTMLIFrameElement | null>(null);
@@ -208,9 +217,25 @@ export function useOverflowIframe(args: UseOverflowIframeArgs): OverflowIframeSt
             }
         };
         window.addEventListener('message', onMessage);
-        return () => window.removeEventListener('message', onMessage);
+        // When the overflow tab is detached, the iframe lives inside a
+        // popup window. Its `window.parent.postMessage(...)` calls hit
+        // the popup window, not the main one — so we listen there too.
+        // Without this binding the overlay-ready handshake (and every
+        // subsequent pin / filter / node event) would be dropped after
+        // a layout switch remounts the iframe inside the popup.
+        const popup = (detachedWindow && detachedWindow !== window && !detachedWindow.closed)
+            ? detachedWindow : null;
+        if (popup) {
+            popup.addEventListener('message', onMessage);
+        }
+        return () => {
+            window.removeEventListener('message', onMessage);
+            if (popup) {
+                try { popup.removeEventListener('message', onMessage); } catch { /* popup torn down */ }
+            }
+        };
     }, [onVlOpen, onOverflowPinPreview, onOverflowPinDoubleClick,
-        onOverviewFiltersChange, onSimulateUnsimulatedAction]);
+        onOverviewFiltersChange, onSimulateUnsimulatedAction, detachedWindow]);
 
     // Outside-click + Escape dismissal for the overflow pin popover —
     // mirrors `ActionOverviewDiagram`. Clicks INSIDE the iframe (the

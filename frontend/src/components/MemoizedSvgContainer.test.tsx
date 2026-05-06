@@ -9,6 +9,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { createRef } from 'react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import MemoizedSvgContainer from './MemoizedSvgContainer';
 
 describe('MemoizedSvgContainer', () => {
@@ -133,6 +135,49 @@ describe('MemoizedSvgContainer', () => {
             <MemoizedSvgContainer svg={svgEl} containerRef={containerRef} display="block" tabId="n-1" />
         );
         expect(containerRef.current?.querySelector('svg')?.getAttribute('viewBox')).toBe('25 25 10 10');
+    });
+
+    // ===== VL-names toggle: hide-rule contract =====
+    // Regression for the bug where toggling VL names off hid the label
+    // boxes but left dangling connector ticks (`.nad-text-edges`) from
+    // each voltage-level node to its now-invisible label. The CSS rule
+    // in App.css must list every shape pypowsybl emits for VL labels
+    // AND the connector-edge group, otherwise the toggle is incomplete.
+
+    it('applies nad-hide-vl-labels class on the container when hideVlLabels is true', () => {
+        const containerRef = createRef<HTMLDivElement>();
+        const { container } = render(
+            <MemoizedSvgContainer svg="" containerRef={containerRef} display="block" tabId="n" hideVlLabels={true} />
+        );
+        const el = container.querySelector('#n-svg-container');
+        expect(el).toHaveClass('nad-hide-vl-labels');
+    });
+
+    it('omits nad-hide-vl-labels class when hideVlLabels is false (default)', () => {
+        const containerRef = createRef<HTMLDivElement>();
+        const { container } = render(
+            <MemoizedSvgContainer svg="" containerRef={containerRef} display="block" tabId="n" />
+        );
+        const el = container.querySelector('#n-svg-container');
+        expect(el).not.toHaveClass('nad-hide-vl-labels');
+    });
+
+    it('App.css hides .nad-text-edges (the VL→label connector tick) when nad-hide-vl-labels is set', () => {
+        const css = readFileSync(resolve(__dirname, '..', 'App.css'), 'utf-8');
+        // Locate the hide-vl-labels rule block (selectors split across
+        // lines, ending with `display: none !important;`).
+        const ruleMatch = css.match(
+            /((?:\.svg-container\.nad-hide-vl-labels[^,{]*,\s*)+\.svg-container\.nad-hide-vl-labels[^,{]*)\s*\{[^}]*display:\s*none\s*!important[^}]*\}/s,
+        );
+        expect(ruleMatch).not.toBeNull();
+        const selectorList = ruleMatch![1];
+        // Each shape pypowsybl emits MUST be covered by the hide rule.
+        // `.nad-text-edges` is the connector-line group — without it the
+        // tick from each VL node to its hidden label box is left visible.
+        expect(selectorList).toMatch(/\.svg-container\.nad-hide-vl-labels\s+\.nad-text-edges\b/);
+        // Sanity: the previously-covered shapes must still be there.
+        expect(selectorList).toMatch(/\.svg-container\.nad-hide-vl-labels\s+\.nad-text-nodes\b/);
+        expect(selectorList).toMatch(/\.svg-container\.nad-hide-vl-labels\s+\.nad-label-box\b/);
     });
 
     it('handles empty string placeholder followed by real SVG without erasing prior viewBox', () => {

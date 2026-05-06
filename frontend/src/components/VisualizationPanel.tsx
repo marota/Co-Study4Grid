@@ -314,6 +314,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
         onSimulateUnsimulatedAction,
         onOverviewFiltersChange,
         onVlOpen,
+        detachedWindow: detachedTabs['overflow']?.window ?? null,
     });
 
     const filteredInspectables = useMemo(() => {

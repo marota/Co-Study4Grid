@@ -758,7 +758,11 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     ++ Combine
                 </button>
 
-                {/* Search dropdown */}
+                {/* Search dropdown — when scored actions are available
+                    (analysis has produced suggestions), expand to a wide
+                    centered overlay that mirrors the Combine Actions
+                    modal layout so the score table has room for its
+                    Action ID, MW Start and Score columns. */}
                 {searchOpen && (
                     <ActionSearchDropdown
                         dropdownRef={dropdownRef}
@@ -784,6 +788,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         onResimulateTap={handleResimulateTap}
                         onShowTooltip={showTooltip}
                         onHideTooltip={hideTooltip}
+                        wide={scoredActionsList.length > 0}
                     />
                 )}
             </div>

@@ -142,6 +142,49 @@ describe('ActionSearchDropdown', () => {
         expect(screen.getByText('Simulating...')).toBeInTheDocument();
     });
 
+    describe('wide mode (centered overlay when scoring is computed)', () => {
+        it('renders the narrow inline dropdown by default', () => {
+            render(<ActionSearchDropdown {...defaultProps} />);
+            expect(screen.getByTestId('manual-selection-dropdown')).toBeInTheDocument();
+            expect(screen.queryByTestId('manual-selection-wide')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('manual-selection-backdrop')).not.toBeInTheDocument();
+        });
+
+        it('renders a wide centered overlay with backdrop when wide=true', () => {
+            render(<ActionSearchDropdown {...defaultProps} wide />);
+            expect(screen.queryByTestId('manual-selection-dropdown')).not.toBeInTheDocument();
+            const wide = screen.getByTestId('manual-selection-wide');
+            expect(wide).toBeInTheDocument();
+            // Mirrors the Combine Actions modal layout: centered, fixed,
+            // 80vw wide so the score table has room for its columns.
+            const styleAttr = wide.getAttribute('style') || '';
+            expect(styleAttr).toContain('position: fixed');
+            expect(styleAttr).toContain('width: 80vw');
+            expect(screen.getByTestId('manual-selection-backdrop')).toBeInTheDocument();
+        });
+
+        it('still renders the score table inside the wide overlay', () => {
+            const scoredActionsList = [
+                { type: 'line_reconnection', actionId: 'act_wide_1', score: 7.25, mwStart: null },
+            ];
+            const actionScores = {
+                line_reconnection: { scores: { act_wide_1: 7.25 }, params: {} },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={scoredActionsList}
+                    actionScores={actionScores}
+                    wide
+                />,
+            );
+            expect(screen.getByTestId('manual-selection-wide')).toBeInTheDocument();
+            expect(screen.getByText('Scored Actions')).toBeInTheDocument();
+            expect(screen.getByText('act_wide_1')).toBeInTheDocument();
+            expect(screen.getByText('7.25')).toBeInTheDocument();
+        });
+    });
+
     describe('Target MW sync (Bug 1)', () => {
         // A computed load-shedding action is already in the `actions` map
         // with a simulated shedded_mw value. The score table row for that
