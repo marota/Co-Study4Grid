@@ -566,13 +566,18 @@ class AnalysisMixin:
         Mutates and returns ``context`` — kept as a separate method so
         the step2 orchestrator stays readable.
 
-        ``additional_lines_to_cut`` is appended after the selected-overload
-        narrow so the recommender sees these lines as additional resolution
-        targets (ExpertAgent's `additionalLinesToCut`/`ltc` semantics).
-        Names are mapped to ``obs_simu_defaut.name_line`` indices; unknown
-        names are skipped with a warning. The lines are also added back to
-        ``lines_we_care_about`` so the deselect-filter above does not
-        evict them.
+        ``additional_lines_to_cut`` are operator-supplied lines that
+        should be cut in the overflow-graph analysis like overloads but
+        NOT classified as overloads in the viewer (ExpertAgent's
+        ``additionalLinesToCut`` semantic). Names are mapped to
+        ``obs_simu_defaut.name_line`` indices and exposed to the
+        upstream library through ``context["extra_lines_to_cut_ids"]``
+        — see ``Expert_op4grid_recommender`` ≥ 0.2.2 +
+        ``ExpertOp4Grid``'s ``OverFlowGraph(extra_lines_to_cut=…)``
+        which stamp ``is_extra_cut=True`` on those edges and skip
+        them in ``is_overload`` / ``is_monitored``.
+        Names are also kept in ``lines_we_care_about`` so monitoring
+        stays aligned with the operator's selection.
         """
         all_names = context["lines_overloaded_names"]
         selected_indices = [i for i, name in enumerate(all_names) if name in selected]
@@ -608,6 +613,10 @@ class AnalysisMixin:
                 monitor_deselected, all_overloads,
             )
 
+        # Always set the upstream extras channel — empty list when the
+        # operator picked nothing — so the library reads a stable key.
+        context["extra_lines_to_cut_ids"] = []
+
         if additional_lines_to_cut:
             obs_start = context.get("obs_simu_defaut")
             try:
@@ -617,24 +626,24 @@ class AnalysisMixin:
                 name_line = []
             name_to_idx = {name: i for i, name in enumerate(name_line)}
 
-            existing_names = set(context["lines_overloaded_names"])
-            existing_ids = set(context["lines_overloaded_ids"])
-            appended_names: list[str] = []
-            appended_ids: list[int] = []
+            existing_overloaded_ids = set(context["lines_overloaded_ids"])
+            extra_ids: list[int] = []
+            extra_names: list[str] = []
             unknown: list[str] = []
+            seen_extra: set[int] = set()
             for name in additional_lines_to_cut:
-                if name in existing_names:
-                    continue
                 idx = name_to_idx.get(name)
                 if idx is None:
                     unknown.append(name)
                     continue
-                if idx in existing_ids:
+                # If the operator picks something that is already a
+                # selected overload, skip it — the line is already a
+                # primary resolution target with full overload styling.
+                if idx in existing_overloaded_ids or idx in seen_extra:
                     continue
-                appended_names.append(name)
-                appended_ids.append(idx)
-                existing_names.add(name)
-                existing_ids.add(idx)
+                extra_ids.append(idx)
+                extra_names.append(name)
+                seen_extra.add(idx)
 
             if unknown:
                 logger.warning(
@@ -642,33 +651,26 @@ class AnalysisMixin:
                     len(unknown), unknown,
                 )
 
-            if appended_ids:
-                context["lines_overloaded_ids"] = list(context["lines_overloaded_ids"]) + appended_ids
-                context["lines_overloaded_names"] = (
-                    list(context["lines_overloaded_names"]) + appended_names
-                )
-                # Treat the additional lines as "kept" so they reach the
-                # overflow-graph target set just like detected overloads.
-                context["lines_overloaded_ids_kept"] = (
-                    list(context["lines_overloaded_ids_kept"]) + appended_ids
-                )
-                # Keep them inside the monitoring scope; the deselect-filter
-                # block above may have excluded them otherwise.
+            if extra_ids:
+                context["extra_lines_to_cut_ids"] = extra_ids
+                # Keep extras inside the monitoring scope; the deselect
+                # filter above may have evicted them otherwise.
                 care = context.get("lines_we_care_about")
                 if care is not None:
                     if isinstance(care, set):
-                        context["lines_we_care_about"] = care | set(appended_names)
+                        context["lines_we_care_about"] = care | set(extra_names)
                     elif isinstance(care, (list, tuple)):
                         merged = list(care)
-                        for name in appended_names:
+                        for name in extra_names:
                             if name not in merged:
                                 merged.append(name)
                         context["lines_we_care_about"] = merged
                     else:
-                        context["lines_we_care_about"] = set(care) | set(appended_names)
+                        context["lines_we_care_about"] = set(care) | set(extra_names)
                 logger.info(
-                    "[Step2] additional_lines_to_cut: appended %d line(s): %s",
-                    len(appended_names), appended_names,
+                    "[Step2] extra_lines_to_cut_ids: %d line(s) routed to upstream "
+                    "(not classified as overloads): %s",
+                    len(extra_names), extra_names,
                 )
 
         return context

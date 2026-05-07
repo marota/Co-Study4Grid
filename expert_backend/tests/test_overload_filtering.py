@@ -156,20 +156,21 @@ class TestOverloadFiltering:
 
     @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
     @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
-    def test_run_analysis_step2_appends_additional_lines_to_cut(self, mock_run_discovery, mock_run_graph, service):
-        """Verify additional_lines_to_cut are appended to the resolution targets
-        (ExpertAgent's `additionalLinesToCut`/`ltc` semantics) and kept in
-        lines_we_care_about even when their detected siblings are deselected."""
+    def test_run_analysis_step2_routes_additional_lines_to_extra_channel(self, mock_run_discovery, mock_run_graph, service):
+        """Operator-supplied extras are routed via the upstream
+        ``extra_lines_to_cut_ids`` channel (which the recommender / alphaDeesp
+        treat as cut-but-not-overload via ``OverFlowGraph(extra_lines_to_cut=…)``).
+        They MUST NOT be appended to ``lines_overloaded_*`` — otherwise the
+        viewer's "Overloads" layer would mis-classify them.
+        """
         mock_run_graph.side_effect = lambda ctx: ctx
         mock_run_discovery.return_value = {
             "prioritized_actions": {},
             "action_scores": {},
-            "lines_overloaded_names": ["L1", "EXTRA_1"],
+            "lines_overloaded_names": ["L1"],
         }
 
         obs = MagicMock()
-        # name_line is the obs-aligned line catalogue; ids returned by step1
-        # index into it. We seed L1=0, L2=1 and the candidate extras at 2, 3.
         obs.name_line = ["L1", "L2", "EXTRA_1", "EXTRA_2"]
         service._analysis_context = {
             "env": MagicMock(),
@@ -188,30 +189,33 @@ class TestOverloadFiltering:
         ))
 
         ctx = service._analysis_context
-        # Detected target L1 stays, L2 is dropped, EXTRA_{1,2} are appended.
-        # L1 (already selected) and UNKNOWN_LINE (not in name_line) must
-        # not be duplicated/added.
-        assert ctx["lines_overloaded_names"] == ["L1", "EXTRA_1", "EXTRA_2"]
-        assert ctx["lines_overloaded_ids"] == [0, 2, 3]
-        # Kept-ids tracks the same set so they reach the overflow graph.
-        assert ctx["lines_overloaded_ids_kept"] == [0, 2, 3]
-        # The deselect-filter would have evicted nothing here, but we also
-        # need to ensure the extras stay inside care.
+        # Overload lists stay narrowed to operator-selected detected
+        # overloads — extras must NOT leak in.
+        assert ctx["lines_overloaded_names"] == ["L1"]
+        assert ctx["lines_overloaded_ids"] == [0]
+        assert ctx["lines_overloaded_ids_kept"] == [0]
+        # Extras flow through the upstream ``extra_lines_to_cut_ids``
+        # channel (consumed by ``run_analysis_step2_graph`` and forwarded
+        # to ``OverFlowGraph(extra_lines_to_cut=…)``).  L1 (already
+        # selected) and UNKNOWN_LINE (not in name_line) are skipped.
+        assert ctx["extra_lines_to_cut_ids"] == [2, 3]
+        # Extras stay inside the monitoring scope.
         assert "EXTRA_1" in ctx["lines_we_care_about"]
         assert "EXTRA_2" in ctx["lines_we_care_about"]
         assert "L2" not in ctx["lines_we_care_about"]
 
     @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
     @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
-    def test_run_analysis_step2_additional_lines_recover_from_deselect_filter(self, mock_run_discovery, mock_run_graph, service):
-        """If an additional line happens to be in the deselected-overload set,
-        the append step must add it back to lines_we_care_about so monitoring
-        is not silently lost."""
+    def test_run_analysis_step2_extra_lines_recover_from_deselect_filter(self, mock_run_discovery, mock_run_graph, service):
+        """An extra that coincides with a deselected overload must be added
+        back to lines_we_care_about so monitoring is not silently lost,
+        and routed through ``extra_lines_to_cut_ids`` (not promoted back
+        into the overload set)."""
         mock_run_graph.side_effect = lambda ctx: ctx
         mock_run_discovery.return_value = {
             "prioritized_actions": {},
             "action_scores": {},
-            "lines_overloaded_names": ["L1", "L2"],
+            "lines_overloaded_names": ["L1"],
         }
 
         obs = MagicMock()
@@ -225,9 +229,6 @@ class TestOverloadFiltering:
             "lines_we_care_about": {"L1", "L2"},
         }
 
-        # Operator deselects L2 but immediately re-adds it as an extra
-        # line-to-cut — net effect is: L2 stays in care and is re-added
-        # as a target.
         list(service.run_analysis_step2(
             selected_overloads=["L1"],
             all_overloads=["L1", "L2"],
@@ -236,9 +237,14 @@ class TestOverloadFiltering:
         ))
 
         ctx = service._analysis_context
+        # L2 is back in care (re-merged after the deselect-filter would
+        # have evicted it).
         assert "L2" in ctx["lines_we_care_about"]
-        assert ctx["lines_overloaded_names"] == ["L1", "L2"]
-        assert ctx["lines_overloaded_ids"] == [0, 1]
+        # L2 is routed through the extras channel — it must NOT have
+        # been promoted back into the overload-resolution targets.
+        assert ctx["extra_lines_to_cut_ids"] == [1]
+        assert ctx["lines_overloaded_names"] == ["L1"]
+        assert ctx["lines_overloaded_ids"] == [0]
 
     @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
     @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
