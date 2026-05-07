@@ -408,8 +408,16 @@ class AnalysisMixin:
         selected_overloads: list[str],
         all_overloads: list[str] = None,
         monitor_deselected: bool = False,
+        additional_lines_to_cut: list[str] = None,
     ):
         """Step 2 — PDF emission + action discovery, streaming NDJSON events.
+
+        ``additional_lines_to_cut`` is the operator-supplied set of extra
+        line IDs that should be treated like overloads in the overflow
+        graph (ExpertAgent's `additionalLinesToCut`/`ltc` semantics).
+        They are appended to ``lines_overloaded_ids``/``names`` and kept
+        inside ``lines_we_care_about`` so the recommender's actions also
+        relieve flow on them.
 
         No ``_ensure_*_state_ready`` guard here: step2 inherits the
         ``_analysis_context`` positioned by step1 (observations,
@@ -420,7 +428,11 @@ class AnalysisMixin:
             raise ValueError("Analysis context not found. Run step 1 first.")
 
         context = self._narrow_context_to_selected_overloads(
-            self._analysis_context, selected_overloads, all_overloads, monitor_deselected
+            self._analysis_context,
+            selected_overloads,
+            all_overloads,
+            monitor_deselected,
+            additional_lines_to_cut=additional_lines_to_cut,
         )
         analysis_start_time = time.time()
         # Fresh Step-2: drop any cached overflow files from a previous
@@ -547,12 +559,20 @@ class AnalysisMixin:
         selected: list[str],
         all_overloads: list[str] | None,
         monitor_deselected: bool,
+        additional_lines_to_cut: list[str] | None = None,
     ) -> dict:
         """Filter ``context`` in place to the operator-selected overload subset.
 
         Mutates and returns ``context`` — kept as a separate method so
-        the step2 orchestrator stays readable.  Behaviour preserved
-        verbatim from the original inline block.
+        the step2 orchestrator stays readable.
+
+        ``additional_lines_to_cut`` is appended after the selected-overload
+        narrow so the recommender sees these lines as additional resolution
+        targets (ExpertAgent's `additionalLinesToCut`/`ltc` semantics).
+        Names are mapped to ``obs_simu_defaut.name_line`` indices; unknown
+        names are skipped with a warning. The lines are also added back to
+        ``lines_we_care_about`` so the deselect-filter above does not
+        evict them.
         """
         all_names = context["lines_overloaded_names"]
         selected_indices = [i for i, name in enumerate(all_names) if name in selected]
@@ -587,6 +607,70 @@ class AnalysisMixin:
                 "[Step2] monitor_deselected=%s, all_overloads=%s -> NOT filtering lines_we_care_about",
                 monitor_deselected, all_overloads,
             )
+
+        if additional_lines_to_cut:
+            obs_start = context.get("obs_simu_defaut")
+            try:
+                name_line = list(obs_start.name_line) if obs_start is not None else []
+            except Exception as e:
+                logger.warning("[Step2] additional_lines_to_cut: cannot read name_line (%s)", e)
+                name_line = []
+            name_to_idx = {name: i for i, name in enumerate(name_line)}
+
+            existing_names = set(context["lines_overloaded_names"])
+            existing_ids = set(context["lines_overloaded_ids"])
+            appended_names: list[str] = []
+            appended_ids: list[int] = []
+            unknown: list[str] = []
+            for name in additional_lines_to_cut:
+                if name in existing_names:
+                    continue
+                idx = name_to_idx.get(name)
+                if idx is None:
+                    unknown.append(name)
+                    continue
+                if idx in existing_ids:
+                    continue
+                appended_names.append(name)
+                appended_ids.append(idx)
+                existing_names.add(name)
+                existing_ids.add(idx)
+
+            if unknown:
+                logger.warning(
+                    "[Step2] additional_lines_to_cut: %d unknown line names skipped: %s",
+                    len(unknown), unknown,
+                )
+
+            if appended_ids:
+                context["lines_overloaded_ids"] = list(context["lines_overloaded_ids"]) + appended_ids
+                context["lines_overloaded_names"] = (
+                    list(context["lines_overloaded_names"]) + appended_names
+                )
+                # Treat the additional lines as "kept" so they reach the
+                # overflow-graph target set just like detected overloads.
+                context["lines_overloaded_ids_kept"] = (
+                    list(context["lines_overloaded_ids_kept"]) + appended_ids
+                )
+                # Keep them inside the monitoring scope; the deselect-filter
+                # block above may have excluded them otherwise.
+                care = context.get("lines_we_care_about")
+                if care is not None:
+                    if isinstance(care, set):
+                        context["lines_we_care_about"] = care | set(appended_names)
+                    elif isinstance(care, (list, tuple)):
+                        merged = list(care)
+                        for name in appended_names:
+                            if name not in merged:
+                                merged.append(name)
+                        context["lines_we_care_about"] = merged
+                    else:
+                        context["lines_we_care_about"] = set(care) | set(appended_names)
+                logger.info(
+                    "[Step2] additional_lines_to_cut: appended %d line(s): %s",
+                    len(appended_names), appended_names,
+                )
+
         return context
 
     def run_analysis(self, disconnected_elements):

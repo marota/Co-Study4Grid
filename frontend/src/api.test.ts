@@ -276,6 +276,7 @@ describe('api client', () => {
                             selected_overloads: ['LINE_A'],
                             all_overloads: ['LINE_A', 'LINE_B'],
                             monitor_deselected: true,
+                            additional_lines_to_cut: [],
                         }),
                     },
                 );

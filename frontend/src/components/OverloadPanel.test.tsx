@@ -134,4 +134,71 @@ describe('OverloadPanel', () => {
             expect(screen.queryByTestId('overload-monitoring-hint')).not.toBeInTheDocument();
         });
     });
+
+    describe('Additional lines to cut', () => {
+        it('hides the row when no branches/additionalLinesToCut are provided', () => {
+            render(<OverloadPanel {...defaultProps} />);
+            expect(screen.queryByTestId('additional-lines-to-cut-row')).not.toBeInTheDocument();
+        });
+
+        it('renders the row and existing chips when wired up', () => {
+            render(
+                <OverloadPanel
+                    {...defaultProps}
+                    branches={['LINE_A', 'LINE_B', 'LINE_C']}
+                    additionalLinesToCut={new Set(['LINE_A'])}
+                    onToggleAdditionalLineToCut={vi.fn()}
+                />,
+            );
+            expect(screen.getByTestId('additional-lines-to-cut-row')).toBeInTheDocument();
+            expect(screen.getByText('LINE_A')).toBeInTheDocument();
+        });
+
+        it('commits a suggestion on click and excludes detected overloads', async () => {
+            const user = userEvent.setup();
+            const onToggle = vi.fn();
+            render(
+                <OverloadPanel
+                    {...defaultProps}
+                    n1Overloads={['LINE_A']}
+                    branches={['LINE_A', 'LINE_B', 'LINE_C']}
+                    additionalLinesToCut={new Set()}
+                    onToggleAdditionalLineToCut={onToggle}
+                />,
+            );
+
+            const input = screen.getByPlaceholderText('Add line ID…');
+            await user.click(input);
+            await user.type(input, 'LINE_');
+
+            // LINE_A is already a detected overload, so it must NOT show up
+            // as a suggestion. LINE_B and LINE_C are valid candidates.
+            const options = screen.getAllByRole('option');
+            const labels = options.map(o => o.textContent);
+            expect(labels).toContain('LINE_B');
+            expect(labels).toContain('LINE_C');
+            expect(labels).not.toContain('LINE_A');
+
+            // mousedown commits the selection and clears the input.
+            await user.click(screen.getByText('LINE_B'));
+            expect(onToggle).toHaveBeenCalledWith('LINE_B');
+        });
+
+        it('removes a chip when its × button is clicked', async () => {
+            const user = userEvent.setup();
+            const onToggle = vi.fn();
+            render(
+                <OverloadPanel
+                    {...defaultProps}
+                    branches={['LINE_A', 'LINE_B']}
+                    additionalLinesToCut={new Set(['LINE_A'])}
+                    onToggleAdditionalLineToCut={onToggle}
+                />,
+            );
+
+            const removeBtn = screen.getByTitle('Remove LINE_A');
+            await user.click(removeBtn);
+            expect(onToggle).toHaveBeenCalledWith('LINE_A');
+        });
+    });
 });

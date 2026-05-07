@@ -64,7 +64,8 @@ def test_run_analysis_step2_success(client, mock_rs):
     mock_rs.run_analysis_step2.assert_called_with(
         ["LINE_1"],
         all_overloads=["LINE_1", "LINE_2"],
-        monitor_deselected=True
+        monitor_deselected=True,
+        additional_lines_to_cut=[],
     )
 
 def test_run_analysis_step1_error(client, mock_rs):

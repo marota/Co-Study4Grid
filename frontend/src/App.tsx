@@ -169,7 +169,8 @@ function App() {
   const analysis = useAnalysis();
   const {
     result, setResult, pendingAnalysisResult, analysisLoading,
-    infoMessage, selectedOverloads, monitorDeselected
+    infoMessage, selectedOverloads, monitorDeselected,
+    additionalLinesToCut,
   } = analysis;
 
   const {
@@ -295,6 +296,7 @@ function App() {
     analysis.setPendingAnalysisResult(null);
     analysis.setSelectedOverloads(new Set());
     analysis.setMonitorDeselected(false);
+    analysis.setAdditionalLinesToCut(new Set());
     actionsHook.clearActionState();
     diagrams.setSelectedActionId(null);
     diagrams.setActionDiagram(null);
@@ -1302,6 +1304,9 @@ function App() {
               monitorDeselected={monitorDeselected}
               onToggleMonitorDeselected={handleToggleMonitorDeselected}
               displayName={displayName}
+              branches={branches}
+              additionalLinesToCut={additionalLinesToCut}
+              onToggleAdditionalLineToCut={analysis.handleToggleAdditionalLineToCut}
             />
           </div>
           <ActionFeed

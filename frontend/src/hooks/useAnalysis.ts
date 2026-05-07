@@ -26,6 +26,16 @@ export interface AnalysisState {
   setSelectedOverloads: (v: Set<string>) => void;
   monitorDeselected: boolean;
   setMonitorDeselected: (v: boolean) => void;
+  /**
+   * Extra lines the operator wants the recommender to treat as
+   * "lines to cut" beyond the detected overloads (ExpertAgent's
+   * `additionalLinesToCut`/`ltc` semantics). Passed verbatim to
+   * `/api/run-analysis-step2` and appended to the overflow-graph
+   * target set on the backend.
+   */
+  additionalLinesToCut: Set<string>;
+  setAdditionalLinesToCut: Dispatch<SetStateAction<Set<string>>>;
+  handleToggleAdditionalLineToCut: (line: string) => void;
 
   // Ref to previous result for merge logic
   prevResultRef: MutableRefObject<AnalysisResult | null>;
@@ -60,6 +70,7 @@ export function useAnalysis(): AnalysisState {
   // Analysis flow
   const [selectedOverloads, setSelectedOverloads] = useState<Set<string>>(new Set());
   const [monitorDeselected, setMonitorDeselected] = useState(false);
+  const [additionalLinesToCut, setAdditionalLinesToCut] = useState<Set<string>>(new Set());
 
   const handleRunAnalysis = useCallback(async (
     selectedContingency: string[],
@@ -120,18 +131,22 @@ export function useAnalysis(): AnalysisState {
 
       // Step 2: Resolution
       // Replay contract (docs/features/interaction-logging.md):
-      //   { element, selected_overloads, all_overloads, monitor_deselected }
+      //   { element, selected_overloads, all_overloads, monitor_deselected,
+      //     additional_lines_to_cut }
+      const additionalLinesArr = Array.from(additionalLinesToCut);
       const step2CorrId = interactionLogger.record('analysis_step2_started', {
         element: selectedContingency.join('+'),
         selected_overloads: toResolve,
         all_overloads: detected,
         monitor_deselected: monitorDeselected,
+        additional_lines_to_cut: additionalLinesArr,
       });
       const step2StartTs = new Date().toISOString();
       const response2 = await api.runAnalysisStep2Stream({
         selected_overloads: toResolve,
         all_overloads: detected,
         monitor_deselected: monitorDeselected,
+        additional_lines_to_cut: additionalLinesArr,
       });
 
       const reader = response2.body!.getReader();
@@ -195,7 +210,24 @@ export function useAnalysis(): AnalysisState {
     } finally {
       setAnalysisLoading(false);
     }
-  }, [selectedOverloads, monitorDeselected]);
+  }, [selectedOverloads, monitorDeselected, additionalLinesToCut]);
+
+  const handleToggleAdditionalLineToCut = useCallback((line: string) => {
+    if (!line) return;
+    let willAdd = false;
+    setAdditionalLinesToCut((prev: Set<string>) => {
+      const next = new Set(prev);
+      if (next.has(line)) {
+        next.delete(line);
+        willAdd = false;
+      } else {
+        next.add(line);
+        willAdd = true;
+      }
+      return next;
+    });
+    interactionLogger.record('additional_line_to_cut_toggled', { line, selected: willAdd });
+  }, []);
 
   const handleDisplayPrioritizedActions = useCallback((selectedActionIds: Set<string>, setActiveTab?: (tab: TabId) => void) => {
     if (!pendingAnalysisResult) return;
@@ -270,13 +302,16 @@ export function useAnalysis(): AnalysisState {
     error, setError,
     selectedOverloads, setSelectedOverloads,
     monitorDeselected, setMonitorDeselected,
+    additionalLinesToCut, setAdditionalLinesToCut,
+    handleToggleAdditionalLineToCut,
     prevResultRef,
     handleRunAnalysis,
     handleDisplayPrioritizedActions,
     handleToggleOverload,
   }), [
     result, pendingAnalysisResult, analysisLoading, infoMessage, error,
-    selectedOverloads, monitorDeselected,
+    selectedOverloads, monitorDeselected, additionalLinesToCut,
     handleRunAnalysis, handleDisplayPrioritizedActions, handleToggleOverload,
+    handleToggleAdditionalLineToCut,
   ]);
 }

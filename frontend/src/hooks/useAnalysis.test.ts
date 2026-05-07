@@ -128,6 +128,7 @@ describe('useAnalysis', () => {
             selected_overloads: detected,
             all_overloads: detected,
             monitor_deselected: false,
+            additional_lines_to_cut: [],
         });
     });
 

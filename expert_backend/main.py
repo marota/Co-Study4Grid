@@ -304,6 +304,12 @@ class AnalysisStep2Request(BaseModel):
     selected_overloads: list[str]
     all_overloads: list[str] = []
     monitor_deselected: bool = False
+    # Extra line IDs the operator wants the recommender to treat as
+    # "lines to cut" (akin to ExpertAgent's additionalLinesToCut). They
+    # are not actually overloaded but are appended to the overflow-graph
+    # target set so resolving actions also relieve flow on them, and
+    # they are kept inside `lines_we_care_about` for monitoring.
+    additional_lines_to_cut: list[str] = []
 
 class RegenerateOverflowGraphRequest(BaseModel):
     mode: str  # "hierarchical" or "geo"
@@ -711,7 +717,8 @@ async def run_analysis_step2(request: AnalysisStep2Request) -> StreamingResponse
             for event in recommender_service.run_analysis_step2(
                 request.selected_overloads,
                 all_overloads=request.all_overloads,
-                monitor_deselected=request.monitor_deselected
+                monitor_deselected=request.monitor_deselected,
+                additional_lines_to_cut=request.additional_lines_to_cut,
             ):
                 if event.get("pdf_path"):
                     filename = os.path.basename(event["pdf_path"])

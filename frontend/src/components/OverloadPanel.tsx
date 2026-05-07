@@ -5,8 +5,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
-import React from 'react';
-import { colors, space, text } from '../styles/tokens';
+import React, { useMemo, useRef, useState } from 'react';
+import { colors, space, text, radius } from '../styles/tokens';
 
 interface OverloadPanelProps {
     nOverloads: string[];
@@ -42,6 +42,22 @@ interface OverloadPanelProps {
     onToggleMonitorDeselected?: () => void;
     /** Resolve an element ID to its human-readable display name. Falls back to the ID. */
     displayName?: (id: string) => string;
+    /**
+     * Catalogue of disconnectable elements used to populate the
+     * "additional lines to cut" autocomplete. Lines / transformers
+     * already detected as N-1 overloads are filtered out at render
+     * time so the operator only picks new ones.
+     */
+    branches?: string[];
+    /**
+     * Extra lines the operator wants the recommender to treat as
+     * "lines to cut" beyond the detected overloads — ExpertAgent's
+     * `additionalLinesToCut` semantic. They are not actually
+     * overloaded, but resolving actions will also relieve flow on
+     * them. Pass undefined to hide the input row.
+     */
+    additionalLinesToCut?: Set<string>;
+    onToggleAdditionalLineToCut?: (line: string) => void;
 }
 
 const OverloadPanel: React.FC<OverloadPanelProps> = ({
@@ -56,7 +72,38 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
     monitorDeselected = false,
     onToggleMonitorDeselected,
     displayName = (id: string) => id,
+    branches,
+    additionalLinesToCut,
+    onToggleAdditionalLineToCut,
 }) => {
+    const [extraQuery, setExtraQuery] = useState('');
+    const [extraFocused, setExtraFocused] = useState(false);
+    const extraCloseTimer = useRef<number | null>(null);
+
+    const showAdditionalRow = branches !== undefined
+        && additionalLinesToCut !== undefined
+        && onToggleAdditionalLineToCut !== undefined;
+
+    const detectedSet = useMemo(() => new Set(n1Overloads), [n1Overloads]);
+    const extraSuggestions = useMemo(() => {
+        if (!showAdditionalRow || !branches) return [];
+        const q = extraQuery.trim().toUpperCase();
+        const picked = additionalLinesToCut!;
+        return branches
+            .filter(b => !detectedSet.has(b) && !picked.has(b))
+            .filter(b => q === '' || b.toUpperCase().includes(q) || displayName(b).toUpperCase().includes(q))
+            .slice(0, 50);
+    }, [branches, detectedSet, additionalLinesToCut, extraQuery, displayName, showAdditionalRow]);
+
+    const commitExtraLine = (line: string) => {
+        if (!line || !onToggleAdditionalLineToCut) return;
+        if (additionalLinesToCut?.has(line)) return;
+        if (detectedSet.has(line)) return;
+        if (branches && !branches.includes(line)) return;
+        onToggleAdditionalLineToCut(line);
+        setExtraQuery('');
+    };
+
     const clickableLinkStyle: React.CSSProperties = {
         background: 'none',
         border: 'none',
@@ -218,6 +265,159 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                         {renderLinks(n1Overloads, n1OverloadsRho, 'contingency')}
                     </span>
                 </div>
+
+                {showAdditionalRow && (
+                    <div
+                        data-testid="additional-lines-to-cut-row"
+                        style={{
+                            padding: `${space[1]} 6px`,
+                            borderLeft: `3px solid ${colors.borderSubtle}`,
+                            borderBottom: `1px solid ${colors.borderSubtle}`,
+                            lineHeight: '1.6',
+                        }}
+                    >
+                        <strong style={{ whiteSpace: 'nowrap', marginRight: space[1] }}>
+                            Additional lines to cut:
+                        </strong>
+                        <span
+                            title="Extra lines the recommender will treat as 'lines to cut' on top of the detected overloads (ExpertAgent's additionalLinesToCut). They are not currently overloaded but resolving actions will also relieve flow on them."
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '14px',
+                                height: '14px',
+                                borderRadius: '50%',
+                                background: colors.chromeSoft,
+                                color: colors.textOnBrand,
+                                fontSize: '10px',
+                                cursor: 'help',
+                                verticalAlign: 'middle',
+                                marginRight: space[1],
+                            }}
+                        >
+                            ?
+                        </span>
+                        <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '4px', verticalAlign: 'middle' }}>
+                            {Array.from(additionalLinesToCut!).map(line => (
+                                <span
+                                    key={line}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        background: colors.brandSoft,
+                                        color: colors.brand,
+                                        border: `1px solid ${colors.border}`,
+                                        borderRadius: radius.sm,
+                                        padding: `1px 6px`,
+                                        fontSize: text.xs,
+                                        fontWeight: 600,
+                                    }}
+                                >
+                                    {displayName(line)}
+                                    <button
+                                        type="button"
+                                        onClick={() => onToggleAdditionalLineToCut!(line)}
+                                        title={`Remove ${displayName(line)}`}
+                                        style={{
+                                            background: 'none',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            color: colors.textSecondary,
+                                            padding: 0,
+                                            fontSize: text.xs,
+                                            lineHeight: 1,
+                                        }}
+                                    >
+                                        ×
+                                    </button>
+                                </span>
+                            ))}
+                            <span style={{ position: 'relative', display: 'inline-block' }}>
+                                <input
+                                    type="text"
+                                    value={extraQuery}
+                                    placeholder="Add line ID…"
+                                    onChange={e => setExtraQuery(e.target.value)}
+                                    onFocus={() => {
+                                        if (extraCloseTimer.current !== null) {
+                                            window.clearTimeout(extraCloseTimer.current);
+                                            extraCloseTimer.current = null;
+                                        }
+                                        setExtraFocused(true);
+                                    }}
+                                    onBlur={() => {
+                                        extraCloseTimer.current = window.setTimeout(() => {
+                                            setExtraFocused(false);
+                                            extraCloseTimer.current = null;
+                                        }, 120);
+                                    }}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const exact = extraSuggestions.find(
+                                                s => s.toUpperCase() === extraQuery.trim().toUpperCase(),
+                                            );
+                                            if (exact) commitExtraLine(exact);
+                                            else if (extraSuggestions.length === 1) commitExtraLine(extraSuggestions[0]);
+                                        } else if (e.key === 'Escape') {
+                                            setExtraQuery('');
+                                        }
+                                    }}
+                                    style={{
+                                        fontSize: text.xs,
+                                        padding: '2px 6px',
+                                        border: `1px solid ${colors.border}`,
+                                        borderRadius: radius.sm,
+                                        minWidth: '140px',
+                                    }}
+                                />
+                                {extraFocused && extraQuery.length > 0 && extraSuggestions.length > 0 && (
+                                    <div
+                                        role="listbox"
+                                        style={{
+                                            position: 'absolute',
+                                            top: '100%',
+                                            left: 0,
+                                            zIndex: 20,
+                                            background: colors.surface,
+                                            border: `1px solid ${colors.border}`,
+                                            borderRadius: radius.sm,
+                                            boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
+                                            maxHeight: '180px',
+                                            overflowY: 'auto',
+                                            minWidth: '180px',
+                                            marginTop: '2px',
+                                        }}
+                                    >
+                                        {extraSuggestions.map(line => (
+                                            <div
+                                                key={line}
+                                                role="option"
+                                                aria-selected={false}
+                                                onMouseDown={e => {
+                                                    e.preventDefault();
+                                                    commitExtraLine(line);
+                                                }}
+                                                style={{
+                                                    padding: '4px 8px',
+                                                    fontSize: text.xs,
+                                                    cursor: 'pointer',
+                                                    color: colors.textPrimary,
+                                                }}
+                                                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = colors.surfaceMuted; }}
+                                                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                                            >
+                                                {displayName(line)}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </span>
+                        </span>
+                    </div>
+                )}
             </div>
         </div>
     );

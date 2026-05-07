@@ -59,7 +59,8 @@ const SPEC: Record<string, SpecRow> = {
   // --- Two-Step Analysis ---
   analysis_step1_started:         { required: new Set(['element']) },
   overload_toggled:               { required: new Set(['overload', 'selected']) },
-  analysis_step2_started:         { required: new Set(['element', 'selected_overloads', 'all_overloads', 'monitor_deselected']) },
+  additional_line_to_cut_toggled: { required: new Set(['line', 'selected']) },
+  analysis_step2_started:         { required: new Set(['element', 'selected_overloads', 'all_overloads', 'monitor_deselected']), optional: new Set(['additional_lines_to_cut']) },
   prioritized_actions_displayed:  { required: new Set(['n_actions']) },
   // --- Action ---
   action_selected:                { required: new Set(['action_id']) },

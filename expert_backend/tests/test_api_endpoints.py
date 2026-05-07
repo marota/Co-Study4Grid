@@ -641,7 +641,7 @@ class TestRunAnalysisStep2:
     def test_streaming_response_success(self, client, mock_services):
         _, mock_rs = mock_services
 
-        def fake_analysis_step2(selected_overloads, all_overloads=None, monitor_deselected=False):
+        def fake_analysis_step2(selected_overloads, all_overloads=None, monitor_deselected=False, additional_lines_to_cut=None):
             yield {"type": "pdf", "pdf_path": "/tmp/graph.pdf"}
             yield {
                 "type": "result",
@@ -682,7 +682,8 @@ class TestRunAnalysisStep2:
         mock_rs.run_analysis_step2.assert_called_once_with(
             ["LINE_1"],
             all_overloads=["LINE_1", "LINE_2"],
-            monitor_deselected=True
+            monitor_deselected=True,
+            additional_lines_to_cut=[],
         )
 
     def test_error_in_streaming(self, client, mock_services):
@@ -1040,7 +1041,7 @@ class TestRunAnalysisLinesWeCareAbout:
     def test_step2_includes_lines_we_care_about(self, client, mock_services):
         _, mock_rs = mock_services
 
-        def fake_step2(selected_overloads, all_overloads=None, monitor_deselected=False):
+        def fake_step2(selected_overloads, all_overloads=None, monitor_deselected=False, additional_lines_to_cut=None):
             yield {
                 "type": "result",
                 "actions": {},

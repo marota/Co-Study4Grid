@@ -51,6 +51,7 @@ type InteractionType =
   | 'analysis_step1_started'       // Step 1 launched (detect overloads)
   | 'analysis_step1_completed'     // Step 1 finished (overloads detected)
   | 'overload_toggled'             // User toggled an overload checkbox
+  | 'additional_line_to_cut_toggled'  // User added/removed an extra "line to cut"
   | 'analysis_step2_started'       // Step 2 launched (resolve overloads)
   | 'analysis_step2_completed'     // Step 2 finished (actions received)
   | 'prioritized_actions_displayed'// User clicked "Display Prioritized Actions"
@@ -148,7 +149,8 @@ Each event's `details` field contains **all parameters needed to replay** the us
 | `analysis_step1_started` | `{ element: string }` | Click "Detect Overloads" |
 | `analysis_step1_completed` | `{ element, overloads_found: string[], n_overloads: string[], can_proceed: bool, dc_fallback: bool, message: string }` | *(wait point — agent waits for API response)* |
 | `overload_toggled` | `{ overload: string, selected: bool }` | Click checkbox for overload |
-| `analysis_step2_started` | `{ element, selected_overloads: string[], all_overloads: string[], monitor_deselected: bool }` | Click "Resolve Selected Overloads" |
+| `additional_line_to_cut_toggled` | `{ line: string, selected: bool }` | Add/remove an extra "line to cut" beyond the detected overloads |
+| `analysis_step2_started` | `{ element, selected_overloads: string[], all_overloads: string[], monitor_deselected: bool, additional_lines_to_cut?: string[] }` | Click "Resolve Selected Overloads" |
 | `analysis_step2_completed` | `{ n_actions: number, action_ids: string[], dc_fallback: bool, message: string, pdf_url: string\|null }` | *(wait point)* |
 | `prioritized_actions_displayed` | `{ n_actions: number }` | Click "Display Prioritized Actions" button |
 
