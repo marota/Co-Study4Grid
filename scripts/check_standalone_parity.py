@@ -141,7 +141,11 @@ SPEC_DETAILS: dict[str, dict] = {
     "overload_toggled":         _spec_row({"overload", "selected"}),
     "analysis_step2_started":   _spec_row({
         "element", "selected_overloads", "all_overloads", "monitor_deselected",
+        # PR #134 — operator-selectable extra "lines to cut" forwarded
+        # to the discovery engine as ``extra_lines_to_cut_ids``.
+        "additional_lines_to_cut",
     }),
+    "additional_line_to_cut_toggled": _spec_row({"line", "selected"}),
     "analysis_step2_completed": _spec_row({
         "n_actions", "action_ids", "dc_fallback", "message", "pdf_url",
     }),

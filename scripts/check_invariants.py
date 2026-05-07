@@ -418,18 +418,20 @@ INVARIANTS: list[Invariant] = [
         description=(
             "Recommendation #5 (add a diagram legend): "
             "VisualizationPanel.tsx must render a `<DiagramLegend>` "
-            "for the N, N-1 and Action tabs so the operator can read "
-            "halo / disconnection / voltage-level conventions on-"
-            "screen. Removing any of the three would re-open the "
-            "onboarding gap the recommendation closed."
+            "for the N, contingency and Action tabs so the operator "
+            "can read halo / disconnection / voltage-level "
+            "conventions on-screen. Removing any of the three would "
+            "re-open the onboarding gap the recommendation closed."
         ),
         react={
             "file_hint": "frontend/src/components/VisualizationPanel.tsx",
             # Each tabId must be wired explicitly. `[\s\S]*?` chains
-            # the three matches in source order.
+            # the three matches in source order. The contingency tab
+            # is keyed ``contingency`` since the N-K refactor (was
+            # ``n-1`` before).
             "pattern": (
                 r"<DiagramLegend\b[^>]*?tabId=\"n\""
-                r"[\s\S]*?<DiagramLegend\b[^>]*?tabId=\"n-1\""
+                r"[\s\S]*?<DiagramLegend\b[^>]*?tabId=\"contingency\""
                 r"[\s\S]*?<DiagramLegend\b[^>]*?tabId=\"action\""
             ),
         },

@@ -103,11 +103,24 @@ GESTURE_SEQUENCE = [
         "expected_events": ["config_loaded"],
     },
     {
+        # The N-K contingency refactor split the legacy single-step
+        # ``contingency_selected`` event into:
+        #   - ``contingency_element_added`` / ``contingency_element_removed``
+        #     for each chip the user toggles in the multi-select,
+        #   - ``contingency_applied`` when the user clicks the
+        #     Trigger button to commit the pending list.
+        # The "select" gesture is now operationally satisfied by the
+        # COMMIT action — that's what drives the diagram fetch — so
+        # the parity script tracks ``contingency_applied`` here. The
+        # standalone snapshot still uses the legacy event name; the
+        # ``standalone_*`` keys keep the legacy contract until the
+        # auto-generated bundle catches up.
         "name": "2. Select contingency",
-        "react_handler": "handleSelectContingency",  # fallback to onChange
-        "react_handler_fallbacks": ["contingency_selected"],
+        "react_handler": "handleContingencyApply",
+        "react_handler_fallbacks": ["contingency_applied"],
         "standalone_handler": "contingency_selected",
-        "expected_events": ["contingency_selected"],
+        "standalone_handler_fallbacks": ["contingency_applied"],
+        "expected_events": ["contingency_applied"],
     },
     {
         "name": "3. Run analysis step 1",
