@@ -410,10 +410,21 @@ export const buildOverflowPinPayload = (
     }
 
     // Pass 3 — emit the unitary pins, dimming the protected fails.
+    // When the "combined only" toggle is active, drop every unitary
+    // pin that is NOT a constituent of a passing combined pin and
+    // mark the survivors as dimmed-by-filter — same contract as the
+    // ``ActionOverviewDiagram`` ``pins`` memo, so the two surfaces
+    // stay in lock-step.
+    const combinedOnly = !!overviewFilters?.showCombinedOnly;
     const out: OverflowPin[] = [];
     for (const u of unitaryDrafts) {
         const passes = passesAll(u.actionId, u.details);
-        if (!passes && !protectedIds.has(u.actionId)) continue;
+        if (combinedOnly) {
+            if (!protectedIds.has(u.actionId)) continue;
+        } else if (!passes && !protectedIds.has(u.actionId)) {
+            continue;
+        }
+        const dimmedByFilter = combinedOnly || !passes;
         out.push({
             actionId: u.actionId,
             substation: u.anchor.substation,
@@ -423,7 +434,7 @@ export const buildOverflowPinPayload = (
             severity: computeActionSeverity(u.details, monitoringFactor),
             isSelected: selectedActionIds.has(u.actionId),
             isRejected: rejectedActionIds.has(u.actionId),
-            ...(passes ? {} : { dimmedByFilter: true }),
+            ...(dimmedByFilter ? { dimmedByFilter: true } : {}),
         });
     }
 
@@ -474,6 +485,10 @@ export const buildOverflowUnsimulatedPinPayload = (
     overviewFilters?: ActionOverviewFilters,
 ): OverflowPin[] => {
     if (!metaIndex || scoredActionIds.length === 0) return [];
+    // Un-simulated actions can never participate in a computed pair —
+    // when the operator restricts the overview to combined-only pins
+    // there is nothing for this layer to emit.
+    if (overviewFilters?.showCombinedOnly) return [];
     const knownSet = overflowSubstations ?? new Set<string>();
     const acceptAny = !overflowSubstations;
     // Stub ActionDetail used for anchor resolution — un-simulated

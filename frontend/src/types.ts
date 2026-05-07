@@ -620,6 +620,17 @@ export interface ActionOverviewFilters {
      * stay in sync regardless of which chip row the operator uses.
      */
     actionType: ActionTypeFilterToken;
+    /**
+     * Pin-only "combined actions only" toggle. When true, the Action
+     * Overview NAD and the overflow-graph iframe render combined-action
+     * pins (pair ids containing ``+``) plus their constituents (dimmed
+     * for context) and drop every other unitary / un-simulated pin.
+     * Lets operators focus on the multi-action remediations the
+     * recommender has computed without having to scroll past every
+     * unitary pin. The Action Feed cards are not gated by this flag —
+     * it is intentionally pin-scoped.
+     */
+    showCombinedOnly: boolean;
 }
 
 /**
