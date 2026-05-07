@@ -101,7 +101,7 @@ export default function SidebarSummary({
       )}
       {hasOverloads && (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: space[1] }}>
-          <span style={{ color: colors.dangerStrong, fontWeight: 600, whiteSpace: 'nowrap' }}>⚠️ Contingency:</span>
+          <span style={{ color: colors.dangerStrong, fontWeight: 600, whiteSpace: 'nowrap' }}>⚠️ Overloads:</span>
           <span style={{ wordBreak: 'break-word' }}>
             {n1LinesOverloaded!.map((name, i) => {
               const rho = n1LinesOverloadedRho?.[i];

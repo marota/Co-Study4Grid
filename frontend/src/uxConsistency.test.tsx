@@ -356,10 +356,10 @@ describe('UX consistency — Recommendation #4 (tier the warning system)', () =>
         // Both the contingency-zoom button and the notices pill are
         // descendants of the same strip.
         expect(within(summary).getByTestId('notices-pill')).toBeInTheDocument();
-        // The strip surfaces both the "🎯 Contingency:" header and
-        // the "⚠️ Contingency:" overloads header — using getAllByText
-        // because both share the same prefix.
-        expect(within(summary).getAllByText(/Contingency:/i).length).toBeGreaterThan(0);
+        // The strip surfaces the "🎯 Contingency:" applied-contingency
+        // header and the "⚠️ Overloads:" overloads header.
+        expect(within(summary).getByText(/Contingency:/i)).toBeInTheDocument();
+        expect(within(summary).getByText(/Overloads:/i)).toBeInTheDocument();
         // The strip stacks vertically so the notices pill sits on
         // its own line above the contingency / overload rows.
         expect(summary.style.display).toBe('flex');

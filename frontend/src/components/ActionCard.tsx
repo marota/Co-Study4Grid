@@ -451,7 +451,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                         it per card (see git blame for the original
                         rationale). */}
                     <div style={{ fontSize: '12px', background: colors.brandSoft, padding: '5px', marginTop: '8px', borderRadius: '4px' }}>
-                        Loading after: {renderRho(details.rho_after, id, 'action')}
+                        Overload loading after: {renderRho(details.rho_after, id, 'action')}
                     </div>
                 </div>
             )}
