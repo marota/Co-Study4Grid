@@ -207,6 +207,27 @@ class TestInjectOverlay:
         assert "showUnsimulated: !!ev.target.checked" in out
         assert "showUnsimulated: !!msg.filters.showUnsimulated" in out
 
+    def test_filter_panel_combined_only_checkbox(self) -> None:
+        """The Combined-only checkbox lets operators restrict the
+        overflow graph to combined-action pins (computed pairs) plus
+        their two constituents (dimmed for context). Mirrors the
+        React Action Overview's ``showCombinedOnly`` filter so both
+        surfaces stay in lock-step. Round-trips the boolean to / from
+        the parent through the cs4g:filters envelope."""
+        out = inject_overlay(_BASE_HTML)
+        assert 'data-filter="combined-only"' in out
+        # Outbound — user clicks the checkbox, iframe posts the new
+        # filter state to the parent.
+        assert "showCombinedOnly: !!ev.target.checked" in out
+        # Inbound — parent broadcasts overviewFilters; the iframe
+        # parses ``showCombinedOnly`` from the message and updates
+        # its local mirror.
+        assert "showCombinedOnly: !!msg.filters.showCombinedOnly" in out
+        # Default value matches DEFAULT_ACTION_OVERVIEW_FILTERS.
+        assert "showCombinedOnly: false," in out
+        # The chip is rendered with a clear label.
+        assert "Combined only" in out
+
     def test_filter_panel_pin_counter_starts_at_zero(self) -> None:
         """The injected counter element starts at 0 and is updated by
         ``updatePinCounter`` from the render loop after pin
@@ -249,6 +270,9 @@ class TestInjectOverlay:
         assert "showUnsimulated: false," in out
         # actionType 'all' by default.
         assert "actionType: 'all'," in out
+        # showCombinedOnly false by default — pin-only "combined
+        # actions only" toggle (PR adding combined-only filter).
+        assert "showCombinedOnly: false," in out
 
     def test_overlay_listens_for_parent_filter_broadcasts(self) -> None:
         """Bidirectional sync — the parent posts ``cs4g:filters``
