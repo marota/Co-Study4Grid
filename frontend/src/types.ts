@@ -440,6 +440,14 @@ export interface SessionResult {
         disconnected_element?: string;
         selected_overloads: string[];
         monitor_deselected: boolean;
+        /**
+         * Snapshot of the "additional lines to prevent flow
+         * increase" picker captured at Step 2 post-time. Drives the
+         * post-run "Additional lines integrated…" sidebar notice
+         * after a session reload. Optional — older session dumps
+         * and runs that didn't use the picker omit the field.
+         */
+        additional_lines_to_cut?: string[];
     };
     overloads: {
         n_overloads: string[];

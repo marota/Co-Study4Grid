@@ -170,7 +170,7 @@ function App() {
   const {
     result, setResult, pendingAnalysisResult, analysisLoading,
     infoMessage, selectedOverloads, monitorDeselected,
-    additionalLinesToCut,
+    additionalLinesToCut, committedAdditionalLinesToCut,
   } = analysis;
 
   const {
@@ -297,6 +297,7 @@ function App() {
     analysis.setSelectedOverloads(new Set());
     analysis.setMonitorDeselected(false);
     analysis.setAdditionalLinesToCut(new Set());
+    analysis.setCommittedAdditionalLinesToCut(new Set());
     actionsHook.clearActionState();
     diagrams.setSelectedActionId(null);
     diagrams.setActionDiagram(null);
@@ -684,6 +685,7 @@ function App() {
     selectedBranch: selectedContingency.join('+'),
     selectedContingency,
     selectedOverloads, monitorDeselected,
+    committedAdditionalLinesToCut,
     nOverloads: nDiagram?.lines_overloaded ?? [],
     n1Overloads: n1Diagram?.lines_overloaded ?? [],
     nOverloadsRho: nDiagram?.lines_overloaded_rho,
@@ -699,6 +701,7 @@ function App() {
     linesMonitoringPath, monitoringFactor,
     preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
     selectedContingency, selectedOverloads, monitorDeselected,
+    committedAdditionalLinesToCut,
     nDiagram, n1Diagram,
     result, selectedActionIds, rejectedActionIds,
     manuallyAddedIds, suggestedByRecommenderIds,
@@ -725,6 +728,7 @@ function App() {
     setIgnoreReconnections, setPypowsyblFastMode,
     setMonitorDeselected: analysis.setMonitorDeselected,
     setSelectedOverloads: analysis.setSelectedOverloads,
+    setCommittedAdditionalLinesToCut: analysis.setCommittedAdditionalLinesToCut,
     setResult,
     setSelectedActionIds: actionsHook.setSelectedActionIds,
     setRejectedActionIds: actionsHook.setRejectedActionIds,
@@ -1231,11 +1235,19 @@ function App() {
       });
     }
 
-    // Additional "lines to prevent flow increase" — surfaced as a
-    // warning while the picker is non-empty, so the operator can
-    // see at a glance which extra targets the next Analyze & Suggest
-    // run will pass to the recommender. Self-clears once the run
-    // starts (the picker is hidden during Analyzing… and after).
+    // Additional "lines to prevent flow increase" — two complementary
+    // notices, one per analysis lifecycle phase:
+    //
+    //   PRE-RUN  (no result yet, picker non-empty): warning that
+    //     surfaces the EXTRA targets the next Analyze & Suggest run
+    //     is about to pass to the recommender.
+    //   POST-RUN (result present, committed snapshot non-empty):
+    //     info that surfaces the EXTRA targets baked into the
+    //     CURRENT result, so the operator never loses track of the
+    //     hypothesis the recommendations were computed against —
+    //     even if the picker has since been edited and a new run is
+    //     pending. The committed snapshot is taken inside
+    //     ``useAnalysis`` at the moment Step 2 was posted.
     if (additionalLinesToCut.size > 0 && !pendingAnalysisResult && !result) {
       const lines = Array.from(additionalLinesToCut);
       list.push({
@@ -1256,6 +1268,26 @@ function App() {
         ),
       });
     }
+    if (committedAdditionalLinesToCut.size > 0 && !!result) {
+      const lines = Array.from(committedAdditionalLinesToCut);
+      list.push({
+        id: 'additional-lines-to-cut-committed',
+        severity: 'info',
+        title: 'Additional lines integrated in overflow analysis',
+        body: (
+          <>
+            <div>
+              <strong>{lines.length}</strong> additional line
+              {lines.length === 1 ? '' : 's'} integrated in overflow
+              analysis on which to prevent powerflow increase:
+            </div>
+            <div style={{ marginTop: 4, wordBreak: 'break-word' }}>
+              {lines.map(displayName).join(', ')}
+            </div>
+          </>
+        ),
+      });
+    }
 
     return list;
   }, [
@@ -1264,7 +1296,7 @@ function App() {
     monitoringFactor, preExistingOverloadThreshold,
     showRecommenderNotice, pendingAnalysisResult, recommenderConfig,
     handleOpenSettings, handleOpenConfigSettings, handleDismissWarning,
-    additionalLinesToCut, displayName,
+    additionalLinesToCut, committedAdditionalLinesToCut, displayName,
   ]);
 
   return (

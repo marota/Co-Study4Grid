@@ -51,6 +51,10 @@ export interface SaveParams {
   selectedContingency?: string[];
   selectedOverloads: Set<string>;
   monitorDeselected: boolean;
+  /** Snapshot of the "additional lines to prevent flow increase"
+   *  picker at the moment Step 2 was posted; persisted so the
+   *  post-run sidebar notice survives a session reload. */
+  committedAdditionalLinesToCut?: Set<string>;
   nOverloads: string[];
   n1Overloads: string[];
   nOverloadsRho?: number[];
@@ -93,6 +97,11 @@ export interface RestoreContext {
   ingestBaseDiagram: (raw: DiagramData & { svg: string }, vlCount: number) => void;
   setMonitorDeselected: (v: boolean) => void;
   setSelectedOverloads: (v: Set<string>) => void;
+  /** Restore the committed "additional lines to prevent flow
+   *  increase" snapshot so the post-run sidebar notice surfaces
+   *  again after a reload. Optional so test mocks predating the
+   *  field don't have to know about it. */
+  setCommittedAdditionalLinesToCut?: (v: Set<string>) => void;
   setResult: Dispatch<SetStateAction<AnalysisResult | null>>;
   setSelectedActionIds: Dispatch<SetStateAction<Set<string>>>;
   setRejectedActionIds: Dispatch<SetStateAction<Set<string>>>;
@@ -141,6 +150,7 @@ export function useSession(): SessionState {
       selectedBranch: params.selectedBranch,
       selectedOverloads: params.selectedOverloads,
       monitorDeselected: params.monitorDeselected,
+      committedAdditionalLinesToCut: params.committedAdditionalLinesToCut,
       nOverloads: params.nOverloads,
       n1Overloads: params.n1Overloads,
       nOverloadsRho: params.nOverloadsRho,
@@ -314,6 +324,13 @@ export function useSession(): SessionState {
       const contingency = session.contingency;
       ctx.setMonitorDeselected(contingency.monitor_deselected);
       ctx.setSelectedOverloads(new Set(contingency.selected_overloads));
+      // Restore the "additional lines to prevent flow increase"
+      // snapshot so the post-run sidebar notice resurfaces. Older
+      // session dumps that predate the picker simply set an empty
+      // set, which keeps the notice hidden.
+      ctx.setCommittedAdditionalLinesToCut?.(
+        new Set(contingency.additional_lines_to_cut ?? []),
+      );
 
       // 6. Restore analysis result
       if (session.analysis) {

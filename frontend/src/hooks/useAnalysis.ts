@@ -36,6 +36,17 @@ export interface AnalysisState {
   additionalLinesToCut: Set<string>;
   setAdditionalLinesToCut: Dispatch<SetStateAction<Set<string>>>;
   handleToggleAdditionalLineToCut: (line: string) => void;
+  /**
+   * Snapshot of ``additionalLinesToCut`` taken at the moment
+   * ``handleRunAnalysis`` posted Step 2. Drives the post-run
+   * "Additional lines integrated in overflow analysis" notice so
+   * the operator always sees the hypothesis BAKED INTO the
+   * current ``result`` — even if they later toggle the picker
+   * before re-running. Cleared on
+   * ``clearContingencyState`` / ``resetAllState``.
+   */
+  committedAdditionalLinesToCut: Set<string>;
+  setCommittedAdditionalLinesToCut: Dispatch<SetStateAction<Set<string>>>;
 
   // Ref to previous result for merge logic
   prevResultRef: MutableRefObject<AnalysisResult | null>;
@@ -71,6 +82,11 @@ export function useAnalysis(): AnalysisState {
   const [selectedOverloads, setSelectedOverloads] = useState<Set<string>>(new Set());
   const [monitorDeselected, setMonitorDeselected] = useState(false);
   const [additionalLinesToCut, setAdditionalLinesToCut] = useState<Set<string>>(new Set());
+  // Snapshot of ``additionalLinesToCut`` at the moment Step 2 was
+  // posted. Drives the post-run "Additional lines integrated…"
+  // notice so the operator keeps sight of the hypothesis the
+  // current ``result`` was computed against.
+  const [committedAdditionalLinesToCut, setCommittedAdditionalLinesToCut] = useState<Set<string>>(new Set());
 
   const handleRunAnalysis = useCallback(async (
     selectedContingency: string[],
@@ -134,6 +150,10 @@ export function useAnalysis(): AnalysisState {
       //   { element, selected_overloads, all_overloads, monitor_deselected,
       //     additional_lines_to_cut }
       const additionalLinesArr = Array.from(additionalLinesToCut);
+      // Stamp the committed snapshot BEFORE the network call so the
+      // post-run notice reflects exactly what the backend is about to
+      // process (even if the user toggles the picker mid-stream).
+      setCommittedAdditionalLinesToCut(new Set(additionalLinesArr));
       const step2CorrId = interactionLogger.record('analysis_step2_started', {
         element: selectedContingency.join('+'),
         selected_overloads: toResolve,
@@ -304,6 +324,7 @@ export function useAnalysis(): AnalysisState {
     monitorDeselected, setMonitorDeselected,
     additionalLinesToCut, setAdditionalLinesToCut,
     handleToggleAdditionalLineToCut,
+    committedAdditionalLinesToCut, setCommittedAdditionalLinesToCut,
     prevResultRef,
     handleRunAnalysis,
     handleDisplayPrioritizedActions,
@@ -311,6 +332,7 @@ export function useAnalysis(): AnalysisState {
   }), [
     result, pendingAnalysisResult, analysisLoading, infoMessage, error,
     selectedOverloads, monitorDeselected, additionalLinesToCut,
+    committedAdditionalLinesToCut,
     handleRunAnalysis, handleDisplayPrioritizedActions, handleToggleOverload,
     handleToggleAdditionalLineToCut,
   ]);

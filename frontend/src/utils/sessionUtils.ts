@@ -42,6 +42,14 @@ export interface SessionInput {
     selectedBranch?: string;
     selectedOverloads: Set<string>;
     monitorDeselected: boolean;
+    /**
+     * Snapshot of the "additional lines to prevent flow increase"
+     * picker captured at the moment Step 2 was posted. Persisted so
+     * the post-run "Additional lines integrated…" notice survives a
+     * session reload. Optional — older sessions or runs that didn't
+     * use the picker omit the field entirely.
+     */
+    committedAdditionalLinesToCut?: Set<string>;
 
     // Overload lists from diagrams (parallel rho arrays are optional,
     // backend only populates them on the N-1 payload today — see PR #88).
@@ -82,6 +90,7 @@ export function buildSessionResult(input: SessionInput): SessionResult {
         selectedContingency: contingencyInput,
         selectedBranch: legacyBranch,
         selectedOverloads, monitorDeselected,
+        committedAdditionalLinesToCut,
         nOverloads, n1Overloads,
         nOverloadsRho, n1OverloadsRho,
         result,
@@ -214,6 +223,14 @@ export function buildSessionResult(input: SessionInput): SessionResult {
                     : {}),
                 selected_overloads: Array.from(selectedOverloads),
                 monitor_deselected: monitorDeselected,
+                // Snapshot of the "additional lines to prevent flow
+                // increase" picker captured at Step 2 post-time, so
+                // the post-run notice survives a session reload.
+                // Optional — older session dumps and runs that didn't
+                // use the picker omit the field.
+                ...(committedAdditionalLinesToCut && committedAdditionalLinesToCut.size > 0
+                    ? { additional_lines_to_cut: Array.from(committedAdditionalLinesToCut) }
+                    : {}),
             };
         })(),
         overloads: {
