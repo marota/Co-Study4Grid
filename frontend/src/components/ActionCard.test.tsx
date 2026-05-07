@@ -228,18 +228,18 @@ describe('ActionCard', () => {
         expect(onAssetClick).toHaveBeenCalledWith('act_1', 'LINE_B', 'action');
     });
 
-    it('renders loading after only inside the viewing disclosure', () => {
-        // At rest the "Loading after" detail is hidden — the per-card
-        // max ρ% summary above replaces it.  Only the viewing card
-        // expands the per-line breakdown.  "Loading before" remains in
-        // the sticky Overloads panel and never appears on the card.
+    it('renders the "Overload loading after" detail only inside the viewing disclosure', () => {
+        // At rest the "Overload loading after" detail is hidden — the
+        // per-card max ρ% summary above replaces it.  Only the viewing
+        // card expands the per-line breakdown.  "Loading before" stays
+        // in the sticky Overloads panel and never appears on the card.
         const { rerender } = render(<ActionCard {...defaultProps} />);
-        expect(screen.queryByText(/Loading after/)).not.toBeInTheDocument();
-        expect(screen.queryByText(/Loading before/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/loading after/i)).not.toBeInTheDocument();
+        expect(screen.queryByText(/loading before/i)).not.toBeInTheDocument();
 
         rerender(<ActionCard {...defaultProps} isViewing={true} />);
-        expect(screen.getByText(/Loading after/)).toBeInTheDocument();
-        expect(screen.queryByText(/Loading before/)).not.toBeInTheDocument();
+        expect(screen.getByText(/Overload loading after/i)).toBeInTheDocument();
+        expect(screen.queryByText(/loading before/i)).not.toBeInTheDocument();
     });
 
     it('renders load shedding details with MW input and re-simulate button when viewing', () => {

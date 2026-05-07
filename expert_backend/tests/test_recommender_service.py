@@ -178,14 +178,14 @@ class TestRestoreAnalysisContext:
 
         service.restore_analysis_context(
             lines_we_care_about=["LINE_A", "LINE_B"],
-            disconnected_element="LINE_X",
+            disconnected_elements=["LINE_X"],
             lines_overloaded=["LINE_A"],
         )
 
         assert service._analysis_context is not None
         assert service._analysis_context["lines_we_care_about"] == ["LINE_A", "LINE_B"]
         assert service._analysis_context["lines_overloaded"] == ["LINE_A"]
-        assert service._last_disconnected_element == "LINE_X"
+        assert service._last_disconnected_elements == ["LINE_X"]
 
     def test_restore_with_none_lines(self):
         service = RecommenderService()
@@ -218,26 +218,26 @@ class TestRestoreAnalysisContext:
 
         assert service._analysis_context["lines_we_care_about"] == ["L1", "L2"]
         assert "lines_overloaded" not in service._analysis_context
-        assert service._last_disconnected_element is None
+        assert service._last_disconnected_elements == []
 
     def test_restore_updates_disconnected_element(self):
         service = RecommenderService()
-        service._last_disconnected_element = "OLD_LINE"
+        service._last_disconnected_elements = ["OLD_LINE"]
         service.restore_analysis_context(
             lines_we_care_about=["L1"],
-            disconnected_element="NEW_LINE",
+            disconnected_elements=["NEW_LINE"],
         )
-        assert service._last_disconnected_element == "NEW_LINE"
+        assert service._last_disconnected_elements == ["NEW_LINE"]
 
     def test_restore_does_not_overwrite_disconnected_element_if_none(self):
         service = RecommenderService()
-        service._last_disconnected_element = "EXISTING"
+        service._last_disconnected_elements = ["EXISTING"]
         service.restore_analysis_context(
             lines_we_care_about=["L1"],
-            disconnected_element=None,
+            disconnected_elements=None,
         )
         # None is falsy, so it should not overwrite
-        assert service._last_disconnected_element == "EXISTING"
+        assert service._last_disconnected_elements == ["EXISTING"]
 
     def test_reset_clears_restored_context(self):
         service = RecommenderService()
@@ -565,7 +565,7 @@ class TestEnsureNStateReady:
 
 
 class TestVariantRestorationIsSafeOnException:
-    """`_get_n_variant` and `_get_n1_variant` must restore the original
+    """`_get_n_variant` and `_get_contingency_variant` must restore the original
     working variant even when the AC load flow raises. Otherwise the
     shared Network (used by network_service and grid2op) gets stuck on
     a `*_cached` variant and silently corrupts concurrent reads."""
@@ -585,7 +585,7 @@ class TestVariantRestorationIsSafeOnException:
         # though the LF raised inside the try block.
         fake_net.set_working_variant.assert_any_call("InitialState")
 
-    def test_get_n1_variant_restores_original_on_lf_failure(self):
+    def test_get_contingency_variant_restores_original_on_lf_failure(self):
         service = RecommenderService()
         fake_net = MagicMock(name="net")
         fake_net.get_working_variant_id.return_value = "InitialState"
@@ -595,13 +595,13 @@ class TestVariantRestorationIsSafeOnException:
 
         with patch.object(service, "_run_ac_with_fallback", side_effect=RuntimeError("LF boom")):
             with pytest.raises(RuntimeError, match="LF boom"):
-                service._get_n1_variant("LINE_A")
+                service._get_contingency_variant("LINE_A")
 
         fake_net.set_working_variant.assert_any_call("InitialState")
 
 
 class TestEnsureN1StateReady:
-    """`_ensure_n1_state_ready(disconnected_element)` is used by
+    """`_ensure_contingency_state_ready(disconnected_element)` is used by
     `simulate_manual_action` and `compute_superposition` — they operate
     on top of a known contingency, so the natural entry state is N-1
     (not N). The guard drains the NAD prefetch worker, then positions
@@ -613,12 +613,12 @@ class TestEnsureN1StateReady:
         service._base_network = fake_net
 
         with patch.object(service, "_drain_pending_base_nad_prefetch") as drain, \
-             patch.object(service, "_get_n1_variant", return_value="N_1_state_LINE_A") as n1:
-            service._ensure_n1_state_ready("LINE_A")
+             patch.object(service, "_get_contingency_variant", return_value="contingency_state_LINE_A") as n1:
+            service._ensure_contingency_state_ready("LINE_A")
 
             drain.assert_called_once()
-            n1.assert_called_once_with("LINE_A")
-            fake_net.set_working_variant.assert_called_once_with("N_1_state_LINE_A")
+            n1.assert_called_once_with(["LINE_A"])
+            fake_net.set_working_variant.assert_called_once_with("contingency_state_LINE_A")
 
     def test_is_noop_before_any_network_is_loaded(self):
         service = RecommenderService()
@@ -626,7 +626,7 @@ class TestEnsureN1StateReady:
         saved_env_path = getattr(config, "ENV_PATH", None)
         try:
             config.ENV_PATH = None
-            service._ensure_n1_state_ready("LINE_A")  # Must not raise.
+            service._ensure_contingency_state_ready("LINE_A")  # Must not raise.
         finally:
             config.ENV_PATH = saved_env_path
 
@@ -637,8 +637,8 @@ class TestEnsureN1StateReady:
         service = RecommenderService()
         service._base_network = MagicMock(name="net")
         with patch.object(service, "_drain_pending_base_nad_prefetch") as drain, \
-             patch.object(service, "_get_n1_variant") as n1:
-            service._ensure_n1_state_ready("")
+             patch.object(service, "_get_contingency_variant") as n1:
+            service._ensure_contingency_state_ready("")
 
             drain.assert_called_once()
             n1.assert_not_called()
@@ -647,8 +647,8 @@ class TestEnsureN1StateReady:
         service = RecommenderService()
         service._base_network = MagicMock(name="net")
         with patch.object(service, "_drain_pending_base_nad_prefetch"), \
-             patch.object(service, "_get_n1_variant", side_effect=RuntimeError("LF diverged")):
-            service._ensure_n1_state_ready("LINE_A")  # Must not re-raise.
+             patch.object(service, "_get_contingency_variant", side_effect=RuntimeError("LF diverged")):
+            service._ensure_contingency_state_ready("LINE_A")  # Must not re-raise.
 
 
 class TestOverflowLayoutToggle:

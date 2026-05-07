@@ -27,7 +27,7 @@ import { useDiagrams } from './hooks/useDiagrams';
 import { useSession } from './hooks/useSession';
 import { useDetachedTabs } from './hooks/useDetachedTabs';
 import { useTiedTabsSync, type PZInstance } from './hooks/useTiedTabsSync';
-import { useN1Fetch } from './hooks/useN1Fetch';
+import { useContingencyFetch } from './hooks/useContingencyFetch';
 import { useDiagramHighlights } from './hooks/useDiagramHighlights';
 import { interactionLogger } from './utils/interactionLogger';
 import { DEFAULT_ACTION_OVERVIEW_FILTERS } from './utils/actionTypes';
@@ -67,7 +67,20 @@ function App() {
     buildConfigRequest, applyConfigResponse, createCurrentBackup, setSettingsBackup
   } = settings;
 
-  const [selectedBranch, setSelectedBranch] = useState<string>('');
+  /**
+   * Currently APPLIED contingency — ordered list of element IDs to
+   * disconnect simultaneously. Empty list means N state. Single-item
+   * list is the legacy N-1 case; longer lists drive N-K studies.
+   * The user builds the list via ``pendingContingency`` and commits
+   * it with the Apply button in the Header.
+   */
+  const [selectedContingency, setSelectedContingency] = useState<string[]>([]);
+  /**
+   * Pending element IDs the user is composing in the Header before
+   * pressing Apply. Confirming applies the list to
+   * ``selectedContingency`` and triggers the diagram fetch.
+   */
+  const [pendingContingency, setPendingContingency] = useState<string[]>([]);
   const [branches, setBranches] = useState<string[]>([]);
   const [voltageLevels, setVoltageLevels] = useState<string[]>([]);
   /** ID → human-readable name for branches (lines + transformers) and VLs. */
@@ -94,7 +107,7 @@ function App() {
   });
   const { detachedTabs, detach: detachTab, reattach: reattachTab, focus: focusDetachedTab } = detachedTabsHook;
 
-  const diagrams = useDiagrams(branches, voltageLevels, selectedBranch, detachedTabs);
+  const diagrams = useDiagrams(branches, voltageLevels, selectedContingency, detachedTabs);
 
   // ===== Action Overview PZ (for tied-tab sync) =====
   // The action overview has its own independent usePanZoom instance
@@ -130,7 +143,7 @@ function App() {
   // docs/features/detachable-viz-tabs.md#tied-detached-tabs for the full
   // design rationale.
   const tiedTabsHook = useTiedTabsSync(
-    { 'n': diagrams.nPZ, 'n-1': diagrams.n1PZ, 'action': actionPZForTie },
+    { 'n': diagrams.nPZ, 'contingency': diagrams.n1PZ, 'action': actionPZForTie },
     diagrams.activeTab,
     detachedTabs,
   );
@@ -156,7 +169,8 @@ function App() {
   const analysis = useAnalysis();
   const {
     result, setResult, pendingAnalysisResult, analysisLoading,
-    infoMessage, selectedOverloads, monitorDeselected
+    infoMessage, selectedOverloads, monitorDeselected,
+    additionalLinesToCut, committedAdditionalLinesToCut,
   } = analysis;
 
   const {
@@ -235,28 +249,6 @@ function App() {
     return { unsimulatedActionIds: ids, unsimulatedActionInfo: info };
   }, [analysis.result?.action_scores, analysis.result?.actions]);
 
-  const contingencyOptions = useMemo(() => {
-    const q = selectedBranch.toUpperCase();
-    const opts: string[] = [];
-    if (!q) {
-      opts.push(...branches.slice(0, 50));
-    } else {
-      for (const b of branches) {
-        const name = nameMap[b] || '';
-        if (b.toUpperCase().includes(q) || name.toUpperCase().includes(q)) {
-          opts.push(b);
-          if (opts.length >= 50) break;
-        }
-      }
-    }
-    // Show "DisplayName (ID)" as the visible label so the user sees real names,
-    // while `value` stays the raw ID that gets submitted.
-    return opts.map(b => {
-      const name = nameMap[b];
-      return <option key={b} value={b} label={name ? `${name}  —  ${b}` : b} />;
-    });
-  }, [branches, selectedBranch, nameMap]);
-
   const recommenderConfig = useMemo<RecommenderDisplayConfig>(() => ({
     minLineReconnections, minCloseCoupling, minOpenCoupling,
     minLineDisconnections, minPst, minLoadShedding,
@@ -285,7 +277,7 @@ function App() {
     // an empty slot by default. Prefers the first tab that is not itself
     // detached; falls back to 'n' (which is always available).
     if (entry && diagrams.activeTab === tabId) {
-      const order: TabId[] = ['n', 'n-1', 'action', 'overflow'];
+      const order: TabId[] = ['n', 'contingency', 'action', 'overflow'];
       const fallback = order.find(t => t !== tabId && !detachedTabs[t]);
       diagrams.setActiveTab(fallback ?? 'n');
     }
@@ -304,11 +296,13 @@ function App() {
     analysis.setPendingAnalysisResult(null);
     analysis.setSelectedOverloads(new Set());
     analysis.setMonitorDeselected(false);
+    analysis.setAdditionalLinesToCut(new Set());
+    analysis.setCommittedAdditionalLinesToCut(new Set());
     actionsHook.clearActionState();
     diagrams.setSelectedActionId(null);
     diagrams.setActionDiagram(null);
     // Do NOT reset activeTab to 'n' here — the caller (fetchN1) sets
-    // it to 'n-1' immediately. Resetting to 'n' interfered with the
+    // it to 'contingency' immediately. Resetting to 'n' interfered with the
     // auto-zoom effect on the second contingency change.
     diagrams.setVlOverlay(null);
     // Fresh contingency / study starts in hierarchical mode so the
@@ -321,7 +315,7 @@ function App() {
     // effect to detect a spurious "branch change" during the same render
     // cycle in which the old n1Diagram SVG is still mounted, firing the
     // zoom on stale data and consuming the intent before the new diagram
-    // loads.  Leaving lastZoomState intact lets the natural selectedBranch
+    // loads.  Leaving lastZoomState intact lets the natural selectedContingency
     // change trigger the zoom correctly after the new SVG is ready.
   }, [setError, actionsHook, analysis, diagrams]);
 
@@ -390,10 +384,11 @@ function App() {
     diagrams.setShowVoltageLevelNames(true);
     diagrams.setN1Loading(false);
     diagrams.setActionDiagramLoading(false);
-    diagrams.committedBranchRef.current = '';
+    diagrams.committedBranchRef.current = [];
     diagrams.actionSyncSourceRef.current = null;
     diagrams.lastZoomState.current = { query: '', branch: '' };
-    setSelectedBranch('');
+    setSelectedContingency([]);
+    setPendingContingency([]);
     setShowMonitoringWarning(false);
     setVlToSubstation({});
     setOverflowPinsEnabled(false);
@@ -469,8 +464,8 @@ function App() {
 
   const wrappedActionSelect = useCallback(
     (actionId: string | null) =>
-      diagrams.handleActionSelect(actionId, result, selectedBranch, voltageLevels.length, setResult, setError),
-    [diagrams, result, selectedBranch, voltageLevels.length, setResult, setError]
+      diagrams.handleActionSelect(actionId, result, selectedContingency, voltageLevels.length, setResult, setError),
+    [diagrams, result, selectedContingency, voltageLevels.length, setResult, setError]
   );
 
   // Overflow Analysis tab's Hierarchical / Geo toggle — the hook's
@@ -488,8 +483,8 @@ function App() {
   // newly-simulated action diagram is always re-fetched.
   const wrappedForcedActionSelect = useCallback(
     (actionId: string | null) =>
-      diagrams.handleActionSelect(actionId, result, selectedBranch, voltageLevels.length, setResult, setError, true),
-    [diagrams, result, selectedBranch, voltageLevels.length, setResult, setError]
+      diagrams.handleActionSelect(actionId, result, selectedContingency, voltageLevels.length, setResult, setError, true),
+    [diagrams, result, selectedContingency, voltageLevels.length, setResult, setError]
   );
 
   const wrappedActionFavorite = useCallback(
@@ -517,14 +512,14 @@ function App() {
   // as the feed add path.
   const handleSimulateUnsimulatedAction = useCallback(
     async (actionId: string) => {
-      if (!selectedBranch) {
+      if (selectedContingency.length === 0) {
         setError('Select a contingency first.');
         return;
       }
       try {
         const response = await api.simulateAndVariantDiagramStream({
           action_id: actionId,
-          disconnected_element: selectedBranch,
+          disconnected_elements: selectedContingency,
           action_content: null,
           lines_overloaded: result?.lines_overloaded ?? null,
           target_mw: null,
@@ -605,7 +600,7 @@ function App() {
         setError(err?.response?.data?.detail || 'Simulation failed');
       }
     },
-    [selectedBranch, result?.lines_overloaded, diagrams, voltageLevels.length, wrappedManualActionAdded]
+    [selectedContingency, result?.lines_overloaded, diagrams, voltageLevels.length, wrappedManualActionAdded]
   );
 
   // Re-simulation of an already-present action (edit Target MW / tap on a
@@ -648,8 +643,8 @@ function App() {
   );
 
   const wrappedRunAnalysis = useCallback(
-    () => analysis.handleRunAnalysis(selectedBranch, resetForAnalysisRun, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab),
-    [analysis, selectedBranch, resetForAnalysisRun, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab]
+    () => analysis.handleRunAnalysis(selectedContingency, resetForAnalysisRun, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab),
+    [analysis, selectedContingency, resetForAnalysisRun, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab]
   );
 
   const wrappedDisplayPrioritized = useCallback(
@@ -658,7 +653,7 @@ function App() {
   );
 
   const wrappedAssetClick = useCallback(
-    (actionId: string, assetName: string, tab: 'action' | 'n' | 'n-1' = 'action') =>
+    (actionId: string, assetName: string, tab: 'action' | 'n' | 'contingency' = 'action') =>
       diagrams.handleAssetClick(actionId, assetName, tab, diagrams.selectedActionId, wrappedActionSelect),
     [diagrams, wrappedActionSelect]
   );
@@ -687,7 +682,10 @@ function App() {
     minRenewableCurtailmentActions, nPrioritizedActions,
     linesMonitoringPath, monitoringFactor,
     preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
-    selectedBranch, selectedOverloads, monitorDeselected,
+    selectedBranch: selectedContingency.join('+'),
+    selectedContingency,
+    selectedOverloads, monitorDeselected,
+    committedAdditionalLinesToCut,
     nOverloads: nDiagram?.lines_overloaded ?? [],
     n1Overloads: n1Diagram?.lines_overloaded ?? [],
     nOverloadsRho: nDiagram?.lines_overloaded_rho,
@@ -702,7 +700,8 @@ function App() {
     minRenewableCurtailmentActions, nPrioritizedActions,
     linesMonitoringPath, monitoringFactor,
     preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
-    selectedBranch, selectedOverloads, monitorDeselected,
+    selectedContingency, selectedOverloads, monitorDeselected,
+    committedAdditionalLinesToCut,
     nDiagram, n1Diagram,
     result, selectedActionIds, rejectedActionIds,
     manuallyAddedIds, suggestedByRecommenderIds,
@@ -729,12 +728,13 @@ function App() {
     setIgnoreReconnections, setPypowsyblFastMode,
     setMonitorDeselected: analysis.setMonitorDeselected,
     setSelectedOverloads: analysis.setSelectedOverloads,
+    setCommittedAdditionalLinesToCut: analysis.setCommittedAdditionalLinesToCut,
     setResult,
     setSelectedActionIds: actionsHook.setSelectedActionIds,
     setRejectedActionIds: actionsHook.setRejectedActionIds,
     setManuallyAddedIds: actionsHook.setManuallyAddedIds,
     setSuggestedByRecommenderIds: actionsHook.setSuggestedByRecommenderIds,
-    setSelectedBranch,
+    setSelectedContingency,
     restoringSessionRef: diagrams.restoringSessionRef,
     committedBranchRef: diagrams.committedBranchRef,
     committedNetworkPathRef,
@@ -753,7 +753,7 @@ function App() {
     setMinRenewableCurtailmentActions, setNPrioritizedActions,
     setLinesMonitoringPath, setMonitoringFactor, setPreExistingOverloadThreshold,
     setIgnoreReconnections, setPypowsyblFastMode,
-    analysis, actionsHook, setResult, setSelectedBranch,
+    analysis, actionsHook, setResult, setSelectedContingency,
     diagrams, setError, applyConfigResponse, setBranches, setVoltageLevels, setNameMap,
   ]);
 
@@ -843,7 +843,8 @@ function App() {
       setVoltageLevels(vlRes.voltage_levels);
       // Merge element + VL name maps into a single lookup
       setNameMap({ ...branchRes.name_map, ...vlRes.name_map });
-      setSelectedBranch('');
+      setSelectedContingency([]);
+      setPendingContingency([]);
 
       diagrams.setNominalVoltageMap(nomVRes.mapping);
       diagrams.setUniqueVoltages(nomVRes.unique_kv);
@@ -909,7 +910,8 @@ function App() {
       setBranches(branchRes.branches);
       setVoltageLevels(vlRes.voltage_levels);
       setNameMap({ ...branchRes.name_map, ...vlRes.name_map });
-      setSelectedBranch('');
+      setSelectedContingency([]);
+      setPendingContingency([]);
 
       diagrams.setNominalVoltageMap(nomVRes.mapping);
       diagrams.setUniqueVoltages(nomVRes.unique_kv);
@@ -961,7 +963,11 @@ function App() {
     interactionLogger.record('contingency_confirmed', { type: confirmDialog.type, pending_branch: confirmDialog.pendingBranch });
     if (confirmDialog.type === 'contingency') {
       clearContingencyState();
-      setSelectedBranch(confirmDialog.pendingBranch || '');
+      const pending = confirmDialog.pendingBranch
+        ? confirmDialog.pendingBranch.split('+').filter(Boolean)
+        : [];
+      setSelectedContingency(pending);
+      setPendingContingency(pending);
     } else if (confirmDialog.type === 'applySettings') {
       applySettingsImmediate();
     } else if (confirmDialog.type === 'changeNetwork') {
@@ -979,8 +985,8 @@ function App() {
   // ===== App-Level Effects =====
 
   useEffect(() => {
-    diagrams.selectedBranchForSld.current = selectedBranch;
-  }, [selectedBranch, diagrams.selectedBranchForSld]);
+    diagrams.selectedContingencyForSld.current = selectedContingency;
+  }, [selectedContingency, diagrams.selectedContingencyForSld]);
 
   // Inject `<title>` elements into each voltage-level node group on every
   // diagram refresh so the browser surfaces the VL name as a native
@@ -1001,15 +1007,15 @@ function App() {
 
 
 
-  useN1Fetch({
-    selectedBranch,
+  useContingencyFetch({
+    selectedContingency,
     branches,
     voltageLevelsLength: voltageLevels.length,
     diagrams,
     analysisLoading,
     hasAnalysisState,
     clearContingencyState,
-    setSelectedBranch,
+    setSelectedContingency,
     setConfirmDialog,
     setError,
   });
@@ -1029,7 +1035,7 @@ function App() {
   const { viewModeForTab, handleViewModeChangeForTab } = useDiagramHighlights({
     diagrams,
     result,
-    selectedBranch,
+    selectedContingency,
     selectedOverloads,
     monitoringFactor,
     detachedTabs,
@@ -1037,10 +1043,37 @@ function App() {
 
   // ===== Extracted JSX callbacks (stable references for React.memo) =====
 
-  const handleContingencyChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    interactionLogger.record('contingency_selected', { element: e.target.value });
-    setSelectedBranch(e.target.value);
-  }, []);
+  /**
+   * Replace the pending list with whatever the multi-select dropdown
+   * currently shows. We diff against the previous pending list to
+   * emit a single ``contingency_element_added`` /
+   * ``contingency_element_removed`` event per change so the
+   * interaction log stays replay-friendly even when the user picks
+   * several elements before pressing Apply.
+   */
+  const handlePendingContingencyChange = useCallback((next: string[]) => {
+    const prev = pendingContingency;
+    const prevSet = new Set(prev);
+    const nextSet = new Set(next);
+    for (const id of next) {
+      if (!prevSet.has(id)) interactionLogger.record('contingency_element_added', { element: id });
+    }
+    for (const id of prev) {
+      if (!nextSet.has(id)) interactionLogger.record('contingency_element_removed', { element: id });
+    }
+    setPendingContingency(next);
+  }, [pendingContingency]);
+
+  /**
+   * Commit the pending list. Triggers the contingency-state confirm
+   * dialog when an analysis already exists (same routing as today's
+   * single-element flow).
+   */
+  const handleContingencyApply = useCallback(() => {
+    const next = [...pendingContingency];
+    interactionLogger.record('contingency_applied', { elements: next });
+    setSelectedContingency(next);
+  }, [pendingContingency]);
 
   const handleDismissWarning = useCallback(() => {
     setShowMonitoringWarning(false);
@@ -1202,6 +1235,60 @@ function App() {
       });
     }
 
+    // Additional "lines to prevent flow increase" — two complementary
+    // notices, one per analysis lifecycle phase:
+    //
+    //   PRE-RUN  (no result yet, picker non-empty): warning that
+    //     surfaces the EXTRA targets the next Analyze & Suggest run
+    //     is about to pass to the recommender.
+    //   POST-RUN (result present, committed snapshot non-empty):
+    //     info that surfaces the EXTRA targets baked into the
+    //     CURRENT result, so the operator never loses track of the
+    //     hypothesis the recommendations were computed against —
+    //     even if the picker has since been edited and a new run is
+    //     pending. The committed snapshot is taken inside
+    //     ``useAnalysis`` at the moment Step 2 was posted.
+    if (additionalLinesToCut.size > 0 && !pendingAnalysisResult && !result) {
+      const lines = Array.from(additionalLinesToCut);
+      list.push({
+        id: 'additional-lines-to-cut',
+        severity: 'warning',
+        title: 'Additional lines to prevent flow increase',
+        body: (
+          <>
+            <div>
+              The next Analyze &amp; Suggest run will treat{' '}
+              <strong>{lines.length}</strong> extra line{lines.length === 1 ? '' : 's'} as
+              {' '}targets to prevent flow increase on (simulated as disconnected, not rendered as overloads):
+            </div>
+            <div style={{ marginTop: 4, wordBreak: 'break-word' }}>
+              {lines.map(displayName).join(', ')}
+            </div>
+          </>
+        ),
+      });
+    }
+    if (committedAdditionalLinesToCut.size > 0 && !!result) {
+      const lines = Array.from(committedAdditionalLinesToCut);
+      list.push({
+        id: 'additional-lines-to-cut-committed',
+        severity: 'info',
+        title: 'Additional lines integrated in overflow analysis',
+        body: (
+          <>
+            <div>
+              <strong>{lines.length}</strong> additional line
+              {lines.length === 1 ? '' : 's'} integrated in overflow
+              analysis on which to prevent powerflow increase:
+            </div>
+            <div style={{ marginTop: 4, wordBreak: 'break-word' }}>
+              {lines.map(displayName).join(', ')}
+            </div>
+          </>
+        ),
+      });
+    }
+
     return list;
   }, [
     showActionDictNotice, actionDictFileName, actionDictStats, result,
@@ -1209,6 +1296,7 @@ function App() {
     monitoringFactor, preExistingOverloadThreshold,
     showRecommenderNotice, pendingAnalysisResult, recommenderConfig,
     handleOpenSettings, handleOpenConfigSettings, handleDismissWarning,
+    additionalLinesToCut, committedAdditionalLinesToCut, displayName,
   ]);
 
   return (
@@ -1219,7 +1307,7 @@ function App() {
         onCommitNetworkPath={requestNetworkPathChange}
         configLoading={configLoading}
         result={result}
-        selectedBranch={selectedBranch}
+        selectedContingency={selectedContingency}
         sessionRestoring={sessionRestoring}
         onPickSettingsPath={pickSettingsPath}
         onLoadStudy={handleLoadStudyClick}
@@ -1244,17 +1332,18 @@ function App() {
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <AppSidebar
-          selectedBranch={selectedBranch}
+          selectedContingency={selectedContingency}
+          pendingContingency={pendingContingency}
           branches={branches}
           nameMap={nameMap}
           n1LinesOverloaded={n1Diagram?.lines_overloaded}
           n1LinesOverloadedRho={n1Diagram?.lines_overloaded_rho}
           selectedOverloads={selectedOverloads}
-          contingencyOptions={contingencyOptions}
-          onContingencyChange={handleContingencyChange}
+          onPendingContingencyChange={handlePendingContingencyChange}
+          onContingencyApply={handleContingencyApply}
           displayName={displayName}
           onContingencyZoom={handleZoomOnActiveTab}
-          onOverloadClick={wrappedAssetClick as (actionId: string, assetName: string, tab: 'n' | 'n-1') => void}
+          onOverloadClick={wrappedAssetClick as (actionId: string, assetName: string, tab: 'n' | 'contingency') => void}
           notices={sidebarNotices}
         >
           <div style={{ flexShrink: 0 }}>
@@ -1263,7 +1352,7 @@ function App() {
               n1Overloads={n1Diagram?.lines_overloaded || []}
               nOverloadsRho={nDiagram?.lines_overloaded_rho}
               n1OverloadsRho={n1Diagram?.lines_overloaded_rho}
-              onAssetClick={wrappedAssetClick as (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void}
+              onAssetClick={wrappedAssetClick as (actionId: string, assetName: string, tab?: 'n' | 'contingency') => void}
               monitoringHint={
                 showMonitoringWarning && totalLinesCount && totalLinesCount > 0
                   ? `${monitoredLinesCount || 0}/${totalLinesCount} lines monitored — see Notices for details.`
@@ -1289,14 +1378,14 @@ function App() {
             pendingAnalysisResult={pendingAnalysisResult}
             onDisplayPrioritizedActions={wrappedDisplayPrioritized}
             onRunAnalysis={wrappedRunAnalysis}
-            canRunAnalysis={!!selectedBranch && !analysisLoading}
+            canRunAnalysis={selectedContingency.length > 0 && !analysisLoading}
             onActionSelect={wrappedActionSelect}
             onActionFavorite={wrappedActionFavorite}
             onActionReject={actionsHook.handleActionReject}
             onAssetClick={wrappedAssetClick}
             nodesByEquipmentId={diagrams.nMetaIndex?.nodesByEquipmentId ?? null}
             edgesByEquipmentId={diagrams.nMetaIndex?.edgesByEquipmentId ?? null}
-            disconnectedElement={selectedBranch || null}
+            disconnectedElement={selectedContingency}
             onManualActionAdded={wrappedManualActionAdded}
             onActionResimulated={wrappedActionResimulated}
             analysisLoading={analysisLoading}
@@ -1308,6 +1397,10 @@ function App() {
             voltageLevelsLength={voltageLevels.length}
             overviewFilters={overviewFilters}
             onOverviewFiltersChange={setOverviewFilters}
+            branches={branches}
+            additionalLinesToCut={additionalLinesToCut}
+            onToggleAdditionalLineToCut={analysis.handleToggleAdditionalLineToCut}
+            n1Overloads={n1Diagram?.lines_overloaded || []}
           />
         </AppSidebar>
         <div style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column' }}>
@@ -1344,7 +1437,7 @@ function App() {
             onZoomIn={handleManualZoomIn}
             onZoomOut={handleManualZoomOut}
             hasBranches={branches.length > 0}
-            selectedBranch={selectedBranch}
+            selectedContingency={selectedContingency}
             vlOverlay={vlOverlay}
             onOverlayClose={handleOverlayClose}
             onOverlaySldTabChange={handleOverlaySldTabChange}

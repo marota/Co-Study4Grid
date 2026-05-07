@@ -86,7 +86,7 @@ class TestDiscoActionContentIntegrity:
 class TestSimulateManualActionContentNeverNone:
     """simulate_manual_action must never leave content=None in _dict_action."""
 
-    @patch.object(RecommenderService, '_get_n1_variant', return_value="n1_var")
+    @patch.object(RecommenderService, '_get_contingency_variant', return_value="n1_var")
     @patch.object(RecommenderService, '_get_n_variant', return_value="n_var")
     def test_content_defaults_to_empty_dict_when_unavailable(self, mock_n, mock_n1):
         """If content can't be resolved from dict or topology, it must

@@ -119,13 +119,13 @@ const mockApi = vi.hoisted(() => ({
   getNominalVoltages: vi.fn().mockResolvedValue({ mapping: {}, unique_kv: [63, 225] }),
   getVoltageLevelSubstations: vi.fn().mockResolvedValue({ mapping: {} }),
   getNetworkDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
-  getN1Diagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] }),
+  getContingencyDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] }),
   pickPath: vi.fn(),
   runAnalysisStep1: vi.fn().mockResolvedValue({ can_proceed: true, lines_overloaded: ['LINE_OL1'] }),
   runAnalysisStep2Stream: vi.fn(),
   getActionVariantDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
   getNSld: vi.fn(),
-  getN1Sld: vi.fn(),
+  getContingencySld: vi.fn(),
   getActionVariantSld: vi.fn(),
 }));
 
@@ -151,16 +151,40 @@ async function renderAndLoadStudy() {
   }, { timeout: 5000 });
 }
 
-// Helper: select a valid branch by typing the full name
-async function selectBranch(branchName: string) {
-  const input = screen.getByPlaceholderText('Search line/bus...');
+// Helper: clear every chip currently displayed in the multi-select.
+async function clearContingencyChips() {
+  // react-select renders each chip with a ✕ button identified
+  // by the ``cs4g-contingency__multi-value__remove`` class.
+  let removeBtn = document.querySelector('.cs4g-contingency__multi-value__remove') as HTMLElement | null;
+  while (removeBtn) {
+    await act(async () => {
+      await userEvent.click(removeBtn!);
+    });
+    removeBtn = document.querySelector('.cs4g-contingency__multi-value__remove') as HTMLElement | null;
+  }
+}
+
+// Helper: pick ``branchName`` from the react-select multi-select
+// then click the Trigger button to commit the contingency. By default
+// REPLACES whatever was previously selected so older single-branch
+// tests keep their semantics; pass ``{ append: true }`` to grow a
+// multi-element contingency on top of the existing chips.
+async function selectBranch(branchName: string, opts: { append?: boolean } = {}) {
+  if (!opts.append) {
+    await clearContingencyChips();
+  }
+  const combobox = screen.getByRole('combobox');
   await act(async () => {
-    await userEvent.clear(input);
-    await userEvent.type(input, branchName);
+    await userEvent.click(combobox);
+    await userEvent.type(combobox, branchName);
+    await userEvent.keyboard('{Enter}');
   });
-  // Wait for N-1 diagram fetch to complete
+  const trigger = await screen.findByRole('button', { name: /Trigger/ });
+  await act(async () => {
+    await userEvent.click(trigger);
+  });
   await waitFor(() => {
-    expect(mockApi.getN1Diagram).toHaveBeenCalledWith(branchName);
+    expect(mockApi.getContingencyDiagram).toHaveBeenCalledWith([branchName]);
   });
 }
 
@@ -334,7 +358,7 @@ describe('Phase 2: State Management Optimization', () => {
 
       await waitFor(() => {
         const lastViz = vizPanelRenderLog[vizPanelRenderLog.length - 1];
-        expect(lastViz.activeTab).toBe('n-1');
+        expect(lastViz.activeTab).toBe('contingency');
       });
 
       // Select second branch → should stay on n-1 tab (not flash to n)
@@ -342,8 +366,8 @@ describe('Phase 2: State Management Optimization', () => {
 
       await waitFor(() => {
         const lastViz = vizPanelRenderLog[vizPanelRenderLog.length - 1];
-        // activeTab must be 'n-1' after contingency switch, NOT 'n'
-        expect(lastViz.activeTab).toBe('n-1');
+        // activeTab must be 'contingency' after contingency switch, NOT 'n'
+        expect(lastViz.activeTab).toBe('contingency');
       });
     });
 
@@ -351,13 +375,13 @@ describe('Phase 2: State Management Optimization', () => {
       await renderAndLoadStudy();
 
       await selectBranch('BRANCH_A');
-      const firstCallCount = mockApi.getN1Diagram.mock.calls.length;
+      const firstCallCount = mockApi.getContingencyDiagram.mock.calls.length;
 
       await selectBranch('BRANCH_B');
 
       // Should have fetched N-1 diagram for the new branch
-      expect(mockApi.getN1Diagram).toHaveBeenCalledWith('BRANCH_B');
-      expect(mockApi.getN1Diagram.mock.calls.length).toBeGreaterThan(firstCallCount);
+      expect(mockApi.getContingencyDiagram).toHaveBeenCalledWith(['BRANCH_B']);
+      expect(mockApi.getContingencyDiagram.mock.calls.length).toBeGreaterThan(firstCallCount);
     });
   });
 });

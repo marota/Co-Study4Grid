@@ -26,12 +26,33 @@ export interface AnalysisState {
   setSelectedOverloads: (v: Set<string>) => void;
   monitorDeselected: boolean;
   setMonitorDeselected: (v: boolean) => void;
+  /**
+   * Extra lines the operator wants the recommender to treat as
+   * "lines to cut" beyond the detected overloads (ExpertAgent's
+   * `additionalLinesToCut`/`ltc` semantics). Passed verbatim to
+   * `/api/run-analysis-step2` and appended to the overflow-graph
+   * target set on the backend.
+   */
+  additionalLinesToCut: Set<string>;
+  setAdditionalLinesToCut: Dispatch<SetStateAction<Set<string>>>;
+  handleToggleAdditionalLineToCut: (line: string) => void;
+  /**
+   * Snapshot of ``additionalLinesToCut`` taken at the moment
+   * ``handleRunAnalysis`` posted Step 2. Drives the post-run
+   * "Additional lines integrated in overflow analysis" notice so
+   * the operator always sees the hypothesis BAKED INTO the
+   * current ``result`` — even if they later toggle the picker
+   * before re-running. Cleared on
+   * ``clearContingencyState`` / ``resetAllState``.
+   */
+  committedAdditionalLinesToCut: Set<string>;
+  setCommittedAdditionalLinesToCut: Dispatch<SetStateAction<Set<string>>>;
 
   // Ref to previous result for merge logic
   prevResultRef: MutableRefObject<AnalysisResult | null>;
 
   handleRunAnalysis: (
-    selectedBranch: string,
+    selectedContingency: string[],
     clearContingencyState: () => void,
     setSuggestedByRecommenderIds: Dispatch<SetStateAction<Set<string>>>,
     setActiveTab?: (tab: TabId) => void
@@ -60,26 +81,32 @@ export function useAnalysis(): AnalysisState {
   // Analysis flow
   const [selectedOverloads, setSelectedOverloads] = useState<Set<string>>(new Set());
   const [monitorDeselected, setMonitorDeselected] = useState(false);
+  const [additionalLinesToCut, setAdditionalLinesToCut] = useState<Set<string>>(new Set());
+  // Snapshot of ``additionalLinesToCut`` at the moment Step 2 was
+  // posted. Drives the post-run "Additional lines integrated…"
+  // notice so the operator keeps sight of the hypothesis the
+  // current ``result`` was computed against.
+  const [committedAdditionalLinesToCut, setCommittedAdditionalLinesToCut] = useState<Set<string>>(new Set());
 
   const handleRunAnalysis = useCallback(async (
-    selectedBranch: string,
+    selectedContingency: string[],
     clearContingencyState: () => void,
     setSuggestedByRecommenderIds: (fn: (prev: Set<string>) => Set<string>) => void,
     setActiveTab?: (tab: TabId) => void
   ) => {
-    if (!selectedBranch) return;
+    if (!selectedContingency || selectedContingency.length === 0) return;
     clearContingencyState();
     setAnalysisLoading(true);
     setError('');
     setInfoMessage('');
 
-    const step1CorrId = interactionLogger.record('analysis_step1_started', { element: selectedBranch });
+    const step1CorrId = interactionLogger.record('analysis_step1_started', { element: selectedContingency.join('+') });
     const step1StartTs = new Date().toISOString();
 
     try {
       // Step 1: Detection
       const { api } = await import('../api');
-      const res1 = await api.runAnalysisStep1(selectedBranch);
+      const res1 = await api.runAnalysisStep1(selectedContingency);
       if (!res1.can_proceed) {
         setError(res1.message || 'Analysis cannot proceed.');
         if (res1.message) setInfoMessage(res1.message);
@@ -120,18 +147,26 @@ export function useAnalysis(): AnalysisState {
 
       // Step 2: Resolution
       // Replay contract (docs/features/interaction-logging.md):
-      //   { element, selected_overloads, all_overloads, monitor_deselected }
+      //   { element, selected_overloads, all_overloads, monitor_deselected,
+      //     additional_lines_to_cut }
+      const additionalLinesArr = Array.from(additionalLinesToCut);
+      // Stamp the committed snapshot BEFORE the network call so the
+      // post-run notice reflects exactly what the backend is about to
+      // process (even if the user toggles the picker mid-stream).
+      setCommittedAdditionalLinesToCut(new Set(additionalLinesArr));
       const step2CorrId = interactionLogger.record('analysis_step2_started', {
-        element: selectedBranch,
+        element: selectedContingency.join('+'),
         selected_overloads: toResolve,
         all_overloads: detected,
         monitor_deselected: monitorDeselected,
+        additional_lines_to_cut: additionalLinesArr,
       });
       const step2StartTs = new Date().toISOString();
       const response2 = await api.runAnalysisStep2Stream({
         selected_overloads: toResolve,
         all_overloads: detected,
         monitor_deselected: monitorDeselected,
+        additional_lines_to_cut: additionalLinesArr,
       });
 
       const reader = response2.body!.getReader();
@@ -195,7 +230,24 @@ export function useAnalysis(): AnalysisState {
     } finally {
       setAnalysisLoading(false);
     }
-  }, [selectedOverloads, monitorDeselected]);
+  }, [selectedOverloads, monitorDeselected, additionalLinesToCut]);
+
+  const handleToggleAdditionalLineToCut = useCallback((line: string) => {
+    if (!line) return;
+    let willAdd = false;
+    setAdditionalLinesToCut((prev: Set<string>) => {
+      const next = new Set(prev);
+      if (next.has(line)) {
+        next.delete(line);
+        willAdd = false;
+      } else {
+        next.add(line);
+        willAdd = true;
+      }
+      return next;
+    });
+    interactionLogger.record('additional_line_to_cut_toggled', { line, selected: willAdd });
+  }, []);
 
   const handleDisplayPrioritizedActions = useCallback((selectedActionIds: Set<string>, setActiveTab?: (tab: TabId) => void) => {
     if (!pendingAnalysisResult) return;
@@ -270,13 +322,18 @@ export function useAnalysis(): AnalysisState {
     error, setError,
     selectedOverloads, setSelectedOverloads,
     monitorDeselected, setMonitorDeselected,
+    additionalLinesToCut, setAdditionalLinesToCut,
+    handleToggleAdditionalLineToCut,
+    committedAdditionalLinesToCut, setCommittedAdditionalLinesToCut,
     prevResultRef,
     handleRunAnalysis,
     handleDisplayPrioritizedActions,
     handleToggleOverload,
   }), [
     result, pendingAnalysisResult, analysisLoading, infoMessage, error,
-    selectedOverloads, monitorDeselected,
+    selectedOverloads, monitorDeselected, additionalLinesToCut,
+    committedAdditionalLinesToCut,
     handleRunAnalysis, handleDisplayPrioritizedActions, handleToggleOverload,
+    handleToggleAdditionalLineToCut,
   ]);
 }

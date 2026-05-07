@@ -111,10 +111,10 @@ class DiagramMixin:
     def _get_asset_flows(self, network):
         return get_asset_flows(network)
 
-    def _get_n1_flows(self, contingency: str) -> dict:
-        """Branch flows of the network in the N-1 state using a cached variant."""
+    def _get_contingency_flows(self, disconnected_elements) -> dict:
+        """Branch flows of the network in the contingency state using a cached variant."""
         n = self._get_base_network()
-        var_id = self._get_n1_variant(contingency)
+        var_id = self._get_contingency_variant(disconnected_elements)
         original_variant = n.get_working_variant_id()
 
         n.set_working_variant(var_id)
@@ -184,24 +184,25 @@ class DiagramMixin:
         finally:
             n.set_working_variant(original_variant)
 
-    def get_n1_diagram(self, disconnected_element: str, voltage_level_ids=None, depth=0):
-        """Post-contingency (N-1) NAD with flow deltas vs N."""
+    def get_contingency_diagram(self, disconnected_elements, voltage_level_ids=None, depth=0):
+        """Post-contingency NAD (N-1, N-2, ..., N-K) with flow deltas vs N."""
+        norm = self._normalize_contingency_elements(disconnected_elements)
         logger.info(
-            "[RECO] Generating N-1 diagram for %s (VLs=%s, depth=%d)...",
-            disconnected_element, voltage_level_ids, depth,
+            "[RECO] Generating contingency diagram for %s (VLs=%s, depth=%d)...",
+            norm, voltage_level_ids, depth,
         )
 
         n = self._get_base_network()
         original_variant = n.get_working_variant_id()
-        n1_variant_id = self._get_n1_variant(disconnected_element)
-        n.set_working_variant(n1_variant_id)
+        variant_id = self._get_contingency_variant(norm)
+        n.set_working_variant(variant_id)
 
         try:
-            converged, lf_status = self._lf_status_for_variant(n, n1_variant_id, disconnected_element)
+            converged, lf_status = self._lf_status_for_variant(n, variant_id, norm)
             if not converged:
                 logger.warning(
-                    "Warning: AC load flow did not converge for N-1 (%s): %s",
-                    disconnected_element, lf_status,
+                    "Warning: AC load flow did not converge for contingency (%s): %s",
+                    norm, lf_status,
                 )
 
             diagram = self._generate_diagram(n, voltage_level_ids=voltage_level_ids, depth=depth)
@@ -245,11 +246,11 @@ class DiagramMixin:
         try:
             action_flows = get_network_flows(network)
             action_assets = get_asset_flows(network)
-            n1_flows, n1_assets = self._snapshot_n1_state(self._last_disconnected_element)
-            deltas = compute_deltas(action_flows, n1_flows, voltage_level_ids=voltage_level_ids)
+            cont_flows, cont_assets = self._snapshot_contingency_state(self._last_disconnected_elements)
+            deltas = compute_deltas(action_flows, cont_flows, voltage_level_ids=voltage_level_ids)
             diagram["flow_deltas"] = deltas["flow_deltas"]
             diagram["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
-            diagram["asset_deltas"] = compute_asset_deltas(action_assets, n1_assets)
+            diagram["asset_deltas"] = compute_asset_deltas(action_assets, cont_assets)
         except Exception as e:
             logger.warning("Warning: Failed to compute flow deltas: %s", e)
             diagram["flow_deltas"] = {}
@@ -277,25 +278,26 @@ class DiagramMixin:
     # See docs/performance/history/svg-dom-recycling.md for the full
     # rationale and benchmark results.
 
-    def _build_n1_patch_payload(self, disconnected_element: str) -> dict:
-        """Compute the N-1 patch payload without generating the NAD SVG.
+    def _build_contingency_patch_payload(self, disconnected_elements) -> dict:
+        """Compute the contingency patch payload without generating the NAD SVG.
 
-        Mirrors the flow-delta / overload logic in `get_n1_diagram` but
-        skips `_generate_diagram` and `_get_svg_*` entirely — returns
-        only the per-branch / per-asset data needed by the frontend to
-        patch a cloned N-state SVG.
+        Mirrors the flow-delta / overload logic in
+        ``get_contingency_diagram`` but skips ``_generate_diagram`` and
+        ``_get_svg_*`` entirely — returns only the per-branch /
+        per-asset data needed by the frontend to patch a cloned
+        N-state SVG.
         """
         import time
 
+        norm = self._normalize_contingency_elements(disconnected_elements)
         t_start = time.time()
         n = self._get_base_network()
         original_variant = n.get_working_variant_id()
-        n1_variant_id = self._get_n1_variant(disconnected_element)
-        n.set_working_variant(n1_variant_id)
+        variant_id = self._get_contingency_variant(norm)
+        n.set_working_variant(variant_id)
 
         try:
-            # Reuse the same LF-status cache as `get_n1_diagram`.
-            cached_status = getattr(self, '_lf_status_by_variant', {}).get(n1_variant_id)
+            cached_status = getattr(self, '_lf_status_by_variant', {}).get(variant_id)
             if cached_status is not None:
                 converged = cached_status["converged"]
                 lf_status = cached_status["lf_status"]
@@ -307,16 +309,16 @@ class DiagramMixin:
 
             payload = {
                 "patchable": True,
-                "contingency_id": disconnected_element,
+                "contingency_id": "+".join(norm) if norm else "",
+                "contingency_elements": list(norm),
                 "lf_converged": converged,
                 "lf_status": lf_status,
-                "disconnected_edges": [disconnected_element] if disconnected_element else [],
+                "disconnected_edges": list(norm),
             }
 
-            # Flows + deltas (same path as get_n1_diagram lines 243-266).
             try:
-                n1_flows = self._get_network_flows(n)
-                n1_assets = self._get_asset_flows(n)
+                cont_flows = self._get_network_flows(n)
+                cont_assets = self._get_asset_flows(n)
 
                 n_base = self._get_base_network()
                 original_variant_base = n_base.get_working_variant_id()
@@ -326,29 +328,27 @@ class DiagramMixin:
                 base_flows = self._get_network_flows(n_base)
                 base_assets = self._get_asset_flows(n_base)
 
-                deltas = self._compute_deltas(n1_flows, base_flows)
+                deltas = self._compute_deltas(cont_flows, base_flows)
                 payload["absolute_flows"] = {
-                    "p1": n1_flows["p1"],
-                    "p2": n1_flows["p2"],
-                    "q1": n1_flows["q1"],
-                    "q2": n1_flows["q2"],
-                    "vl1": n1_flows["vl1"],
-                    "vl2": n1_flows["vl2"],
+                    "p1": cont_flows["p1"],
+                    "p2": cont_flows["p2"],
+                    "q1": cont_flows["q1"],
+                    "q2": cont_flows["q2"],
+                    "vl1": cont_flows["vl1"],
+                    "vl2": cont_flows["vl2"],
                 }
                 payload["flow_deltas"] = deltas["flow_deltas"]
                 payload["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
-                payload["asset_deltas"] = self._compute_asset_deltas(n1_assets, base_assets)
+                payload["asset_deltas"] = self._compute_asset_deltas(cont_assets, base_assets)
 
                 n_base.set_working_variant(original_variant_base)
             except Exception as e:
-                logger.warning(f"Warning: Failed to compute N-1 patch flow deltas: {e}")
+                logger.warning(f"Warning: Failed to compute contingency patch flow deltas: {e}")
                 payload["absolute_flows"] = {}
                 payload["flow_deltas"] = {}
                 payload["reactive_flow_deltas"] = {}
                 payload["asset_deltas"] = {}
 
-            # Overloads — same filtering as get_n1_diagram (excludes
-            # pre-existing ones unless worsened).
             n_state_currents = getattr(self, '_n_state_currents', None)
             names, rhos = self._get_overloaded_lines(
                 n,
@@ -367,16 +367,17 @@ class DiagramMixin:
         finally:
             n.set_working_variant(original_variant)
 
-    def get_n1_diagram_patch(self, disconnected_element: str) -> dict:
-        """Return the N-1 patch payload (SVG-less).
+    def get_contingency_diagram_patch(self, disconnected_elements) -> dict:
+        """Return the contingency patch payload (SVG-less).
 
         The frontend uses this to patch a clone of the N-state SVG DOM
-        instead of fetching a fresh ~20 MB N-1 NAD. Falls back to
-        `get_n1_diagram` on the frontend side if anything in this
-        endpoint raises.
+        instead of fetching a fresh ~20 MB contingency NAD. Falls back
+        to ``get_contingency_diagram`` on the frontend side if anything
+        in this endpoint raises.
         """
-        logger.info(f"[RECO] N-1 patch payload for {disconnected_element}...")
-        return self._build_n1_patch_payload(disconnected_element)
+        norm = self._normalize_contingency_elements(disconnected_elements)
+        logger.info(f"[RECO] Contingency patch payload for {norm}...")
+        return self._build_contingency_patch_payload(norm)
 
     @staticmethod
     def _compute_vl_topology_diff(action_buses_snap, n1_network):
@@ -659,20 +660,20 @@ class DiagramMixin:
             logger.debug(f"[get_action_variant_diagram_patch] asset snapshot failed: {e}")
             action_assets_snap = None
 
-        # Set up an N-1 variant on the base network for topology comparison
-        # AND reference flows.
-        n1_network = self._get_base_network()
-        original_variant_n1 = n1_network.get_working_variant_id()
-        n1_variant_id = self._get_n1_variant(self._last_disconnected_element)
-        n1_network.set_working_variant(n1_variant_id)
+        # Set up the contingency variant on the base network for topology
+        # comparison AND reference flows.
+        cont_network = self._get_base_network()
+        original_variant_cont = cont_network.get_working_variant_id()
+        cont_variant_id = self._get_contingency_variant(self._last_disconnected_elements)
+        cont_network.set_working_variant(cont_variant_id)
 
         try:
             # Step 1: compute the VL-level bus-count diff between the
-            # action variant and the currently-active N-1 variant.
+            # action variant and the currently-active contingency variant.
             # `None` means we could not compute it reliably (snapshot
             # missing / pypowsybl query raised) — be conservative and
             # fall back to the full NAD.
-            vl_diff = self._compute_vl_topology_diff(action_buses_snap, n1_network)
+            vl_diff = self._compute_vl_topology_diff(action_buses_snap, cont_network)
             if vl_diff is None:
                 logger.info(
                     f"[RECO] Action '{action_id}' is not patchable "
@@ -699,12 +700,13 @@ class DiagramMixin:
                 try:
                     nm.set_working_variant(variant_id)
                     vl_subtrees = self._extract_vl_subtrees_with_edges(action_network, vl_diff)
-                    # Re-activate N-1 for the subsequent reference-flow
-                    # computation (currently served from snapshots, so
-                    # the re-activation is only needed for the
-                    # overload scan further down — which also re-pins
-                    # the action variant explicitly).
-                    n1_network.set_working_variant(n1_variant_id)
+                    # Re-activate the contingency variant for the
+                    # subsequent reference-flow computation (currently
+                    # served from snapshots, so the re-activation is
+                    # only needed for the overload scan further down
+                    # — which also re-pins the action variant
+                    # explicitly).
+                    cont_network.set_working_variant(cont_variant_id)
                 except Exception as e:
                     logger.warning(
                         f"[RECO] Action '{action_id}' VL-subtree extraction "
@@ -771,11 +773,11 @@ class DiagramMixin:
                 }
                 action_assets = action_assets_snap or {}
 
-                # N-1 flows + assets (reference for deltas).
-                n1_flows = self._get_network_flows(n1_network)
-                n1_assets = self._get_asset_flows(n1_network)
+                # Contingency flows + assets (reference for deltas).
+                cont_flows = self._get_network_flows(cont_network)
+                cont_assets = self._get_asset_flows(cont_network)
 
-                deltas = self._compute_deltas(action_flows, n1_flows)
+                deltas = self._compute_deltas(action_flows, cont_flows)
                 payload["absolute_flows"] = {
                     "p1": action_flows["p1"],
                     "p2": action_flows["p2"],
@@ -786,7 +788,7 @@ class DiagramMixin:
                 }
                 payload["flow_deltas"] = deltas["flow_deltas"]
                 payload["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
-                payload["asset_deltas"] = self._compute_asset_deltas(action_assets, n1_assets)
+                payload["asset_deltas"] = self._compute_asset_deltas(action_assets, cont_assets)
             except Exception as e:
                 logger.warning(f"Warning: Failed to compute action patch flow deltas: {e}")
                 payload["absolute_flows"] = {}
@@ -796,12 +798,12 @@ class DiagramMixin:
 
             # Overloads on the action variant. Filter against N-state to
             # exclude pre-existing ones (same convention as
-            # get_n1_diagram). Re-activate action variant for the scan
-            # since we were measuring flows on both variants.
+            # get_contingency_diagram). Re-activate action variant for
+            # the scan since we were measuring flows on both variants.
             try:
-                n1_network.set_working_variant(original_variant_n1)
+                cont_network.set_working_variant(original_variant_cont)
             except Exception as e:
-                logger.debug(f"n1 variant restore pre-overload scan failed: {e}")
+                logger.debug(f"contingency variant restore pre-overload scan failed: {e}")
             try:
                 nm.set_working_variant(variant_id)
                 n_state_currents = getattr(self, '_n_state_currents', None)
@@ -819,15 +821,15 @@ class DiagramMixin:
                 payload["lines_overloaded_rho"] = []
 
             payload["meta"] = {
-                "base_state": "N-1",
+                "base_state": "contingency",
                 "elapsed_ms": int((time.time() - t_start) * 1000),
             }
             return sanitize_for_json(payload)
         finally:
             try:
-                n1_network.set_working_variant(original_variant_n1)
+                cont_network.set_working_variant(original_variant_cont)
             except Exception as e:
-                logger.debug(f"Final n1 variant restore failed: {e}")
+                logger.debug(f"Final contingency variant restore failed: {e}")
 
     # ------------------------------------------------------------------
     # Public SLD endpoints
@@ -849,11 +851,12 @@ class DiagramMixin:
             "voltage_level_id": voltage_level_id,
         }
 
-    def get_n1_sld(self, disconnected_element: str, voltage_level_id: str) -> dict:
-        """Single Line Diagram in the N-1 state."""
+    def get_contingency_sld(self, disconnected_elements, voltage_level_id: str) -> dict:
+        """Single Line Diagram in the contingency state (N-1 / N-K)."""
+        norm = self._normalize_contingency_elements(disconnected_elements)
         n = self._get_base_network()
         original_variant = n.get_working_variant_id()
-        n.set_working_variant(self._get_n1_variant(disconnected_element))
+        n.set_working_variant(self._get_contingency_variant(norm))
 
         try:
             sld = n.get_single_line_diagram(voltage_level_id)
@@ -862,7 +865,7 @@ class DiagramMixin:
                 "svg": svg,
                 "sld_metadata": sld_metadata,
                 "voltage_level_id": voltage_level_id,
-                "disconnected_element": disconnected_element,
+                "disconnected_elements": list(norm),
             }
             self._attach_flow_deltas_vs_base(result, n, voltage_level_ids=[voltage_level_id])
             return result
@@ -925,19 +928,20 @@ class DiagramMixin:
             # `_snapshot_n1_state` saves the current working variant
             # (ACTION), flips to N-1 to read, then restores to ACTION
             # — exactly the cadence used by the NAD sibling endpoint.
-            n1_flows, n1_assets = self._snapshot_n1_state(self._last_disconnected_element)
+            cont_flows, cont_assets = self._snapshot_contingency_state(self._last_disconnected_elements)
 
             # Diagnostic: confirm the snapshots really do differ. If
             # max |Δp1| is 0 for every branch, the upstream action
             # simulation either did not actually modify the pypowsybl
             # variant (grid2op-cached result, no-op action, …) or
-            # `obs._variant_id` points to the same variant as the N-1
-            # reference. Either way the frontend will render the
-            # cell-free "Δ +0.0" / grey Impacts view the operator
-            # reported — and the fix won't be in this function.
+            # ``obs._variant_id`` points to the same variant as the
+            # contingency reference. Either way the frontend will
+            # render the cell-free "Δ +0.0" / grey Impacts view the
+            # operator reported — and the fix won't be in this
+            # function.
             try:
                 p1_after = (action_flows or {}).get("p1") or {}
-                p1_before = (n1_flows or {}).get("p1") or {}
+                p1_before = (cont_flows or {}).get("p1") or {}
                 common = set(p1_after.keys()) & set(p1_before.keys())
                 max_abs = 0.0
                 top5: list = []
@@ -955,24 +959,25 @@ class DiagramMixin:
             except Exception as diag_e:
                 logger.debug("[SLD action-variant] flow-diff diagnostic failed: %s", diag_e)
 
-            deltas = compute_deltas(action_flows, n1_flows, voltage_level_ids=[voltage_level_id])
+            deltas = compute_deltas(action_flows, cont_flows, voltage_level_ids=[voltage_level_id])
             result["flow_deltas"] = deltas["flow_deltas"]
             result["reactive_flow_deltas"] = deltas["reactive_flow_deltas"]
-            result["asset_deltas"] = compute_asset_deltas(action_assets, n1_assets)
+            result["asset_deltas"] = compute_asset_deltas(action_assets, cont_assets)
         except Exception as e:
             logger.warning("Warning: Failed to compute SLD flow deltas for manual action: %s", e)
             result["flow_deltas"] = {}
             result["reactive_flow_deltas"] = {}
             result["asset_deltas"] = {}
 
-        # Switch-diff comes AFTER `_snapshot_n1_state` (which restores
-        # the working variant to ACTION). The `action_switches_snap`
-        # we captured at the top is a materialised copy so the diff
-        # is variant-independent — we just need the N-1 half, which
-        # we re-read with a short-lived variant flip + restore.
+        # Switch-diff comes AFTER `_snapshot_contingency_state` (which
+        # restores the working variant to ACTION). The
+        # `action_switches_snap` we captured at the top is a materialised
+        # copy so the diff is variant-independent — we just need the
+        # contingency-state half, which we re-read with a short-lived
+        # variant flip + restore.
         try:
-            result["changed_switches"] = self._diff_action_switches_vs_n1(
-                action_switches_snap, self._last_disconnected_element,
+            result["changed_switches"] = self._diff_action_switches_vs_contingency(
+                action_switches_snap, self._last_disconnected_elements,
             )
         except Exception as e:
             logger.warning("Warning: Failed to diff switches: %s", e)
@@ -980,12 +985,13 @@ class DiagramMixin:
 
         return result
 
-    def _diff_action_switches_vs_n1(self, action_switches_snap, disconnected_element: str) -> dict:
-        """Diff a pre-captured action-variant switch snapshot against the live N-1 variant.
+    def _diff_action_switches_vs_contingency(self, action_switches_snap, disconnected_elements) -> dict:
+        """Diff a pre-captured action-variant switch snapshot against the
+        live contingency variant.
 
         Centralises the save/switch/read/restore dance so
-        `get_action_variant_sld` doesn't have to interleave variant
-        management with the flow-delta pipeline. Returns `{}` on any
+        ``get_action_variant_sld`` doesn't have to interleave variant
+        management with the flow-delta pipeline. Returns ``{}`` on any
         failure — switches are informational, they must not break the
         SLD response.
         """
@@ -994,7 +1000,7 @@ class DiagramMixin:
         n = self._get_base_network()
         original_variant = n.get_working_variant_id()
         try:
-            n.set_working_variant(self._get_n1_variant(disconnected_element))
+            n.set_working_variant(self._get_contingency_variant(disconnected_elements))
             return self._diff_switches(action_switches_snap, n)
         finally:
             n.set_working_variant(original_variant)
@@ -1012,16 +1018,16 @@ class DiagramMixin:
             raise ValueError(f"Action '{action_id}' not found in last analysis result.")
         return actions
 
-    def _lf_status_for_variant(self, network, variant_id: str, disconnected_element: str):
+    def _lf_status_for_variant(self, network, variant_id: str, disconnected_elements):
         """Return ``(converged, lf_status)`` for ``variant_id``.
 
-        Prefers the cached status from ``_get_n1_variant`` (populated
-        when the variant was first created) — avoids a ~600 ms-1 s
-        re-run of the AC LF per diagram on large grids.
+        Prefers the cached status from ``_get_contingency_variant``
+        (populated when the variant was first created) — avoids a
+        ~600 ms-1 s re-run of the AC LF per diagram on large grids.
         """
         cached = getattr(self, "_lf_status_by_variant", {}).get(variant_id)
         if cached is not None:
-            logger.info("[RECO] N-1 LF status for %s served from cache", disconnected_element)
+            logger.info("[RECO] Contingency LF status for %s served from cache", disconnected_elements)
             return cached["converged"], cached["lf_status"]
 
         t0 = time.time()
@@ -1029,25 +1035,26 @@ class DiagramMixin:
         results = self._run_ac_with_fallback(network, params)
         converged = any(r.status.name == "CONVERGED" for r in results)
         lf_status = results[0].status.name if results else "UNKNOWN"
-        logger.info("[RECO] N-1 LF check %s: %.2fs", disconnected_element, time.time() - t0)
+        logger.info("[RECO] Contingency LF check %s: %.2fs", disconnected_elements, time.time() - t0)
         return converged, lf_status
 
-    def _snapshot_n1_state(self, disconnected_element: str) -> tuple[dict, dict]:
-        """Fetch ``(branch_flows, asset_flows)`` in the N-1 state.
+    def _snapshot_contingency_state(self, disconnected_elements) -> tuple[dict, dict]:
+        """Fetch ``(branch_flows, asset_flows)`` in the contingency state.
 
         Positions the base network on the contingency variant, reads
         both snapshots, restores the original variant. Used by the
-        action-variant diagram to produce deltas against N-1.
+        action-variant diagram to produce deltas against the
+        contingency state.
         """
-        n1_flows = self._get_n1_flows(disconnected_element)
-        n1_network = self._get_base_network()
-        original_variant = n1_network.get_working_variant_id()
-        n1_network.set_working_variant(self._get_n1_variant(disconnected_element))
+        cont_flows = self._get_contingency_flows(disconnected_elements)
+        cont_network = self._get_base_network()
+        original_variant = cont_network.get_working_variant_id()
+        cont_network.set_working_variant(self._get_contingency_variant(disconnected_elements))
         try:
-            n1_assets = get_asset_flows(n1_network)
+            cont_assets = get_asset_flows(cont_network)
         finally:
-            n1_network.set_working_variant(original_variant)
-        return n1_flows, n1_assets
+            cont_network.set_working_variant(original_variant)
+        return cont_flows, cont_assets
 
     def _attach_flow_deltas_vs_base(self, diagram: dict, n_contingency_network, voltage_level_ids):
         """Populate ``flow_deltas`` / ``reactive_flow_deltas`` / ``asset_deltas`` on ``diagram``.
@@ -1097,19 +1104,19 @@ class DiagramMixin:
         diagram["non_convergence"] = non_convergence
 
     @staticmethod
-    def _diff_switches(action_switches_df, n1_network) -> dict:
+    def _diff_switches(action_switches_df, cont_network) -> dict:
         """Return ``{switch_id: {from_open, to_open}}`` for each switch whose state changed."""
         if action_switches_df is None:
             return {}
         changed: dict[str, dict] = {}
         try:
-            n1_switches_df = n1_network.get_switches()
+            cont_switches_df = cont_network.get_switches()
             for sw_id in action_switches_df.index:
-                if sw_id in n1_switches_df.index:
+                if sw_id in cont_switches_df.index:
                     a_open = bool(action_switches_df.loc[sw_id, "open"])
-                    n1_open = bool(n1_switches_df.loc[sw_id, "open"])
-                    if a_open != n1_open:
-                        changed[sw_id] = {"from_open": n1_open, "to_open": a_open}
+                    cont_open = bool(cont_switches_df.loc[sw_id, "open"])
+                    if a_open != cont_open:
+                        changed[sw_id] = {"from_open": cont_open, "to_open": a_open}
         except Exception as e:
             logger.warning("Warning: Failed to compare switch states: %s", e)
         return changed

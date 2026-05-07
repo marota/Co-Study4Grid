@@ -27,7 +27,7 @@ def test_run_analysis_filtering_combined_actions(recommender):
     recommender._load_network_if_needed = MagicMock()
     recommender._get_base_network = MagicMock()
     recommender._get_n_variant = MagicMock()
-    recommender._get_n1_variant = MagicMock()
+    recommender._get_contingency_variant = MagicMock()
     recommender._get_overloaded_lines = MagicMock(return_value=[])
     recommender._get_element_max_currents = MagicMock(return_value={})
     
@@ -93,7 +93,7 @@ def test_simulate_manual_action_for_combined(recommender):
     recommender._get_simulation_env = MagicMock(return_value=env)
     recommender._get_monitoring_parameters = MagicMock(return_value=(["LINE1"], {"LINE1": 100}))
     recommender._get_n_variant = MagicMock()
-    recommender._get_n1_variant = MagicMock()
+    recommender._get_contingency_variant = MagicMock()
     
     # Mock N-state obs (Should NOT be overloaded on LINE1)
     obs_n = MagicMock()

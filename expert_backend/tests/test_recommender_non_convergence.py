@@ -187,7 +187,7 @@ class TestRecommenderNonConvergence:
 
         with patch.object(self.service, "_get_base_network"), \
              patch.object(self.service, "_get_n_variant"), \
-             patch.object(self.service, "_get_n1_variant"), \
+             patch.object(self.service, "_get_contingency_variant"), \
              patch.object(mock_env, "get_obs", side_effect=[MagicMock(), mock_obs_n1]), \
              patch.object(mock_obs_n1, "simulate", return_value=(MagicMock(), None, None, mock_info)), \
              patch.object(mock_env, "action_space", return_value=mock_action), \
@@ -218,9 +218,9 @@ class TestRecommenderNonConvergence:
              patch.object(self.service, "_generate_diagram") as mock_gen, \
              patch.object(self.service, "_get_network_flows"), \
              patch.object(self.service, "_get_asset_flows"), \
-             patch.object(self.service, "_get_n1_flows"), \
+             patch.object(self.service, "_get_contingency_flows"), \
              patch.object(self.service, "_get_base_network"), \
-             patch.object(self.service, "_get_n1_variant"), \
+             patch.object(self.service, "_get_contingency_variant"), \
              patch.object(self.service, "_compute_deltas") as mock_deltas:
             
             mock_gen.return_value = {"svg": "<svg></svg>", "metadata": {}}
@@ -250,9 +250,9 @@ class TestRecommenderNonConvergence:
         with patch.object(self.service, "_extract_sld_svg_and_metadata") as mock_extract, \
              patch.object(self.service, "_get_network_flows"), \
              patch.object(self.service, "_get_asset_flows"), \
-             patch.object(self.service, "_get_n1_flows"), \
+             patch.object(self.service, "_get_contingency_flows"), \
              patch.object(self.service, "_get_base_network"), \
-             patch.object(self.service, "_get_n1_variant"), \
+             patch.object(self.service, "_get_contingency_variant"), \
              patch.object(self.service, "_compute_deltas") as mock_deltas:
             
             mock_extract.return_value = ("<svg></svg>", {})

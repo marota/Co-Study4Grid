@@ -40,7 +40,7 @@ def _setup_superposition_env(recommender, actions_dict, dict_action, name_line=N
     recommender._dict_action = dict_action
     recommender._get_simulation_env = MagicMock()
     recommender._get_n_variant = MagicMock(return_value="N")
-    recommender._get_n1_variant = MagicMock(return_value="N-1")
+    recommender._get_contingency_variant = MagicMock(return_value="N-1")
 
     env = recommender._get_simulation_env.return_value
     env.name_line = name_line
@@ -108,7 +108,7 @@ def test_compute_superposition_triggers_simulation(recommender):
         mock_combine.return_value = {"betas": [0.5, 0.5]}
         result = recommender.compute_superposition(aid1, aid2, "contingency")
 
-        recommender.simulate_manual_action.assert_called_with(aid2, "contingency")
+        recommender.simulate_manual_action.assert_called_with(aid2, ["contingency"])
         assert "betas" in result
 
 
@@ -565,7 +565,7 @@ def test_simulate_manual_action_pins_n1_variant_before_simulate_even_on_cache_hi
     to the N-1 id IMMEDIATELY BEFORE `obs.simulate(action, keep_variant=True)`,
     regardless of whether the N / N-1 observation caches hit.
 
-    Why: `_fetch_n_and_n1_observations` only calls `set_working_variant`
+    Why: `_fetch_n_and_contingency_observations` only calls `set_working_variant`
     when a cache misses.  When both caches hit (the common case after
     step1 has run), the working variant is left on whatever the previous
     caller positioned — often N.  `obs.simulate(action, keep_variant=True)`
@@ -600,10 +600,10 @@ def test_simulate_manual_action_pins_n1_variant_before_simulate_even_on_cache_hi
     svc._get_simulation_env = MagicMock(return_value=env)
     svc._get_base_network = MagicMock(return_value=n)
     svc._get_n_variant = MagicMock(return_value="n_var")
-    svc._get_n1_variant = MagicMock(return_value="n1_var")
+    svc._get_contingency_variant = MagicMock(return_value="n1_var")
     svc._get_monitoring_parameters = MagicMock(return_value=(["L1"], ["L1"]))
 
-    # Prime both caches so `_fetch_n_and_n1_observations` takes the
+    # Prime both caches so `_fetch_n_and_contingency_observations` takes the
     # cache-hit branch — it will NOT touch set_working_variant, so we
     # must verify the explicit pin-to-N-1 kicks in before .simulate().
     svc._cached_obs_n = obs_n

@@ -30,12 +30,12 @@ def test_run_analysis_step1_success(client, mock_rs):
         "can_proceed": True
     }
     
-    response = client.post("/api/run-analysis-step1", json={"disconnected_element": "GEN_1"})
+    response = client.post("/api/run-analysis-step1", json={"disconnected_elements": ["GEN_1"]})
     assert response.status_code == 200
     data = response.json()
     assert data["lines_overloaded"] == ["LINE_1", "LINE_2"]
     assert data["can_proceed"] is True
-    mock_rs.run_analysis_step1.assert_called_with("GEN_1")
+    mock_rs.run_analysis_step1.assert_called_with(["GEN_1"])
 
 def test_run_analysis_step2_success(client, mock_rs):
     """Verify Step 2 endpoint streams results and respects selection."""
@@ -64,13 +64,14 @@ def test_run_analysis_step2_success(client, mock_rs):
     mock_rs.run_analysis_step2.assert_called_with(
         ["LINE_1"],
         all_overloads=["LINE_1", "LINE_2"],
-        monitor_deselected=True
+        monitor_deselected=True,
+        additional_lines_to_cut=[],
     )
 
 def test_run_analysis_step1_error(client, mock_rs):
     """Verify Step 1 handles errors."""
     mock_rs.run_analysis_step1.side_effect = Exception("Step 1 failed")
     
-    response = client.post("/api/run-analysis-step1", json={"disconnected_element": "GEN_1"})
+    response = client.post("/api/run-analysis-step1", json={"disconnected_elements": ["GEN_1"]})
     assert response.status_code == 400
     assert "Step 1 failed" in response.json()["detail"]

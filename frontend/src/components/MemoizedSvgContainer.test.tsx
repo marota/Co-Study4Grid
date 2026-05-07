@@ -27,9 +27,9 @@ describe('MemoizedSvgContainer', () => {
     it('sets display style based on prop', () => {
         const containerRef = createRef<HTMLDivElement>();
         const { container } = render(
-            <MemoizedSvgContainer svg="" containerRef={containerRef} display="none" tabId="n-1" />
+            <MemoizedSvgContainer svg="" containerRef={containerRef} display="none" tabId="contingency" />
         );
-        const el = container.querySelector('#n-1-svg-container') as HTMLElement;
+        const el = container.querySelector('#contingency-svg-container') as HTMLElement;
         expect(el.style.display).toBe('none');
     });
 
@@ -83,7 +83,7 @@ describe('MemoizedSvgContainer', () => {
         const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { /* noop */ });
         const containerRef = createRef<HTMLDivElement>();
         render(
-            <MemoizedSvgContainer svg="" containerRef={containerRef} display="block" tabId="n-1" />
+            <MemoizedSvgContainer svg="" containerRef={containerRef} display="block" tabId="contingency" />
         );
         // No DOM injection log should have been emitted
         expect(consoleSpy).not.toHaveBeenCalledWith(expect.stringContaining('[SVG] DOM injection'));
@@ -96,19 +96,19 @@ describe('MemoizedSvgContainer', () => {
         const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { /* noop */ });
         const containerRef = createRef<HTMLDivElement>();
         const { rerender } = render(
-            <MemoizedSvgContainer svg="" containerRef={containerRef} display="block" tabId="n-1" />
+            <MemoizedSvgContainer svg="" containerRef={containerRef} display="block" tabId="contingency" />
         );
         // Initial render with empty svg: no injection
         expect(consoleSpy).not.toHaveBeenCalled();
 
         // Transition to real SVG (simulates fetchN1 completing)
         rerender(
-            <MemoizedSvgContainer svg="<svg><rect/></svg>" containerRef={containerRef} display="block" tabId="n-1" />
+            <MemoizedSvgContainer svg="<svg><rect/></svg>" containerRef={containerRef} display="block" tabId="contingency" />
         );
 
         // Exactly one injection should have fired (the update), not two
         const injectionCalls = consoleSpy.mock.calls.filter(
-            call => typeof call[0] === 'string' && call[0].includes('[SVG] DOM injection for n-1')
+            call => typeof call[0] === 'string' && call[0].includes('[SVG] DOM injection for contingency')
         );
         expect(injectionCalls.length).toBe(1);
         expect(containerRef.current?.innerHTML).toContain('<rect');
@@ -121,7 +121,7 @@ describe('MemoizedSvgContainer', () => {
         svgEl.setAttribute('viewBox', '0 0 100 100');
 
         const { rerender } = render(
-            <MemoizedSvgContainer svg={svgEl} containerRef={containerRef} display="block" tabId="n-1" />
+            <MemoizedSvgContainer svg={svgEl} containerRef={containerRef} display="block" tabId="contingency" />
         );
 
         // Simulate auto-zoom setting a new viewBox on the live DOM
@@ -132,7 +132,7 @@ describe('MemoizedSvgContainer', () => {
         // Re-render with the SAME svg prop (React.memo + stable ref) — this
         // should not re-run the layout effect and must preserve our viewBox.
         rerender(
-            <MemoizedSvgContainer svg={svgEl} containerRef={containerRef} display="block" tabId="n-1" />
+            <MemoizedSvgContainer svg={svgEl} containerRef={containerRef} display="block" tabId="contingency" />
         );
         expect(containerRef.current?.querySelector('svg')?.getAttribute('viewBox')).toBe('25 25 10 10');
     });
@@ -188,13 +188,13 @@ describe('MemoizedSvgContainer', () => {
 
         // Step 1: mount empty (placeholder mode, n1Diagram null)
         const { rerender } = render(
-            <MemoizedSvgContainer svg="" containerRef={containerRef} display="block" tabId="n-1" />
+            <MemoizedSvgContainer svg="" containerRef={containerRef} display="block" tabId="contingency" />
         );
         expect(containerRef.current?.querySelector('svg')).toBeNull();
 
         // Step 2: fetchN1 completes, svg arrives
         rerender(
-            <MemoizedSvgContainer svg='<svg viewBox="0 0 1000 1000"><g/></svg>' containerRef={containerRef} display="block" tabId="n-1" />
+            <MemoizedSvgContainer svg='<svg viewBox="0 0 1000 1000"><g/></svg>' containerRef={containerRef} display="block" tabId="contingency" />
         );
         const svg = containerRef.current?.querySelector('svg');
         expect(svg).toBeTruthy();
@@ -204,7 +204,7 @@ describe('MemoizedSvgContainer', () => {
 
         // Step 4: parent re-renders without svg change — must not reset viewBox
         rerender(
-            <MemoizedSvgContainer svg='<svg viewBox="0 0 1000 1000"><g/></svg>' containerRef={containerRef} display="block" tabId="n-1" />
+            <MemoizedSvgContainer svg='<svg viewBox="0 0 1000 1000"><g/></svg>' containerRef={containerRef} display="block" tabId="contingency" />
         );
         // The string svg prop creates a new reference each call, so this DOES
         // re-inject — this test just documents that behavior.  The fix in

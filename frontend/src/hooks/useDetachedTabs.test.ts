@@ -69,24 +69,24 @@ describe('useDetachedTabs', () => {
     it('starts with an empty detached map', () => {
         const { result } = renderHook(() => useDetachedTabs());
         expect(result.current.detachedTabs).toEqual({});
-        expect(result.current.isDetached('n-1')).toBe(false);
+        expect(result.current.isDetached('contingency')).toBe(false);
     });
 
     it('detach opens a popup and records the tab', () => {
         const { result } = renderHook(() => useDetachedTabs());
         act(() => {
-            result.current.detach('n-1');
+            result.current.detach('contingency');
         });
         expect(fakePopups).toHaveLength(1);
-        expect(result.current.detachedTabs['n-1']).toBeDefined();
-        expect(result.current.isDetached('n-1')).toBe(true);
-        expect(result.current.detachedTabs['n-1']!.mountNode.id).toBe('costudy4grid-detached-root');
+        expect(result.current.detachedTabs['contingency']).toBeDefined();
+        expect(result.current.isDetached('contingency')).toBe(true);
+        expect(result.current.detachedTabs['contingency']!.mountNode.id).toBe('costudy4grid-detached-root');
     });
 
     it('detaching the same tab twice focuses the existing popup', () => {
         const { result } = renderHook(() => useDetachedTabs());
-        act(() => { result.current.detach('n-1'); });
-        act(() => { result.current.detach('n-1'); });
+        act(() => { result.current.detach('contingency'); });
+        act(() => { result.current.detach('contingency'); });
         expect(fakePopups).toHaveLength(1);
         expect(fakePopups[0].focus).toHaveBeenCalled();
     });
@@ -126,14 +126,14 @@ describe('useDetachedTabs', () => {
     it('different tabs can be detached independently', () => {
         const { result } = renderHook(() => useDetachedTabs());
         act(() => {
-            result.current.detach('n-1');
+            result.current.detach('contingency');
             result.current.detach('action');
         });
         expect(fakePopups).toHaveLength(2);
-        expect(result.current.isDetached('n-1')).toBe(true);
+        expect(result.current.isDetached('contingency')).toBe(true);
         expect(result.current.isDetached('action')).toBe(true);
-        act(() => { result.current.reattach('n-1'); });
-        expect(result.current.isDetached('n-1')).toBe(false);
+        act(() => { result.current.reattach('contingency'); });
+        expect(result.current.isDetached('contingency')).toBe(false);
         expect(result.current.isDetached('action')).toBe(true);
     });
 
@@ -157,7 +157,7 @@ describe('useDetachedTabs', () => {
     describe('reattach defers popup close until after layout effects (Bug 3)', () => {
         it('does not call window.close synchronously from the reattach call', () => {
             const { result } = renderHook(() => useDetachedTabs());
-            act(() => { result.current.detach('n-1'); });
+            act(() => { result.current.detach('contingency'); });
             const popup = fakePopups[0];
 
             // Monkey-patch close() to record the exact call order.
@@ -171,7 +171,7 @@ describe('useDetachedTabs', () => {
             let stateAfterReattachCall: typeof result.current.detachedTabs | null = null;
             act(() => {
                 duringReattach = true;
-                result.current.reattach('n-1');
+                result.current.reattach('contingency');
                 // At this point reattach has queued the popup for
                 // close and pruned state. But act() hasn't returned
                 // yet, so effects haven't flushed. The close MUST NOT
@@ -190,7 +190,7 @@ describe('useDetachedTabs', () => {
             // (We can't use the mid-act snapshot because renderHook's
             // `result.current` is updated at the end of act().)
             expect(stateAfterReattachCall).not.toBeNull();
-            expect(result.current.detachedTabs['n-1']).toBeUndefined();
+            expect(result.current.detachedTabs['contingency']).toBeUndefined();
         });
 
         it('still closes popups that were scheduled while a previous close was pending', () => {

@@ -45,7 +45,7 @@ def _make_service_with_last_result(action_id, obs_mock):
             }
         }
     }
-    service._last_disconnected_element = "LINE_TEST"
+    service._last_disconnected_elements = "LINE_TEST"
     return service
 
 
@@ -67,11 +67,11 @@ class TestChangedSwitchesInSld:
         return obs, nm
 
     @patch.object(RecommenderService, "_get_base_network")
-    @patch.object(RecommenderService, "_get_n1_variant", return_value="n1_var")
+    @patch.object(RecommenderService, "_get_contingency_variant", return_value="n1_var")
     @patch.object(RecommenderService, "_extract_sld_svg_and_metadata", return_value=("<svg/>", None))
     @patch.object(RecommenderService, "_get_network_flows", return_value={})
     @patch.object(RecommenderService, "_get_asset_flows", return_value={})
-    @patch.object(RecommenderService, "_get_n1_flows", return_value={})
+    @patch.object(RecommenderService, "_get_contingency_flows", return_value={})
     @patch.object(RecommenderService, "_compute_deltas", return_value={"flow_deltas": {}, "reactive_flow_deltas": {}})
     @patch.object(RecommenderService, "_compute_asset_deltas", return_value={})
     def test_changed_switches_returned_for_toggled_switch(
@@ -108,11 +108,11 @@ class TestChangedSwitchesInSld:
         assert "SW_C" not in changed
 
     @patch.object(RecommenderService, "_get_base_network")
-    @patch.object(RecommenderService, "_get_n1_variant", return_value="n1_var")
+    @patch.object(RecommenderService, "_get_contingency_variant", return_value="n1_var")
     @patch.object(RecommenderService, "_extract_sld_svg_and_metadata", return_value=("<svg/>", None))
     @patch.object(RecommenderService, "_get_network_flows", return_value={})
     @patch.object(RecommenderService, "_get_asset_flows", return_value={})
-    @patch.object(RecommenderService, "_get_n1_flows", return_value={})
+    @patch.object(RecommenderService, "_get_contingency_flows", return_value={})
     @patch.object(RecommenderService, "_compute_deltas", return_value={"flow_deltas": {}, "reactive_flow_deltas": {}})
     @patch.object(RecommenderService, "_compute_asset_deltas", return_value={})
     def test_empty_changed_switches_when_no_diff(
@@ -138,11 +138,11 @@ class TestChangedSwitchesInSld:
         assert result["changed_switches"] == {}
 
     @patch.object(RecommenderService, "_get_base_network")
-    @patch.object(RecommenderService, "_get_n1_variant", return_value="n1_var")
+    @patch.object(RecommenderService, "_get_contingency_variant", return_value="n1_var")
     @patch.object(RecommenderService, "_extract_sld_svg_and_metadata", return_value=("<svg/>", None))
     @patch.object(RecommenderService, "_get_network_flows", return_value={})
     @patch.object(RecommenderService, "_get_asset_flows", return_value={})
-    @patch.object(RecommenderService, "_get_n1_flows", return_value={})
+    @patch.object(RecommenderService, "_get_contingency_flows", return_value={})
     @patch.object(RecommenderService, "_compute_deltas", return_value={"flow_deltas": {}, "reactive_flow_deltas": {}})
     @patch.object(RecommenderService, "_compute_asset_deltas", return_value={})
     def test_multiple_switches_changed(
@@ -172,11 +172,11 @@ class TestChangedSwitchesInSld:
         assert "SW_3" not in changed  # unchanged
 
     @patch.object(RecommenderService, "_get_base_network")
-    @patch.object(RecommenderService, "_get_n1_variant", return_value="n1_var")
+    @patch.object(RecommenderService, "_get_contingency_variant", return_value="n1_var")
     @patch.object(RecommenderService, "_extract_sld_svg_and_metadata", return_value=("<svg/>", None))
     @patch.object(RecommenderService, "_get_network_flows", return_value={})
     @patch.object(RecommenderService, "_get_asset_flows", return_value={})
-    @patch.object(RecommenderService, "_get_n1_flows", return_value={})
+    @patch.object(RecommenderService, "_get_contingency_flows", return_value={})
     @patch.object(RecommenderService, "_compute_deltas", return_value={"flow_deltas": {}, "reactive_flow_deltas": {}})
     @patch.object(RecommenderService, "_compute_asset_deltas", return_value={})
     def test_changed_switches_graceful_on_get_switches_error(
@@ -527,11 +527,11 @@ class TestActionVariantSldDeltaFreshness:
             return n1_asset_flows
 
         service = _make_service_with_last_result("ACT_IMPACT", obs)
-        # `_get_n1_flows` is easiest to stub directly to return the
+        # `_get_contingency_flows` is easiest to stub directly to return the
         # N-1 snapshot — otherwise it would try to switch the variant
         # on shared_net and we'd need to wire its restore semantics.
-        service._get_n1_flows = lambda contingency: n1_branch_flows
-        service._get_n1_variant = lambda contingency: "n1_var"
+        service._get_contingency_flows = lambda contingency: n1_branch_flows
+        service._get_contingency_variant = lambda contingency: "n1_var"
         service._diff_switches = lambda a, b: {}
 
         with patch("expert_backend.services.diagram_mixin.get_network_flows", side_effect=_get_network_flows), \
@@ -611,13 +611,13 @@ class TestActionVariantSldDeltaFreshness:
             return n1_asset_flows
 
         service = _make_service_with_last_result("ACT_PARITY", obs)
-        service._get_n1_flows = lambda contingency: n1_branch_flows
-        service._get_n1_variant = lambda contingency: "n1_var"
+        service._get_contingency_flows = lambda contingency: n1_branch_flows
+        service._get_contingency_variant = lambda contingency: "n1_var"
         service._diff_switches = lambda a, b: {}
-        # Mock `_snapshot_n1_state` to use the same underlying snapshots
+        # Mock `_snapshot_contingency_state` to use the same underlying snapshots
         # the NAD endpoint relies on so the two endpoints see the same
         # "before" values.
-        service._snapshot_n1_state = lambda contingency: (n1_branch_flows, n1_asset_flows)
+        service._snapshot_contingency_state = lambda contingency: (n1_branch_flows, n1_asset_flows)
         service._generate_diagram = lambda network, voltage_level_ids=None, depth=0: {"svg": "<svg/>"}
 
         # Real compute_deltas — we want the actual math.
@@ -663,7 +663,7 @@ class TestActionVariantSldDeltaFreshness:
             raise RuntimeError("simulated pypowsybl failure")
 
         service = _make_service_with_last_result("ACT_FAIL", obs)
-        service._get_n1_variant = lambda contingency: "n1_var"
+        service._get_contingency_variant = lambda contingency: "n1_var"
         service._diff_switches = lambda a, b: {}
 
         with patch("expert_backend.services.diagram_mixin.get_network_flows", side_effect=_raise_flows), \

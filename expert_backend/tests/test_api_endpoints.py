@@ -231,7 +231,7 @@ class TestGetNetworkDiagram:
 class TestGetN1Diagram:
     def test_success(self, client, mock_services):
         _, mock_rs = mock_services
-        mock_rs.get_n1_diagram.return_value = {
+        mock_rs.get_contingency_diagram.return_value = {
             "svg": "<svg>n1</svg>",
             "metadata": "{}",
             "lf_converged": True,
@@ -239,15 +239,15 @@ class TestGetN1Diagram:
         }
 
         response = client.post(
-            "/api/n1-diagram",
-            json={"disconnected_element": "LINE_A"},
+            "/api/contingency-diagram",
+            json={"disconnected_elements": ["LINE_A"]},
         )
         assert response.status_code == 200
         data = response.json()
         assert data["lf_converged"] is True
 
     def test_missing_element(self, client, mock_services):
-        response = client.post("/api/n1-diagram", json={})
+        response = client.post("/api/contingency-diagram", json={})
         assert response.status_code == 422
 
 
@@ -263,7 +263,7 @@ class TestGetN1Diagram:
 class TestGetN1DiagramPatch:
     def test_returns_patchable_payload_without_svg(self, client, mock_services):
         _, mock_rs = mock_services
-        mock_rs.get_n1_diagram_patch.return_value = {
+        mock_rs.get_contingency_diagram_patch.return_value = {
             "patchable": True,
             "contingency_id": "LINE_A",
             "lf_converged": True,
@@ -283,8 +283,8 @@ class TestGetN1DiagramPatch:
         }
 
         response = client.post(
-            "/api/n1-diagram-patch",
-            json={"disconnected_element": "LINE_A"},
+            "/api/contingency-diagram-patch",
+            json={"disconnected_elements": ["LINE_A"]},
         )
         assert response.status_code == 200
         data = response.json()
@@ -296,16 +296,16 @@ class TestGetN1DiagramPatch:
         assert "metadata" not in data
 
     def test_missing_element_returns_422(self, client, mock_services):
-        response = client.post("/api/n1-diagram-patch", json={})
+        response = client.post("/api/contingency-diagram-patch", json={})
         assert response.status_code == 422
 
     def test_service_error_returns_400(self, client, mock_services):
         _, mock_rs = mock_services
-        mock_rs.get_n1_diagram_patch.side_effect = ValueError("N state unavailable")
+        mock_rs.get_contingency_diagram_patch.side_effect = ValueError("N state unavailable")
 
         response = client.post(
-            "/api/n1-diagram-patch",
-            json={"disconnected_element": "LINE_A"},
+            "/api/contingency-diagram-patch",
+            json={"disconnected_elements": ["LINE_A"]},
         )
         assert response.status_code == 400
         assert "N state unavailable" in response.json()["detail"]
@@ -325,7 +325,7 @@ class TestGetN1DiagramPatch:
             "reactive_flow_deltas": {},
             "asset_deltas": {},
         }
-        mock_rs.get_n1_diagram_patch.return_value = {
+        mock_rs.get_contingency_diagram_patch.return_value = {
             "patchable": True,
             "contingency_id": "LINE_A",
             "disconnected_edges": ["LINE_A"],
@@ -337,8 +337,8 @@ class TestGetN1DiagramPatch:
         }
 
         response = client.post(
-            "/api/n1-diagram-patch",
-            json={"disconnected_element": "LINE_A"},
+            "/api/contingency-diagram-patch",
+            json={"disconnected_elements": ["LINE_A"]},
         )
         data = response.json()
         for k, v in shared_fields.items():
@@ -570,7 +570,7 @@ class TestRunAnalysis:
 
         response = client.post(
             "/api/run-analysis",
-            json={"disconnected_element": "LINE_A"},
+            json={"disconnected_elements": ["LINE_A"]},
         )
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/x-ndjson"
@@ -597,7 +597,7 @@ class TestRunAnalysis:
 
         response = client.post(
             "/api/run-analysis",
-            json={"disconnected_element": "LINE_A"},
+            json={"disconnected_elements": ["LINE_A"]},
         )
         assert response.status_code == 200  # Streaming always returns 200
         lines = [
@@ -618,7 +618,7 @@ class TestRunAnalysisStep1:
 
         response = client.post(
             "/api/run-analysis-step1",
-            json={"disconnected_element": "LINE_A"},
+            json={"disconnected_elements": ["LINE_A"]},
         )
         assert response.status_code == 200
         data = response.json()
@@ -631,7 +631,7 @@ class TestRunAnalysisStep1:
 
         response = client.post(
             "/api/run-analysis-step1",
-            json={"disconnected_element": "LINE_A"},
+            json={"disconnected_elements": ["LINE_A"]},
         )
         assert response.status_code == 400
         assert "Step 1 failed" in response.json()["detail"]
@@ -641,7 +641,7 @@ class TestRunAnalysisStep2:
     def test_streaming_response_success(self, client, mock_services):
         _, mock_rs = mock_services
 
-        def fake_analysis_step2(selected_overloads, all_overloads=None, monitor_deselected=False):
+        def fake_analysis_step2(selected_overloads, all_overloads=None, monitor_deselected=False, additional_lines_to_cut=None):
             yield {"type": "pdf", "pdf_path": "/tmp/graph.pdf"}
             yield {
                 "type": "result",
@@ -682,7 +682,39 @@ class TestRunAnalysisStep2:
         mock_rs.run_analysis_step2.assert_called_once_with(
             ["LINE_1"],
             all_overloads=["LINE_1", "LINE_2"],
-            monitor_deselected=True
+            monitor_deselected=True,
+            additional_lines_to_cut=[],
+        )
+
+    def test_additional_lines_to_cut_forwarded(self, client, mock_services):
+        """The ``additional_lines_to_cut`` field on the request body must
+        reach ``recommender_service.run_analysis_step2`` as the
+        ``additional_lines_to_cut`` kwarg. Guards against an accidental
+        drop in the FastAPI -> service plumbing (e.g. someone forgets to
+        add the field to the Pydantic model)."""
+        _, mock_rs = mock_services
+
+        def fake_step2(selected_overloads, all_overloads=None, monitor_deselected=False, additional_lines_to_cut=None):
+            yield {"type": "result", "actions": {}, "action_scores": {}, "lines_overloaded": []}
+
+        mock_rs.run_analysis_step2.side_effect = fake_step2
+
+        response = client.post(
+            "/api/run-analysis-step2",
+            json={
+                "selected_overloads": ["LINE_1"],
+                "all_overloads": ["LINE_1"],
+                "monitor_deselected": False,
+                "additional_lines_to_cut": ["EXTRA_A", "EXTRA_B"],
+            },
+        )
+
+        assert response.status_code == 200
+        mock_rs.run_analysis_step2.assert_called_once_with(
+            ["LINE_1"],
+            all_overloads=["LINE_1"],
+            monitor_deselected=False,
+            additional_lines_to_cut=["EXTRA_A", "EXTRA_B"],
         )
 
     def test_error_in_streaming(self, client, mock_services):
@@ -743,7 +775,7 @@ class TestFocusedDiagram:
     def test_with_disconnected_element(self, client, mock_services):
         mock_ns, mock_rs = mock_services
         mock_ns.get_element_voltage_levels.return_value = ["VL1"]
-        mock_rs.get_n1_diagram.return_value = {
+        mock_rs.get_contingency_diagram.return_value = {
             "svg": "<svg>focused</svg>",
             "metadata": "{}",
         }
@@ -753,7 +785,7 @@ class TestFocusedDiagram:
             json={
                 "element_id": "LINE_A",
                 "depth": 2,
-                "disconnected_element": "LINE_B",
+                "disconnected_elements": ["LINE_B"],
             },
         )
         assert response.status_code == 200
@@ -818,7 +850,7 @@ class TestSimulateManualAction:
             "/api/simulate-manual-action",
             json={
                 "action_id": "action_1",
-                "disconnected_element": "LINE_B",
+                "disconnected_elements": ["LINE_B"],
             },
         )
         assert response.status_code == 200
@@ -865,15 +897,15 @@ class TestPydanticModels:
     def test_analysis_request_validation(self):
         from expert_backend.main import AnalysisRequest
 
-        req = AnalysisRequest(disconnected_element="LINE_A")
-        assert req.disconnected_element == "LINE_A"
+        req = AnalysisRequest(disconnected_elements=["LINE_A"])
+        assert req.disconnected_elements == ["LINE_A"]
 
     def test_focused_diagram_request_defaults(self):
         from expert_backend.main import FocusedDiagramRequest
 
         req = FocusedDiagramRequest(element_id="LINE_A")
         assert req.depth == 1
-        assert req.disconnected_element is None
+        assert req.disconnected_elements is None
 
     def test_action_variant_request_defaults(self):
         from expert_backend.main import ActionVariantRequest
@@ -893,7 +925,7 @@ class TestRestoreAnalysisContext:
             "/api/restore-analysis-context",
             json={
                 "lines_we_care_about": ["LINE_A", "LINE_B", "LINE_C"],
-                "disconnected_element": "LINE_X",
+                "disconnected_elements": ["LINE_X"],
                 "lines_overloaded": ["LINE_A"],
                 "computed_pairs": {"LINE_A+LINE_B": {"max_rho": 0.5}},
             },
@@ -906,7 +938,7 @@ class TestRestoreAnalysisContext:
 
         mock_rs.restore_analysis_context.assert_called_once_with(
             lines_we_care_about=["LINE_A", "LINE_B", "LINE_C"],
-            disconnected_element="LINE_X",
+            disconnected_elements=["LINE_X"],
             lines_overloaded=["LINE_A"],
             computed_pairs={"LINE_A+LINE_B": {"max_rho": 0.5}},
         )
@@ -963,7 +995,7 @@ class TestRestoreAnalysisContextModel:
 
         req = RestoreAnalysisContextRequest()
         assert req.lines_we_care_about is None
-        assert req.disconnected_element is None
+        assert req.disconnected_elements is None
         assert req.lines_overloaded is None
         assert req.computed_pairs is None
 
@@ -972,12 +1004,12 @@ class TestRestoreAnalysisContextModel:
 
         req = RestoreAnalysisContextRequest(
             lines_we_care_about=["L1", "L2"],
-            disconnected_element="LINE_X",
+            disconnected_elements=["LINE_X"],
             lines_overloaded=["L1"],
             computed_pairs={"pair1": {"betas": [0.1, 0.2]}},
         )
         assert req.lines_we_care_about == ["L1", "L2"]
-        assert req.disconnected_element == "LINE_X"
+        assert req.disconnected_elements == ["LINE_X"]
         assert req.lines_overloaded == ["L1"]
         assert req.computed_pairs == {"pair1": {"betas": [0.1, 0.2]}}
 
@@ -1004,7 +1036,7 @@ class TestRunAnalysisLinesWeCareAbout:
 
         response = client.post(
             "/api/run-analysis",
-            json={"disconnected_element": "LINE_X"},
+            json={"disconnected_elements": ["LINE_X"]},
         )
         assert response.status_code == 200
 
@@ -1031,7 +1063,7 @@ class TestRunAnalysisLinesWeCareAbout:
 
         response = client.post(
             "/api/run-analysis",
-            json={"disconnected_element": "LINE_X"},
+            json={"disconnected_elements": ["LINE_X"]},
         )
         lines = [line for line in response.text.strip().split("\n") if line.strip()]
         result_event = json.loads(lines[0])
@@ -1040,7 +1072,7 @@ class TestRunAnalysisLinesWeCareAbout:
     def test_step2_includes_lines_we_care_about(self, client, mock_services):
         _, mock_rs = mock_services
 
-        def fake_step2(selected_overloads, all_overloads=None, monitor_deselected=False):
+        def fake_step2(selected_overloads, all_overloads=None, monitor_deselected=False, additional_lines_to_cut=None):
             yield {
                 "type": "result",
                 "actions": {},
@@ -1087,7 +1119,7 @@ class TestSimulateManualActionWithContext:
             "/api/simulate-manual-action",
             json={
                 "action_id": "action_1",
-                "disconnected_element": "LINE_B",
+                "disconnected_elements": ["LINE_B"],
                 "lines_overloaded": ["LINE_A", "LINE_C"],
             },
         )
@@ -1145,7 +1177,7 @@ class TestSimulateAndVariantDiagramStream:
             "/api/simulate-and-variant-diagram",
             json={
                 "action_id": "act_1",
-                "disconnected_element": "LINE_B",
+                "disconnected_elements": ["LINE_B"],
             },
         )
         assert response.status_code == 200
@@ -1177,7 +1209,7 @@ class TestSimulateAndVariantDiagramStream:
 
         response = client.post(
             "/api/simulate-and-variant-diagram",
-            json={"action_id": "act_1", "disconnected_element": "LINE_B"},
+            json={"action_id": "act_1", "disconnected_elements": ["LINE_B"]},
             headers={"Accept-Encoding": "gzip"},
         )
         assert response.status_code == 200
@@ -1189,7 +1221,7 @@ class TestSimulateAndVariantDiagramStream:
 
         response = client.post(
             "/api/simulate-and-variant-diagram",
-            json={"action_id": "act_1", "disconnected_element": "LINE_B"},
+            json={"action_id": "act_1", "disconnected_elements": ["LINE_B"]},
         )
         assert response.status_code == 200
         lines = [ln for ln in response.text.splitlines() if ln.strip()]
@@ -1206,7 +1238,7 @@ class TestSimulateAndVariantDiagramStream:
 
         response = client.post(
             "/api/simulate-and-variant-diagram",
-            json={"action_id": "act_1", "disconnected_element": "LINE_B"},
+            json={"action_id": "act_1", "disconnected_elements": ["LINE_B"]},
         )
         assert response.status_code == 200
         lines = [ln for ln in response.text.splitlines() if ln.strip()]
@@ -1224,7 +1256,7 @@ class TestSimulateAndVariantDiagramStream:
             "/api/simulate-and-variant-diagram",
             json={
                 "action_id": "act_1",
-                "disconnected_element": "LINE_B",
+                "disconnected_elements": ["LINE_B"],
                 "action_content": {"switches": {"sw1": True}},
                 "lines_overloaded": ["LINE_A", "LINE_C"],
                 "target_mw": 42.5,
@@ -1298,14 +1330,14 @@ class TestDiagramGzipCompression:
 
     def test_n1_diagram_gzip_when_accepted(self, client, mock_services):
         _, mock_rs = mock_services
-        mock_rs.get_n1_diagram.return_value = {
+        mock_rs.get_contingency_diagram.return_value = {
             "svg": self._BIG_SVG,
             "metadata": "{}",
             "lf_converged": True,
         }
         response = client.post(
-            "/api/n1-diagram",
-            json={"disconnected_element": "LINE_A"},
+            "/api/contingency-diagram",
+            json={"disconnected_elements": ["LINE_A"]},
             headers={"Accept-Encoding": "gzip"},
         )
         self._assert_gzip(response)
