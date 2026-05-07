@@ -287,11 +287,15 @@ export const api = {
         selected_overloads: string[];
         all_overloads: string[];
         monitor_deselected: boolean;
+        additional_lines_to_cut?: string[];
     }): Promise<Response> => {
         const response = await fetch(`${API_BASE_URL}/api/run-analysis-step2`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(params),
+            body: JSON.stringify({
+                ...params,
+                additional_lines_to_cut: params.additional_lines_to_cut ?? [],
+            }),
         });
         if (!response.ok) {
             throw new Error(`Analysis Resolution failed: ${response.statusText}`);

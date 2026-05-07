@@ -13,6 +13,7 @@ import { api } from '../api';
 import { interactionLogger } from '../utils/interactionLogger';
 import CombinedActionsModal from './CombinedActionsModal';
 import ActionCard from './ActionCard';
+import AdditionalLinesPicker from './AdditionalLinesPicker';
 import ActionSearchDropdown from './ActionSearchDropdown';
 import { colors } from '../styles/tokens';
 
@@ -77,6 +78,17 @@ interface ActionFeedProps {
     overviewFilters?: ActionOverviewFilters;
     /** Update the shared filter state (owned by App.tsx). */
     onOverviewFiltersChange?: (next: ActionOverviewFilters) => void;
+    /**
+     * Catalogue of disconnectable elements feeding the
+     * "additional lines to prevent flow increase" picker rendered
+     * above the Analyze & Suggest button.
+     */
+    branches?: string[];
+    /** Operator-selected extras (ExpertAgent's `additionalLinesToCut`). */
+    additionalLinesToCut?: Set<string>;
+    onToggleAdditionalLineToCut?: (line: string) => void;
+    /** N-1 detected overloads — excluded from the picker suggestions. */
+    n1Overloads?: string[];
 }
 
 const ActionFeed: React.FC<ActionFeedProps> = ({
@@ -110,6 +122,10 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     onActionDiagramPrimed,
     voltageLevelsLength,
     overviewFilters,
+    branches,
+    additionalLinesToCut,
+    onToggleAdditionalLineToCut,
+    n1Overloads,
 }) => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -924,23 +940,34 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                 📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
                             </button>
                         ) : (
-                            <button
-                                onClick={onRunAnalysis}
-                                disabled={!canRunAnalysis}
-                                style={{
-                                    width: '100%', padding: '10px 16px',
-                                    background: canRunAnalysis ? colors.success : colors.disabled,
-                                    color: colors.textOnBrand, border: 'none', borderRadius: '8px',
-                                    cursor: canRunAnalysis ? 'pointer' : 'not-allowed',
-                                    fontSize: '14px', fontWeight: 700,
-                                    boxShadow: canRunAnalysis ? '0 2px 8px rgba(39,174,96,0.3)' : 'none',
-                                    transition: 'transform 0.1s',
-                                }}
-                                onMouseEnter={(e) => { if (canRunAnalysis) (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'; }}
-                                onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
-                            >
-                                🔍 Analyze & Suggest
-                            </button>
+                            <>
+                                {branches && additionalLinesToCut && onToggleAdditionalLineToCut && (
+                                    <AdditionalLinesPicker
+                                        branches={branches}
+                                        n1Overloads={n1Overloads ?? []}
+                                        additionalLinesToCut={additionalLinesToCut}
+                                        onToggle={onToggleAdditionalLineToCut}
+                                        displayName={displayName}
+                                    />
+                                )}
+                                <button
+                                    onClick={onRunAnalysis}
+                                    disabled={!canRunAnalysis}
+                                    style={{
+                                        width: '100%', padding: '10px 16px',
+                                        background: canRunAnalysis ? colors.success : colors.disabled,
+                                        color: colors.textOnBrand, border: 'none', borderRadius: '8px',
+                                        cursor: canRunAnalysis ? 'pointer' : 'not-allowed',
+                                        fontSize: '14px', fontWeight: 700,
+                                        boxShadow: canRunAnalysis ? '0 2px 8px rgba(39,174,96,0.3)' : 'none',
+                                        transition: 'transform 0.1s',
+                                    }}
+                                    onMouseEnter={(e) => { if (canRunAnalysis) (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'; }}
+                                    onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
+                                >
+                                    🔍 Analyze & Suggest
+                                </button>
+                            </>
                         )}
                     </div>
                 )}
