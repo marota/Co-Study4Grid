@@ -277,10 +277,10 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                         }}
                     >
                         <strong style={{ whiteSpace: 'nowrap', marginRight: space[1] }}>
-                            Additional lines to cut:
+                            Additional lines to prevent flow increase:
                         </strong>
                         <span
-                            title="Extra lines the recommender will treat as 'lines to cut' on top of the detected overloads (ExpertAgent's additionalLinesToCut). They are not currently overloaded but resolving actions will also relieve flow on them."
+                            title="Extra lines the recommender in its overflow analysis will consider as ones to also prevent flow increase. This will simulate them disconnected in this analysis similarly to overloads. But they are not rendered as overloads. This can be of use to highlights other path flows in the case of double or triple lines for instance, if only studying N-1"
                             style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
