@@ -2771,4 +2771,55 @@ describe('ActionFeed', () => {
             expect(() => fireEvent.click(discoChip)).not.toThrow();
         });
     });
+
+    describe('AdditionalLinesPicker placement', () => {
+        // Product rule: the picker sits directly above the
+        // "Analyze & Suggest" button so the operator can configure
+        // extra cuts where the analysis is launched.  It must
+        // disappear the moment analysis is in flight or results are
+        // pending — same gate as the button itself.
+        const pickerProps = {
+            branches: ['LINE_A', 'LINE_B', 'LINE_C'],
+            additionalLinesToCut: new Set<string>(),
+            onToggleAdditionalLineToCut: vi.fn(),
+            n1Overloads: ['LINE_C'],
+        };
+
+        it('renders the picker alongside Analyze & Suggest in the empty state', () => {
+            render(<ActionFeed {...defaultProps} {...pickerProps} canRunAnalysis />);
+            expect(screen.getByTestId('additional-lines-picker')).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /Analyze & Suggest/ })).toBeInTheDocument();
+        });
+
+        it('hides the picker while analysis is running', () => {
+            render(<ActionFeed {...defaultProps} {...pickerProps} analysisLoading />);
+            expect(screen.queryByTestId('additional-lines-picker')).not.toBeInTheDocument();
+            expect(screen.getByText(/Analyzing/)).toBeInTheDocument();
+        });
+
+        it('hides the picker when a pending result is awaiting display', () => {
+            const pending: AnalysisResult = {
+                actions: {}, action_scores: {}, lines_overloaded: ['LINE_C'],
+                pdf_url: null, pdf_path: null, message: '', dc_fallback: false,
+            } as unknown as AnalysisResult;
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    {...pickerProps}
+                    pendingAnalysisResult={pending}
+                />,
+            );
+            expect(screen.queryByTestId('additional-lines-picker')).not.toBeInTheDocument();
+            expect(screen.getByText(/Display .* prioritized actions/)).toBeInTheDocument();
+        });
+
+        it('hides the picker when the picker props are not wired', () => {
+            // Backwards-compat: ActionFeed must render correctly when
+            // the parent forgets to pass branches / extras (e.g. an
+            // unrelated test that doesn't care about the picker).
+            render(<ActionFeed {...defaultProps} canRunAnalysis />);
+            expect(screen.queryByTestId('additional-lines-picker')).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /Analyze & Suggest/ })).toBeInTheDocument();
+        });
+    });
 });
