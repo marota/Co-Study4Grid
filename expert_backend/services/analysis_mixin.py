@@ -413,11 +413,15 @@ class AnalysisMixin:
         """Step 2 — PDF emission + action discovery, streaming NDJSON events.
 
         ``additional_lines_to_cut`` is the operator-supplied set of extra
-        line IDs that should be treated like overloads in the overflow
-        graph (ExpertAgent's `additionalLinesToCut`/`ltc` semantics).
-        They are appended to ``lines_overloaded_ids``/``names`` and kept
-        inside ``lines_we_care_about`` so the recommender's actions also
-        relieve flow on them.
+        line names (ExpertAgent's `additionalLinesToCut`/`ltc` semantic).
+        They are routed to ``context["extra_lines_to_cut_ids"]`` (line
+        indices) which the upstream library reads and forwards to
+        ``OverFlowGraph(extra_lines_to_cut=…)`` so the simulation cuts
+        them like overloads but the viewer keeps them out of the
+        ``Overloads`` / ``Low margin lines`` layers (they show up
+        under the dedicated ``Extra lines to prevent flow increase``
+        layer instead).  Names also stay in ``lines_we_care_about`` so
+        monitoring is not silently lost.
 
         No ``_ensure_*_state_ready`` guard here: step2 inherits the
         ``_analysis_context`` positioned by step1 (observations,
@@ -444,6 +448,20 @@ class AnalysisMixin:
         self._overflow_layout_cache = {}
         self._overflow_layout_mode = "hierarchical"
         try:
+            # Diagnostic at the handoff to upstream: confirms what the
+            # operator-supplied extras resolved to (post-name lookup,
+            # post-dedup against the selected overloads). If this logs
+            # ``extra_lines_to_cut_ids=[]`` while the request payload
+            # carried names, check the warning above for "unknown line
+            # names skipped" — the names did not match obs.name_line.
+            logger.info(
+                "[Step2] handoff to run_analysis_step2_graph: "
+                "lines_overloaded_ids=%s, lines_overloaded_ids_kept=%s, "
+                "extra_lines_to_cut_ids=%s",
+                context.get("lines_overloaded_ids"),
+                context.get("lines_overloaded_ids_kept"),
+                context.get("extra_lines_to_cut_ids"),
+            )
             # Part 1: graph generation + HTML
             context = run_analysis_step2_graph(context)
             produced_pdf = self._get_latest_pdf_path(analysis_start_time)
