@@ -686,6 +686,37 @@ class TestRunAnalysisStep2:
             additional_lines_to_cut=[],
         )
 
+    def test_additional_lines_to_cut_forwarded(self, client, mock_services):
+        """The ``additional_lines_to_cut`` field on the request body must
+        reach ``recommender_service.run_analysis_step2`` as the
+        ``additional_lines_to_cut`` kwarg. Guards against an accidental
+        drop in the FastAPI -> service plumbing (e.g. someone forgets to
+        add the field to the Pydantic model)."""
+        _, mock_rs = mock_services
+
+        def fake_step2(selected_overloads, all_overloads=None, monitor_deselected=False, additional_lines_to_cut=None):
+            yield {"type": "result", "actions": {}, "action_scores": {}, "lines_overloaded": []}
+
+        mock_rs.run_analysis_step2.side_effect = fake_step2
+
+        response = client.post(
+            "/api/run-analysis-step2",
+            json={
+                "selected_overloads": ["LINE_1"],
+                "all_overloads": ["LINE_1"],
+                "monitor_deselected": False,
+                "additional_lines_to_cut": ["EXTRA_A", "EXTRA_B"],
+            },
+        )
+
+        assert response.status_code == 200
+        mock_rs.run_analysis_step2.assert_called_once_with(
+            ["LINE_1"],
+            all_overloads=["LINE_1"],
+            monitor_deselected=False,
+            additional_lines_to_cut=["EXTRA_A", "EXTRA_B"],
+        )
+
     def test_error_in_streaming(self, client, mock_services):
         _, mock_rs = mock_services
 

@@ -448,20 +448,6 @@ class AnalysisMixin:
         self._overflow_layout_cache = {}
         self._overflow_layout_mode = "hierarchical"
         try:
-            # Diagnostic at the handoff to upstream: confirms what the
-            # operator-supplied extras resolved to (post-name lookup,
-            # post-dedup against the selected overloads). If this logs
-            # ``extra_lines_to_cut_ids=[]`` while the request payload
-            # carried names, check the warning above for "unknown line
-            # names skipped" — the names did not match obs.name_line.
-            logger.info(
-                "[Step2] handoff to run_analysis_step2_graph: "
-                "lines_overloaded_ids=%s, lines_overloaded_ids_kept=%s, "
-                "extra_lines_to_cut_ids=%s",
-                context.get("lines_overloaded_ids"),
-                context.get("lines_overloaded_ids_kept"),
-                context.get("extra_lines_to_cut_ids"),
-            )
             # Part 1: graph generation + HTML
             context = run_analysis_step2_graph(context)
             produced_pdf = self._get_latest_pdf_path(analysis_start_time)
