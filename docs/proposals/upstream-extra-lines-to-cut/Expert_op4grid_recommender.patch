@@ -1,0 +1,251 @@
+From 1630a263258515c37611a63c696ff265e137ce47 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 7 May 2026 09:31:31 +0000
+Subject: [PATCH] feat(builder): thread extra_lines_to_cut_ids to OverFlowGraph
+
+---
+ .../graph_analysis/builder.py                 | 22 +++++++++--
+ .../graph_analysis/visualization.py           |  3 +-
+ expert_op4grid_recommender/main.py            | 37 ++++++++++++++-----
+ .../pypowsybl_backend/overflow_analysis.py    | 28 +++++++++-----
+ 4 files changed, 68 insertions(+), 22 deletions(-)
+
+diff --git a/expert_op4grid_recommender/graph_analysis/builder.py b/expert_op4grid_recommender/graph_analysis/builder.py
+index 11d1fe8..bac0af0 100644
+--- a/expert_op4grid_recommender/graph_analysis/builder.py
++++ b/expert_op4grid_recommender/graph_analysis/builder.py
+@@ -26,7 +26,8 @@ def inhibit_swapped_flows(df_of_g):
+ def build_overflow_graph(env, obs_overloaded, overloaded_line_ids, non_connected_reconnectable_lines,
+                          lines_non_reconnectable, timestep, do_consolidate_graph=True,
+                          inhibit_swapped_flow_reversion=True, node_renaming=True,
+-                         param_options=PARAM_OPTIONS_EXPERT_OP, use_dc=False):
++                         param_options=PARAM_OPTIONS_EXPERT_OP, use_dc=False,
++                         extra_lines_to_cut_ids=None):
+     """
+     Constructs and refines an overflow graph based on a Grid2Op simulation state.
+ 
+@@ -72,10 +73,23 @@ def build_overflow_graph(env, obs_overloaded, overloaded_line_ids, non_connected
+               distribution graph object derived from the refined `g_overflow`.
+             - node_name_mapping (dict): A dictionary mapping original node indices to substation names.
+     """
++    # ``extra_lines_to_cut_ids`` are operator-supplied line indices that
++    # should be cut in the simulation (so the recommender finds actions
++    # that prevent flow increase on them) but NOT classified as
++    # overloads in the visualization.  ExpertAgent's
++    # ``additionalLinesToCut`` semantic.  They are appended to ``ltc``
++    # for the simulation and forwarded as ``extra_lines_to_cut`` to the
++    # OverFlowGraph so it can stamp ``is_extra_cut`` and skip
++    # ``is_overload`` / ``is_monitored`` for those edges.
++    extras = list(extra_lines_to_cut_ids or [])
++    seen = set(overloaded_line_ids)
++    extras = [idx for idx in extras if idx not in seen]
++    full_ltc = list(overloaded_line_ids) + extras
++
+     overflow_sim = Grid2opSimulation(
+         obs_overloaded, env.action_space, env.observation_space,
+         param_options=param_options, debug=False,
+-        ltc=overloaded_line_ids, plot=True, simu_step=timestep
++        ltc=full_ltc, plot=True, simu_step=timestep
+     )
+     df_of_g = overflow_sim.get_dataframe()
+     df_of_g["line_name"] = obs_overloaded.name_line
+@@ -83,7 +97,9 @@ def build_overflow_graph(env, obs_overloaded, overloaded_line_ids, non_connected
+     if inhibit_swapped_flow_reversion:
+         df_of_g = inhibit_swapped_flows(df_of_g)
+ 
+-    g_overflow = OverFlowGraph(overflow_sim.topo, overloaded_line_ids, df_of_g, float_precision="%.0f")
++    g_overflow = OverFlowGraph(overflow_sim.topo, full_ltc, df_of_g,
++                               float_precision="%.0f",
++                               extra_lines_to_cut=extras)
+     node_name_mapping = {i: name for i, name in enumerate(obs_overloaded.name_sub)}
+ 
+     if node_renaming:
+diff --git a/expert_op4grid_recommender/graph_analysis/visualization.py b/expert_op4grid_recommender/graph_analysis/visualization.py
+index 5e366f4..bc17535 100644
+--- a/expert_op4grid_recommender/graph_analysis/visualization.py
++++ b/expert_op4grid_recommender/graph_analysis/visualization.py
+@@ -78,7 +78,8 @@ def make_overflow_graph_visualization(env, overflow_sim, g_overflow, hubs, obs_s
+                                       lines_swapped, custom_layout=None, lines_we_care_about=None,
+                                       monitoring_factor_thermal_limits=1.0,
+                                       lines_constrained_path=None, nodes_constrained_path=None,
+-                                      lines_red_loops=None, nodes_red_loops=None):
++                                      lines_red_loops=None, nodes_red_loops=None,
++                                      extra_lines_to_cut_ids=None):
+     """
+     Generates and saves a visualization of the overflow graph with various annotations.
+ 
+diff --git a/expert_op4grid_recommender/main.py b/expert_op4grid_recommender/main.py
+index d3fdcbb..c24cf1a 100644
+--- a/expert_op4grid_recommender/main.py
++++ b/expert_op4grid_recommender/main.py
+@@ -130,14 +130,16 @@ def compute_baseline_simulation_grid2op(obs, timestep, act_defaut, act_reco_main
+     return compute_baseline_simulation(obs, timestep, act_defaut, act_reco_maintenance, overload_ids)
+ 
+ 
+-def build_overflow_graph_grid2op(env, obs_simu_defaut, lines_overloaded_ids_kept, 
++def build_overflow_graph_grid2op(env, obs_simu_defaut, lines_overloaded_ids_kept,
+                                   non_connected_reconnectable_lines, lines_non_reconnectable,
+-                                  timestep, do_consolidate_graph,use_dc=False):
++                                  timestep, do_consolidate_graph,use_dc=False,
++                                  extra_lines_to_cut_ids=None):
+     """Build overflow graph using Grid2Op/alphaDeesp."""
+     from expert_op4grid_recommender.graph_analysis.builder import build_overflow_graph
+     return build_overflow_graph(env, obs_simu_defaut, lines_overloaded_ids_kept,
+                                  non_connected_reconnectable_lines, lines_non_reconnectable,
+-                                 timestep, do_consolidate_graph=do_consolidate_graph,use_dc=use_dc)
++                                 timestep, do_consolidate_graph=do_consolidate_graph,use_dc=use_dc,
++                                 extra_lines_to_cut_ids=extra_lines_to_cut_ids)
+ 
+ 
+ # =============================================================================
+@@ -209,13 +211,15 @@ def compute_baseline_simulation_pypowsybl(obs, timestep, act_defaut, act_reco_ma
+ 
+ def build_overflow_graph_pypowsybl_wrapper(env, obs_simu_defaut, lines_overloaded_ids_kept,
+                                            non_connected_reconnectable_lines, lines_non_reconnectable,
+-                                           timestep, do_consolidate_graph,use_dc=False, fast_mode=True):
++                                           timestep, do_consolidate_graph,use_dc=False, fast_mode=True,
++                                           extra_lines_to_cut_ids=None):
+     """Wrapper for pypowsybl overflow graph builder with correct signature."""
+     from expert_op4grid_recommender.pypowsybl_backend.overflow_analysis import build_overflow_graph_pypowsybl as _build
+     return _build(env, obs_simu_defaut, lines_overloaded_ids_kept,
+                   non_connected_reconnectable_lines, lines_non_reconnectable,
+-                  timestep, do_consolidate_graph=do_consolidate_graph, 
+-                  use_dc=use_dc, param_options={"fast_mode": fast_mode})
++                  timestep, do_consolidate_graph=do_consolidate_graph,
++                  use_dc=use_dc, param_options={"fast_mode": fast_mode},
++                  extra_lines_to_cut_ids=extra_lines_to_cut_ids)
+ 
+ 
+ # =============================================================================
+@@ -462,6 +466,15 @@ def run_analysis_step1(analysis_date: Optional[datetime],
+         "pre_existing_rho": pre_existing_rho,
+         "lines_overloaded_names": lines_overloaded_names,
+         "non_connected_reconnectable_lines": non_connected_reconnectable_lines,
++        # Operator-supplied extras (line indices) that should be cut in
++        # the overflow graph alongside the detected overloads but
++        # NOT classified as overloads in the viewer.  Step 2 callers
++        # (e.g. CoStudy4Grid) populate this when narrowing the context
++        # before ``run_analysis_step2_graph``; left empty here so the
++        # legacy single-step / no-extras path keeps its current
++        # behaviour.  Plumbed through to ``build_overflow_graph`` in
++        # Step 2 graph generation.
++        "extra_lines_to_cut_ids": [],
+         "dict_action": dict_action,
+         "is_bare_env": is_bare_env,
+         "is_pypowsybl": is_pypowsybl,
+@@ -500,10 +513,13 @@ def run_analysis_step2_graph(context: Dict[str, Any]) -> Dict[str, Any]:
+     custom_layout = context["custom_layout"]
+     chronic_name = context["chronic_name"]
+     non_connected_reconnectable_lines = context["non_connected_reconnectable_lines"]
+-    
++    # Operator-supplied extras — see step1 `context["extra_lines_to_cut_ids"]`.
++    # Defaulted to an empty list when missing so older callers keep working.
++    extra_lines_to_cut_ids = context.get("extra_lines_to_cut_ids") or []
++
+     is_pypowsybl = context["is_pypowsybl"]
+     actual_fast_mode = context["actual_fast_mode"]
+-    
++
+     check_simu_overloads = context["check_simu_overloads"]
+     switch_to_dc = context["switch_to_dc"]
+     build_overflow_graph = context["build_overflow_graph"]
+@@ -532,12 +548,14 @@ def run_analysis_step2_graph(context: Dict[str, Any]) -> Dict[str, Any]:
+         if is_pypowsybl:
+             df_of_g, overflow_sim, g_overflow, hubs, g_distribution_graph, node_name_mapping = build_overflow_graph(
+                 env, obs_simu_defaut, lines_overloaded_ids_kept, non_connected_reconnectable_lines, lines_non_reconnectable,
+-                current_timestep, do_consolidate_graph=config.DO_CONSOLIDATE_GRAPH,use_dc=use_dc, fast_mode=actual_fast_mode
++                current_timestep, do_consolidate_graph=config.DO_CONSOLIDATE_GRAPH,use_dc=use_dc, fast_mode=actual_fast_mode,
++                extra_lines_to_cut_ids=extra_lines_to_cut_ids,
+             )
+         else:
+             df_of_g, overflow_sim, g_overflow, hubs, g_distribution_graph, node_name_mapping = build_overflow_graph(
+                 env, obs_simu_defaut, lines_overloaded_ids_kept, non_connected_reconnectable_lines, lines_non_reconnectable,
+                 current_timestep, do_consolidate_graph=config.DO_CONSOLIDATE_GRAPH,use_dc=use_dc,
++                extra_lines_to_cut_ids=extra_lines_to_cut_ids,
+             )
+ 
+     # Visualize graph (only if enabled in config)
+@@ -591,6 +609,7 @@ def run_analysis_step2_graph(context: Dict[str, Any]) -> Dict[str, Any]:
+                 nodes_constrained_path=nodes_constrained_path,
+                 lines_red_loops=lines_red_loops,
+                 nodes_red_loops=nodes_red_loops,
++                extra_lines_to_cut_ids=extra_lines_to_cut_ids,
+             )
+     else:
+         print("Skipping visualization (DO_VISUALIZATION=False)")
+diff --git a/expert_op4grid_recommender/pypowsybl_backend/overflow_analysis.py b/expert_op4grid_recommender/pypowsybl_backend/overflow_analysis.py
+index e8cddf4..c90d416 100644
+--- a/expert_op4grid_recommender/pypowsybl_backend/overflow_analysis.py
++++ b/expert_op4grid_recommender/pypowsybl_backend/overflow_analysis.py
+@@ -640,14 +640,15 @@ class OverflowGraphBuilder:
+ 
+ 
+ def build_overflow_graph_pypowsybl(env: 'SimulationEnvironment',
+-                                    obs: 'PypowsyblObservation', 
++                                    obs: 'PypowsyblObservation',
+                                     overloaded_line_ids: List[int],
+                                     non_connected_reconnectable_lines: List[str],
+                                     lines_non_reconnectable: List[str],
+                                     timestep: int,
+                                     do_consolidate_graph: bool = True,
+                                     use_dc: bool = False,
+-                                    param_options: Optional[Dict] = None):
++                                    param_options: Optional[Dict] = None,
++                                    extra_lines_to_cut_ids: Optional[List[int]] = None):
+     """
+     Build overflow graph using pure pypowsybl.
+     
+@@ -681,7 +682,15 @@ def build_overflow_graph_pypowsybl(env: 'SimulationEnvironment',
+     params = param_options or PARAM_OPTIONS_EXPERT_OP
+     # Keep the fast_mode extraction flexible
+     fast_mode = params.get("fast_mode", True) if isinstance(params, dict) else True
+-    
++
++    # Operator-supplied extras: cut in the simulation alongside the
++    # detected overloads but tagged ``is_extra_cut`` in the overflow
++    # graph so the visualization keeps them out of the Overloads layer.
++    extras = list(extra_lines_to_cut_ids or [])
++    seen = set(overloaded_line_ids)
++    extras = [idx for idx in extras if idx not in seen]
++    full_ltc = list(overloaded_line_ids) + extras
++
+     # Create alphaDeesp-compatible adapter (replaces Grid2opSimulation)
+     overflow_sim = AlphaDeespAdapter(
+         obs=obs,
+@@ -689,26 +698,27 @@ def build_overflow_graph_pypowsybl(env: 'SimulationEnvironment',
+         observation_space=None,  # Not needed for our use case
+         param_options=params,
+         debug=False,
+-        ltc=overloaded_line_ids,
++        ltc=full_ltc,
+         plot=False,
+         simu_step=timestep,
+         use_dc=use_dc,
+         fast_mode=fast_mode
+     )
+-    
++
+     # Get flow changes DataFrame
+     df_of_g = overflow_sim.get_dataframe()
+     df_of_g["line_name"] = obs.name_line
+-    
++
+     # Apply flow swap correction - this negates delta_flows for lines where
+     # new_flows_swapped=True, making them negative (blue) instead of positive (red)
+     df_of_g = _inhibit_swapped_flows(df_of_g)
+-    
++
+     # Build topology info for alphaDeesp
+     topo = overflow_sim.topo
+-    
++
+     # Use alphaDeesp's OverFlowGraph to construct graph with proper color attributes
+-    g_overflow = OverFlowGraph(topo, overloaded_line_ids, df_of_g, float_precision="%.0f")
++    g_overflow = OverFlowGraph(topo, full_ltc, df_of_g, float_precision="%.0f",
++                               extra_lines_to_cut=extras)
+     
+     # Node name mapping
+     node_name_mapping = {i: name for i, name in enumerate(obs.name_sub)}
+-- 
+2.43.0
+
