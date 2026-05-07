@@ -1231,6 +1231,32 @@ function App() {
       });
     }
 
+    // Additional "lines to prevent flow increase" — surfaced as a
+    // warning while the picker is non-empty, so the operator can
+    // see at a glance which extra targets the next Analyze & Suggest
+    // run will pass to the recommender. Self-clears once the run
+    // starts (the picker is hidden during Analyzing… and after).
+    if (additionalLinesToCut.size > 0 && !pendingAnalysisResult && !result) {
+      const lines = Array.from(additionalLinesToCut);
+      list.push({
+        id: 'additional-lines-to-cut',
+        severity: 'warning',
+        title: 'Additional lines to prevent flow increase',
+        body: (
+          <>
+            <div>
+              The next Analyze &amp; Suggest run will treat{' '}
+              <strong>{lines.length}</strong> extra line{lines.length === 1 ? '' : 's'} as
+              {' '}targets to prevent flow increase on (simulated as disconnected, not rendered as overloads):
+            </div>
+            <div style={{ marginTop: 4, wordBreak: 'break-word' }}>
+              {lines.map(displayName).join(', ')}
+            </div>
+          </>
+        ),
+      });
+    }
+
     return list;
   }, [
     showActionDictNotice, actionDictFileName, actionDictStats, result,
@@ -1238,6 +1264,7 @@ function App() {
     monitoringFactor, preExistingOverloadThreshold,
     showRecommenderNotice, pendingAnalysisResult, recommenderConfig,
     handleOpenSettings, handleOpenConfigSettings, handleDismissWarning,
+    additionalLinesToCut, displayName,
   ]);
 
   return (
@@ -1304,9 +1331,6 @@ function App() {
               monitorDeselected={monitorDeselected}
               onToggleMonitorDeselected={handleToggleMonitorDeselected}
               displayName={displayName}
-              branches={branches}
-              additionalLinesToCut={additionalLinesToCut}
-              onToggleAdditionalLineToCut={analysis.handleToggleAdditionalLineToCut}
             />
           </div>
           <ActionFeed
@@ -1341,6 +1365,10 @@ function App() {
             voltageLevelsLength={voltageLevels.length}
             overviewFilters={overviewFilters}
             onOverviewFiltersChange={setOverviewFilters}
+            branches={branches}
+            additionalLinesToCut={additionalLinesToCut}
+            onToggleAdditionalLineToCut={analysis.handleToggleAdditionalLineToCut}
+            n1Overloads={n1Diagram?.lines_overloaded || []}
           />
         </AppSidebar>
         <div style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column' }}>
