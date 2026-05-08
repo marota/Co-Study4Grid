@@ -16,7 +16,22 @@ export interface SettingsState {
   configFilePath: string;
   setConfigFilePath: (v: string) => void;
   lastActiveConfigFilePath: string;
-  changeConfigFilePath: (newPath: string) => Promise<void>;
+  /**
+   * Switch the active config file: POSTs the new path to the backend,
+   * applies the loaded config to every settings field, and **returns the
+   * fresh `UserConfig` object**. Callers that need to chain a follow-up
+   * backend call (e.g. `api.updateConfig` in `applySettingsImmediate`)
+   * MUST use the returned value rather than calling `buildConfigRequest()`
+   * — React state updates from `applyLoadedConfig` haven't flushed yet
+   * when this resolves, so reading via `buildConfigRequest()` still
+   * captures the previous render's values (the stale-closure bug fixed
+   * 2026-05-08).
+   */
+  changeConfigFilePath: (newPath: string) => Promise<UserConfig>;
+  /** Convert a fresh `UserConfig` (typically the resolved value of
+   *  `changeConfigFilePath`) into the same `ConfigRequest` shape that
+   *  `buildConfigRequest()` produces, bypassing React state. */
+  configRequestFromUserConfig: (cfg: UserConfig) => ReturnType<SettingsState['buildConfigRequest']>;
 
   // Paths
   networkPath: string;
@@ -183,7 +198,7 @@ export function useSettings(): SettingsState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const changeConfigFilePath = useCallback(async (newPath: string) => {
+  const changeConfigFilePath = useCallback(async (newPath: string): Promise<UserConfig> => {
     const result = await api.setConfigFilePath(newPath);
     setConfigFilePath(result.config_file_path);
     lastConfigFilePathRef.current = result.config_file_path;
@@ -191,7 +206,39 @@ export function useSettings(): SettingsState {
     configLoadedRef.current = false;
     applyLoadedConfig(result.config);
     configLoadedRef.current = true;
+    return result.config;
   }, [applyLoadedConfig]);
+
+  /**
+   * Mirror `buildConfigRequest()` but read every value from the passed
+   * `UserConfig` instead of from React state. Used by
+   * `applySettingsImmediate` / `handleLoadConfig` immediately after
+   * `await changeConfigFilePath()` resolves: at that point the
+   * `applyLoadedConfig` setters have only been QUEUED, not flushed, so
+   * the `buildConfigRequest` closure still captures the previous
+   * render's values. Skipping React state and reading directly from the
+   * just-resolved config keeps the next backend call in lockstep with
+   * the file the operator just loaded.
+   */
+  const configRequestFromUserConfig = useCallback((cfg: UserConfig) => ({
+    network_path: cfg.network_path,
+    action_file_path: cfg.action_file_path,
+    layout_path: cfg.layout_path ?? '',
+    min_line_reconnections: cfg.min_line_reconnections,
+    min_close_coupling: cfg.min_close_coupling,
+    min_open_coupling: cfg.min_open_coupling,
+    min_line_disconnections: cfg.min_line_disconnections,
+    min_pst: cfg.min_pst,
+    min_load_shedding: cfg.min_load_shedding,
+    min_renewable_curtailment_actions: cfg.min_renewable_curtailment_actions,
+    n_prioritized_actions: cfg.n_prioritized_actions,
+    lines_monitoring_path: cfg.lines_monitoring_path ?? '',
+    monitoring_factor: cfg.monitoring_factor,
+    pre_existing_overload_threshold: cfg.pre_existing_overload_threshold,
+    ignore_reconnections: cfg.ignore_reconnections,
+    pypowsybl_fast_mode: cfg.pypowsybl_fast_mode,
+    force_layout: cfg.force_layout ?? false,
+  }), []);
 
   // Persist settings to backend config file whenever they change
   useEffect(() => {
@@ -380,6 +427,7 @@ export function useSettings(): SettingsState {
     handleOpenSettings,
     handleCloseSettings,
     buildConfigRequest,
+    configRequestFromUserConfig,
     applyConfigResponse,
     createCurrentBackup,
   }), [
@@ -390,6 +438,6 @@ export function useSettings(): SettingsState {
     actionDictFileName, actionDictStats,
     isSettingsOpen, settingsTab, settingsBackup,
     configFilePath, changeConfigFilePath,
-    pickSettingsPath, handleOpenSettings, handleCloseSettings, buildConfigRequest, applyConfigResponse, createCurrentBackup
+    pickSettingsPath, handleOpenSettings, handleCloseSettings, buildConfigRequest, configRequestFromUserConfig, applyConfigResponse, createCurrentBackup
   ]);
 }
