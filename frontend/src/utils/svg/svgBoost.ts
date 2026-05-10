@@ -69,17 +69,38 @@ export const boostSvgForLargeGrid = (svgString: string, viewBox: ViewBox | null,
     //     huge (≥ 9 M units) that the gained boost would overwhelm the
     //     intrinsic node density.
     //
-    // Trade-off documented in CHANGELOG: this gain still over-enlarges
-    // nodes on the LEGACY 8 000-unit-wide layout (`--target-width 8000`
-    // mode of `regenerate_grid_layout.py`); that layout was already
-    // known-broken for visual density and is not the canonical
-    // PyPSA-EUR output anymore.
-    const NODE_BOOST_FLOOR = 0.5;
+    // Adding an OFFSET (2026-05-08, third iteration): the plain `boost ×
+    // GAIN` shape from iteration 2 still over-amplified small-viewBox
+    // grids — bare_env (8 K-wide viewBox, vlCount > 500) ended up at
+    // nodeBoost ≈ 4.87, which made every node a blob. Subtract OFFSET
+    // from `boost` before scaling and add 1 back so the formula
+    // converges to `nodeBoost = 1` (= native pypowsybl rendering) as
+    // viewBox shrinks below ~8 500 user-units. For viewBox > 10 K the
+    // shape is essentially the same as iteration 2 (drift < 6 %), so
+    // PyPSA-EUR / European calibration is preserved.
+    //
+    // Calibration check after the offset change:
+    //
+    //   viewBox          boost   nodeBoost   r/viewBox
+    //   8 K (bare_env)   1.46    1.0 (floor) 0.34 %  ← native
+    //   1.4 M (fr225)    19.32   60.4        0.12 %  ← unchanged
+    //   4.4 M (Europe)   34.25   110.2       0.069 % ← unchanged
+    //   ≥ 75 M (huge)    ≥ 159   250 (cap)   ≤ 0.009 %
+    //
+    // Tuning knobs:
+    //   - bare_env-style grids still too big? raise OFFSET (e.g. 2.0)
+    //   - Large grids still too small?        raise GAIN
+    //   - Hard "always native" floor?         raise FLOOR
+    const NODE_BOOST_FLOOR = 1.0;
+    const NODE_BOOST_OFFSET = 1.5;
     const NODE_BOOST_GAIN = 10 / 3;
     const NODE_BOOST_CEILING = 250;
     const nodeBoost = Math.max(
         NODE_BOOST_FLOOR,
-        Math.min(NODE_BOOST_CEILING, boost * NODE_BOOST_GAIN),
+        Math.min(
+            NODE_BOOST_CEILING,
+            (boost - NODE_BOOST_OFFSET) * NODE_BOOST_GAIN + 1,
+        ),
     );
     const nodeBoostStr = nodeBoost.toFixed(2);
 
