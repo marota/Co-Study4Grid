@@ -69,38 +69,59 @@ export const boostSvgForLargeGrid = (svgString: string, viewBox: ViewBox | null,
     //     huge (≥ 9 M units) that the gained boost would overwhelm the
     //     intrinsic node density.
     //
-    // Adding an OFFSET (2026-05-08, third iteration): the plain `boost ×
-    // GAIN` shape from iteration 2 still over-amplified small-viewBox
-    // grids — bare_env (8 K-wide viewBox, vlCount > 500) ended up at
-    // nodeBoost ≈ 4.87, which made every node a blob. Subtract OFFSET
-    // from `boost` before scaling and add 1 back so the formula
-    // converges to `nodeBoost = 1` (= native pypowsybl rendering) as
-    // viewBox shrinks below ~8 500 user-units. For viewBox > 10 K the
-    // shape is essentially the same as iteration 2 (drift < 6 %), so
-    // PyPSA-EUR / European calibration is preserved.
+    // Adding an OFFSET (third iteration) gave a baseline shape that
+    // converges to native rendering for very small viewBoxes; adding
+    // density-suppression (fourth iteration, 2026-05-08) handles the
+    // case where a layout has the same span as a PyPSA-EUR grid but a
+    // MUCH higher VL count.
     //
-    // Calibration check after the offset change:
+    // Operator-reported case: `bare_env_20240828T0100Z` covers France
+    // at the same scale as `pypsa_eur_fr225_400` (~1.64 M-wide viewBox)
+    // but with 18 141 VLs instead of 1 196 — 15× the density. The pure
+    // OFFSET formula gave both the same nodeBoost ≈ 60, which is
+    // correct for fr225_400 but produces overlap on bare_env where
+    // median NN is 1 776 (so r/NN = 102 %, every node merges with its
+    // neighbour). The fix divides the gained boost by
+    // `sqrt(max(1, density / REFERENCE))` so denser layouts shrink
+    // proportionally while sparser ones (PyPSA-EUR) pass through
+    // unchanged.
     //
-    //   viewBox          boost   nodeBoost   r/viewBox
-    //   8 K (bare_env)   1.46    1.0 (floor) 0.34 %  ← native
-    //   1.4 M (fr225)    19.32   60.4        0.12 %  ← unchanged
-    //   4.4 M (Europe)   34.25   110.2       0.069 % ← unchanged
-    //   ≥ 75 M (huge)    ≥ 159   250 (cap)   ≤ 0.009 %
+    // Calibration:
+    //
+    //   layout          vlCount  viewBox    density/REF  nodeBoost (before → after)
+    //   fr225_400       1 196    1.4 M      1.02 (≈1)    60.4 → 59.7 (drift -1 %)
+    //   European        5 247    4.4 M      0.56 (clip1) 110.2 → 110.2 (unchanged)
+    //   bare_env        18 141   1.64 M     13.3         65.8 → 18.1 ← fix
+    //   tiny dense fix  1 000    20 K       4 167        3.7 → 1.0 (floor)
+    //   tiny native     —        ≤ 8 K      —            1.0 (offset)
     //
     // Tuning knobs:
-    //   - bare_env-style grids still too big? raise OFFSET (e.g. 2.0)
-    //   - Large grids still too small?        raise GAIN
-    //   - Hard "always native" floor?         raise FLOOR
+    //   - bare-env-style grids still too big?      raise NODE_BOOST_GAIN  (does
+    //                                              hardly anything for very
+    //                                              high density, lifts the
+    //                                              PyPSA-scale grids)
+    //   - PyPSA grids feel too small?              raise NODE_BOOST_GAIN
+    //   - Want the density penalty to bite earlier? lower VL_DENSITY_REFERENCE
+    //   - Hard "always native" floor?              raise NODE_BOOST_FLOOR
     const NODE_BOOST_FLOOR = 1.0;
     const NODE_BOOST_OFFSET = 1.5;
     const NODE_BOOST_GAIN = 10 / 3;
     const NODE_BOOST_CEILING = 250;
+    // VLs per unit² above which the formula starts shrinking nodes
+    // proportionally to `sqrt(density)`. Calibrated against fr225_400:
+    // 1 196 VLs / (1.4 M × 1.39 M) ≈ 6 × 10⁻¹⁰. Less-dense layouts
+    // (European, fr400) sit BELOW the reference and pass through; more
+    // dense ones (bare_env operator reference at ~13× denser) get
+    // scaled down by sqrt(13) ≈ 3.6×.
+    const VL_DENSITY_REFERENCE = 6e-10;
+
+    const viewBoxArea = viewBox.w * viewBox.h;
+    const density = vlCount / Math.max(1, viewBoxArea);
+    const densitySuppress = Math.sqrt(Math.max(1, density / VL_DENSITY_REFERENCE));
+    const rawBoost = (boost - NODE_BOOST_OFFSET) * NODE_BOOST_GAIN + 1;
     const nodeBoost = Math.max(
         NODE_BOOST_FLOOR,
-        Math.min(
-            NODE_BOOST_CEILING,
-            (boost - NODE_BOOST_OFFSET) * NODE_BOOST_GAIN + 1,
-        ),
+        Math.min(NODE_BOOST_CEILING, rawBoost / densitySuppress),
     );
     const nodeBoostStr = nodeBoost.toFixed(2);
 
