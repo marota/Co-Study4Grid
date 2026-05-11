@@ -232,7 +232,6 @@ export function useSettings(): SettingsState {
     pre_existing_overload_threshold: cfg.pre_existing_overload_threshold,
     ignore_reconnections: cfg.ignore_reconnections,
     pypowsybl_fast_mode: cfg.pypowsybl_fast_mode,
-    force_layout: cfg.force_layout ?? false,
   }), []);
 
   // Persist settings to backend config file whenever they change
