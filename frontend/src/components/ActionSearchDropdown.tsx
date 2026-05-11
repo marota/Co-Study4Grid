@@ -41,6 +41,10 @@ interface ActionSearchDropdownProps {
     onResimulateTap: (actionId: string, newTap: number) => void;
     onShowTooltip: (e: React.MouseEvent, content: React.ReactNode) => void;
     onHideTooltip: () => void;
+    /** Same threshold the action cards use to colour their max-ρ
+     *  severity (green / orange / red). Plumbed through so the new
+     *  "Simulated Max ρ" column matches the rest of the UI. */
+    monitoringFactor: number;
     /** When true, render as a wide centered overlay (mirroring the
      *  Combine Actions modal layout) so the score table has room for
      *  its action ID, MW Start and Score columns. Used when scoring
@@ -72,6 +76,7 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
     onResimulateTap,
     onShowTooltip,
     onHideTooltip,
+    monitoringFactor,
     wide = false,
 }) => {
     const dropdownStyle: React.CSSProperties = wide
@@ -184,6 +189,7 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                                 onResimulateTap={onResimulateTap}
                                 onShowTooltip={onShowTooltip}
                                 onHideTooltip={onHideTooltip}
+                                monitoringFactor={monitoringFactor}
                             />
                         )}
 
@@ -298,6 +304,7 @@ interface ScoreTableProps {
     onResimulateTap: (actionId: string, newTap: number) => void;
     onShowTooltip: (e: React.MouseEvent, content: React.ReactNode) => void;
     onHideTooltip: () => void;
+    monitoringFactor: number;
 }
 
 const ScoreTable: React.FC<ScoreTableProps> = ({
@@ -315,6 +322,7 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
     onResimulateTap,
     onShowTooltip,
     onHideTooltip,
+    monitoringFactor,
 }) => {
     return (
         <div style={{ padding: '0 8px', marginBottom: '8px' }}>
@@ -360,11 +368,15 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                         <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', border: `1px solid ${colors.border}`, borderTop: 'none' }}>
                             <thead>
                                 <tr style={{ background: colors.surfaceMuted, borderBottom: `1px solid ${colors.border}` }}>
-                                    <th style={{ textAlign: 'left', padding: '4px 6px', width: hasEditableColumn ? '40%' : '55%' }}>Action</th>
-                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: '15%' }}>{isPstType ? 'Tap Start' : 'MW Start'}</th>
-                                    {isLsOrRcType && <th style={{ textAlign: 'right', padding: '4px 6px', width: '20%' }}>Target MW</th>}
-                                    {isPstType && <th style={{ textAlign: 'right', padding: '4px 6px', width: '20%' }}>Target Tap</th>}
-                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: hasEditableColumn ? '15%' : '25%' }}>Score</th>
+                                    <th style={{ textAlign: 'left', padding: '4px 6px', width: hasEditableColumn ? '32%' : '45%' }}>Action</th>
+                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: '12%' }}>{isPstType ? 'Tap Start' : 'MW Start'}</th>
+                                    {isLsOrRcType && <th style={{ textAlign: 'right', padding: '4px 6px', width: '14%' }}>Target MW</th>}
+                                    {isPstType && <th style={{ textAlign: 'right', padding: '4px 6px', width: '14%' }}>Target Tap</th>}
+                                    <th
+                                        style={{ textAlign: 'right', padding: '4px 6px', width: '20%' }}
+                                        title="Max ρ on the contingency's overloads after this action has been simulated (dash when not yet simulated)."
+                                    >Simulated Max ρ</th>
+                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: hasEditableColumn ? '12%' : '20%' }}>Score</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -537,6 +549,11 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                                                     />
                                                 </td>
                                             )}
+                                            <SimulatedMaxRhoCell
+                                                actionId={item.actionId}
+                                                detail={isComputed ? actions[item.actionId] : null}
+                                                monitoringFactor={monitoringFactor}
+                                            />
                                             <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace' }}>
                                                 {item.score.toFixed(2)}
                                             </td>
@@ -549,6 +566,84 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                 );
             })}
         </div>
+    );
+};
+
+// --- SimulatedMaxRhoCell ---
+//
+// Renders the "Simulated Max ρ" column for a single score-table row.
+// Once the action has been simulated (``detail`` non-null), shows the
+// max-ρ percentage colour-coded against ``monitoringFactor`` with the
+// same green / orange / red severity rule the ActionCard severity
+// stripe uses (see ``components/ActionCard.tsx``: > mf → red, > mf
+// - 0.05 → orange, otherwise → green). Surfaces ``max_rho_line`` as
+// a native title tooltip so the operator can identify which line
+// drove the loading without leaving the modal. Non-convergent and
+// islanded simulations render the matching warning glyph instead of
+// a numeric value.
+
+interface SimulatedMaxRhoCellProps {
+    actionId: string;
+    detail: ActionDetail | null;
+    monitoringFactor: number;
+}
+
+const SimulatedMaxRhoCell: React.FC<SimulatedMaxRhoCellProps> = ({ actionId, detail, monitoringFactor }) => {
+    if (!detail) {
+        return (
+            <td
+                data-testid={`sim-max-rho-${actionId}`}
+                data-state="pending"
+                style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: colors.textTertiary }}
+            >—</td>
+        );
+    }
+    if (detail.non_convergence) {
+        return (
+            <td
+                data-testid={`sim-max-rho-${actionId}`}
+                data-state="divergent"
+                title={detail.non_convergence || undefined}
+                style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: colors.danger, fontWeight: 600 }}
+            >divergent</td>
+        );
+    }
+    if (detail.is_islanded) {
+        return (
+            <td
+                data-testid={`sim-max-rho-${actionId}`}
+                data-state="islanded"
+                title={detail.disconnected_mw != null ? `Islanded — ${detail.disconnected_mw.toFixed(1)} MW disconnected` : 'Islanded'}
+                style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: colors.danger, fontWeight: 600 }}
+            >islanded</td>
+        );
+    }
+    const maxRho = detail.max_rho;
+    if (maxRho == null) {
+        return (
+            <td
+                data-testid={`sim-max-rho-${actionId}`}
+                data-state="pending"
+                style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: colors.textTertiary }}
+            >—</td>
+        );
+    }
+    const severity =
+        maxRho > monitoringFactor ? 'red'
+            : maxRho > monitoringFactor - 0.05 ? 'orange'
+                : 'green';
+    const severityColor = severity === 'red' ? colors.danger
+        : severity === 'orange' ? colors.warningStrong
+            : colors.success;
+    return (
+        <td
+            data-testid={`sim-max-rho-${actionId}`}
+            data-state={severity}
+            title={detail.max_rho_line ? `Max ρ on ${detail.max_rho_line}` : undefined}
+            style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: severityColor, fontWeight: 600 }}
+        >
+            {(maxRho * 100).toFixed(1)}%
+        </td>
     );
 };
 

@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { interactionLogger } from '../utils/interactionLogger';
@@ -606,6 +606,114 @@ describe('ActionFeed', () => {
             undefined,
             undefined,
         );
+    });
+
+    // Operator-requested addition: chain several manual simulations
+    // from the wide score-table modal without it auto-closing each
+    // round. Mirrors the Combine Actions modal's contract — the
+    // operator typically wants to compare a handful of candidate
+    // remedies before committing. The narrow no-score search still
+    // auto-dismisses (one-shot "type an ID, hit enter" flow).
+    describe('manual-selection modal lifecycle (multi-simulation flow)', () => {
+        // ``defaultProps.onManualActionAdded`` (and the api module
+        // mocks) are shared ``vi.fn()`` references at the describe-block
+        // scope, so a successful simulation in this group would
+        // otherwise carry call history into the unrelated
+        // race-condition guard below ("awaits simulation before
+        // calling onManualActionAdded …"). Clear before each test in
+        // this group AND after the group finishes so the surrounding
+        // suite sees a clean slate.
+        beforeEach(() => {
+            vi.clearAllMocks();
+        });
+        afterEach(() => {
+            vi.clearAllMocks();
+        });
+
+        const buildScoredProps = () => ({
+            ...defaultProps,
+            actionScores: {
+                line_reconnection: {
+                    scores: { reco_A: 5, reco_B: 4 },
+                    params: {},
+                },
+            } as Record<string, Record<string, unknown>>,
+            actions: {} as Record<string, ActionDetail>,
+        });
+
+        const mockSimulateOk = (actionId: string) => {
+            vi.mocked(api.simulateManualAction).mockResolvedValueOnce({
+                action_id: actionId,
+                description_unitaire: 'simulated',
+                rho_before: [1.05],
+                rho_after: [0.85],
+                max_rho: 0.85,
+                max_rho_line: 'LINE_1',
+                is_rho_reduction: true,
+                is_islanded: false,
+                n_components: 1,
+                disconnected_mw: 0,
+                non_convergence: null,
+                lines_overloaded: ['LINE_1'],
+                lines_overloaded_after: [],
+                load_shedding_details: [],
+                curtailment_details: [],
+                pst_details: [],
+                action_topology: emptyTopo,
+                is_estimated: false,
+            } as Awaited<ReturnType<typeof api.simulateManualAction>>);
+        };
+
+        it('keeps the wide score-table modal open after a successful manual simulation', async () => {
+            const props = buildScoredProps();
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+
+            // Wide layout active — scored actions visible.
+            expect(screen.getByTestId('manual-selection-wide')).toBeInTheDocument();
+            expect(screen.queryByTestId('manual-selection-dropdown')).not.toBeInTheDocument();
+
+            // Wait for the available-actions fetch to settle before the
+            // ScoreTable renders the row links.
+            await waitFor(() => {
+                expect(screen.queryByText('Loading actions...')).not.toBeInTheDocument();
+            });
+
+            mockSimulateOk('reco_A');
+            fireEvent.click(screen.getByText('reco_A'));
+
+            await waitFor(() => {
+                expect(api.simulateManualAction).toHaveBeenCalledTimes(1);
+            });
+            // The wide overlay must still be mounted — pre-fix it
+            // unmounted on every simulation, forcing the operator
+            // to reopen + re-scroll for the next candidate.
+            expect(screen.getByTestId('manual-selection-wide')).toBeInTheDocument();
+            // The score list is preserved so the next row is one
+            // click away (no need to re-filter / re-search).
+            expect(screen.getByText('reco_B')).toBeInTheDocument();
+        });
+
+        it('still closes the narrow no-score dropdown after a manual ID is simulated', async () => {
+            // No actionScores → narrow layout, traditional one-shot
+            // flow. Closing on success is the expected UX.
+            render(<ActionFeed {...defaultProps} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            expect(screen.getByTestId('manual-selection-dropdown')).toBeInTheDocument();
+
+            const searchInput = screen.getByPlaceholderText(/Search action/);
+            fireEvent.change(searchInput, { target: { value: 'custom_42' } });
+            await waitFor(() => {
+                expect(screen.queryByText('Loading actions...')).not.toBeInTheDocument();
+            });
+
+            mockSimulateOk('custom_42');
+            fireEvent.click(screen.getByText(/Simulate manual ID:/));
+
+            await waitFor(() => {
+                expect(screen.queryByTestId('manual-selection-dropdown')).not.toBeInTheDocument();
+            });
+        });
     });
 
     it('hides actions that classify as disco even when their score type is pst, when filter is "pst"', async () => {
