@@ -147,5 +147,160 @@ def test_simulate_manual_action_for_combined(recommender):
     assert stored["is_estimated"] is False
     assert stored["rho_after"] is not None
 
+
+def _wire_manual_action_mocks(recommender, name_line, base_rho, n1_rho, after_rho):
+    """Common scaffolding for simulate_manual_action ctx-key tests.
+
+    Mocks the smallest service surface needed to drive
+    ``simulation_mixin.simulate_manual_action`` end-to-end with two
+    monitored lines and a single-action ``"act_solo"`` entry. Returns
+    the obs mocks so tests can poke them post-call.
+    """
+    config.MONITORING_FACTOR_THERMAL_LIMITS = 0.95
+    config.PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD = 0.02
+
+    env = MagicMock()
+    recommender._get_simulation_env = MagicMock(return_value=env)
+    recommender._get_monitoring_parameters = MagicMock(
+        return_value=(set(name_line), {l: 100 for l in name_line})
+    )
+    recommender._get_n_variant = MagicMock()
+    recommender._get_contingency_variant = MagicMock()
+    recommender._ensure_contingency_state_ready = MagicMock()
+    recommender._fetch_n_and_contingency_observations = MagicMock()
+
+    obs_n = MagicMock(
+        rho=np.array(base_rho), name_line=name_line,
+        n_components=1, main_component_load_mw=1000.0,
+    )
+    obs_n1 = MagicMock(
+        rho=np.array(n1_rho), name_line=name_line,
+        n_components=1, main_component_load_mw=1000.0,
+    )
+    obs_after = MagicMock(
+        rho=np.array(after_rho), name_line=name_line,
+        n_components=1, main_component_load_mw=1000.0,
+    )
+    obs_n1.simulate.return_value = (obs_after, None, None, {"exception": None})
+    recommender._fetch_n_and_contingency_observations.return_value = (obs_n, obs_n1)
+
+    env.action_space.return_value = MagicMock()
+    recommender._dict_action = {
+        "act_solo": {"content": "c", "description_unitaire": "Desc"}
+    }
+    return obs_n, obs_n1, obs_after
+
+
+# Regression for the ``lines_overloaded_names`` ctx-key fix in
+# ``simulation_mixin.simulate_manual_action``. Step1 populates
+# ``_analysis_context["lines_overloaded_names"]`` (see
+# ``test_overload_filtering.py``) but the consumer only read
+# ``ctx.get("lines_overloaded")`` — silently falling through to the
+# vectorised obs-based path and re-emitting grid2op's synthetic
+# ``line_<i>`` names instead of the pypowsybl-style friendly
+# identifiers step1 had already resolved. The frontend's
+# ``displayName`` resolver has no mapping for the synthetic strings,
+# so manual-sim action cards displayed e.g. ``line_0: 90.7 %``
+# instead of ``BEON L31CPVAN: 90.7 %``.
+def test_simulate_manual_uses_lines_overloaded_names_from_step1_context(recommender):
+    # rho_before / rho_after are indexed against the ctx-resolved
+    # overload list (lines_overloaded_ids in
+    # ``compute_action_metrics``). Picking a single-overload ctx
+    # against a two-line ``name_line`` lets us assert on the array
+    # cardinality: prior to the fix the consumer fell through to
+    # vectorised recomputation and emitted a TWO-line rho_before
+    # (both lines on rho ≥ 1.0), proving the wrong code path ran.
+    name_line = ["BEON L31CPVAN", "DARCEL61VIELM"]
+    _wire_manual_action_mocks(
+        recommender, name_line,
+        base_rho=[0.10, 0.10], n1_rho=[1.20, 1.15], after_rho=[0.90, 1.10],
+    )
+    # Step1 shape — the resolved friendly identifiers go under
+    # ``lines_overloaded_names``, NOT ``lines_overloaded``.
+    recommender._analysis_context = {
+        "lines_overloaded_names": ["BEON L31CPVAN"],
+        "lines_we_care_about": set(name_line),
+    }
+
+    result = recommender.simulate_manual_action("act_solo", "P.SAOL31RONCI")
+
+    # Single ctx overload → single rho_before / rho_after entry.
+    # Pre-fix this came back with two entries because the consumer
+    # silently fell through to obs-based recomputation, which
+    # masked both 1.20- and 1.15-loaded lines on the N-1 state.
+    assert len(result["rho_before"]) == 1, (
+        "post-step1 manual sims must reuse the step1 overload set, "
+        "not fall through to obs-based recomputation"
+    )
+    assert len(result["rho_after"]) == 1
+
+
+# Session-reload writes the same field under the legacy
+# ``lines_overloaded`` key (see
+# ``RecommenderService.restore_analysis_context``). The dual-key
+# read MUST keep that path working — otherwise a reloaded session
+# would lose its overload set on the next manual simulation.
+def test_simulate_manual_uses_lines_overloaded_from_session_reload_context(recommender):
+    name_line = ["BEON L31CPVAN", "DARCEL61VIELM"]
+    _wire_manual_action_mocks(
+        recommender, name_line,
+        base_rho=[0.10, 0.10], n1_rho=[1.20, 1.15], after_rho=[0.90, 1.10],
+    )
+    # Session-reload shape — the legacy key.
+    recommender._analysis_context = {
+        "lines_overloaded": ["BEON L31CPVAN"],
+        "lines_we_care_about": set(name_line),
+    }
+
+    result = recommender.simulate_manual_action("act_solo", "P.SAOL31RONCI")
+
+    assert len(result["rho_before"]) == 1
+    assert len(result["rho_after"]) == 1
+
+
+# ``lines_overloaded_names`` takes priority over ``lines_overloaded``
+# when both keys are present — matches the ordering compute_superposition
+# already used.
+def test_simulate_manual_lines_overloaded_names_wins_over_legacy_key(recommender):
+    name_line = ["A", "B", "C"]
+    _wire_manual_action_mocks(
+        recommender, name_line,
+        base_rho=[0.10, 0.10, 0.10], n1_rho=[1.20, 1.10, 1.05],
+        after_rho=[0.90, 0.85, 0.80],
+    )
+    # Stale legacy key spans two lines; the live names-key has a
+    # single entry. The dual-key resolver MUST honour the
+    # names-key — proven by the single-entry rho_before length.
+    recommender._analysis_context = {
+        "lines_overloaded_names": ["A"],
+        "lines_overloaded": ["A", "B"],
+        "lines_we_care_about": set(name_line),
+    }
+
+    result = recommender.simulate_manual_action("act_solo", "ctg")
+
+    assert len(result["rho_before"]) == 1
+
+
+# Without analysis context AND without a caller-supplied list the
+# resolver falls through to obs-based recomputation — same path as
+# before the fix. Pins the regression boundary so a future change
+# can't accidentally start treating the empty-ctx case as a step1
+# context.
+def test_simulate_manual_falls_back_to_obs_when_ctx_empty(recommender):
+    name_line = ["A", "B"]
+    _wire_manual_action_mocks(
+        recommender, name_line,
+        base_rho=[0.10, 0.10], n1_rho=[1.20, 1.15], after_rho=[0.90, 1.10],
+    )
+    recommender._analysis_context = None
+
+    result = recommender.simulate_manual_action("act_solo", "ctg")
+
+    # Both N-1 rho values cross the 1.0 threshold and neither
+    # pre-existed in N — the vectorised path picks them both up.
+    assert len(result["rho_before"]) == 2
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

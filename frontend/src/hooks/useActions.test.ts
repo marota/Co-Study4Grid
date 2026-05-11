@@ -240,4 +240,121 @@ describe('useActions — interaction logging', () => {
             expect(log.some(e => e.type === 'pst_tap_resimulated' && e.details.action_id === 'act_7')).toBe(false);
         });
     });
+
+    // Regression for the manual-sim overload-name fix. The backend's
+    // ``simulate_manual_action`` returns ``lines_overloaded`` populated
+    // from ``obs.name_line`` — grid2op's synthetic ``line_<i>`` strings
+    // when no ``_analysis_context`` is set yet, which the frontend's
+    // ``displayName`` resolver has no mapping for. The hook used to
+    // promote that array into ``result.lines_overloaded`` whenever the
+    // prev value was empty, poisoning the ActionCard's "Overload
+    // loading after" row. Now App.tsx falls back to
+    // ``n1Diagram.lines_overloaded`` (authoritative pypowsybl-style
+    // identifiers) and the hook leaves ``lines_overloaded`` empty so
+    // the fallback can take effect. Only step1 / session reload write
+    // the field.
+    describe('lines_overloaded poisoning regression', () => {
+        const detail: ActionDetail = {
+            description_unitaire: 'test',
+            rho_before: [1.1],
+            rho_after: [0.9],
+            max_rho: 0.9,
+            max_rho_line: 'LINE_X',
+            is_rho_reduction: true,
+        };
+
+        it('handleManualActionAdded does NOT promote response lines_overloaded into result.lines_overloaded (prev is null)', () => {
+            const { result } = renderHook(() => useActions());
+            let captured: AnalysisResult | null = null;
+            const setResult = (updater: unknown) => {
+                if (typeof updater === 'function') {
+                    captured = (updater as (p: AnalysisResult | null) => AnalysisResult | null)(null);
+                }
+            };
+
+            act(() => {
+                result.current.handleManualActionAdded(
+                    'manual_x',
+                    detail,
+                    // Manual-sim response field — grid2op synthetic names.
+                    ['line_0', 'line_1'],
+                    setResult as React.Dispatch<React.SetStateAction<AnalysisResult | null>>,
+                    vi.fn(),
+                );
+            });
+
+            expect(captured).not.toBeNull();
+            // Stays empty — App.tsx will fall back to n1Diagram.
+            expect(captured!.lines_overloaded).toEqual([]);
+            // The action detail still lands in result.actions.
+            expect(captured!.actions.manual_x).toBeDefined();
+            expect(captured!.actions.manual_x.is_manual).toBe(true);
+        });
+
+        it('handleManualActionAdded preserves an existing analysis result lines_overloaded (post-step1)', () => {
+            const { result } = renderHook(() => useActions());
+            let captured: AnalysisResult | null = null;
+            const setResult = (updater: unknown) => {
+                if (typeof updater === 'function') {
+                    captured = (updater as (p: AnalysisResult | null) => AnalysisResult | null)({
+                        pdf_path: null, pdf_url: null, actions: {},
+                        // step1 wrote the friendly pypowsybl-style names.
+                        lines_overloaded: ['BEON L31CPVAN'],
+                        message: '', dc_fallback: false,
+                    });
+                }
+            };
+
+            act(() => {
+                result.current.handleManualActionAdded(
+                    'manual_x',
+                    detail,
+                    // Even when the response would have polluted the field
+                    // with grid2op synthetic names, the existing step1
+                    // value must survive.
+                    ['line_0'],
+                    setResult as React.Dispatch<React.SetStateAction<AnalysisResult | null>>,
+                    vi.fn(),
+                );
+            });
+
+            expect(captured!.lines_overloaded).toEqual(['BEON L31CPVAN']);
+        });
+
+        it('handleActionResimulated does NOT promote response lines_overloaded into result.lines_overloaded', () => {
+            const { result } = renderHook(() => useActions());
+            let captured: AnalysisResult | null = null;
+            const setResult = (updater: unknown) => {
+                if (typeof updater === 'function') {
+                    captured = (updater as (p: AnalysisResult | null) => AnalysisResult | null)({
+                        pdf_path: null, pdf_url: null,
+                        actions: {
+                            existing: {
+                                description_unitaire: 'before',
+                                rho_before: [1.1], rho_after: [1.0],
+                                max_rho: 1.0, max_rho_line: 'A',
+                                is_rho_reduction: false, is_manual: false,
+                            },
+                        },
+                        // Pre-existing analysis-result list — must stay.
+                        lines_overloaded: ['BEON L31CPVAN'],
+                        message: '', dc_fallback: false,
+                    });
+                }
+            };
+
+            act(() => {
+                result.current.handleActionResimulated(
+                    'existing',
+                    detail,
+                    ['line_0', 'line_1'],
+                    setResult as React.Dispatch<React.SetStateAction<AnalysisResult | null>>,
+                    vi.fn(),
+                );
+            });
+
+            expect(captured!.lines_overloaded).toEqual(['BEON L31CPVAN']);
+            expect(captured!.actions.existing.rho_after).toEqual([0.9]);
+        });
+    });
 });
