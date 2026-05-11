@@ -78,8 +78,6 @@ export interface SettingsState {
   setPreExistingOverloadThreshold: (v: number) => void;
   pypowsyblFastMode: boolean;
   setPypowsyblFastMode: (v: boolean) => void;
-  forceLayout: boolean;
-  setForceLayout: (v: boolean) => void;
 
   // Action dict info
   actionDictFileName: string | null;
@@ -116,7 +114,6 @@ export interface SettingsState {
     pre_existing_overload_threshold: number;
     ignore_reconnections: boolean;
     pypowsybl_fast_mode: boolean;
-    force_layout: boolean;
   };
   applyConfigResponse: (configRes: Record<string, unknown>) => void;
   createCurrentBackup: () => SettingsBackup;
@@ -148,7 +145,6 @@ export function useSettings(): SettingsState {
   const [monitoringFactor, setMonitoringFactor] = useState(0.95);
   const [preExistingOverloadThreshold, setPreExistingOverloadThreshold] = useState(0.02);
   const [pypowsyblFastMode, setPypowsyblFastMode] = useState(true);
-  const [forceLayout, setForceLayout] = useState(false);
 
   const [actionDictFileName, setActionDictFileName] = useState<string | null>(null);
   const [actionDictStats, setActionDictStats] = useState<{ reco: number; disco: number; pst: number; open_coupling: number; close_coupling: number; total: number } | null>(null);
@@ -179,7 +175,6 @@ export function useSettings(): SettingsState {
     if (cfg.pre_existing_overload_threshold !== undefined) setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
     if (cfg.ignore_reconnections !== undefined) setIgnoreReconnections(cfg.ignore_reconnections);
     if (cfg.pypowsybl_fast_mode !== undefined) setPypowsyblFastMode(cfg.pypowsybl_fast_mode);
-    if (cfg.force_layout !== undefined) setForceLayout(cfg.force_layout);
   }, []);
 
   // Load persisted config from backend on mount
@@ -261,7 +256,6 @@ export function useSettings(): SettingsState {
       pre_existing_overload_threshold: preExistingOverloadThreshold,
       ignore_reconnections: ignoreReconnections,
       pypowsybl_fast_mode: pypowsyblFastMode,
-      force_layout: forceLayout,
     };
 
     // Sync to localStorage for instant UI availability on next reload/test
@@ -276,7 +270,7 @@ export function useSettings(): SettingsState {
   }, [networkPath, actionPath, layoutPath, outputFolderPath, linesMonitoringPath,
     minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
     minPst, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, monitoringFactor, preExistingOverloadThreshold,
-    ignoreReconnections, pypowsyblFastMode, forceLayout]);
+    ignoreReconnections, pypowsyblFastMode]);
 
   const pickSettingsPath = useCallback(async (type: 'file' | 'dir', setter: (path: string) => void) => {
     try {
@@ -329,8 +323,7 @@ export function useSettings(): SettingsState {
     preExistingOverloadThreshold,
     ignoreReconnections,
     pypowsyblFastMode,
-    forceLayout,
-  }), [networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode, forceLayout]);
+  }), [networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
 
   const handleOpenSettings = useCallback((tab: 'recommender' | 'configurations' | 'paths' = 'paths') => {
     interactionLogger.record('settings_opened', { tab });
@@ -358,7 +351,6 @@ export function useSettings(): SettingsState {
       setPreExistingOverloadThreshold(settingsBackup.preExistingOverloadThreshold);
       setIgnoreReconnections(settingsBackup.ignoreReconnections ?? false);
       setPypowsyblFastMode(settingsBackup.pypowsyblFastMode ?? true);
-      setForceLayout(settingsBackup.forceLayout ?? false);
     }
     setIsSettingsOpen(false);
   }, [settingsBackup]);
@@ -380,8 +372,7 @@ export function useSettings(): SettingsState {
     pre_existing_overload_threshold: preExistingOverloadThreshold,
     ignore_reconnections: ignoreReconnections,
     pypowsybl_fast_mode: pypowsyblFastMode,
-    force_layout: forceLayout,
-  }), [networkPath, actionPath, layoutPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode, forceLayout]);
+  }), [networkPath, actionPath, layoutPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
 
   const applyConfigResponse = useCallback((configRes: Record<string, unknown>) => {
     if (configRes && configRes.total_lines_count !== undefined) {
@@ -417,7 +408,6 @@ export function useSettings(): SettingsState {
     monitoringFactor, setMonitoringFactor,
     preExistingOverloadThreshold, setPreExistingOverloadThreshold,
     pypowsyblFastMode, setPypowsyblFastMode,
-    forceLayout, setForceLayout,
     actionDictFileName, setActionDictFileName,
     actionDictStats, setActionDictStats,
     isSettingsOpen, setIsSettingsOpen,
@@ -434,7 +424,7 @@ export function useSettings(): SettingsState {
     networkPath, actionPath, layoutPath, outputFolderPath,
     minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
     nPrioritizedActions, minPst, minLoadShedding, minRenewableCurtailmentActions, ignoreReconnections,
-    linesMonitoringPath, monitoredLinesCount, totalLinesCount, showMonitoringWarning, monitoringFactor, preExistingOverloadThreshold, pypowsyblFastMode, forceLayout,
+    linesMonitoringPath, monitoredLinesCount, totalLinesCount, showMonitoringWarning, monitoringFactor, preExistingOverloadThreshold, pypowsyblFastMode,
     actionDictFileName, actionDictStats,
     isSettingsOpen, settingsTab, settingsBackup,
     configFilePath, changeConfigFilePath,

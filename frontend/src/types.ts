@@ -22,7 +22,6 @@ export interface ConfigRequest {
     ignore_reconnections?: boolean;
     pypowsybl_fast_mode?: boolean;
     layout_path?: string;
-    force_layout?: boolean;
 }
 
 export interface AnalysisRequest {
@@ -316,7 +315,6 @@ export interface SettingsBackup {
     ignoreReconnections?: boolean;
     pypowsyblFastMode?: boolean;
     layoutPath?: string;
-    forceLayout?: boolean;
 }
 
 export interface RecommenderDisplayConfig {
