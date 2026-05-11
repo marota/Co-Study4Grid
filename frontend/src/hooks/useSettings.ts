@@ -16,7 +16,22 @@ export interface SettingsState {
   configFilePath: string;
   setConfigFilePath: (v: string) => void;
   lastActiveConfigFilePath: string;
-  changeConfigFilePath: (newPath: string) => Promise<void>;
+  /**
+   * Switch the active config file: POSTs the new path to the backend,
+   * applies the loaded config to every settings field, and **returns the
+   * fresh `UserConfig` object**. Callers that need to chain a follow-up
+   * backend call (e.g. `api.updateConfig` in `applySettingsImmediate`)
+   * MUST use the returned value rather than calling `buildConfigRequest()`
+   * — React state updates from `applyLoadedConfig` haven't flushed yet
+   * when this resolves, so reading via `buildConfigRequest()` still
+   * captures the previous render's values (the stale-closure bug fixed
+   * 2026-05-08).
+   */
+  changeConfigFilePath: (newPath: string) => Promise<UserConfig>;
+  /** Convert a fresh `UserConfig` (typically the resolved value of
+   *  `changeConfigFilePath`) into the same `ConfigRequest` shape that
+   *  `buildConfigRequest()` produces, bypassing React state. */
+  configRequestFromUserConfig: (cfg: UserConfig) => ReturnType<SettingsState['buildConfigRequest']>;
 
   // Paths
   networkPath: string;
@@ -63,6 +78,8 @@ export interface SettingsState {
   setPreExistingOverloadThreshold: (v: number) => void;
   pypowsyblFastMode: boolean;
   setPypowsyblFastMode: (v: boolean) => void;
+  forceLayout: boolean;
+  setForceLayout: (v: boolean) => void;
 
   // Action dict info
   actionDictFileName: string | null;
@@ -99,6 +116,7 @@ export interface SettingsState {
     pre_existing_overload_threshold: number;
     ignore_reconnections: boolean;
     pypowsybl_fast_mode: boolean;
+    force_layout: boolean;
   };
   applyConfigResponse: (configRes: Record<string, unknown>) => void;
   createCurrentBackup: () => SettingsBackup;
@@ -130,6 +148,7 @@ export function useSettings(): SettingsState {
   const [monitoringFactor, setMonitoringFactor] = useState(0.95);
   const [preExistingOverloadThreshold, setPreExistingOverloadThreshold] = useState(0.02);
   const [pypowsyblFastMode, setPypowsyblFastMode] = useState(true);
+  const [forceLayout, setForceLayout] = useState(false);
 
   const [actionDictFileName, setActionDictFileName] = useState<string | null>(null);
   const [actionDictStats, setActionDictStats] = useState<{ reco: number; disco: number; pst: number; open_coupling: number; close_coupling: number; total: number } | null>(null);
@@ -160,6 +179,7 @@ export function useSettings(): SettingsState {
     if (cfg.pre_existing_overload_threshold !== undefined) setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
     if (cfg.ignore_reconnections !== undefined) setIgnoreReconnections(cfg.ignore_reconnections);
     if (cfg.pypowsybl_fast_mode !== undefined) setPypowsyblFastMode(cfg.pypowsybl_fast_mode);
+    if (cfg.force_layout !== undefined) setForceLayout(cfg.force_layout);
   }, []);
 
   // Load persisted config from backend on mount
@@ -178,7 +198,7 @@ export function useSettings(): SettingsState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const changeConfigFilePath = useCallback(async (newPath: string) => {
+  const changeConfigFilePath = useCallback(async (newPath: string): Promise<UserConfig> => {
     const result = await api.setConfigFilePath(newPath);
     setConfigFilePath(result.config_file_path);
     lastConfigFilePathRef.current = result.config_file_path;
@@ -186,7 +206,39 @@ export function useSettings(): SettingsState {
     configLoadedRef.current = false;
     applyLoadedConfig(result.config);
     configLoadedRef.current = true;
+    return result.config;
   }, [applyLoadedConfig]);
+
+  /**
+   * Mirror `buildConfigRequest()` but read every value from the passed
+   * `UserConfig` instead of from React state. Used by
+   * `applySettingsImmediate` / `handleLoadConfig` immediately after
+   * `await changeConfigFilePath()` resolves: at that point the
+   * `applyLoadedConfig` setters have only been QUEUED, not flushed, so
+   * the `buildConfigRequest` closure still captures the previous
+   * render's values. Skipping React state and reading directly from the
+   * just-resolved config keeps the next backend call in lockstep with
+   * the file the operator just loaded.
+   */
+  const configRequestFromUserConfig = useCallback((cfg: UserConfig) => ({
+    network_path: cfg.network_path,
+    action_file_path: cfg.action_file_path,
+    layout_path: cfg.layout_path ?? '',
+    min_line_reconnections: cfg.min_line_reconnections,
+    min_close_coupling: cfg.min_close_coupling,
+    min_open_coupling: cfg.min_open_coupling,
+    min_line_disconnections: cfg.min_line_disconnections,
+    min_pst: cfg.min_pst,
+    min_load_shedding: cfg.min_load_shedding,
+    min_renewable_curtailment_actions: cfg.min_renewable_curtailment_actions,
+    n_prioritized_actions: cfg.n_prioritized_actions,
+    lines_monitoring_path: cfg.lines_monitoring_path ?? '',
+    monitoring_factor: cfg.monitoring_factor,
+    pre_existing_overload_threshold: cfg.pre_existing_overload_threshold,
+    ignore_reconnections: cfg.ignore_reconnections,
+    pypowsybl_fast_mode: cfg.pypowsybl_fast_mode,
+    force_layout: cfg.force_layout ?? false,
+  }), []);
 
   // Persist settings to backend config file whenever they change
   useEffect(() => {
@@ -209,6 +261,7 @@ export function useSettings(): SettingsState {
       pre_existing_overload_threshold: preExistingOverloadThreshold,
       ignore_reconnections: ignoreReconnections,
       pypowsybl_fast_mode: pypowsyblFastMode,
+      force_layout: forceLayout,
     };
 
     // Sync to localStorage for instant UI availability on next reload/test
@@ -223,7 +276,7 @@ export function useSettings(): SettingsState {
   }, [networkPath, actionPath, layoutPath, outputFolderPath, linesMonitoringPath,
     minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
     minPst, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, monitoringFactor, preExistingOverloadThreshold,
-    ignoreReconnections, pypowsyblFastMode]);
+    ignoreReconnections, pypowsyblFastMode, forceLayout]);
 
   const pickSettingsPath = useCallback(async (type: 'file' | 'dir', setter: (path: string) => void) => {
     try {
@@ -276,7 +329,8 @@ export function useSettings(): SettingsState {
     preExistingOverloadThreshold,
     ignoreReconnections,
     pypowsyblFastMode,
-  }), [networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
+    forceLayout,
+  }), [networkPath, actionPath, layoutPath, outputFolderPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode, forceLayout]);
 
   const handleOpenSettings = useCallback((tab: 'recommender' | 'configurations' | 'paths' = 'paths') => {
     interactionLogger.record('settings_opened', { tab });
@@ -304,6 +358,7 @@ export function useSettings(): SettingsState {
       setPreExistingOverloadThreshold(settingsBackup.preExistingOverloadThreshold);
       setIgnoreReconnections(settingsBackup.ignoreReconnections ?? false);
       setPypowsyblFastMode(settingsBackup.pypowsyblFastMode ?? true);
+      setForceLayout(settingsBackup.forceLayout ?? false);
     }
     setIsSettingsOpen(false);
   }, [settingsBackup]);
@@ -325,7 +380,8 @@ export function useSettings(): SettingsState {
     pre_existing_overload_threshold: preExistingOverloadThreshold,
     ignore_reconnections: ignoreReconnections,
     pypowsybl_fast_mode: pypowsyblFastMode,
-  }), [networkPath, actionPath, layoutPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
+    force_layout: forceLayout,
+  }), [networkPath, actionPath, layoutPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode, forceLayout]);
 
   const applyConfigResponse = useCallback((configRes: Record<string, unknown>) => {
     if (configRes && configRes.total_lines_count !== undefined) {
@@ -361,6 +417,7 @@ export function useSettings(): SettingsState {
     monitoringFactor, setMonitoringFactor,
     preExistingOverloadThreshold, setPreExistingOverloadThreshold,
     pypowsyblFastMode, setPypowsyblFastMode,
+    forceLayout, setForceLayout,
     actionDictFileName, setActionDictFileName,
     actionDictStats, setActionDictStats,
     isSettingsOpen, setIsSettingsOpen,
@@ -370,16 +427,17 @@ export function useSettings(): SettingsState {
     handleOpenSettings,
     handleCloseSettings,
     buildConfigRequest,
+    configRequestFromUserConfig,
     applyConfigResponse,
     createCurrentBackup,
   }), [
     networkPath, actionPath, layoutPath, outputFolderPath,
     minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
     nPrioritizedActions, minPst, minLoadShedding, minRenewableCurtailmentActions, ignoreReconnections,
-    linesMonitoringPath, monitoredLinesCount, totalLinesCount, showMonitoringWarning, monitoringFactor, preExistingOverloadThreshold, pypowsyblFastMode,
+    linesMonitoringPath, monitoredLinesCount, totalLinesCount, showMonitoringWarning, monitoringFactor, preExistingOverloadThreshold, pypowsyblFastMode, forceLayout,
     actionDictFileName, actionDictStats,
     isSettingsOpen, settingsTab, settingsBackup,
     configFilePath, changeConfigFilePath,
-    pickSettingsPath, handleOpenSettings, handleCloseSettings, buildConfigRequest, applyConfigResponse, createCurrentBackup
+    pickSettingsPath, handleOpenSettings, handleCloseSettings, buildConfigRequest, configRequestFromUserConfig, applyConfigResponse, createCurrentBackup
   ]);
 }

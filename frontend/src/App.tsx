@@ -64,7 +64,7 @@ function App() {
     setIsSettingsOpen, setSettingsTab,
     pickSettingsPath,
     handleOpenSettings,
-    buildConfigRequest, applyConfigResponse, createCurrentBackup, setSettingsBackup
+    buildConfigRequest, configRequestFromUserConfig, applyConfigResponse, createCurrentBackup, setSettingsBackup
   } = settings;
 
   /**
@@ -816,11 +816,24 @@ function App() {
         return;
       }
 
+      // If the config file path changed, load the new file FIRST and use
+      // the resolved `UserConfig` directly to drive `api.updateConfig` —
+      // the React state queued by `applyLoadedConfig` inside
+      // `changeConfigFilePath` has not flushed yet, so reading via
+      // `buildConfigRequest()` here would replay the previous render's
+      // values and silently send the OLD config to the backend (which
+      // the auto-save effect would then persist back into the loaded
+      // file, undoing the operator's selection — see the regression
+      // test in `configUpload.repro.test.tsx`, fixed 2026-05-08).
+      let freshlyLoadedCfg: import('./api').UserConfig | null = null;
       if (configFilePath && configFilePath !== lastActiveConfigFilePath) {
-        await changeConfigFilePath(configFilePath);
+        freshlyLoadedCfg = await changeConfigFilePath(configFilePath);
       }
 
-      const configRes = await api.updateConfig(buildConfigRequest());
+      const configRequest = freshlyLoadedCfg
+        ? configRequestFromUserConfig(freshlyLoadedCfg)
+        : buildConfigRequest();
+      const configRes = await api.updateConfig(configRequest);
       applyConfigResponse(configRes as Record<string, unknown>);
 
       // Fire the 4 post-config XHRs in parallel. The base-diagram call is
@@ -863,7 +876,7 @@ function App() {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
       setError('Failed to apply settings: ' + (e.response?.data?.detail || e.message));
     }
-  }, [networkPath, actionPath, buildConfigRequest, applyConfigResponse, createCurrentBackup, setError, setSettingsBackup, setIsSettingsOpen, diagrams, configFilePath, lastActiveConfigFilePath, changeConfigFilePath, resetAllState, buildConfigInteractionDetails]);
+  }, [networkPath, actionPath, buildConfigRequest, configRequestFromUserConfig, applyConfigResponse, createCurrentBackup, setError, setSettingsBackup, setIsSettingsOpen, diagrams, configFilePath, lastActiveConfigFilePath, changeConfigFilePath, resetAllState, buildConfigInteractionDetails]);
 
   // Apply Settings entry point used by the Settings modal. If a study
   // is already loaded — whether or not analysis has been run yet — we
@@ -887,10 +900,19 @@ function App() {
     resetAllState();
 
     try {
+      // Same stale-closure trap as applySettingsImmediate — see the long
+      // comment there. After `changeConfigFilePath` resolves, the fresh
+      // `UserConfig` it returns is the source of truth for
+      // `api.updateConfig`; `buildConfigRequest()` would silently replay
+      // the previous render's React state.
+      let freshlyLoadedCfg: import('./api').UserConfig | null = null;
       if (configFilePath && configFilePath !== lastActiveConfigFilePath) {
-        await changeConfigFilePath(configFilePath);
+        freshlyLoadedCfg = await changeConfigFilePath(configFilePath);
       }
-      const configRes = await api.updateConfig(buildConfigRequest());
+      const configRequest = freshlyLoadedCfg
+        ? configRequestFromUserConfig(freshlyLoadedCfg)
+        : buildConfigRequest();
+      const configRes = await api.updateConfig(configRequest);
       applyConfigResponse(configRes as Record<string, unknown>);
 
       // See the sibling call site in `applySettingsImmediate` for context:
@@ -929,7 +951,7 @@ function App() {
     } finally {
       setConfigLoading(false);
     }
-  }, [buildConfigRequest, applyConfigResponse, setError, diagrams, networkPath, configFilePath, lastActiveConfigFilePath, changeConfigFilePath, resetAllState, buildConfigInteractionDetails]);
+  }, [buildConfigRequest, configRequestFromUserConfig, applyConfigResponse, setError, diagrams, networkPath, configFilePath, lastActiveConfigFilePath, changeConfigFilePath, resetAllState, buildConfigInteractionDetails]);
 
 
   const handleLoadStudyClick = useCallback(() => {

@@ -25,6 +25,15 @@ export const boostSvgForLargeGrid = (svgString: string, viewBox: ViewBox | null,
 
     const boost = Math.sqrt(ratio / BOOST_THRESHOLD);
     const boostStr = boost.toFixed(2);
+    // Apply a milder factor to node circles than to text / edge-info groups.
+    // On dense PyPSA-derived grids (lots of voltage levels collocated at the
+    // same urban substation) scaling the node radii by the full text-boost
+    // factor pushes neighbouring nodes into each other and produces the
+    // overlapping-circle blob the operator sees on fr225_400. Damping the
+    // node scale by a sqrt keeps zoomed-in labels readable while leaving
+    // enough whitespace around each VL to distinguish it from its peers.
+    const nodeBoost = Math.sqrt(boost);
+    const nodeBoostStr = nodeBoost.toFixed(2);
 
     try {
         const parser = new DOMParser();
@@ -75,7 +84,7 @@ export const boostSvgForLargeGrid = (svgString: string, viewBox: ViewBox | null,
             const cyNum = parseFloat(cy || '0');
 
             if (!isNaN(cxNum) && !isNaN(cyNum)) {
-                targetEl.setAttribute('transform', `${t} translate(${cxNum},${cyNum}) scale(${boostStr}) translate(${-cxNum},${-cyNum})`);
+                targetEl.setAttribute('transform', `${t} translate(${cxNum},${cyNum}) scale(${nodeBoostStr}) translate(${-cxNum},${-cyNum})`);
             }
 
             if (i % 100 === 0 && Date.now() - start > 5000) {

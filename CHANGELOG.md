@@ -7,6 +7,31 @@ and the project (informally) follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Settings modal now updates every path/parameter when a new config
+  file is loaded.** Switching the config-file path (typing then
+  clicking Apply, or clicking Apply right after typing without
+  blurring the input) used to silently send the *previous* config to
+  `/api/config`. The auto-save effect then persisted those stale
+  values back into the freshly-loaded config file, undoing the
+  operator's selection — the modal looked unchanged on reopen.
+
+  Root cause: `applySettingsImmediate` and `handleLoadConfig` called
+  `await changeConfigFilePath(...)` followed by
+  `buildConfigRequest()`. The first call queues React state updates
+  via `applyLoadedConfig`, but those don't flush until the next
+  render — so `buildConfigRequest`, a `useCallback` over the
+  pre-update closures, replayed the previous render's values.
+
+  Fix: `changeConfigFilePath` now returns the resolved `UserConfig`,
+  and a new `configRequestFromUserConfig` helper derives the request
+  shape directly from it. Both call sites in `App.tsx` use the
+  fresh value when a config switch just happened. Regression test
+  in `frontend/src/App.configUpload.test.tsx`.
+
+- _Other work in progress — new entries land here before the next
+  tagged release._
 ### Added
 
 - **"Combined only" pin filter** on the Action Overview tab and the

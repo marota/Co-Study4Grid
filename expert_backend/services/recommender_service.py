@@ -108,6 +108,13 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         # `/api/regenerate-overflow-graph` can re-invoke graph generation
         # without redoing step1 setup or action discovery.
         self._last_step2_context = None
+        # NAD layout-type opt-in. Default GEOGRAPHICAL is ~450 ms cheaper
+        # on large grids; FORCE_LAYOUT is the readability fallback for
+        # PyPSA-derived networks with collocated VLs at urban substations.
+        # Read by `DiagramMixin._default_nad_parameters` on every NAD call
+        # so the toggle flips base / N-1 / action / focused diagrams in
+        # lockstep. Set from `settings.force_layout` in `update_config`.
+        self._force_layout = False
 
     def reset(self):
         """Clear all cached analysis state. Called when loading a new study."""
@@ -152,6 +159,9 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._overflow_layout_mode = "hierarchical"
         self._overflow_layout_cache = {}
         self._last_step2_context = None
+        # NAD layout opt-in: revert to the geographic default. The next
+        # `update_config` call will re-apply the user's setting.
+        self._force_layout = False
 
     # ------------------------------------------------------------------
     # Overflow-graph layout (Hierarchical / Geo)
@@ -349,6 +359,13 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
             config.LAYOUT_FILE_PATH = Path(settings.layout_path)
         else:
             config.LAYOUT_FILE_PATH = None
+
+        # NAD layout opt-in (read by DiagramMixin._default_nad_parameters).
+        # Pinned BEFORE prefetch_base_nad_async so the prefetched base
+        # NAD already uses the requested layout type — otherwise the
+        # first `/api/network-diagram` would serve a stale cache rendered
+        # under the previous toggle state.
+        self._force_layout = bool(getattr(settings, 'force_layout', False) or False)
 
         # Force the requested global flags
         config.MAX_RHO_BOTH_EXTREMITIES = True

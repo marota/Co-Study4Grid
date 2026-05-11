@@ -65,6 +65,23 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
     display: none;
 }
 
+/* Halo behind edge-info flow values so digits stay readable when arrows
+   from neighbouring branches overlap them on dense PyPSA-derived grids.
+   `paint-order: stroke fill` paints the white stroke first, so the fill
+   (pypowsybl's native flow-value colour) lands on top — the halo only
+   widens the glyph silhouette, it does not change the text colour. The
+   stroke uses `non-scaling-stroke` (declared in the global rule above)
+   so the halo width stays constant on screen across zoom levels. The
+   `!important` matches the precedent on `.nad-hide-vl-labels` — pypowsybl
+   appends its own `<style>` block AFTER App.css when injecting the SVG,
+   so plain rules can be defeated by the upstream defaults. */
+.nad-edge-infos text {
+    paint-order: stroke fill !important;
+    stroke: var(--color-surface) !important;
+    stroke-width: 3px !important;
+    stroke-linejoin: round !important;
+}
+
 /* User-toggle: hide every voltage-level label on the diagram. pypowsybl
    emits VL labels in two interchangeable shapes depending on the diagram
    configuration: a root-level `<foreignObject class="nad-text-nodes">`

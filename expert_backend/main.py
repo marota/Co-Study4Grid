@@ -294,6 +294,7 @@ class ConfigRequest(BaseModel):
     ignore_reconnections: bool = False
     pypowsybl_fast_mode: bool = True
     layout_path: str | None = None
+    force_layout: bool = False
 
 class AnalysisRequest(BaseModel):
     # List of element IDs to disconnect simultaneously. A single-item list
