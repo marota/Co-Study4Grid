@@ -56,6 +56,7 @@ vi.mock('./components/ActionFeed', () => ({
     <div
       data-testid="action-feed"
       data-ol-count={props.linesOverloaded?.length || 0}
+      data-ol-names={(props.linesOverloaded ?? []).join('|')}
       data-pending={!!props.pendingAnalysisResult}
       data-loading={!!props.analysisLoading}
     >
@@ -538,10 +539,64 @@ describe('N-1 overload state is populated before action analysis', () => {
       expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-sel-ol-count', '2');
     });
 
-    // No analysis was run, so the ActionFeed sees zero result-side
-    // overloads. The N-1 highlight pipeline must therefore use the
-    // n1Diagram fallback (covered by the unit tests on the helper).
-    expect(screen.getByTestId('action-feed')).toHaveAttribute('data-ol-count', '0');
+    // No analysis was run, so ``result.lines_overloaded`` is empty —
+    // but the ActionFeed falls back to the N-1 diagram's authoritative
+    // overload list so manual-simulation action cards display the
+    // friendly pypowsybl identifiers (e.g. ``BEON L31CPVAN``) instead
+    // of grid2op's synthetic ``line_<i>`` strings the backend emits
+    // when no ``_analysis_context`` is set yet. See the App.tsx wiring
+    // on the ``ActionFeed.linesOverloaded`` prop.
+    expect(screen.getByTestId('action-feed')).toHaveAttribute('data-ol-count', '2');
+    // The fallback delivers the exact friendly-name list — same
+    // identifiers the OverloadPanel above is wired to — so the
+    // ``ActionCard.linesOverloaded[i]`` lookup in the "Overload
+    // loading after" row resolves through ``displayName`` cleanly.
+    expect(screen.getByTestId('action-feed')).toHaveAttribute(
+      'data-ol-names',
+      'LINE_OL_A|LINE_OL_B',
+    );
+  });
+
+  // Companion to the test above: once an analysis result is present,
+  // ``result.lines_overloaded`` MUST win over the ``n1Diagram``
+  // fallback — the step2 stream reports the resolved-and-filtered set
+  // (post monitoring deselect / additional-lines etc), and that
+  // authority beats the raw N-1 diagram scan. Pins both directions of
+  // the App.tsx ternary on the ``ActionFeed.linesOverloaded`` prop.
+  it('prefers result.lines_overloaded over the n1Diagram fallback once analysis has populated it', async () => {
+    mockApi.getContingencyDiagram.mockResolvedValueOnce({
+      svg: '<svg></svg>',
+      metadata: null,
+      // Raw n1Diagram overload scan — what the fallback would surface
+      // if the analysis result were empty. TWO entries.
+      lines_overloaded: ['LINE_OL_A', 'LINE_OL_B'],
+    });
+    // Step1 filters the set down to a single resolved overload.
+    mockApi.runAnalysisStep1.mockResolvedValue({
+      can_proceed: true,
+      lines_overloaded: ['LINE_OL_A'],
+    });
+
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+    // Confirm the fallback fires pre-analysis (n1Diagram count = 2).
+    await waitFor(() => {
+      expect(screen.getByTestId('action-feed')).toHaveAttribute('data-ol-count', '2');
+    });
+
+    // Drive the full step1 → step2 stream → display-prioritized
+    // path so ``result.lines_overloaded`` becomes non-empty.
+    await runAnalysis();
+
+    // The analysis-result list wins — single ``LINE_OL1`` from the
+    // stream mock above, not the two-entry n1Diagram fallback.
+    await waitFor(() => {
+      expect(screen.getByTestId('action-feed')).toHaveAttribute('data-ol-count', '1');
+      expect(screen.getByTestId('action-feed')).toHaveAttribute(
+        'data-ol-names',
+        'LINE_OL1',
+      );
+    });
   });
 
   it('replaces the overload selection when switching contingencies without running analysis', async () => {

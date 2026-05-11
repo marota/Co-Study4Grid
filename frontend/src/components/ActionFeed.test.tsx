@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { interactionLogger } from '../utils/interactionLogger';
@@ -464,6 +464,33 @@ describe('ActionFeed', () => {
         expect(goodIndex).toBeLessThan(badIndex);
     });
 
+    // Backend regression guard: ``compute_action_metrics`` zeroes
+    // ``max_rho`` on a non-convergent simulation (see
+    // ``expert_backend/services/simulation_helpers.py`` —
+    // ``"max_rho": 0.0`` is the default before the convergence
+    // check). Sorting by ``max_rho`` alone would float the
+    // divergent card to the top of the stack ahead of legitimate
+    // solving actions — this test pins ``non_convergence`` as the
+    // dominant ordering key in that situation.
+    it('ranks divergent actions (max_rho=0) at the bottom, not the top', () => {
+        const props = {
+            ...defaultProps,
+            actions: {
+                act_solving: { description_unitaire: 'Solving Action', rho_before: [1.0], rho_after: [0.9], max_rho: 0.9, max_rho_line: 'A', is_rho_reduction: true, action_topology: emptyTopo },
+                act_divergent: { description_unitaire: 'Divergent Action', rho_before: [1.0], rho_after: null, max_rho: 0, max_rho_line: 'N/A', is_rho_reduction: false, non_convergence: 'LoadFlow failure', action_topology: emptyTopo },
+            },
+            selectedActionIds: new Set(['act_solving', 'act_divergent']),
+        };
+        render(<ActionFeed {...props} />);
+
+        const cards = screen.getAllByTestId(/^action-card-(act_solving|act_divergent)$/);
+        const cardIds = cards.map(el => el.getAttribute('data-testid'));
+
+        expect(cardIds.indexOf('action-card-act_solving')).toBeLessThan(
+            cardIds.indexOf('action-card-act_divergent'),
+        );
+    });
+
     it('shows only PST actions in dropdown after clicking the PST chip', async () => {
         const pstAction = { id: 'pst_tap_up', description: 'PST action', type: 'pst_tap_change' };
         const regularAction = { id: 'line_reco_1', description: 'Regular action', type: 'line_reconnection' };
@@ -579,6 +606,114 @@ describe('ActionFeed', () => {
             undefined,
             undefined,
         );
+    });
+
+    // Operator-requested addition: chain several manual simulations
+    // from the wide score-table modal without it auto-closing each
+    // round. Mirrors the Combine Actions modal's contract — the
+    // operator typically wants to compare a handful of candidate
+    // remedies before committing. The narrow no-score search still
+    // auto-dismisses (one-shot "type an ID, hit enter" flow).
+    describe('manual-selection modal lifecycle (multi-simulation flow)', () => {
+        // ``defaultProps.onManualActionAdded`` (and the api module
+        // mocks) are shared ``vi.fn()`` references at the describe-block
+        // scope, so a successful simulation in this group would
+        // otherwise carry call history into the unrelated
+        // race-condition guard below ("awaits simulation before
+        // calling onManualActionAdded …"). Clear before each test in
+        // this group AND after the group finishes so the surrounding
+        // suite sees a clean slate.
+        beforeEach(() => {
+            vi.clearAllMocks();
+        });
+        afterEach(() => {
+            vi.clearAllMocks();
+        });
+
+        const buildScoredProps = () => ({
+            ...defaultProps,
+            actionScores: {
+                line_reconnection: {
+                    scores: { reco_A: 5, reco_B: 4 },
+                    params: {},
+                },
+            } as Record<string, Record<string, unknown>>,
+            actions: {} as Record<string, ActionDetail>,
+        });
+
+        const mockSimulateOk = (actionId: string) => {
+            vi.mocked(api.simulateManualAction).mockResolvedValueOnce({
+                action_id: actionId,
+                description_unitaire: 'simulated',
+                rho_before: [1.05],
+                rho_after: [0.85],
+                max_rho: 0.85,
+                max_rho_line: 'LINE_1',
+                is_rho_reduction: true,
+                is_islanded: false,
+                n_components: 1,
+                disconnected_mw: 0,
+                non_convergence: null,
+                lines_overloaded: ['LINE_1'],
+                lines_overloaded_after: [],
+                load_shedding_details: [],
+                curtailment_details: [],
+                pst_details: [],
+                action_topology: emptyTopo,
+                is_estimated: false,
+            } as Awaited<ReturnType<typeof api.simulateManualAction>>);
+        };
+
+        it('keeps the wide score-table modal open after a successful manual simulation', async () => {
+            const props = buildScoredProps();
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+
+            // Wide layout active — scored actions visible.
+            expect(screen.getByTestId('manual-selection-wide')).toBeInTheDocument();
+            expect(screen.queryByTestId('manual-selection-dropdown')).not.toBeInTheDocument();
+
+            // Wait for the available-actions fetch to settle before the
+            // ScoreTable renders the row links.
+            await waitFor(() => {
+                expect(screen.queryByText('Loading actions...')).not.toBeInTheDocument();
+            });
+
+            mockSimulateOk('reco_A');
+            fireEvent.click(screen.getByText('reco_A'));
+
+            await waitFor(() => {
+                expect(api.simulateManualAction).toHaveBeenCalledTimes(1);
+            });
+            // The wide overlay must still be mounted — pre-fix it
+            // unmounted on every simulation, forcing the operator
+            // to reopen + re-scroll for the next candidate.
+            expect(screen.getByTestId('manual-selection-wide')).toBeInTheDocument();
+            // The score list is preserved so the next row is one
+            // click away (no need to re-filter / re-search).
+            expect(screen.getByText('reco_B')).toBeInTheDocument();
+        });
+
+        it('still closes the narrow no-score dropdown after a manual ID is simulated', async () => {
+            // No actionScores → narrow layout, traditional one-shot
+            // flow. Closing on success is the expected UX.
+            render(<ActionFeed {...defaultProps} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            expect(screen.getByTestId('manual-selection-dropdown')).toBeInTheDocument();
+
+            const searchInput = screen.getByPlaceholderText(/Search action/);
+            fireEvent.change(searchInput, { target: { value: 'custom_42' } });
+            await waitFor(() => {
+                expect(screen.queryByText('Loading actions...')).not.toBeInTheDocument();
+            });
+
+            mockSimulateOk('custom_42');
+            fireEvent.click(screen.getByText(/Simulate manual ID:/));
+
+            await waitFor(() => {
+                expect(screen.queryByTestId('manual-selection-dropdown')).not.toBeInTheDocument();
+            });
+        });
     });
 
     it('hides actions that classify as disco even when their score type is pst, when filter is "pst"', async () => {
@@ -1761,7 +1896,10 @@ describe('ActionFeed', () => {
             // Get all td cells in the row
             const cells = actionRow!.querySelectorAll('td');
             // Second cell is Tap Start (first is Action name)
-            const tapStartCell = cells[1];
+            // Score sits in column 2 since the manual-selection score
+            // table was reorganised so the ranking is visible right
+            // after the action name. Tap Start now lives in column 3.
+            const tapStartCell = cells[2];
             expect(tapStartCell).toBeDefined();
             // The textContent of the Tap Start cell should start with 27
             expect(tapStartCell.textContent).toMatch(/^27/);
@@ -1784,7 +1922,10 @@ describe('ActionFeed', () => {
             const rows = screen.getAllByRole('row');
             const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
             const cells = actionRow!.querySelectorAll('td');
-            const tapStartCell = cells[1];
+            // Score sits in column 2 since the manual-selection score
+            // table was reorganised so the ranking is visible right
+            // after the action name. Tap Start now lives in column 3.
+            const tapStartCell = cells[2];
             expect(tapStartCell.textContent).toMatch(/^27/);
         });
 
@@ -1918,7 +2059,10 @@ describe('ActionFeed', () => {
             const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
             expect(actionRow).toBeDefined();
             const cells = actionRow!.querySelectorAll('td');
-            const tapStartCell = cells[1];
+            // Score sits in column 2 since the manual-selection score
+            // table was reorganised so the ranking is visible right
+            // after the action name. Tap Start now lives in column 3.
+            const tapStartCell = cells[2];
             expect(tapStartCell.textContent).toMatch(/^27/);
         });
 
@@ -1940,7 +2084,10 @@ describe('ActionFeed', () => {
             const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
             expect(actionRow).toBeDefined();
             const cells = actionRow!.querySelectorAll('td');
-            const tapStartCell = cells[1];
+            // Score sits in column 2 since the manual-selection score
+            // table was reorganised so the ranking is visible right
+            // after the action name. Tap Start now lives in column 3.
+            const tapStartCell = cells[2];
             expect(tapStartCell.textContent).toMatch(/^27/);
         });
 
@@ -2012,7 +2159,10 @@ describe('ActionFeed', () => {
             const rows = screen.getAllByRole('row');
             const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
             const cells = actionRow!.querySelectorAll('td');
-            const tapStartCell = cells[1];
+            // Score sits in column 2 since the manual-selection score
+            // table was reorganised so the ranking is visible right
+            // after the action name. Tap Start now lives in column 3.
+            const tapStartCell = cells[2];
             expect(tapStartCell.textContent).toMatch(/^27/);
 
             // Target Tap input should show 29

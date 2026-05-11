@@ -37,6 +37,7 @@ describe('ActionSearchDropdown', () => {
         onResimulateTap: vi.fn(),
         onShowTooltip: vi.fn(),
         onHideTooltip: vi.fn(),
+        monitoringFactor: 0.95,
     };
 
     it('renders search input with placeholder', () => {
@@ -457,6 +458,401 @@ describe('ActionSearchDropdown', () => {
                 />,
             );
             expect(screen.queryByTestId('no-relevant-action-warning')).not.toBeInTheDocument();
+        });
+    });
+
+    // Operator-requested addition: a "Simulated Max ρ" column in the
+    // score table so the user can compare action effectiveness from
+    // inside the manual-selection modal without bouncing back to the
+    // action card stack. Pending rows render an em-dash; simulated
+    // rows show the max-ρ percentage with the same green / orange /
+    // red severity colouring the ActionCard uses, and divergent /
+    // islanded simulations render the matching warning label.
+    describe('Simulated Max ρ column', () => {
+        const baseScored = [
+            { type: 'line_reconnection', actionId: 'reco_1', score: 5, mwStart: null },
+        ];
+        const baseScores = {
+            line_reconnection: { scores: { reco_1: 5 }, params: {} },
+        };
+
+        it('renders the column header in the score table', () => {
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                />,
+            );
+            expect(screen.getByText(/Simulated Max/i)).toBeInTheDocument();
+        });
+
+        it('renders an em-dash for an unsimulated row', () => {
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                />,
+            );
+            const cell = screen.getByTestId('sim-max-rho-reco_1');
+            expect(cell.getAttribute('data-state')).toBe('pending');
+            expect(cell.textContent).toBe('—');
+        });
+
+        it('renders the green-severity max ρ once the action has been simulated below the monitoring band', () => {
+            const actions: Record<string, ActionDetail> = {
+                reco_1: {
+                    description_unitaire: 'r1',
+                    rho_before: [1.05],
+                    rho_after: [0.5],
+                    max_rho: 0.5,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                    actions={actions}
+                />,
+            );
+            const cell = screen.getByTestId('sim-max-rho-reco_1');
+            expect(cell.getAttribute('data-state')).toBe('green');
+            expect(cell.textContent).toBe('50.0%');
+            expect(cell.getAttribute('title')).toBe('Max ρ on LINE_A');
+        });
+
+        it('renders orange severity when max_rho is in the (mf - 0.05, mf] band', () => {
+            const actions: Record<string, ActionDetail> = {
+                reco_1: {
+                    description_unitaire: 'r1',
+                    rho_before: [1.05],
+                    rho_after: [0.92],
+                    // monitoringFactor = 0.95 (default). 0.92 is in
+                    // (mf - 0.05, mf] → orange.
+                    max_rho: 0.92,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                    actions={actions}
+                />,
+            );
+            expect(screen.getByTestId('sim-max-rho-reco_1').getAttribute('data-state')).toBe('orange');
+        });
+
+        it('renders red severity when max_rho is above the monitoring factor', () => {
+            const actions: Record<string, ActionDetail> = {
+                reco_1: {
+                    description_unitaire: 'r1',
+                    rho_before: [1.05],
+                    rho_after: [1.02],
+                    max_rho: 1.02,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: false,
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                    actions={actions}
+                />,
+            );
+            const cell = screen.getByTestId('sim-max-rho-reco_1');
+            expect(cell.getAttribute('data-state')).toBe('red');
+            expect(cell.textContent).toBe('102.0%');
+        });
+
+        it('renders a "divergent" label for a non-convergent simulation', () => {
+            const actions: Record<string, ActionDetail> = {
+                reco_1: {
+                    description_unitaire: 'r1',
+                    rho_before: null,
+                    rho_after: null,
+                    // Backend writes max_rho = 0 on non-convergence — the
+                    // numeric value must NOT leak as "0.0%". The
+                    // non_convergence flag wins.
+                    max_rho: 0,
+                    max_rho_line: 'N/A',
+                    is_rho_reduction: false,
+                    non_convergence: 'LoadFlow failure: foo',
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                    actions={actions}
+                />,
+            );
+            const cell = screen.getByTestId('sim-max-rho-reco_1');
+            expect(cell.getAttribute('data-state')).toBe('divergent');
+            expect(cell.textContent).toBe('divergent');
+            expect(cell.getAttribute('title')).toContain('LoadFlow failure');
+        });
+
+        it('renders an "islanded" label for an islanded simulation', () => {
+            const actions: Record<string, ActionDetail> = {
+                reco_1: {
+                    description_unitaire: 'r1',
+                    rho_before: null,
+                    rho_after: null,
+                    max_rho: 0.4,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: false,
+                    is_islanded: true,
+                    disconnected_mw: 42.5,
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                    actions={actions}
+                />,
+            );
+            const cell = screen.getByTestId('sim-max-rho-reco_1');
+            expect(cell.getAttribute('data-state')).toBe('islanded');
+            expect(cell.textContent).toBe('islanded');
+            expect(cell.getAttribute('title')).toContain('42.5 MW');
+        });
+    });
+
+    // Mirrors the ``Simulated Line`` column in
+    // ``ComputedPairsTable`` — surfaces the branch carrying max ρ on
+    // the post-action observation, resolved through ``displayName``
+    // so the operator sees the friendly pypowsybl substation pair
+    // (e.g. ``BEON L31CPVAN``) instead of the raw element ID. Pending
+    // rows and faulted simulations (divergent / islanded) render an
+    // em-dash because the post-action max-ρ branch is not meaningful
+    // in those cases.
+    describe('Simulated Line column', () => {
+        const baseScored = [
+            { type: 'line_reconnection', actionId: 'reco_1', score: 5, mwStart: null },
+        ];
+        const baseScores = {
+            line_reconnection: { scores: { reco_1: 5 }, params: {} },
+        };
+
+        it('renders the column header in the score table', () => {
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                />,
+            );
+            expect(screen.getByText('Simulated Line')).toBeInTheDocument();
+        });
+
+        it('renders an em-dash for an unsimulated row', () => {
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                />,
+            );
+            const cell = screen.getByTestId('sim-line-reco_1');
+            expect(cell.getAttribute('data-state')).toBe('pending');
+            expect(cell.textContent).toBe('—');
+        });
+
+        it('renders displayName(max_rho_line) once the action has been simulated', () => {
+            const actions: Record<string, ActionDetail> = {
+                reco_1: {
+                    description_unitaire: 'r1',
+                    rho_before: [1.05],
+                    rho_after: [0.85],
+                    max_rho: 0.85,
+                    max_rho_line: 'BRANCH_ID_42',
+                    is_rho_reduction: true,
+                },
+            };
+            const displayName = (id: string) => id === 'BRANCH_ID_42' ? 'BEON L31CPVAN' : id;
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                    actions={actions}
+                    displayName={displayName}
+                />,
+            );
+            const cell = screen.getByTestId('sim-line-reco_1');
+            expect(cell.getAttribute('data-state')).toBe('resolved');
+            expect(cell.textContent).toBe('BEON L31CPVAN');
+            // Raw ID still on the title so the operator can copy it
+            // if they need to debug at the data layer.
+            expect(cell.getAttribute('title')).toBe('BRANCH_ID_42');
+        });
+
+        it('falls back to the raw id when displayName has no mapping', () => {
+            const actions: Record<string, ActionDetail> = {
+                reco_1: {
+                    description_unitaire: 'r1',
+                    rho_before: [1.05],
+                    rho_after: [0.85],
+                    max_rho: 0.85,
+                    max_rho_line: 'UNMAPPED_LINE',
+                    is_rho_reduction: true,
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                    actions={actions}
+                />,
+            );
+            expect(screen.getByTestId('sim-line-reco_1').textContent).toBe('UNMAPPED_LINE');
+        });
+
+        it('renders an em-dash for a divergent simulation', () => {
+            const actions: Record<string, ActionDetail> = {
+                reco_1: {
+                    description_unitaire: 'r1',
+                    rho_before: null,
+                    rho_after: null,
+                    max_rho: 0,
+                    max_rho_line: 'N/A',
+                    is_rho_reduction: false,
+                    non_convergence: 'LoadFlow failure',
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                    actions={actions}
+                />,
+            );
+            const cell = screen.getByTestId('sim-line-reco_1');
+            expect(cell.getAttribute('data-state')).toBe('unavailable');
+            expect(cell.textContent).toBe('—');
+        });
+
+        it('renders an em-dash for an islanded simulation', () => {
+            const actions: Record<string, ActionDetail> = {
+                reco_1: {
+                    description_unitaire: 'r1',
+                    rho_before: null,
+                    rho_after: null,
+                    max_rho: 0.4,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: false,
+                    is_islanded: true,
+                    disconnected_mw: 12,
+                },
+            };
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                    actions={actions}
+                />,
+            );
+            const cell = screen.getByTestId('sim-line-reco_1');
+            expect(cell.getAttribute('data-state')).toBe('unavailable');
+            expect(cell.textContent).toBe('—');
+        });
+    });
+
+    // Score column moved to position 2 (right after the Action
+    // name) so the ranking is visible without the operator's eye
+    // having to scan past the per-row MW / tap inputs. Pin both the
+    // header order AND the row cell order so a future drag-resize
+    // or re-shuffle can't silently regress it.
+    describe('Score column position', () => {
+        const baseScored = [
+            { type: 'line_reconnection', actionId: 'reco_1', score: 7.25, mwStart: null },
+        ];
+        const baseScores = {
+            line_reconnection: { scores: { reco_1: 7.25 }, params: {} },
+        };
+
+        it('renders the Score header in the second column (right after Action)', () => {
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                />,
+            );
+            const headers = screen.getAllByRole('columnheader');
+            expect(headers[0].textContent).toBe('Action');
+            expect(headers[1].textContent).toBe('Score');
+        });
+
+        it('renders the score value cell in the second column of the data row', () => {
+            render(
+                <ActionSearchDropdown
+                    {...defaultProps}
+                    scoredActionsList={baseScored}
+                    actionScores={baseScores}
+                />,
+            );
+            const actionRow = screen.getAllByRole('row').find(r => r.textContent?.includes('reco_1'));
+            const cells = actionRow!.querySelectorAll('td');
+            // Column 0 = action name; column 1 = score (newly moved).
+            expect(cells[0].textContent).toContain('reco_1');
+            expect(cells[1].textContent).toBe('7.25');
+            expect(screen.getByTestId('score-reco_1').textContent).toBe('7.25');
+        });
+    });
+
+    // Operator-requested addition: the wide modal now stays mounted
+    // across multiple simulations (see
+    // ``ActionFeed.handleAddAction``), so it needs an explicit
+    // dismiss affordance. Matches the Combine Actions modal close
+    // button (``CombinedActionsModal.tsx:391``). The narrow inline
+    // dropdown does not get a header — it relies on outside-click
+    // dismissal as before.
+    describe('Close button (wide mode)', () => {
+        it('renders the close button only when wide AND onClose is wired', () => {
+            const onClose = vi.fn();
+            render(<ActionSearchDropdown {...defaultProps} wide onClose={onClose} />);
+            expect(screen.getByTestId('manual-selection-close')).toBeInTheDocument();
+        });
+
+        it('does not render the close button in narrow mode', () => {
+            const onClose = vi.fn();
+            render(<ActionSearchDropdown {...defaultProps} onClose={onClose} />);
+            expect(screen.queryByTestId('manual-selection-close')).not.toBeInTheDocument();
+        });
+
+        it('does not render the close button when onClose is omitted', () => {
+            render(<ActionSearchDropdown {...defaultProps} wide />);
+            expect(screen.queryByTestId('manual-selection-close')).not.toBeInTheDocument();
+        });
+
+        it('invokes onClose when the close button is clicked', () => {
+            const onClose = vi.fn();
+            render(<ActionSearchDropdown {...defaultProps} wide onClose={onClose} />);
+            fireEvent.click(screen.getByTestId('manual-selection-close'));
+            expect(onClose).toHaveBeenCalledTimes(1);
+        });
+
+        it('uses the multiplication-sign glyph (×) so it matches the Combine modal', () => {
+            const onClose = vi.fn();
+            render(<ActionSearchDropdown {...defaultProps} wide onClose={onClose} />);
+            // &times; → ×
+            expect(screen.getByTestId('manual-selection-close').textContent).toBe('×');
         });
     });
 });

@@ -1390,7 +1390,20 @@ function App() {
           <ActionFeed
             actions={result?.actions || {}}
             actionScores={result?.action_scores}
-            linesOverloaded={result?.lines_overloaded || []}
+            // Prefer the analysis-result overload list when it carries
+            // entries (step1 / session reload populate it with the
+            // pypowsybl-style friendly identifiers the rest of the UI
+            // is wired against), and fall back to the N-1 diagram's
+            // authoritative list otherwise. The fallback matters for
+            // the pre-analysis manual-simulation flow: without it the
+            // card stack inherits ``simulate_manual_action``'s
+            // vectorised obs-based names — grid2op's synthetic
+            // ``line_<i>`` strings that ``displayName`` cannot resolve.
+            linesOverloaded={
+              result?.lines_overloaded && result.lines_overloaded.length > 0
+                ? result.lines_overloaded
+                : (n1Diagram?.lines_overloaded || [])
+            }
             selectedActionId={selectedActionId}
             scrollTarget={scrollTarget}
             selectedActionIds={selectedActionIds}

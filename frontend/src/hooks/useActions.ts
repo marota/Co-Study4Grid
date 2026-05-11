@@ -90,7 +90,7 @@ export function useActions(): ActionsState {
   const handleManualActionAdded = useCallback((
     actionId: string,
     detail: ActionDetail,
-    linesOverloaded: string[],
+    _linesOverloaded: string[],
     setResult: React.Dispatch<React.SetStateAction<AnalysisResult | null>>,
     onSelectAction: (actionId: string) => void,
   ) => {
@@ -104,9 +104,17 @@ export function useActions(): ActionsState {
         message: '',
         dc_fallback: false,
       };
+      // ``_linesOverloaded`` is the manual-simulation backend response's
+      // ``lines_overloaded`` field. It carries grid2op's synthetic
+      // ``line_<i>`` names when the user hits "+ Manual Selection"
+      // before running analysis (no ``_analysis_context``; backend
+      // falls through to the vectorised obs-based path). Keeping
+      // ``lines_overloaded`` empty in that case lets ``App.tsx`` fall
+      // back to ``n1Diagram.lines_overloaded`` — the authoritative
+      // pypowsybl-style identifier list — for the card display.
+      // Step1 / session reload set it on their own setResult paths.
       return {
         ...base,
-        lines_overloaded: base.lines_overloaded.length > 0 ? base.lines_overloaded : linesOverloaded,
         actions: {
           ...base.actions,
           [actionId]: { ...detail, is_manual: true },
@@ -128,7 +136,7 @@ export function useActions(): ActionsState {
   const handleActionResimulated = useCallback((
     actionId: string,
     detail: ActionDetail,
-    linesOverloaded: string[],
+    _linesOverloaded: string[],
     setResult: React.Dispatch<React.SetStateAction<AnalysisResult | null>>,
     onSelectAction: (actionId: string) => void,
   ) => {
@@ -139,12 +147,17 @@ export function useActions(): ActionsState {
     // 'manual_action_simulated' which conflated the two flows
     // and made replay impossible — the log entry now lives next
     // to the actual button click instead.
+    //
+    // ``_linesOverloaded`` (the manual-sim response array) is
+    // intentionally NOT promoted to ``prev.lines_overloaded`` —
+    // see ``handleManualActionAdded`` for the rationale (the
+    // backend emits grid2op's synthetic ``line_<i>`` names when
+    // no analysis context has been set yet).
     setResult(prev => {
       if (!prev) return prev;
       const existing = prev.actions[actionId];
       return {
         ...prev,
-        lines_overloaded: prev.lines_overloaded.length > 0 ? prev.lines_overloaded : linesOverloaded,
         actions: {
           ...prev.actions,
           // Preserve the is_manual flag from the existing entry so a

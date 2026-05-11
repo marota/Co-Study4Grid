@@ -358,8 +358,19 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
 
             };
             onManualActionAdded(trimmedId, detail, result.lines_overloaded || []);
-            setSearchOpen(false);
-            setSearchQuery('');
+            // Keep the wide score-table modal open after a successful
+            // simulation so the operator can chain several manual
+            // simulations in a row (same UX contract as
+            // ``CombinedActionsModal.handleSimulate``). Closing was
+            // forcing a re-open + re-scroll for every row the
+            // operator wanted to compare. The narrow no-score search
+            // dropdown still auto-dismisses since that mode is
+            // typically a one-shot "type an ID, hit enter" flow.
+            const wide = scoredActionsList.length > 0;
+            if (!wide) {
+                setSearchOpen(false);
+                setSearchQuery('');
+            }
         } catch (e: unknown) {
             console.error('Simulation failed:', e);
             const err = e as { response?: { data?: { detail?: string } } };
@@ -556,9 +567,14 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 return true;
             })
             .sort(([, a], [, b]) => {
-                const aIslanded = !!a.is_islanded;
-                const bIslanded = !!b.is_islanded;
-                if (aIslanded !== bIslanded) return aIslanded ? 1 : -1;
+                // Sink load-flow faults (divergent / islanded) to the bottom of
+                // the stack regardless of their reported max_rho. The backend
+                // emits ``max_rho = 0`` (not ``null``) for non-convergent
+                // simulations — sorting by max_rho alone would float those
+                // cards to the top, ahead of legitimate solving actions.
+                const aFault = !!(a.is_islanded || a.non_convergence);
+                const bFault = !!(b.is_islanded || b.non_convergence);
+                if (aFault !== bFault) return aFault ? 1 : -1;
                 return (a.max_rho ?? 999) - (b.max_rho ?? 999);
             });
     }, [actions, overviewFilters, monitoringFactor]);
@@ -803,6 +819,9 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         onAddAction={handleAddAction}
                         onResimulate={handleResimulate}
                         onResimulateTap={handleResimulateTap}
+                        monitoringFactor={monitoringFactor}
+                        displayName={displayName}
+                        onClose={() => { setSearchOpen(false); setSearchQuery(''); }}
                         onShowTooltip={showTooltip}
                         onHideTooltip={hideTooltip}
                         wide={scoredActionsList.length > 0}
