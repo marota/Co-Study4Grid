@@ -28,6 +28,34 @@ export interface UserConfig {
     pre_existing_overload_threshold: number;
     ignore_reconnections: boolean;
     pypowsybl_fast_mode: boolean;
+    // Pluggable recommender selection (see GET /api/models).
+    // Defaults to the expert system for backwards compatibility.
+    model?: string;
+    // Toggles the (expensive) step-2 overflow graph build. Only takes
+    // effect when the chosen model declares requires_overflow_graph=true.
+    compute_overflow_graph?: boolean;
+}
+
+// Mirrors expert_backend.recommenders.registry.list_models() output.
+// Consumed by SettingsModal to render the model dropdown and only the
+// parameter inputs the selected model actually consumes.
+export interface ModelParamSpec {
+    name: string;
+    label: string;
+    kind: 'int' | 'float' | 'bool';
+    default: number | boolean | null;
+    min?: number | null;
+    max?: number | null;
+    description?: string | null;
+    group?: string | null;
+}
+
+export interface ModelDescriptor {
+    name: string;
+    label: string;
+    requires_overflow_graph: boolean;
+    is_default: boolean;
+    params: ModelParamSpec[];
 }
 
 export const api = {
@@ -52,6 +80,16 @@ export const api = {
         const response = await axios.post(`${API_BASE_URL}/api/config`, config);
         return response.data;
     },
+    /**
+     * Lists the recommendation models registered on the backend. Called
+     * once at startup by `useSettings`; the dropdown in the Settings
+     * → Recommender tab is populated from the response and each model's
+     * `params_spec` drives which parameter inputs are visible.
+     */
+    getModels: async (): Promise<{ models: ModelDescriptor[] }> => {
+        const response = await axios.get<{ models: ModelDescriptor[] }>(`${API_BASE_URL}/api/models`);
+        return response.data;
+    },
     getBranches: async () => {
         const response = await axios.get<BranchResponse>(`${API_BASE_URL}/api/branches`);
         return response.data;
@@ -66,30 +104,13 @@ export const api = {
         );
         return response.data;
     },
-    /**
-     * Return ``{vl_id: substation_id}`` for every voltage level.
-     * Used to anchor action-overview pins on the overflow graph
-     * (which uses substation names as node identifiers).
-     */
     getVoltageLevelSubstations: async (): Promise<{ mapping: Record<string, string> }> => {
         const response = await axios.get<{ mapping: Record<string, string> }>(
             `${API_BASE_URL}/api/voltage-level-substations`
         );
         return response.data;
     },
-    // NOTE: the FastAPI backend always serialises the SVG as a raw
-    // XML string, so these axios methods narrow `DiagramData.svg` to
-    // `string` at the boundary. The wider `string | SVGSVGElement`
-    // union on `DiagramData` only surfaces once the N-1 / Action tab
-    // is repopulated by the svgPatch DOM-recycling path.
     getNetworkDiagram: async (): Promise<DiagramData & { svg: string }> => {
-        // Fetch in `format=text` mode: the server returns a small JSON
-        // header on the first line, then the raw SVG body verbatim. This
-        // avoids `JSON.parse` having to escape-scan and copy the ~25 MB
-        // SVG string, saving ~500 ms of main-thread parse time on large
-        // grids. See docs/performance/history/loading-parallel.md (#4). We use `fetch`
-        // instead of axios so the browser's native gzip decoder runs
-        // without axios trying to JSON-parse the body.
         const res = await fetch(`${API_BASE_URL}/api/network-diagram?format=text`);
         if (!res.ok) {
             const detail = await res.text().catch(() => '');
@@ -120,13 +141,6 @@ export const api = {
         );
         return response.data;
     },
-    /**
-     * SVG-less patch payload for the contingency state. Use to patch a
-     * clone of the N-state SVG DOM instead of fetching a fresh ~20 MB
-     * NAD. Fall back to ``getContingencyDiagram`` on any error or when
-     * the base N SVG is not yet loaded. See
-     * ``docs/performance/history/svg-dom-recycling.md``.
-     */
     getContingencyDiagramPatch: async (disconnectedElements: string[]): Promise<DiagramPatch> => {
         const response = await axios.post<DiagramPatch>(
             `${API_BASE_URL}/api/contingency-diagram-patch`,
@@ -134,12 +148,6 @@ export const api = {
         );
         return response.data;
     },
-    /**
-     * SVG-less patch payload for a post-action state. Returns
-     * `{patchable: false, reason}` for topology-changing actions (switch
-     * toggles, line reconnections, VL-internal topology changes); the
-     * caller must then fall back to `getActionVariantDiagram`.
-     */
     getActionVariantDiagramPatch: async (actionId: string): Promise<DiagramPatch> => {
         const response = await axios.post<DiagramPatch>(
             `${API_BASE_URL}/api/action-variant-diagram-patch`,
@@ -204,9 +212,6 @@ export const api = {
         const response = await axios.get<{ path: string | null; error?: string }>(
             `${API_BASE_URL}/api/pick-path?type=${type}`
         );
-        // Backend returns {"path": "", "error": "..."} when the native dialog
-        // cannot be launched (e.g. no display, tkinter missing). Surface it
-        // so the caller can show the user why nothing happened.
         if (response.data.error) {
             throw new Error(response.data.error);
         }
@@ -260,16 +265,6 @@ export const api = {
         );
         return response.data;
     },
-    /**
-     * Re-pushes the monitored-line set and computed-pair cache captured in a saved
-     * session back into the backend so that any subsequent simulate-action call uses
-     * the SAME `lines_we_care_about` policy as the original study — instead of the
-     * backend's default (all lines, or the lines-monitoring file on disk). Called
-     * from `useSession::handleRestoreSession` right after the base-study XHRs
-     * complete, before the user can kick off a new simulation.
-     *
-     * Parity with `standalone_interface.html:3857`.
-     */
     restoreAnalysisContext: async (params: {
         lines_we_care_about?: string[] | null;
         disconnected_elements?: string[] | null;
@@ -302,17 +297,6 @@ export const api = {
         }
         return response;
     },
-    /**
-     * Combined manual-action simulation + post-action NAD generation, returned as an
-     * NDJSON stream of two events:
-     *   { type: "metrics", ... }   — simulate_manual_action result (rho_before/after, ...)
-     *   { type: "diagram", ... }   — get_action_variant_diagram result (svg, metadata, ...)
-     *
-     * Replaces the previous "simulateManualAction then getActionVariantDiagram" fallback
-     * pattern (one round-trip + earlier sidebar update instead of two sequential
-     * request/response cycles). Caller reads the stream with the same
-     * TextDecoder + split('\n') loop used for `runAnalysisStep2Stream`.
-     */
     simulateAndVariantDiagramStream: async (params: {
         action_id: string;
         disconnected_elements: string[];
