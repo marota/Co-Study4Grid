@@ -28,7 +28,6 @@ export interface UserConfig {
     pre_existing_overload_threshold: number;
     ignore_reconnections: boolean;
     pypowsybl_fast_mode: boolean;
-    force_layout?: boolean;
 }
 
 export const api = {

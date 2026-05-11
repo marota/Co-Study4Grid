@@ -43,7 +43,6 @@ const mockApi = vi.hoisted(() => ({
     pre_existing_overload_threshold: 0.02,
     ignore_reconnections: false,
     pypowsybl_fast_mode: true,
-    force_layout: false,
   }),
   saveUserConfig: vi.fn().mockResolvedValue({}),
   getConfigFilePath: vi.fn().mockResolvedValue('/old/config.json'),
@@ -66,7 +65,6 @@ const mockApi = vi.hoisted(() => ({
       pre_existing_overload_threshold: 0.02,
       ignore_reconnections: false,
       pypowsybl_fast_mode: true,
-      force_layout: true,
     },
   }),
   pickPath: vi.fn().mockResolvedValue('/picked/new_config.json'),
@@ -212,8 +210,8 @@ describe('Config upload state propagation', () => {
   it('configRequestFromUserConfig falls back to safe defaults when the UserConfig is missing optional fields', async () => {
     // Hook-level unit test: drive `configRequestFromUserConfig` directly
     // with a stripped-down UserConfig (older pypowsybl-side configs
-    // predate `layout_path` / `lines_monitoring_path` / `force_layout`).
-    // The helper MUST apply `?? ''` / `?? false` defaults so the
+    // predate `layout_path` / `lines_monitoring_path`).
+    // The helper MUST apply `?? ''` defaults so the
     // backend never receives `undefined` — otherwise FastAPI rejects
     // the body with a validation error and the operator's Apply
     // silently fails. Driving this from the integration test surface
@@ -230,7 +228,6 @@ describe('Config upload state propagation', () => {
       action_file_path: '/picked/legacy_actions.json',
       // layout_path: missing on purpose
       // lines_monitoring_path: missing on purpose
-      // force_layout: missing on purpose
       min_line_reconnections: 2,
       min_close_coupling: 3,
       min_open_coupling: 2,
@@ -250,7 +247,6 @@ describe('Config upload state propagation', () => {
     // Defaults — no `undefined` ever leaks past the helper.
     expect(req.layout_path).toBe('');
     expect(req.lines_monitoring_path).toBe('');
-    expect(req.force_layout).toBe(false);
     // Required fields pass through verbatim.
     expect(req.min_line_reconnections).toBe(2);
     expect(req.monitoring_factor).toBe(0.95);
@@ -281,12 +277,10 @@ describe('Config upload state propagation', () => {
       pre_existing_overload_threshold: 0.01,
       ignore_reconnections: true,
       pypowsybl_fast_mode: false,
-      force_layout: true,
     };
     const req = result.current.configRequestFromUserConfig(full);
     expect(req.layout_path).toBe('/picked/full_layout.json');
     expect(req.lines_monitoring_path).toBe('/picked/full_monitoring.json');
-    expect(req.force_layout).toBe(true);
     expect(req.ignore_reconnections).toBe(true);
     expect(req.pypowsybl_fast_mode).toBe(false);
     expect(req.n_prioritized_actions).toBe(42);

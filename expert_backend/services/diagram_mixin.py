@@ -73,17 +73,8 @@ class DiagramMixin:
         )
 
     def _default_nad_parameters(self):
-        """Return default ``NadParameters`` for diagram generation.
-
-        Reads the per-study ``_force_layout`` flag from the service so
-        the toggle exposed in the Settings modal flips every NAD
-        endpoint (base / N-1 / action / focused) consistently. Defaults
-        to ``False`` to preserve the GEOGRAPHICAL layout that is
-        ~450 ms cheaper on large grids.
-        """
-        return default_nad_parameters(
-            force_layout=getattr(self, "_force_layout", False),
-        )
+        """Return default ``NadParameters`` for diagram generation."""
+        return default_nad_parameters()
 
     def _generate_diagram(self, network, voltage_level_ids=None, depth=0):
         """Generate NAD and return svg + metadata dict."""
