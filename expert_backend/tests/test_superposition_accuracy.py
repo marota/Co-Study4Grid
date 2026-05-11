@@ -92,7 +92,7 @@ def test_superposition_vs_simulation_discrepancy(service, mock_env):
                 # Mock variant helpers
                 service._get_simulation_env = MagicMock(return_value=mock_env)
                 service._get_n_variant = MagicMock(return_value="N")
-                service._get_n1_variant = MagicMock(return_value="N1")
+                service._get_contingency_variant = MagicMock(return_value="N1")
                 mock_env.network_manager.network.get_working_variant_id.return_value = "ORIG"
                 
                 # Mock environment observations

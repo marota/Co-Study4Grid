@@ -36,7 +36,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onApply }) => {
     linesMonitoringPath, setLinesMonitoringPath,
     preExistingOverloadThreshold, setPreExistingOverloadThreshold,
     pypowsyblFastMode, setPypowsyblFastMode,
-    forceLayout, setForceLayout,
     pickSettingsPath,
     handleCloseSettings,
   } = settings;
@@ -238,19 +237,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onApply }) => {
                 </div>
                 <div style={{ fontSize: '0.75rem', color: colors.textTertiary, fontStyle: 'italic', marginLeft: '26px' }}>
                   Disable voltage control in pypowsybl for faster simulations (may affect convergence)
-                </div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <input
-                    type="checkbox" id="forceLayout" checked={forceLayout}
-                    onChange={e => setForceLayout(e.target.checked)}
-                    style={{ width: '16px', height: '16px' }}
-                  />
-                  <label htmlFor="forceLayout" style={{ fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>Force-Layout Network Diagram</label>
-                </div>
-                <div style={{ fontSize: '0.75rem', color: colors.textTertiary, fontStyle: 'italic', marginLeft: '26px' }}>
-                  Spread overlapping voltage levels (helps PyPSA-derived grids with collocated VLs at urban substations). Adds ~450 ms per diagram and discards real-world coordinates.
                 </div>
               </div>
             </div>

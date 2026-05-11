@@ -32,9 +32,24 @@ export interface SessionInput {
     pypowsyblFastMode: boolean;
 
     // Contingency
-    selectedBranch: string;
+    /**
+     * Currently APPLIED contingency. The new multi-element shape is
+     * a list of element IDs; legacy callers (and many existing tests)
+     * still pass a single string under ``selectedBranch``. The
+     * builder accepts either and normalises internally.
+     */
+    selectedContingency?: string[];
+    selectedBranch?: string;
     selectedOverloads: Set<string>;
     monitorDeselected: boolean;
+    /**
+     * Snapshot of the "additional lines to prevent flow increase"
+     * picker captured at the moment Step 2 was posted. Persisted so
+     * the post-run "Additional lines integrated…" notice survives a
+     * session reload. Optional — older sessions or runs that didn't
+     * use the picker omit the field entirely.
+     */
+    committedAdditionalLinesToCut?: Set<string>;
 
     // Overload lists from diagrams (parallel rho arrays are optional,
     // backend only populates them on the N-1 payload today — see PR #88).
@@ -72,7 +87,10 @@ export function buildSessionResult(input: SessionInput): SessionResult {
         minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst, minLoadShedding, minRenewableCurtailmentActions,
         nPrioritizedActions, linesMonitoringPath, monitoringFactor,
         preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
-        selectedBranch, selectedOverloads, monitorDeselected,
+        selectedContingency: contingencyInput,
+        selectedBranch: legacyBranch,
+        selectedOverloads, monitorDeselected,
+        committedAdditionalLinesToCut,
         nOverloads, n1Overloads,
         nOverloadsRho, n1OverloadsRho,
         result,
@@ -185,11 +203,36 @@ export function buildSessionResult(input: SessionInput): SessionResult {
             ignore_reconnections: ignoreReconnections,
             pypowsybl_fast_mode: pypowsyblFastMode,
         },
-        contingency: {
-            disconnected_element: selectedBranch,
-            selected_overloads: Array.from(selectedOverloads),
-            monitor_deselected: monitorDeselected,
-        },
+        contingency: (() => {
+            // Resolve the contingency from either the new list-shaped
+            // ``selectedContingency`` field OR the legacy single-string
+            // ``selectedBranch`` field. New code paths populate the
+            // first; many existing tests still build session inputs
+            // with the second.
+            const elements: string[] = contingencyInput && contingencyInput.length > 0
+                ? [...contingencyInput]
+                : (legacyBranch ? [legacyBranch] : []);
+            return {
+                disconnected_elements: elements,
+                // Keep ``disconnected_element`` populated when a
+                // single element is disconnected so older session
+                // viewers / tools that read the legacy field still
+                // work. Multi-element contingencies omit it entirely.
+                ...(elements.length === 1
+                    ? { disconnected_element: elements[0] }
+                    : {}),
+                selected_overloads: Array.from(selectedOverloads),
+                monitor_deselected: monitorDeselected,
+                // Snapshot of the "additional lines to prevent flow
+                // increase" picker captured at Step 2 post-time, so
+                // the post-run notice survives a session reload.
+                // Optional — older session dumps and runs that didn't
+                // use the picker omit the field.
+                ...(committedAdditionalLinesToCut && committedAdditionalLinesToCut.size > 0
+                    ? { additional_lines_to_cut: Array.from(committedAdditionalLinesToCut) }
+                    : {}),
+            };
+        })(),
         overloads: {
             n_overloads: nOverloads,
             n1_overloads: n1Overloads,

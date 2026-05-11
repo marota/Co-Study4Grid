@@ -22,7 +22,8 @@ interface HeaderProps {
   onCommitNetworkPath: (path: string) => void;
   configLoading: boolean;
   result: AnalysisResult | null;
-  selectedBranch: string;
+  /** Currently APPLIED contingency (list of element IDs). */
+  selectedContingency: string[];
   sessionRestoring: boolean;
   onPickSettingsPath: (type: 'file' | 'dir', setter: (val: string) => void) => void;
   onLoadStudy: () => void;
@@ -37,7 +38,7 @@ const Header: React.FC<HeaderProps> = ({
   onCommitNetworkPath,
   configLoading,
   result,
-  selectedBranch,
+  selectedContingency,
   sessionRestoring,
   onPickSettingsPath,
   onLoadStudy,
@@ -45,7 +46,7 @@ const Header: React.FC<HeaderProps> = ({
   onOpenReloadModal,
   onOpenSettings,
 }) => {
-  const saveDisabled = !result && !selectedBranch;
+  const saveDisabled = !result && selectedContingency.length === 0;
 
   return (
     <header style={{

@@ -51,7 +51,7 @@ describe('useAnalysis', () => {
         const setSuggested = vi.fn();
 
         await act(async () => {
-            await result.current.handleRunAnalysis('', clear, setSuggested);
+            await result.current.handleRunAnalysis([], clear, setSuggested);
         });
 
         expect(clear).not.toHaveBeenCalled();
@@ -70,7 +70,7 @@ describe('useAnalysis', () => {
         const setSuggested = vi.fn();
 
         await act(async () => {
-            await result.current.handleRunAnalysis('LINE_X', clear, setSuggested);
+            await result.current.handleRunAnalysis(['LINE_X'], clear, setSuggested);
         });
 
         expect(result.current.error).toBe('Network not loaded');
@@ -88,7 +88,7 @@ describe('useAnalysis', () => {
         const { result } = renderHook(() => useAnalysis());
 
         await act(async () => {
-            await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+            await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
         });
 
         expect(result.current.infoMessage).toBe('No overloads detected');
@@ -120,7 +120,7 @@ describe('useAnalysis', () => {
         const { result } = renderHook(() => useAnalysis());
 
         await act(async () => {
-            await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+            await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
         });
 
         // Verify step2 was called with correct params
@@ -128,6 +128,7 @@ describe('useAnalysis', () => {
             selected_overloads: detected,
             all_overloads: detected,
             monitor_deselected: false,
+            additional_lines_to_cut: [],
         });
     });
 
@@ -150,12 +151,70 @@ describe('useAnalysis', () => {
         act(() => { result.current.setMonitorDeselected(true); });
 
         await act(async () => {
-            await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+            await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
         });
 
         expect(mockRunAnalysisStep2Stream).toHaveBeenCalledWith(
             expect.objectContaining({ monitor_deselected: true }),
         );
+    });
+
+    describe('handleToggleAdditionalLineToCut', () => {
+        it('adds a line when toggling on, removes it when toggling off', () => {
+            const { result } = renderHook(() => useAnalysis());
+
+            expect(result.current.additionalLinesToCut.size).toBe(0);
+
+            act(() => { result.current.handleToggleAdditionalLineToCut('LINE_X'); });
+            expect(result.current.additionalLinesToCut.has('LINE_X')).toBe(true);
+
+            act(() => { result.current.handleToggleAdditionalLineToCut('LINE_Y'); });
+            expect(result.current.additionalLinesToCut.size).toBe(2);
+
+            act(() => { result.current.handleToggleAdditionalLineToCut('LINE_X'); });
+            expect(result.current.additionalLinesToCut.has('LINE_X')).toBe(false);
+            expect(result.current.additionalLinesToCut.has('LINE_Y')).toBe(true);
+        });
+
+        it('ignores empty / falsy line ids', () => {
+            const { result } = renderHook(() => useAnalysis());
+            act(() => { result.current.handleToggleAdditionalLineToCut(''); });
+            expect(result.current.additionalLinesToCut.size).toBe(0);
+        });
+    });
+
+    it('forwards a non-empty additional_lines_to_cut to step2', async () => {
+        const detected = ['LINE_A'];
+        mockRunAnalysisStep1.mockResolvedValue({
+            can_proceed: true,
+            message: '',
+            lines_overloaded: detected,
+        });
+        const stream = makeStream(
+            JSON.stringify({ type: 'result', actions: {}, lines_overloaded: detected, message: '', dc_fallback: false }) + '\n',
+        );
+        mockRunAnalysisStep2Stream.mockResolvedValue({ ok: true, body: stream });
+
+        const { result } = renderHook(() => useAnalysis());
+
+        act(() => {
+            result.current.handleToggleAdditionalLineToCut('EXTRA_1');
+            result.current.handleToggleAdditionalLineToCut('EXTRA_2');
+        });
+
+        await act(async () => {
+            await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
+        });
+
+        expect(mockRunAnalysisStep2Stream).toHaveBeenCalledWith(
+            expect.objectContaining({
+                additional_lines_to_cut: expect.arrayContaining(['EXTRA_1', 'EXTRA_2']),
+            }),
+        );
+        // Sanity: the extras pass-through preserves the operator's exact
+        // selection — no reordering / dedup at the hook layer.
+        const call = mockRunAnalysisStep2Stream.mock.calls[0][0];
+        expect(call.additional_lines_to_cut).toHaveLength(2);
     });
 
     it('processes PDF and result NDJSON events from stream', async () => {
@@ -187,7 +246,7 @@ describe('useAnalysis', () => {
         const setSuggested = vi.fn();
 
         await act(async () => {
-            await result.current.handleRunAnalysis('LINE_X', vi.fn(), setSuggested);
+            await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), setSuggested);
         });
 
         // PDF event sets result.pdf_url
@@ -222,7 +281,7 @@ describe('useAnalysis', () => {
         const setActiveTab = vi.fn();
 
         await act(async () => {
-            await result.current.handleRunAnalysis('LINE_X', vi.fn(), setSuggested, setActiveTab);
+            await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), setSuggested, setActiveTab);
         });
 
         // Verify setActiveTab was called with 'overflow'
@@ -245,7 +304,7 @@ describe('useAnalysis', () => {
         const { result } = renderHook(() => useAnalysis());
 
         await act(async () => {
-            await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+            await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
         });
 
         expect(result.current.error).toBe('Analysis failed: Backend crashed');
@@ -260,7 +319,7 @@ describe('useAnalysis', () => {
         const { result } = renderHook(() => useAnalysis());
 
         await act(async () => {
-            await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+            await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
         });
 
         expect(result.current.error).toBe('Network error');
@@ -474,7 +533,7 @@ describe('useAnalysis', () => {
             act(() => { result.current.setSelectedOverloads(new Set(['LINE_A', 'LINE_B'])); });
 
             await act(async () => {
-                await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+                await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
             });
 
             // Should resolve only the intersection of detected and previously selected
@@ -503,7 +562,7 @@ describe('useAnalysis', () => {
             act(() => { result.current.setSelectedOverloads(new Set(['LINE_A', 'LINE_B'])); });
 
             await act(async () => {
-                await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+                await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
             });
 
             // Should fall back to all detected
@@ -542,7 +601,7 @@ describe('useAnalysis', () => {
             const { result } = renderHook(() => useAnalysis());
 
             await act(async () => {
-                await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+                await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
             });
 
             const log = interactionLogger.getLog();
@@ -566,7 +625,7 @@ describe('useAnalysis', () => {
             const { result } = renderHook(() => useAnalysis());
 
             await act(async () => {
-                await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+                await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
             });
 
             const log = interactionLogger.getLog();
@@ -592,7 +651,7 @@ describe('useAnalysis', () => {
             const { result } = renderHook(() => useAnalysis());
 
             await act(async () => {
-                await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+                await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
             });
 
             const log = interactionLogger.getLog();
@@ -671,7 +730,7 @@ describe('useAnalysis', () => {
             const { result } = renderHook(() => useAnalysis());
 
             await act(async () => {
-                await result.current.handleRunAnalysis('', vi.fn(), vi.fn());
+                await result.current.handleRunAnalysis([], vi.fn(), vi.fn());
             });
 
             expect(interactionLogger.getLog()).toHaveLength(0);
@@ -696,7 +755,7 @@ describe('useAnalysis', () => {
             const { result } = renderHook(() => useAnalysis());
 
             await act(async () => {
-                await result.current.handleRunAnalysis('LINE_X', vi.fn(), vi.fn());
+                await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
             });
 
             const s2Start = interactionLogger.getLog().find(e => e.type === 'analysis_step2_started')!;

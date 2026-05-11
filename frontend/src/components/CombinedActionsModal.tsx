@@ -27,7 +27,8 @@ interface Props {
     onClose: () => void;
     analysisResult: AnalysisResult | null;
     simulatedActions?: Record<string, ActionDetail>;
-    disconnectedElement: string | null;
+    /** Currently APPLIED contingency (list of element IDs). */
+    disconnectedElement: string[];
     // Called when a COMBINED pair is simulated (green "Simulate Combined"
     // button). Promotes the new pair into Selected Actions.
     onSimulateCombined: (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => void;
@@ -176,7 +177,7 @@ const CombinedActionsModal: React.FC<Props> = ({
         const currentSelection = Array.from(selectedIds).sort().join('+');
         lastSelectionRef.current = currentSelection;
 
-        if (activeTab === 'explore' && selectedIds.size === 2 && disconnectedElement) {
+        if (activeTab === 'explore' && selectedIds.size === 2 && disconnectedElement && disconnectedElement.length > 0) {
             const [id1, id2] = Array.from(selectedIds);
             const pairKey = [id1, id2].sort().join('+');
             const preComputed = analysisResult?.combined_actions?.[pairKey];
@@ -203,7 +204,7 @@ const CombinedActionsModal: React.FC<Props> = ({
     }, [selectedIds, disconnectedElement, activeTab]);
 
     const handleEstimate = async () => {
-        if (activeTab !== 'explore' || selectedIds.size !== 2 || !disconnectedElement) return;
+        if (activeTab !== 'explore' || selectedIds.size !== 2 || !disconnectedElement || disconnectedElement.length === 0) return;
         const [id1, id2] = Array.from(selectedIds);
 
         setLoading(true);
@@ -258,7 +259,7 @@ const CombinedActionsModal: React.FC<Props> = ({
 
     const handleSimulate = async (actionId?: string) => {
         const idToSimulate = actionId ? (actionId.includes('+') ? canonicalizeId(actionId) : actionId) : Array.from(selectedIds).sort().join('+');
-        if (!idToSimulate || !disconnectedElement) return;
+        if (!idToSimulate || !disconnectedElement || disconnectedElement.length === 0) return;
 
         // Try to find estimation data to preserve it
         const estimationData = actionId

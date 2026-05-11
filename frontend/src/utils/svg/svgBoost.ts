@@ -224,7 +224,7 @@ export const boostSvgForLargeGrid = (svgString: string, viewBox: ViewBox | null,
             const cyNum = parseFloat(cy || '0');
 
             if (!isNaN(cxNum) && !isNaN(cyNum)) {
-                targetEl.setAttribute('transform', `${t} translate(${cxNum},${cyNum}) scale(${nodeBoostStr}) translate(${-cxNum},${-cyNum})`);
+                targetEl.setAttribute('transform', `${t} translate(${cxNum},${cyNum}) scale(${boostStr}) translate(${-cxNum},${-cyNum})`);
             }
 
             if (i % 100 === 0 && Date.now() - start > 5000) {

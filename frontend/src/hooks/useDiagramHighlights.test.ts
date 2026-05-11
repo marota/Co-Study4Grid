@@ -46,7 +46,7 @@ const makeDiagramsState = (overrides: Partial<DiagramsState> = {}): DiagramsStat
     const n1Diagram = { svg: '<svg></svg>', lines_overloaded: ['OVL_LINE'] } as unknown as DiagramData;
     const actionDiagram = { svg: '<svg></svg>' } as unknown as DiagramData;
     const base = {
-        activeTab: 'n-1',
+        activeTab: 'contingency',
         nDiagram: { svg: '<svg></svg>' } as unknown as DiagramData,
         n1Diagram,
         actionDiagram,
@@ -82,7 +82,7 @@ describe('useDiagramHighlights — halo call order matches product spec', () => 
             actions: {},
             action_scores: {},
         } as unknown as AnalysisResult;
-        const diagrams = makeDiagramsState({ activeTab: 'n-1' });
+        const diagrams = makeDiagramsState({ activeTab: 'contingency' });
 
         renderHook(() => useDiagramHighlights({
             diagrams,

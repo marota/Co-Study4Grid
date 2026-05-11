@@ -6,7 +6,7 @@ from expert_op4grid_recommender import config
 class TestCacheSynchronization:
     """Tests for the _cached_obs mechanism in RecommenderService."""
 
-    @patch.object(RecommenderService, '_get_n1_variant')
+    @patch.object(RecommenderService, '_get_contingency_variant')
     @patch.object(RecommenderService, '_get_n_variant')
     @patch.object(RecommenderService, '_get_simulation_env')
     @patch.object(RecommenderService, '_get_base_network')
@@ -55,16 +55,16 @@ class TestCacheSynchronization:
             assert service._cached_obs_n is obs_n
             assert service._cached_obs_n1 is obs_n1
 
-    @patch.object(RecommenderService, '_get_n1_variant')
+    @patch.object(RecommenderService, '_get_contingency_variant')
     @patch.object(RecommenderService, '_get_n_variant')
     @patch.object(RecommenderService, '_get_simulation_env')
     @patch.object(RecommenderService, '_get_base_network')
     def test_cache_invalidation_on_contingency_switch(self, mock_get_net, mock_get_env, mock_get_n, mock_get_n1):
-        # `_ensure_n1_state_ready` (invoked at the top of
+        # `_ensure_contingency_state_ready` (invoked at the top of
         # `simulate_manual_action`) calls `_get_base_network()` BEFORE
-        # `_get_n1_variant()`. When the base network is not mocked the
+        # `_get_contingency_variant()`. When the base network is not mocked the
         # fallback path `pp.network.load(config.ENV_PATH)` raises — the
-        # guard swallows the exception, but `_get_n1_variant` is never
+        # guard swallows the exception, but `_get_contingency_variant` is never
         # called, so the 4 `side_effect` values below shift by one and
         # the second `simulate_manual_action("DISCO_B")` ends up getting
         # the cached "n1_A" id back → both N and N-1 caches hit → zero
@@ -83,11 +83,11 @@ class TestCacheSynchronization:
         
         # Contingency A
         mock_get_n.return_value = "n_var"
-        # Each `simulate_manual_action` call now triggers `_get_n1_variant`
+        # Each `simulate_manual_action` call now triggers `_get_contingency_variant`
         # three times:
-        #   1. the `_ensure_n1_state_ready` guard at entry (see
+        #   1. the `_ensure_contingency_state_ready` guard at entry (see
         #      docs/performance/history/grid2op-shared-network.md),
-        #   2. the N-1 fetch inside `_fetch_n_and_n1_observations`,
+        #   2. the N-1 fetch inside `_fetch_n_and_contingency_observations`,
         #   3. the explicit pre-simulate pin added to guarantee the
         #      working variant is on N-1 before
         #      `obs.simulate(action, keep_variant=True)` runs (otherwise
@@ -146,8 +146,8 @@ class TestCacheSynchronization:
         # otherwise stale convergence flags from the previous grid
         # would leak.
         service._lf_status_by_variant = {
-            "N_1_state_DISCO_A": {"converged": True, "lf_status": "CONVERGED"},
-            "N_1_state_DISCO_B": {"converged": False, "lf_status": "FAILED"},
+            "contingency_state_DISCO_A": {"converged": True, "lf_status": "CONVERGED"},
+            "contingency_state_DISCO_B": {"converged": False, "lf_status": "FAILED"},
         }
 
         service.reset()
@@ -157,7 +157,7 @@ class TestCacheSynchronization:
         assert service._cached_obs_n_id is None
         assert service._cached_obs_n1_id is None
         # The LF-status cache dict must be emptied (not replaced with
-        # None) so later `_get_n1_variant` calls on the fresh study
+        # None) so later `_get_contingency_variant` calls on the fresh study
         # can still use `dict.get()` / `dict[key] = ...` safely.
         assert service._lf_status_by_variant == {}
 
@@ -174,7 +174,7 @@ class TestCacheSynchronization:
         # verify it stays isolated. Here we check that the object identity is preserved.
         assert service._cached_obs_n1 is obs_n1
 
-    @patch.object(RecommenderService, '_get_n1_variant')
+    @patch.object(RecommenderService, '_get_contingency_variant')
     @patch.object(RecommenderService, '_get_n_variant')
     @patch.object(RecommenderService, '_get_simulation_env')
     @patch.object(RecommenderService, '_get_base_network')
@@ -262,7 +262,7 @@ class TestCacheSynchronization:
         #    (not on a freshly-fetched stale obs).
         assert ctx_obs_n1.simulate.call_count == 1
 
-    @patch.object(RecommenderService, '_get_n1_variant')
+    @patch.object(RecommenderService, '_get_contingency_variant')
     @patch.object(RecommenderService, '_get_n_variant')
     @patch.object(RecommenderService, '_get_simulation_env')
     @patch.object(RecommenderService, '_get_base_network')
@@ -270,7 +270,7 @@ class TestCacheSynchronization:
         self, mock_get_net, mock_get_env, mock_get_n, mock_get_n1,
     ):
         """Without step1 context, ``simulate_manual_action`` must still
-        work via the fallback ``_fetch_n_and_n1_observations`` path and
+        work via the fallback ``_fetch_n_and_contingency_observations`` path and
         the pre-simulate N-1 re-pin must fire (since the fallback's
         cache-hit branches can leave the working variant drifted)."""
         service = RecommenderService()

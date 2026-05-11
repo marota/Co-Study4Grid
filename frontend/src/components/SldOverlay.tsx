@@ -17,7 +17,8 @@ export interface SldOverlayProps {
     onOverlaySldTabChange: (tab: SldTab) => void;
     n1Diagram: DiagramData | null;
     actionDiagram: DiagramData | null;
-    selectedBranch: string;
+    /** Currently APPLIED contingency (list of element IDs disconnected). */
+    selectedContingency: string[];
     result: AnalysisResult | null;
     /**
      * User-configured monitoring-factor threshold (typically 0.95).
@@ -35,7 +36,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
     vlOverlay, actionViewMode,
     onOverlayClose, onOverlaySldTabChange,
     n1Diagram, actionDiagram,
-    selectedBranch, result,
+    selectedContingency, result,
     monitoringFactor = 0.95,
 }) => {
     const overlayBodyRef = useRef<HTMLDivElement>(null);
@@ -448,7 +449,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
             changedSwitches: vlOverlay.changed_switches
                 ? Object.keys(vlOverlay.changed_switches).sort()
                 : [],
-            branch: selectedBranch,
+            branch: selectedContingency.join('+'),
             n1Overloads: result?.lines_overloaded ?? [],
             actionOverloads: actionDetailForSig?.lines_overloaded_after ?? [],
             ls: ls.map(d => `${d.load_name}:${d.shedded_mw}`).sort(),
@@ -574,12 +575,14 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         const actionDetail: ActionDetail | undefined =
             (actionId && result?.actions) ? result.actions[actionId] : undefined;
 
-        // --- Contingency highlight (N-1 and action tabs) ---
-        if (vlOverlay.tab !== 'n' && selectedBranch) {
-            const cell = findCellForEquipment(selectedBranch);
-            if (cell) {
-                cloneHighlight(cell, 'sld-highlight-contingency');
-                highlightedCells.add(cell);
+        // --- Contingency highlight (contingency and action tabs) ---
+        if (vlOverlay.tab !== 'n' && selectedContingency.length > 0) {
+            for (const id of selectedContingency) {
+                const cell = findCellForEquipment(id);
+                if (cell) {
+                    cloneHighlight(cell, 'sld-highlight-contingency');
+                    highlightedCells.add(cell);
+                }
             }
         }
 
@@ -727,7 +730,7 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
         // same displayed max_rho did not — the backend thresholds
         // diverge (`simulation_mixin.py:536` vs `analysis_mixin.py:97`).
         let overloadedLinesToShow: string[] | undefined;
-        if (vlOverlay.tab === 'n-1') {
+        if (vlOverlay.tab === 'contingency') {
             overloadedLinesToShow = result?.lines_overloaded;
         } else if (vlOverlay.tab === 'action' && actionDetail) {
             const isSolved = actionDetail.max_rho != null
@@ -823,8 +826,8 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                         </span>
                     </div>
                     <div style={{ display: 'flex', gap: '4px' }}>
-                        {(['n', 'n-1', 'action'] as SldTab[]).filter(tabMode => {
-                            if (tabMode === 'n-1') return !!n1Diagram;
+                        {(['n', 'contingency', 'action'] as SldTab[]).filter(tabMode => {
+                            if (tabMode === 'contingency') return !!n1Diagram;
                             // The SLD's "action" sub-tab depends on the
                             // overlay being scoped to an action — NOT on
                             // the main-window NAD already being on the
@@ -851,7 +854,9 @@ const SldOverlay: React.FC<SldOverlayProps> = ({
                                     cursor: vlOverlay.loading ? 'wait' : 'pointer',
                                 }}
                             >
-                                {tabMode.toUpperCase()}
+                                {tabMode === 'contingency'
+                                    ? (selectedContingency.length > 1 ? `N-${selectedContingency.length}` : 'N-1')
+                                    : tabMode.toUpperCase()}
                             </button>
                         ))}
                     </div>

@@ -61,13 +61,13 @@ class TestRecommenderSimulationRealData:
             pytest.skip("No lines in test grid")
 
         target_line = line_ids[0]
-        v_n1 = self.service._get_n1_variant(target_line)
-        expected_v1 = f"N_1_state_{target_line}"
+        v_n1 = self.service._get_contingency_variant(target_line)
+        expected_v1 = f"contingency_state_{target_line}"
         assert v_n1 == expected_v1
         assert v_n1 in n1.get_variant_ids()
 
         with patch.object(n1, "clone_variant") as mock_clone:
-            v_n1_repeat = self.service._get_n1_variant(target_line)
+            v_n1_repeat = self.service._get_contingency_variant(target_line)
             assert v_n1_repeat == expected_v1
             mock_clone.assert_not_called()
 
@@ -177,7 +177,7 @@ class TestRecommenderSimulationRealData:
                 # In the actual code: obs_simu_defaut._variant_id = n1_variant_id
                 # env.get_obs() uses side_effect=wrapped_get_obs which returns mock_obs;
                 # mock_get_obs.return_value is a separate auto-generated mock, not mock_obs.
-                assert mock_obs._variant_id == f"N_1_state_{target_line}"
+                assert mock_obs._variant_id == f"contingency_state_{target_line}"
 
-                # Check that _last_disconnected_element was updated
-                assert self.service._last_disconnected_element == target_line
+                # Check that _last_disconnected_elements was updated
+                assert self.service._last_disconnected_elements == [target_line]

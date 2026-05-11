@@ -593,6 +593,161 @@ describe('buildOverflowPinPayload — overviewFilters', () => {
 });
 
 // ---------------------------------------------------------------------
+// Combined-only filter — the new "Combined only" pin chip on both the
+// Action Overview NAD and the Overflow Analysis iframe must drop every
+// unitary / un-simulated pin that is NOT a constituent of a passing
+// combined pin, and dim the surviving constituents so they read as
+// context for the pair glyph.
+// ---------------------------------------------------------------------
+
+describe('buildOverflowPinPayload — showCombinedOnly', () => {
+    const makeCombinedFixture = () => {
+        const actions: Record<string, ActionDetail> = {
+            ls_a: {
+                description_unitaire: 'load shedding A',
+                max_rho: 0.40,
+                load_shedding_details: [
+                    { load_name: 'L1', voltage_level_id: 'VLA', shedded_mw: 10 },
+                ],
+            } as unknown as ActionDetail,
+            ls_b: {
+                description_unitaire: 'load shedding B',
+                max_rho: 0.50,
+                load_shedding_details: [
+                    { load_name: 'L2', voltage_level_id: 'VLB', shedded_mw: 12 },
+                ],
+            } as unknown as ActionDetail,
+            ls_solo: {
+                description_unitaire: 'load shedding solo',
+                max_rho: 0.60,
+                load_shedding_details: [
+                    { load_name: 'L3', voltage_level_id: 'VLC', shedded_mw: 15 },
+                ],
+            } as unknown as ActionDetail,
+            'ls_a+ls_b': {
+                description_unitaire: 'combined LS',
+                max_rho: 0.70,
+            } as unknown as ActionDetail,
+        };
+        const meta = makeMetaIndex({
+            VLA: { equipmentId: 'VLA' },
+            VLB: { equipmentId: 'VLB' },
+            VLC: { equipmentId: 'VLC' },
+        });
+        const subs = { VLA: 'SUB_A', VLB: 'SUB_B', VLC: 'SUB_C' };
+        return { actions, meta, subs };
+    };
+
+    it('drops every unitary pin that is NOT a combined-pair constituent', () => {
+        const { actions, meta, subs } = makeCombinedFixture();
+        const filters: ActionOverviewFilters = {
+            ...DEFAULT_ACTION_OVERVIEW_FILTERS,
+            threshold: 3.0,
+            showCombinedOnly: true,
+        };
+        const out = buildOverflowPinPayload(
+            actions, meta, subs, 0.95, new Set(), new Set(), undefined, filters,
+        );
+        const ids = new Set(out.map(p => p.actionId));
+        // Solo pin disappears; constituents stay (dimmed); pair stays.
+        expect(ids.has('ls_solo')).toBe(false);
+        expect(ids.has('ls_a')).toBe(true);
+        expect(ids.has('ls_b')).toBe(true);
+        expect(ids.has('ls_a+ls_b')).toBe(true);
+    });
+
+    it('marks the surviving constituents with dimmedByFilter so the iframe renders them as context', () => {
+        const { actions, meta, subs } = makeCombinedFixture();
+        const filters: ActionOverviewFilters = {
+            ...DEFAULT_ACTION_OVERVIEW_FILTERS,
+            threshold: 3.0,
+            showCombinedOnly: true,
+        };
+        const out = buildOverflowPinPayload(
+            actions, meta, subs, 0.95, new Set(), new Set(), undefined, filters,
+        );
+        const byId = new Map(out.map(p => [p.actionId, p]));
+        expect(byId.get('ls_a')?.dimmedByFilter).toBe(true);
+        expect(byId.get('ls_b')?.dimmedByFilter).toBe(true);
+        // Combined pin itself is NOT dimmed — it's the focus of the mode.
+        expect(byId.get('ls_a+ls_b')?.dimmedByFilter).toBeFalsy();
+        expect(byId.get('ls_a+ls_b')?.isCombined).toBe(true);
+    });
+
+    it('returns no unitary pins at all when no combined pair exists', () => {
+        // showCombinedOnly with zero pairs ⇒ empty unitary output.
+        // The payload may still carry the un-paired actions only if
+        // a passing combined pair references them; otherwise drop.
+        const actions: Record<string, ActionDetail> = {
+            solo1: {
+                description_unitaire: '',
+                max_rho: 0.5,
+                load_shedding_details: [
+                    { load_name: 'L1', voltage_level_id: 'V1', shedded_mw: 10 },
+                ],
+            } as unknown as ActionDetail,
+            solo2: {
+                description_unitaire: '',
+                max_rho: 0.5,
+                load_shedding_details: [
+                    { load_name: 'L2', voltage_level_id: 'V1', shedded_mw: 11 },
+                ],
+            } as unknown as ActionDetail,
+        };
+        const meta = makeMetaIndex({ V1: { equipmentId: 'V1' } });
+        const filters: ActionOverviewFilters = {
+            ...DEFAULT_ACTION_OVERVIEW_FILTERS,
+            threshold: 3.0,
+            showCombinedOnly: true,
+        };
+        const out = buildOverflowPinPayload(
+            actions, meta, { V1: 'SUB_A' }, 0.95,
+            new Set(), new Set(), undefined, filters,
+        );
+        expect(out).toEqual([]);
+    });
+
+    it('drops the combined pin too when its own severity / threshold filter fails', () => {
+        // showCombinedOnly only touches the unitary pins — combined
+        // pins still go through their own filter, so a pair that
+        // fails its severity / threshold check disappears entirely
+        // (and so do its constituents, since nothing protects them).
+        const { actions, meta, subs } = makeCombinedFixture();
+        // Bump the pair max_rho above the threshold.
+        actions['ls_a+ls_b'] = {
+            ...actions['ls_a+ls_b'],
+            max_rho: 1.30,
+        } as ActionDetail;
+        const filters: ActionOverviewFilters = {
+            ...DEFAULT_ACTION_OVERVIEW_FILTERS,
+            threshold: 1.0,
+            showCombinedOnly: true,
+        };
+        const out = buildOverflowPinPayload(
+            actions, meta, subs, 0.95, new Set(), new Set(), undefined, filters,
+        );
+        expect(out).toEqual([]);
+    });
+
+    it('does not touch the payload when showCombinedOnly is false (default behaviour preserved)', () => {
+        const { actions, meta, subs } = makeCombinedFixture();
+        const filters: ActionOverviewFilters = {
+            ...DEFAULT_ACTION_OVERVIEW_FILTERS,
+            threshold: 3.0,
+            showCombinedOnly: false,
+        };
+        const out = buildOverflowPinPayload(
+            actions, meta, subs, 0.95, new Set(), new Set(), undefined, filters,
+        );
+        const ids = new Set(out.map(p => p.actionId));
+        // Solo pin survives at full strength alongside the pair.
+        expect(ids.has('ls_solo')).toBe(true);
+        expect(out.find(p => p.actionId === 'ls_solo')?.dimmedByFilter).toBeFalsy();
+        expect(out.find(p => p.actionId === 'ls_a')?.dimmedByFilter).toBeFalsy();
+    });
+});
+
+// ---------------------------------------------------------------------
 // buildOverflowUnsimulatedPinPayload — Show-unsimulated path. Mirrors
 // the Action-Overview ``buildUnsimulatedActionPins`` contract.
 // ---------------------------------------------------------------------
@@ -789,5 +944,22 @@ describe('buildOverflowUnsimulatedPinPayload', () => {
         expect(out.map(p => p.actionId).sort()).toEqual(
             ['disco_LINE_AB', 'load_shedding_V1'],
         );
+    });
+
+    it('returns [] when showCombinedOnly is on (un-simulated actions can never be in a pair)', () => {
+        const out = buildOverflowUnsimulatedPinPayload(
+            ['load_shedding_V1', 'disco_LINE_AB'],
+            new Set(),
+            meta,
+            { V1: 'SUB_A', V2: 'SUB_B' },
+            undefined,
+            undefined,
+            {
+                ...DEFAULT_ACTION_OVERVIEW_FILTERS,
+                showUnsimulated: true,
+                showCombinedOnly: true,
+            },
+        );
+        expect(out).toEqual([]);
     });
 });

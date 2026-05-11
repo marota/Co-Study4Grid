@@ -62,7 +62,7 @@ def _setup_env(recommender, name_line, obs_n1_rho, obs_n_rho,
     env.name_line = name_line
     recommender._get_simulation_env = MagicMock(return_value=env)
     recommender._get_n_variant = MagicMock(return_value="N")
-    recommender._get_n1_variant = MagicMock(return_value="N-1")
+    recommender._get_contingency_variant = MagicMock(return_value="N-1")
     env.network_manager.network.get_working_variant_id.return_value = "ORIG"
 
     obs_n1 = _make_obs(obs_n1_rho, name_line=name_line)

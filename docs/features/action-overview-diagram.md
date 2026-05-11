@@ -6,7 +6,7 @@ The Remedial Action tab now hosts an **action-overview diagram** when no action 
 
 Pins visually reflect the operator's triage decisions: **selected** (starred) actions are highlighted with a gold star above the pin, while **rejected** actions are dimmed with a red cross. **Simulated combined actions** (two unitary actions applied together) appear as a dedicated pin at the midpoint of a curved dashed connection linking the two constituent pins.
 
-A consolidated **single-row header** above the diagram exposes a compact pin counter plus every filter control inline: severity category toggles (Solves overload / Low margin / Still overloaded / Divergent-or-islanded), a `All` / `None` bulk-toggle pair, a **max-loading threshold slider**, a **Show unsimulated** checkbox, and a single-select **action-type chip row** (`ALL / DISCO / RECO / LS / RC / OPEN / CLOSE / PST`). All four controls feed a single `ActionOverviewFilters` state owned by `App.tsx` and are shared with the sidebar `ActionFeed`, so a card hidden in the feed is also hidden on the overview and vice-versa. See [Filtering](#filtering) below.
+A consolidated **single-row header** above the diagram exposes a compact pin counter plus every filter control inline: severity category toggles (Solves overload / Low margin / Still overloaded / Divergent-or-islanded), a `All` / `None` bulk-toggle pair, a **max-loading threshold slider**, a **Show unsimulated** checkbox, a **Combined only** checkbox (PIN-SCOPED — restricts the overview to combined-action pins + their two constituents dimmed for context), and a single-select **action-type chip row** (`ALL / DISCO / RECO / LS / RC / OPEN / CLOSE / PST`). All six controls feed a single `ActionOverviewFilters` state owned by `App.tsx` and are shared with the sidebar `ActionFeed`, so a card hidden in the feed is also hidden on the overview and vice-versa — except `showCombinedOnly`, which is intentionally pin-only and never hides feed cards. See [Filtering](#filtering) below.
 
 When **Show unsimulated** is enabled, scored-but-not-yet-simulated actions (those present in `result.action_scores` but absent from the simulated `actions` dict) are rendered as dimmed, dashed **un-simulated pins**. Hovering one reveals a score-metadata tooltip (type, score, rank-in-type, MW/tap start); double-clicking it kicks off the same manual-simulation code path the Manual Selection dropdown uses. See [Un-simulated action pin](#un-simulated-action-pin) below.
 
@@ -225,10 +225,12 @@ interface ActionOverviewFilters {
     threshold: number;            // ratio, e.g. 1.5 = 150 %
     showUnsimulated: boolean;
     actionType: 'all' | 'disco' | 'reco' | 'ls' | 'rc' | 'open' | 'close' | 'pst';
+    /** Pin-only: hide everything except combined pins + constituents. */
+    showCombinedOnly: boolean;
 }
 ```
 
-Default values: all four categories enabled, threshold `1.5`, `showUnsimulated: false`, `actionType: 'all'`.
+Default values: all four categories enabled, threshold `1.5`, `showUnsimulated: false`, `actionType: 'all'`, `showCombinedOnly: false`.
 
 ### Severity categories
 
@@ -269,6 +271,19 @@ The pin-building memo runs in **three passes** so combined-action constituents a
 
 This keeps the visual grammar intact: every combined-pair curve has two visible endpoints, and the operator sees the filter narrowing the view to "what matters under the current criteria" without breaking the topology of the combined pins that matter.
 
+### Combined-only toggle (`showCombinedOnly`)
+
+A pin-scoped checkbox in the filter header restricts the overview to **combined-action pins + their two constituents** (the constituents come through dimmed via the same `dimmedByFilter` flag the protected-constituent path uses). Solo unitary pins and every un-simulated pin disappear so the operator can focus on the recommender's multi-action remediations without scrolling past every standalone pin.
+
+When `showCombinedOnly: true`:
+- Combined pins still go through their own severity / threshold / action-type filter (a pair that fails its own filter is dropped, and so are its constituents — nothing protects them).
+- Unitary pins are emitted **only** when their id is in `protectedIds` (i.e. constituent of at least one passing combined pin), and always with `dimmedByFilter: true`.
+- The un-simulated pin layer (`buildUnsimulatedActionPins`) short-circuits to `[]` — un-simulated actions can never be in a computed pair.
+
+The flag is **pin-only**: the sidebar `ActionFeed` does NOT consult it, so cards remain visible even when the overview is restricted to pairs (the feed already exposes its own combined / unitary toggles via the explore-pairs surface). This asymmetry is intentional — the toggle is a focusing aid for the network view, not a global filter.
+
+The same flag drives the overflow-graph iframe via the shared `cs4g:filters` postMessage envelope; see `docs/features/interactive-overflow-analysis.md` §7 for the wire-format and round-trip contract.
+
 ### Shared predicate
 
 `actionPassesOverviewFilter(details, monitoringFactor, categoryEnabled, threshold)` (exported from `utils/svgUtils.ts`) is the single predicate used by:
@@ -281,7 +296,7 @@ The action-type check (`matchesActionTypeFilter`) is applied on top of this shar
 
 ### Interaction logging
 
-Each filter adjustment emits an `overview_filter_changed` event with the `kind` (`category` / `categories_bulk` / `threshold` / `action_type`) plus kind-specific payload. Toggling unsimulated fires `overview_unsimulated_toggled`, and simulating an un-simulated pin via double-click fires `overview_unsimulated_pin_simulated`. See `docs/features/interaction-logging.md` for the replay contract.
+Each filter adjustment emits an `overview_filter_changed` event with the `kind` (`category` / `categories_bulk` / `threshold` / `action_type` / `combined_only`) plus kind-specific payload (the `combined_only` variant carries `{ enabled: boolean }`). Toggling unsimulated fires `overview_unsimulated_toggled`, and simulating an un-simulated pin via double-click fires `overview_unsimulated_pin_simulated`. See `docs/features/interaction-logging.md` for the replay contract.
 
 ---
 

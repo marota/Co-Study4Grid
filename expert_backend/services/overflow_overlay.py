@@ -204,6 +204,7 @@ def _build_overlay_block() -> str:
     threshold: 1.5,
     showUnsimulated: false,
     actionType: 'all',
+    showCombinedOnly: false,
   }};
 
   function postFilters() {{
@@ -243,6 +244,10 @@ def _build_overlay_block() -> str:
       +   '<label class="toggle">'
       +     '<input type="checkbox" data-filter="show-unsimulated" />'
       +     '<span style="color:#6b7280">Show unsimulated</span>'
+      +   '</label>'
+      +   '<label class="toggle" title="Show only pins related to combined actions (computed pairs). Constituents stay on the graph dimmed for context.">'
+      +     '<input type="checkbox" data-filter="combined-only" />'
+      +     '<span style="color:#6b7280">Combined only</span>'
       +   '</label>'
       + '</div>'
       + '<div class="row" data-filter-row="action-types"></div>';
@@ -312,6 +317,16 @@ def _build_overlay_block() -> str:
       filterState = {{ ...filterState, showUnsimulated: !!ev.target.checked }};
       renderFilterState(); postFilters();
     }});
+    // Combined-only checkbox — mirrors the React Action Overview's
+    // "Combined only" toggle. The pin filtering itself is done in the
+    // parent React app (``buildOverflowPinPayload``); the iframe just
+    // posts the new flag so the parent recomputes the payload and
+    // re-broadcasts pins.
+    const combinedOnly = panel.querySelector('input[data-filter="combined-only"]');
+    combinedOnly.addEventListener('change', function(ev) {{
+      filterState = {{ ...filterState, showCombinedOnly: !!ev.target.checked }};
+      renderFilterState(); postFilters();
+    }});
     // Action-type chips.
     const typeRow = panel.querySelector('[data-filter-row="action-types"]');
     for (const tok of ACTION_TYPE_TOKENS) {{
@@ -347,6 +362,8 @@ def _build_overlay_block() -> str:
     if (thr) thr.value = String(Math.round(filterState.threshold * 100));
     const showU = panel.querySelector('input[data-filter="show-unsimulated"]');
     if (showU) showU.checked = !!filterState.showUnsimulated;
+    const combinedOnly = panel.querySelector('input[data-filter="combined-only"]');
+    if (combinedOnly) combinedOnly.checked = !!filterState.showCombinedOnly;
   }}
 
   function updatePinCounter(count) {{
@@ -891,6 +908,7 @@ def _build_overlay_block() -> str:
         showUnsimulated: !!msg.filters.showUnsimulated,
         actionType: typeof msg.filters.actionType === 'string'
           ? msg.filters.actionType : 'all',
+        showCombinedOnly: !!msg.filters.showCombinedOnly,
       }};
       buildFiltersPanel();
       renderFilterState();

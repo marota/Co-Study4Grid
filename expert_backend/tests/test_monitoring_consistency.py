@@ -92,7 +92,7 @@ class TestMonitoringConsistency:
         service._enrich_actions = MagicMock(return_value={})
         service._dict_action = {}
         service._get_simulation_env = MagicMock()
-        service._get_n1_variant = MagicMock(return_value="v1")
+        service._get_contingency_variant = MagicMock(return_value="v1")
         service._get_n_variant = MagicMock(return_value="v0")
         mock_identify.return_value = ([1], [1])
         

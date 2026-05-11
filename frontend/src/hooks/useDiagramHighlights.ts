@@ -20,7 +20,7 @@ import type { DiagramsState } from './useDiagrams';
 interface UseDiagramHighlightsArgs {
   diagrams: DiagramsState;
   result: AnalysisResult | null;
-  selectedBranch: string;
+  selectedContingency: string[];
   selectedOverloads: Set<string>;
   monitoringFactor: number;
   detachedTabs: Partial<Record<TabId, unknown>>;
@@ -56,7 +56,7 @@ interface UseDiagramHighlightsReturn {
 export function useDiagramHighlights({
   diagrams,
   result,
-  selectedBranch,
+  selectedContingency,
   selectedOverloads,
   monitoringFactor,
   detachedTabs,
@@ -137,7 +137,7 @@ export function useDiagramHighlights({
       selectedOverloads,
     );
 
-    if (tab === 'n-1') {
+    if (tab === 'contingency') {
       if (diagrams.n1SvgContainerRef.current) {
         // IMPORTANT: run highlight CLONES before applyDeltaVisuals.
         // The clone-based highlights (`applyOverloadedHighlights`,
@@ -161,7 +161,7 @@ export function useDiagramHighlights({
         // the action redistributes flows AND which lines are still
         // (or newly) overloaded; suppressing the halos in delta mode
         // hides exactly that information.
-        applyContingencyHighlight(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, selectedBranch);
+        applyContingencyHighlight(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, selectedContingency);
         if (diagrams.n1MetaIndex && n1OverloadedLines.length > 0) {
           applyOverloadedHighlights(diagrams.n1SvgContainerRef.current, diagrams.n1MetaIndex, n1OverloadedLines);
         }
@@ -224,7 +224,7 @@ export function useDiagramHighlights({
         // the product spec "action halo > overload halo > contingency
         // halo".
         if (diagrams.actionSvgContainerRef.current) {
-          applyContingencyHighlight(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, selectedBranch);
+          applyContingencyHighlight(diagrams.actionSvgContainerRef.current, diagrams.actionMetaIndex, selectedContingency);
         }
 
         if (diagrams.actionSvgContainerRef.current && diagrams.actionMetaIndex) {
@@ -246,12 +246,12 @@ export function useDiagramHighlights({
       // layer.
       applyDeltaVisuals(diagrams.actionSvgContainerRef.current, actionDiagram, diagrams.actionMetaIndex, effectiveMode === 'delta');
     }
-  }, [n1Diagram, actionDiagram, result, selectedActionId, selectedBranch, diagrams, monitoringFactor, viewModeForTab, selectedOverloads]);
+  }, [n1Diagram, actionDiagram, result, selectedActionId, selectedContingency, diagrams, monitoringFactor, viewModeForTab, selectedOverloads]);
 
   useEffect(() => {
     const isTabSwitch = prevHighlightTabRef.current !== activeTab;
     prevHighlightTabRef.current = activeTab;
-    const otherTabs: TabId[] = ['n', 'n-1', 'action'].filter(t => t !== activeTab) as TabId[];
+    const otherTabs: TabId[] = ['n', 'contingency', 'action'].filter(t => t !== activeTab) as TabId[];
     otherTabs.forEach(t => staleHighlights.current.add(t));
 
     // Apply highlights + delta visuals to both the main window's
@@ -281,7 +281,7 @@ export function useDiagramHighlights({
     } else {
       applyAll();
     }
-  }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, detachedViewModes, detachedTabs, activeTab, selectedBranch, selectedOverloads, applyHighlightsForTab]);
+  }, [nDiagram, n1Diagram, actionDiagram, diagrams.nMetaIndex, diagrams.n1MetaIndex, diagrams.actionMetaIndex, result, selectedActionId, actionViewMode, detachedViewModes, detachedTabs, activeTab, selectedContingency, selectedOverloads, applyHighlightsForTab]);
 
   return { viewModeForTab, handleViewModeChangeForTab };
 }

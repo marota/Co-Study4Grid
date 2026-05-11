@@ -22,11 +22,15 @@ export interface ConfigRequest {
     ignore_reconnections?: boolean;
     pypowsybl_fast_mode?: boolean;
     layout_path?: string;
-    force_layout?: boolean;
 }
 
 export interface AnalysisRequest {
-    disconnected_element: string;
+    /**
+     * Ordered list of element IDs to disconnect simultaneously. A
+     * single-item list is the legacy N-1 case; longer lists drive
+     * N-K (multi-element) contingency studies.
+     */
+    disconnected_elements: string[];
 }
 
 export interface ActionTopology {
@@ -284,12 +288,12 @@ export interface DiagramPatch {
         edge_fragments?: Record<string, { svg: string; sub_svg_id: string }>;
     }>;
     meta?: {
-        base_state?: 'N' | 'N-1';
+        base_state?: 'N' | 'contingency';
         elapsed_ms?: number;
     };
 }
 
-export type TabId = 'n' | 'n-1' | 'action' | 'overflow';
+export type TabId = 'n' | 'contingency' | 'action' | 'overflow';
 
 export interface SettingsBackup {
     // Paths tab (new)
@@ -311,7 +315,6 @@ export interface SettingsBackup {
     ignoreReconnections?: boolean;
     pypowsyblFastMode?: boolean;
     layoutPath?: string;
-    forceLayout?: boolean;
 }
 
 export interface RecommenderDisplayConfig {
@@ -332,7 +335,7 @@ export interface AvailableAction {
     type?: string;
 }
 
-export type SldTab = 'n' | 'n-1' | 'action';
+export type SldTab = 'n' | 'contingency' | 'action';
 
 // SLD metadata feeder node: maps SVG element IDs to network equipment IDs.
 // Comes from pypowsybl's GraphMetadata (feederNodes array).
@@ -426,9 +429,25 @@ export interface SessionResult {
         pypowsybl_fast_mode: boolean;
     };
     contingency: {
-        disconnected_element: string;
+        /**
+         * Ordered list of element IDs disconnected for this study.
+         * Older session dumps may carry a single ``disconnected_element``
+         * (string) under the same shape — the loader promotes it to a
+         * 1-element list before pushing into React state.
+         */
+        disconnected_elements: string[];
+        /** Legacy single-element field — read-only backward compat. */
+        disconnected_element?: string;
         selected_overloads: string[];
         monitor_deselected: boolean;
+        /**
+         * Snapshot of the "additional lines to prevent flow
+         * increase" picker captured at Step 2 post-time. Drives the
+         * post-run "Additional lines integrated…" sidebar notice
+         * after a session reload. Optional — older session dumps
+         * and runs that didn't use the picker omit the field.
+         */
+        additional_lines_to_cut?: string[];
     };
     overloads: {
         n_overloads: string[];
@@ -483,13 +502,17 @@ export type InteractionType =
     | 'settings_applied'
     | 'settings_cancelled'
     | 'path_picked'
-    // Contingency Selection
+    // Contingency Selection (multi-element / N-K)
     | 'contingency_selected'
     | 'contingency_confirmed'
+    | 'contingency_element_added'
+    | 'contingency_element_removed'
+    | 'contingency_applied'
     // Two-Step Analysis
     | 'analysis_step1_started'
     | 'analysis_step1_completed'
     | 'overload_toggled'
+    | 'additional_line_to_cut_toggled'
     | 'analysis_step2_started'
     | 'analysis_step2_completed'
     | 'prioritized_actions_displayed'
@@ -597,6 +620,17 @@ export interface ActionOverviewFilters {
      * stay in sync regardless of which chip row the operator uses.
      */
     actionType: ActionTypeFilterToken;
+    /**
+     * Pin-only "combined actions only" toggle. When true, the Action
+     * Overview NAD and the overflow-graph iframe render combined-action
+     * pins (pair ids containing ``+``) plus their constituents (dimmed
+     * for context) and drop every other unitary / un-simulated pin.
+     * Lets operators focus on the multi-action remediations the
+     * recommender has computed without having to scroll past every
+     * unitary pin. The Action Feed cards are not gated by this flag —
+     * it is intentionally pin-scoped.
+     */
+    showCombinedOnly: boolean;
 }
 
 /**

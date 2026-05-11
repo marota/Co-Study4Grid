@@ -62,7 +62,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._generator = None
         self._base_network = None
         self._simulation_env = None
-        self._last_disconnected_element = None
+        self._last_disconnected_elements: list[str] = []
         self._dict_action = None
         self._analysis_context = None
         self._saved_computed_pairs = None
@@ -108,13 +108,6 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         # `/api/regenerate-overflow-graph` can re-invoke graph generation
         # without redoing step1 setup or action discovery.
         self._last_step2_context = None
-        # NAD layout-type opt-in. Default GEOGRAPHICAL is ~450 ms cheaper
-        # on large grids; FORCE_LAYOUT is the readability fallback for
-        # PyPSA-derived networks with collocated VLs at urban substations.
-        # Read by `DiagramMixin._default_nad_parameters` on every NAD call
-        # so the toggle flips base / N-1 / action / focused diagrams in
-        # lockstep. Set from `settings.force_layout` in `update_config`.
-        self._force_layout = False
 
     def reset(self):
         """Clear all cached analysis state. Called when loading a new study."""
@@ -129,7 +122,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._generator = None
         self._base_network = None
         self._simulation_env = None
-        self._last_disconnected_element = None
+        self._last_disconnected_elements = []
         self._dict_action = None
         self._analysis_context = None
         self._saved_computed_pairs = None
@@ -159,9 +152,6 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._overflow_layout_mode = "hierarchical"
         self._overflow_layout_cache = {}
         self._last_step2_context = None
-        # NAD layout opt-in: revert to the geographic default. The next
-        # `update_config` call will re-apply the user's setting.
-        self._force_layout = False
 
     # ------------------------------------------------------------------
     # Overflow-graph layout (Hierarchical / Geo)
@@ -296,7 +286,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
             raise self._prefetched_base_nad_error
         return self._prefetched_base_nad
 
-    def restore_analysis_context(self, lines_we_care_about, disconnected_element=None, lines_overloaded=None, computed_pairs=None):
+    def restore_analysis_context(self, lines_we_care_about, disconnected_elements=None, lines_overloaded=None, computed_pairs=None):
         """Restore analysis context from a saved session.
 
         This sets _analysis_context so that subsequent simulate_manual_action
@@ -308,15 +298,15 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._analysis_context = {
             "lines_we_care_about": list(lines_we_care_about) if lines_we_care_about else None,
         }
-        if disconnected_element:
-            self._last_disconnected_element = disconnected_element
+        if disconnected_elements:
+            self._last_disconnected_elements = list(disconnected_elements)
         if lines_overloaded is not None:
             self._analysis_context["lines_overloaded"] = list(lines_overloaded)
         if computed_pairs is not None:
             self._saved_computed_pairs = computed_pairs
         logger.info(f"[restore_analysis_context] Restored context: "
               f"{len(lines_we_care_about) if lines_we_care_about else 0} monitored lines, "
-              f"disconnected={disconnected_element}, "
+              f"disconnected={list(disconnected_elements) if disconnected_elements else []}, "
               f"{len(lines_overloaded) if lines_overloaded else 0} overloaded lines, "
               f"{len(computed_pairs) if computed_pairs else 0} computed pairs")
 
@@ -359,13 +349,6 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
             config.LAYOUT_FILE_PATH = Path(settings.layout_path)
         else:
             config.LAYOUT_FILE_PATH = None
-
-        # NAD layout opt-in (read by DiagramMixin._default_nad_parameters).
-        # Pinned BEFORE prefetch_base_nad_async so the prefetched base
-        # NAD already uses the requested layout type — otherwise the
-        # first `/api/network-diagram` would serve a stale cache rendered
-        # under the previous toggle state.
-        self._force_layout = bool(getattr(settings, 'force_layout', False) or False)
 
         # Force the requested global flags
         config.MAX_RHO_BOTH_EXTREMITIES = True
@@ -647,7 +630,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
                 n.set_working_variant(original_variant)
         return variant_id
 
-    def _apply_contingency(self, n, contingency: str) -> bool:
+    def _apply_contingency_element(self, n, contingency: str) -> bool:
         """Disconnect ``contingency`` (a line or 2-winding transformer) on
         the current working variant of ``n``.
 
@@ -655,11 +638,12 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         (without raising) when the equipment's terminals don't expose
         the disconnectors the high-level API expects — which happens on
         small test grids and some RTE xiidm exports. Simply catching
-        exceptions therefore misses the failure and leaves the N-1
-        variant identical to N, which then looks like "no overloads
-        anywhere" on the diagram even though the analysis pipeline
-        correctly finds them (it uses grid2op, which disconnects at the
-        line level, not at the pypowsybl switch level).
+        exceptions therefore misses the failure and leaves the
+        contingency variant identical to N, which then looks like "no
+        overloads anywhere" on the diagram even though the analysis
+        pipeline correctly finds them (it uses grid2op, which
+        disconnects at the line level, not at the pypowsybl switch
+        level).
 
         Fall back to ``update_lines`` / ``update_2_windings_transformers``
         with ``connected1=False, connected2=False`` — that directly sets
@@ -694,22 +678,72 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
             return True
         except Exception as e:
             logger.warning(
-                "Fallback update_* failed for %s: %s — N-1 variant will "
-                "not reflect the contingency and overload detection will "
-                "be wrong.",
+                "Fallback update_* failed for %s: %s — contingency variant "
+                "will not reflect the disconnection and overload detection "
+                "will be wrong.",
                 contingency, e,
             )
             return False
 
-    def _get_n1_variant(self, contingency: str):
-        """Return the variant ID for the N-1 state, creating and simulating it if necessary.
+    @staticmethod
+    def _normalize_contingency_elements(elements) -> list[str]:
+        """Coerce caller-supplied contingency input into a clean list.
 
-        Always clones from the N state variant (not the current working variant)
-        to avoid inheriting modifications from prior action simulations.
+        Accepts ``None``, a single string (legacy single-element shape
+        still used by a few internal call-sites), or any iterable of
+        strings. Strips empties and preserves caller order — order
+        matters for variant-id stability across calls in a single
+        session.
         """
+        if elements is None:
+            return []
+        if isinstance(elements, str):
+            return [elements] if elements else []
+        out: list[str] = []
+        for e in elements:
+            if e:
+                out.append(str(e))
+        return out
+
+    @staticmethod
+    def _contingency_variant_id(elements: list[str]) -> str:
+        """Build a deterministic variant ID for a (possibly multi-element)
+        contingency.  Order-sensitive on purpose so an N-2 with
+        ``[A, B]`` and ``[B, A]`` share the same variant cache (we sort).
+        """
+        if not elements:
+            return "contingency_state_none"
+        safe = sorted(
+            e.replace(" ", "_").replace("-", "_").replace("/", "_")
+            for e in elements
+        )
+        joined = "__".join(safe)
+        # Variant IDs end up in pypowsybl logs / error messages so we keep
+        # them readable for short contingencies and fall back to a hash
+        # only for very long lists (rare, but possible for N-K studies).
+        if len(joined) > 120:
+            import hashlib
+            digest = hashlib.sha1("\x00".join(safe).encode("utf-8")).hexdigest()[:16]
+            return f"contingency_state_{len(safe)}elts_{digest}"
+        return f"contingency_state_{joined}"
+
+    def _get_contingency_variant(self, elements):
+        """Return the variant ID for the contingency state, creating and
+        simulating it if necessary.
+
+        ``elements`` may be a single string (legacy) or an iterable of
+        element IDs.  Empty / None returns the N variant.
+
+        Always clones from the N state variant (not the current working
+        variant) to avoid inheriting modifications from prior action
+        simulations.
+        """
+        norm = self._normalize_contingency_elements(elements)
+        if not norm:
+            return self._get_n_variant()
+
         n = self._get_base_network()
-        safe_cont = contingency.replace(" ", "_").replace("-", "_") if contingency else "none"
-        variant_id = f"N_1_state_{safe_cont}"
+        variant_id = self._contingency_variant_id(norm)
 
         if variant_id not in n.get_variant_ids():
             original_variant = n.get_working_variant_id()
@@ -717,18 +751,12 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
             # may have been left on a simulation variant with modified topology.
             n_variant_id = self._get_n_variant()
             n.clone_variant(n_variant_id, variant_id)
-            # try/finally protects shared-Network consumers from being stuck
-            # on an N-1 variant if the AC load flow raises — same rationale
-            # as in `_get_n_variant` above.
             try:
                 n.set_working_variant(variant_id)
-                if contingency:
-                    self._apply_contingency(n, contingency)
+                for elt in norm:
+                    self._apply_contingency_element(n, elt)
                 params = create_olf_rte_parameter()
                 results = self._run_ac_with_fallback(n, params)
-                # Cache the LF result so `get_n1_diagram` doesn't need
-                # to re-run AC LF just to extract convergence status.
-                # Saves ~600 ms per diagram on PyPSA-EUR France.
                 try:
                     converged = any(r.status.name == 'CONVERGED' for r in results)
                     status_name = results[0].status.name if results else "UNKNOWN"
@@ -788,39 +816,41 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
             # message.
             logger.warning(f"[_ensure_n_state_ready] Could not position N variant: {e}")
 
-    def _ensure_n1_state_ready(self, disconnected_element: str):
+    def _ensure_contingency_state_ready(self, disconnected_elements):
         """Guarantee the shared pypowsybl Network is positioned on the
-        N-1 variant for `disconnected_element` with no background work
-        still touching it.
+        contingency variant for ``disconnected_elements`` with no
+        background work still touching it.
 
         Called at the entry of `simulate_manual_action` and
-        `compute_superposition`, whose natural entry state is N-1:
-        they simulate actions ON TOP of a contingency that is already
-        the subject of the current analysis session.
+        `compute_superposition`, whose natural entry state is the
+        contingency state: they simulate actions ON TOP of a
+        contingency that is already the subject of the current
+        analysis session.
 
         Same drain-then-position pattern as `_ensure_n_state_ready`,
-        just with `_get_n1_variant(disconnected_element)` as the target.
-        Creating the N-1 variant on a cold cache triggers an AC load
-        flow (~2-5 s on large grids) — that's a one-off cost amortised
-        across every subsequent action simulation against this
-        contingency.
+        just with `_get_contingency_variant(disconnected_elements)` as
+        the target.  Creating the variant on a cold cache triggers an
+        AC load flow (~2-5 s on large grids) — that's a one-off cost
+        amortised across every subsequent action simulation against
+        this contingency.
         """
         self._drain_pending_base_nad_prefetch()
         if self._base_network is None and getattr(config, 'ENV_PATH', None) is None:
             return
-        if not disconnected_element:
+        norm = self._normalize_contingency_elements(disconnected_elements)
+        if not norm:
             # Nothing to position on — simulation endpoints do pass a
-            # contingency; an empty string here means the caller
+            # contingency; an empty list here means the caller
             # skipped the analysis flow entirely. Drain-only, no
             # variant assertion.
             return
         try:
             n = self._get_base_network()
-            n1_variant = self._get_n1_variant(disconnected_element)
-            n.set_working_variant(n1_variant)
+            variant = self._get_contingency_variant(norm)
+            n.set_working_variant(variant)
         except Exception as e:
-            logger.warning(f"[_ensure_n1_state_ready] Could not position N-1 variant "
-                           f"for {disconnected_element!r}: {e}")
+            logger.warning(f"[_ensure_contingency_state_ready] Could not position "
+                           f"contingency variant for {norm!r}: {e}")
 
     def _get_simulation_env(self):
         """Return a SimulationEnvironment instance, caching it."""

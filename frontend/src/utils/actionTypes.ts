@@ -41,6 +41,7 @@ export const DEFAULT_ACTION_OVERVIEW_FILTERS: ActionOverviewFilters = {
     threshold: 1.5,
     showUnsimulated: false,
     actionType: 'all',
+    showCombinedOnly: false,
 };
 
 export type { ActionTypeFilterToken };

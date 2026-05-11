@@ -88,7 +88,8 @@ interface VisualizationPanelProps {
     onZoomIn: (targetTab?: TabId) => void;
     onZoomOut: (targetTab?: TabId) => void;
     hasBranches: boolean;
-    selectedBranch: string;
+    /** Currently APPLIED contingency (list of element IDs disconnected). */
+    selectedContingency: string[];
     vlOverlay: VlOverlay | null;
     onOverlayClose: () => void;
     onOverlaySldTabChange: (tab: SldTab) => void;
@@ -222,7 +223,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onZoomIn,
     onZoomOut,
     hasBranches,
-    selectedBranch,
+    selectedContingency,
     vlOverlay,
     onOverlayClose,
     onOverlaySldTabChange,
@@ -323,6 +324,15 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
         return inspectableItems.filter(b => b.toUpperCase().includes(q)).slice(0, 50);
     }, [inspectableItems, inspectQuery]);
 
+    // Tab label adapts to the size of the applied contingency: N-1 for
+    // a single disconnected element, N-2 / N-K for multi-element
+    // studies, and a bare "Contingency" while no element is committed.
+    const contingencyTabLabel = useMemo(() => {
+        const k = selectedContingency.length;
+        if (k <= 0) return 'Contingency';
+        return `Contingency (N-${k})`;
+    }, [selectedContingency]);
+
     // When a tab is portaled into a secondary window we inject a small
     // floating header with a Reattach button. This is the ONLY thing the
     // popup-specific wrapper adds on top of the regular tab content — the
@@ -388,7 +398,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
         const isDetachedTab = !!detachedTabs[tabId];
         const hasDiagramForTab =
             (tabId === 'n' && !!nDiagram?.svg) ||
-            (tabId === 'n-1' && !!n1Diagram?.svg) ||
+            (tabId === 'contingency' && !!n1Diagram?.svg) ||
             (tabId === 'action' && !!actionDiagram?.svg);
         const tied = isTabTiedFn(tabId);
         // Per-tab view mode: each detached popup tracks its own
@@ -611,7 +621,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                 {(
                     [
                         { id: 'n' as TabId, label: 'Network (N)' as React.ReactNode, available: !!nDiagram?.svg, accentColor: colors.brand, dimColor: colors.chromeSoft, placeholder: 'Configure a network path in Settings to load the base-case diagram.' },
-                        { id: 'n-1' as TabId, label: 'Contingency (N-1)' as React.ReactNode, available: !!n1Diagram?.svg, accentColor: colors.danger, dimColor: colors.borderStrong, placeholder: 'Select a contingency element from the dropdown to view the N-1 state.' },
+                        { id: 'contingency' as TabId, label: contingencyTabLabel as React.ReactNode, available: !!n1Diagram?.svg, accentColor: colors.danger, dimColor: colors.borderStrong, placeholder: 'Trigger a contingency from the dropdown to view the post-contingency state.' },
                         // When no card is selected, the Remedial Action tab hosts the
                         // action-overview view (pins over the N-1 network). It is considered
                         // "available" as soon as the N-1 diagram has loaded, so the tab is no
@@ -1083,20 +1093,20 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                     inactive so its SVG does not enter Blink's layout tree.
                     See the comment on the N tab above for the full rationale. */}
                 <DetachableTabHost
-                    detachedMountNode={detachedTabs['n-1']?.mountNode ?? null}
+                    detachedMountNode={detachedTabs['contingency']?.mountNode ?? null}
                     homeStyle={{
                         width: '100%', height: '100%',
                         position: 'absolute', top: 0, left: 0,
-                        zIndex: !detachedTabs['n-1'] && activeTab === 'n-1' ? 10 : -1,
-                        display: !detachedTabs['n-1'] && activeTab === 'n-1' ? 'block' : 'none',
-                        pointerEvents: !detachedTabs['n-1'] && activeTab === 'n-1' ? 'auto' : 'none',
+                        zIndex: !detachedTabs['contingency'] && activeTab === 'contingency' ? 10 : -1,
+                        display: !detachedTabs['contingency'] && activeTab === 'contingency' ? 'block' : 'none',
+                        pointerEvents: !detachedTabs['contingency'] && activeTab === 'contingency' ? 'auto' : 'none',
                     }}
                 >
                     <div style={{
                         width: '100%', height: '100%',
                         position: 'absolute', top: 0, left: 0,
                     }}>
-                        {detachedTabs['n-1'] && renderDetachedHeader('n-1', 'Contingency (N-1)', colors.danger)}
+                        {detachedTabs['contingency'] && renderDetachedHeader('contingency', contingencyTabLabel, colors.danger)}
                         {/* Convergence warning banner */}
                         {n1Diagram && n1Diagram.lf_converged === false && (
                             <div style={{
@@ -1113,7 +1123,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             would cause StrictMode to double-invoke its layout effect,
                             and the second DOM injection would overwrite the auto-zoom
                             viewBox that was applied between the two invocations. */}
-                        <MemoizedSvgContainer svg={n1Diagram?.svg || ''} containerRef={n1SvgContainerRef} display="block" tabId="n-1" hideVlLabels={!showVoltageLevelNames} />
+                        <MemoizedSvgContainer svg={n1Diagram?.svg || ''} containerRef={n1SvgContainerRef} display="block" tabId="contingency" hideVlLabels={!showVoltageLevelNames} />
                         {n1Loading && (
                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.textTertiary, background: 'rgba(255,255,255,0.85)', zIndex: 20 }}>
                                 Generating N-1 Diagram...
@@ -1124,13 +1134,13 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                 Select a contingency element from the dropdown to view the N-1 state.
                             </div>
                         )}
-                        {renderTabOverlay('n-1', true)}
+                        {renderTabOverlay('contingency', true)}
                         {n1Diagram?.svg && (
-                            <DiagramLegend tabId="n-1" uniqueVoltages={uniqueVoltages} vlNamesHidden={!showVoltageLevelNames} />
+                            <DiagramLegend tabId="contingency" uniqueVoltages={uniqueVoltages} vlNamesHidden={!showVoltageLevelNames} />
                         )}
                     </div>
                 </DetachableTabHost>
-                {activeTab === 'n-1' && detachedTabs['n-1'] && renderDetachedPlaceholder('n-1', 'Contingency (N-1)', colors.danger)}
+                {activeTab === 'contingency' && detachedTabs['contingency'] && renderDetachedPlaceholder('contingency', contingencyTabLabel, colors.danger)}
 
                 {/* Action Variant Container — always mounted, but `display: none`
                     when inactive so its SVG does not enter Blink's layout tree.
@@ -1187,7 +1197,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                             selectedActionIds={selectedActionIds}
                             rejectedActionIds={rejectedActionIds}
                             onPinPreview={onPinPreview}
-                            contingency={selectedBranch || null}
+                            contingency={selectedContingency.length > 0 ? selectedContingency.join('+') : null}
                             overloadedLines={overloadedLinesMemo}
                             inspectableItems={inspectableItems}
                             visible={!selectedActionId && !actionDiagramLoading}
@@ -1325,7 +1335,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                         onOverlaySldTabChange={onOverlaySldTabChange}
                         n1Diagram={n1Diagram}
                         actionDiagram={actionDiagram}
-                        selectedBranch={selectedBranch}
+                        selectedContingency={selectedContingency}
                         result={result}
                         monitoringFactor={monitoringFactor}
                     />

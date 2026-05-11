@@ -61,7 +61,7 @@ def test_superposition_max_rho_filtering_regression(recommender):
     # 3. Mock internal helpers
     recommender._get_monitoring_parameters = MagicMock(return_value=(set(name_line), set(name_line)))
     recommender._get_n_variant = MagicMock(return_value="N")
-    recommender._get_n1_variant = MagicMock(return_value="N1")
+    recommender._get_contingency_variant = MagicMock(return_value="N1")
     env.network_manager.network.get_working_variant_id.return_value = "ORIG"
     
     # Use patch to mock compute_combined_pair_superposition AND _identify_action_elements

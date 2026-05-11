@@ -345,7 +345,16 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
         for (const p of allUnitary) {
             const det = actions[p.id];
             const passes = det ? passesAll(p.id, det) : true;
-            if (passes) {
+            if (activeFilters.showCombinedOnly) {
+                // Combined-only mode: emit unitary pins ONLY when they
+                // are constituents of a passing combined pin. Everything
+                // else is dropped so the operator's focus stays on the
+                // pair glyphs. Constituents come through dimmed because
+                // they are context for the pair, not first-class actions.
+                if (protectedIds.has(p.id)) {
+                    result.push({ ...p, dimmedByFilter: true });
+                }
+            } else if (passes) {
                 result.push(p);
             } else if (protectedIds.has(p.id)) {
                 result.push({ ...p, dimmedByFilter: true });
@@ -354,7 +363,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
         performance.mark('aod:buildPins:end');
         perfMeasure('aod:buildPins', 'aod:buildPins:start', 'aod:buildPins:end');
         return result;
-    }, [n1MetaIndex, actions, monitoringFactor, activeFilters.categories, activeFilters.threshold, activeFilters.actionType, passesAll]);
+    }, [n1MetaIndex, actions, monitoringFactor, activeFilters.categories, activeFilters.threshold, activeFilters.actionType, activeFilters.showCombinedOnly, passesAll]);
 
     const combinedPins = useMemo(() => {
         if (!actions || pins.length === 0) return [];
@@ -382,6 +391,10 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
 
     const unsimulatedPins = useMemo(() => {
         if (!activeFilters.showUnsimulated) return [];
+        // Un-simulated actions are by definition NOT part of any
+        // computed pair — drop them entirely when "combined only" is
+        // active so the overview stays focused on the pair glyphs.
+        if (activeFilters.showCombinedOnly) return [];
         if (!n1MetaIndex || !unsimulatedActionIds || unsimulatedActionIds.length === 0) return [];
         const simulatedIds = new Set(Object.keys(actions ?? {}));
         // Drop ids that don't match the active type chip. We rely
@@ -394,7 +407,7 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                 return matchesActionTypeFilter(activeFilters.actionType, id, null, scoreType);
             });
         return buildUnsimulatedActionPins(filteredIds, simulatedIds, n1MetaIndex, unsimulatedActionInfo);
-    }, [activeFilters.showUnsimulated, activeFilters.actionType, n1MetaIndex, unsimulatedActionIds, actions, unsimulatedActionInfo]);
+    }, [activeFilters.showUnsimulated, activeFilters.showCombinedOnly, activeFilters.actionType, n1MetaIndex, unsimulatedActionIds, actions, unsimulatedActionInfo]);
 
     // Deterministic auto-fit rectangle derived from the bounding
     // box of contingency + overloads + pins. Recomputed whenever any
@@ -809,6 +822,15 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
         pushFilters({ ...activeFilters, showUnsimulated: next });
     }, [activeFilters, pushFilters]);
 
+    const toggleCombinedOnly = useCallback(() => {
+        const next = !activeFilters.showCombinedOnly;
+        interactionLogger.record('overview_filter_changed', {
+            kind: 'combined_only',
+            enabled: next,
+        });
+        pushFilters({ ...activeFilters, showCombinedOnly: next });
+    }, [activeFilters, pushFilters]);
+
     const setActionType = useCallback((token: ActionTypeFilterToken) => {
         if (token === activeFilters.actionType) return;
         interactionLogger.record('overview_filter_changed', {
@@ -968,6 +990,18 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                         onChange={toggleUnsimulated}
                     />
                     <span style={{ color: colors.textSecondary }}>Show unsimulated</span>
+                </label>
+                <label
+                    data-testid="filter-combined-only"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', flexShrink: 0 }}
+                    title="Show only pins related to combined actions (computed pairs). Constituents stay on the graph dimmed for context."
+                >
+                    <input
+                        type="checkbox"
+                        checked={activeFilters.showCombinedOnly}
+                        onChange={toggleCombinedOnly}
+                    />
+                    <span style={{ color: colors.textSecondary }}>Combined only</span>
                 </label>
                 <span
                     aria-hidden
