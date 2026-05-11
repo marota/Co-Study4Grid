@@ -556,9 +556,14 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 return true;
             })
             .sort(([, a], [, b]) => {
-                const aIslanded = !!a.is_islanded;
-                const bIslanded = !!b.is_islanded;
-                if (aIslanded !== bIslanded) return aIslanded ? 1 : -1;
+                // Sink load-flow faults (divergent / islanded) to the bottom of
+                // the stack regardless of their reported max_rho. The backend
+                // emits ``max_rho = 0`` (not ``null``) for non-convergent
+                // simulations — sorting by max_rho alone would float those
+                // cards to the top, ahead of legitimate solving actions.
+                const aFault = !!(a.is_islanded || a.non_convergence);
+                const bFault = !!(b.is_islanded || b.non_convergence);
+                if (aFault !== bFault) return aFault ? 1 : -1;
                 return (a.max_rho ?? 999) - (b.max_rho ?? 999);
             });
     }, [actions, overviewFilters, monitoringFactor]);

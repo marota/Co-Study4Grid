@@ -219,7 +219,20 @@ class SimulationMixin:
         monitoring_factor = getattr(config, "MONITORING_FACTOR_THERMAL_LIMITS", 0.95)
         worsening_threshold = getattr(config, "PRE_EXISTING_OVERLOAD_WORSENING_THRESHOLD", 0.02)
 
-        ctx_overloaded = (self._analysis_context or {}).get("lines_overloaded")
+        # Step1 stores the resolved friendly names under
+        # ``lines_overloaded_names``; session reload writes them
+        # under ``lines_overloaded`` (see
+        # ``RecommenderService.restore_analysis_context``). Check both
+        # so manual simulations triggered after step1 reuse the same
+        # pypowsybl-style identifiers the rest of the UI is wired
+        # against — the previous single-key read silently fell through
+        # to the vectorised obs-based path and re-emitted grid2op's
+        # synthetic ``line_<i>`` names, which the frontend's
+        # ``displayName`` resolver has no mapping for. Same lookup
+        # order as ``compute_superposition`` (see ``simulation_mixin``
+        # bottom-half). ``ctx`` is the same dict captured earlier in
+        # the function for ``ctx_obs_n1`` / ``ctx_obs_n``.
+        ctx_overloaded = ctx.get("lines_overloaded_names") or ctx.get("lines_overloaded")
         lines_overloaded_ids, lines_overloaded_names = resolve_lines_overloaded(
             obs_simu_defaut,
             obs,

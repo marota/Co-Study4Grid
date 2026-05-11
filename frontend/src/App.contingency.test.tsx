@@ -538,10 +538,14 @@ describe('N-1 overload state is populated before action analysis', () => {
       expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-sel-ol-count', '2');
     });
 
-    // No analysis was run, so the ActionFeed sees zero result-side
-    // overloads. The N-1 highlight pipeline must therefore use the
-    // n1Diagram fallback (covered by the unit tests on the helper).
-    expect(screen.getByTestId('action-feed')).toHaveAttribute('data-ol-count', '0');
+    // No analysis was run, so ``result.lines_overloaded`` is empty —
+    // but the ActionFeed falls back to the N-1 diagram's authoritative
+    // overload list so manual-simulation action cards display the
+    // friendly pypowsybl identifiers (e.g. ``BEON L31CPVAN``) instead
+    // of grid2op's synthetic ``line_<i>`` strings the backend emits
+    // when no ``_analysis_context`` is set yet. See the App.tsx wiring
+    // on the ``ActionFeed.linesOverloaded`` prop.
+    expect(screen.getByTestId('action-feed')).toHaveAttribute('data-ol-count', '2');
   });
 
   it('replaces the overload selection when switching contingencies without running analysis', async () => {

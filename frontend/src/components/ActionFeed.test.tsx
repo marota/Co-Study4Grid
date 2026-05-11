@@ -464,6 +464,33 @@ describe('ActionFeed', () => {
         expect(goodIndex).toBeLessThan(badIndex);
     });
 
+    // Backend regression guard: ``compute_action_metrics`` zeroes
+    // ``max_rho`` on a non-convergent simulation (see
+    // ``expert_backend/services/simulation_helpers.py`` —
+    // ``"max_rho": 0.0`` is the default before the convergence
+    // check). Sorting by ``max_rho`` alone would float the
+    // divergent card to the top of the stack ahead of legitimate
+    // solving actions — this test pins ``non_convergence`` as the
+    // dominant ordering key in that situation.
+    it('ranks divergent actions (max_rho=0) at the bottom, not the top', () => {
+        const props = {
+            ...defaultProps,
+            actions: {
+                act_solving: { description_unitaire: 'Solving Action', rho_before: [1.0], rho_after: [0.9], max_rho: 0.9, max_rho_line: 'A', is_rho_reduction: true, action_topology: emptyTopo },
+                act_divergent: { description_unitaire: 'Divergent Action', rho_before: [1.0], rho_after: null, max_rho: 0, max_rho_line: 'N/A', is_rho_reduction: false, non_convergence: 'LoadFlow failure', action_topology: emptyTopo },
+            },
+            selectedActionIds: new Set(['act_solving', 'act_divergent']),
+        };
+        render(<ActionFeed {...props} />);
+
+        const cards = screen.getAllByTestId(/^action-card-(act_solving|act_divergent)$/);
+        const cardIds = cards.map(el => el.getAttribute('data-testid'));
+
+        expect(cardIds.indexOf('action-card-act_solving')).toBeLessThan(
+            cardIds.indexOf('action-card-act_divergent'),
+        );
+    });
+
     it('shows only PST actions in dropdown after clicking the PST chip', async () => {
         const pstAction = { id: 'pst_tap_up', description: 'PST action', type: 'pst_tap_change' };
         const regularAction = { id: 'line_reco_1', description: 'Regular action', type: 'line_reconnection' };
