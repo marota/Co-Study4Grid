@@ -1896,7 +1896,10 @@ describe('ActionFeed', () => {
             // Get all td cells in the row
             const cells = actionRow!.querySelectorAll('td');
             // Second cell is Tap Start (first is Action name)
-            const tapStartCell = cells[1];
+            // Score sits in column 2 since the manual-selection score
+            // table was reorganised so the ranking is visible right
+            // after the action name. Tap Start now lives in column 3.
+            const tapStartCell = cells[2];
             expect(tapStartCell).toBeDefined();
             // The textContent of the Tap Start cell should start with 27
             expect(tapStartCell.textContent).toMatch(/^27/);
@@ -1919,7 +1922,10 @@ describe('ActionFeed', () => {
             const rows = screen.getAllByRole('row');
             const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
             const cells = actionRow!.querySelectorAll('td');
-            const tapStartCell = cells[1];
+            // Score sits in column 2 since the manual-selection score
+            // table was reorganised so the ranking is visible right
+            // after the action name. Tap Start now lives in column 3.
+            const tapStartCell = cells[2];
             expect(tapStartCell.textContent).toMatch(/^27/);
         });
 
@@ -2053,7 +2059,10 @@ describe('ActionFeed', () => {
             const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
             expect(actionRow).toBeDefined();
             const cells = actionRow!.querySelectorAll('td');
-            const tapStartCell = cells[1];
+            // Score sits in column 2 since the manual-selection score
+            // table was reorganised so the ranking is visible right
+            // after the action name. Tap Start now lives in column 3.
+            const tapStartCell = cells[2];
             expect(tapStartCell.textContent).toMatch(/^27/);
         });
 
@@ -2075,7 +2084,10 @@ describe('ActionFeed', () => {
             const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
             expect(actionRow).toBeDefined();
             const cells = actionRow!.querySelectorAll('td');
-            const tapStartCell = cells[1];
+            // Score sits in column 2 since the manual-selection score
+            // table was reorganised so the ranking is visible right
+            // after the action name. Tap Start now lives in column 3.
+            const tapStartCell = cells[2];
             expect(tapStartCell.textContent).toMatch(/^27/);
         });
 
@@ -2147,7 +2159,10 @@ describe('ActionFeed', () => {
             const rows = screen.getAllByRole('row');
             const actionRow = rows.find(r => r.textContent?.includes(pstActionId));
             const cells = actionRow!.querySelectorAll('td');
-            const tapStartCell = cells[1];
+            // Score sits in column 2 since the manual-selection score
+            // table was reorganised so the ranking is visible right
+            // after the action name. Tap Start now lives in column 3.
+            const tapStartCell = cells[2];
             expect(tapStartCell.textContent).toMatch(/^27/);
 
             // Target Tap input should show 29

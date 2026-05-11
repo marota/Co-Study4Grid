@@ -820,6 +820,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         onResimulate={handleResimulate}
                         onResimulateTap={handleResimulateTap}
                         monitoringFactor={monitoringFactor}
+                        displayName={displayName}
+                        onClose={() => { setSearchOpen(false); setSearchQuery(''); }}
                         onShowTooltip={showTooltip}
                         onHideTooltip={hideTooltip}
                         wide={scoredActionsList.length > 0}

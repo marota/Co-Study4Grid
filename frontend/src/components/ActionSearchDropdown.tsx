@@ -45,11 +45,22 @@ interface ActionSearchDropdownProps {
      *  severity (green / orange / red). Plumbed through so the new
      *  "Simulated Max ρ" column matches the rest of the UI. */
     monitoringFactor: number;
+    /** Resolve a pypowsybl element ID to its human-readable display
+     *  name. Used by the "Simulated Line" column so the operator
+     *  sees the friendly substation pair (e.g. ``BEON L31CPVAN``)
+     *  instead of the raw element identifier. Falls back to the ID. */
+    displayName?: (id: string) => string;
     /** When true, render as a wide centered overlay (mirroring the
      *  Combine Actions modal layout) so the score table has room for
      *  its action ID, MW Start and Score columns. Used when scoring
      *  data is available after running an analysis. */
     wide?: boolean;
+    /** Optional dismiss handler. When provided AND ``wide`` is on,
+     *  the modal renders a header row with a "Manual Selection"
+     *  title + ✕ close button — matching the Combine Actions modal
+     *  layout. Required for the multi-simulation flow where the
+     *  modal is no longer auto-dismissed on each row click. */
+    onClose?: () => void;
 }
 
 const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
@@ -77,7 +88,9 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
     onShowTooltip,
     onHideTooltip,
     monitoringFactor,
+    displayName = (id: string) => id,
     wide = false,
+    onClose,
 }) => {
     const dropdownStyle: React.CSSProperties = wide
         ? {
@@ -131,6 +144,30 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                 data-testid={wide ? 'manual-selection-wide' : 'manual-selection-dropdown'}
                 style={dropdownStyle}
             >
+            {wide && onClose && (
+                <div style={{
+                    padding: '15px 24px',
+                    borderBottom: `1px solid ${colors.borderSubtle}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: colors.surfaceRaised,
+                }}>
+                    <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Manual Selection</h2>
+                    <button
+                        data-testid="manual-selection-close"
+                        onClick={onClose}
+                        style={{
+                            border: 'none',
+                            background: 'none',
+                            fontSize: '24px',
+                            cursor: 'pointer',
+                            color: colors.textTertiary,
+                        }}
+                        aria-label="Close manual selection"
+                    >&times;</button>
+                </div>
+            )}
             <div style={{ padding: '8px' }}>
                 <input
                     ref={searchInputRef}
@@ -190,6 +227,7 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                                 onShowTooltip={onShowTooltip}
                                 onHideTooltip={onHideTooltip}
                                 monitoringFactor={monitoringFactor}
+                                displayName={displayName}
                             />
                         )}
 
@@ -305,6 +343,7 @@ interface ScoreTableProps {
     onShowTooltip: (e: React.MouseEvent, content: React.ReactNode) => void;
     onHideTooltip: () => void;
     monitoringFactor: number;
+    displayName: (id: string) => string;
 }
 
 const ScoreTable: React.FC<ScoreTableProps> = ({
@@ -323,6 +362,7 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
     onShowTooltip,
     onHideTooltip,
     monitoringFactor,
+    displayName,
 }) => {
     return (
         <div style={{ padding: '0 8px', marginBottom: '8px' }}>
@@ -368,15 +408,22 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                         <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', border: `1px solid ${colors.border}`, borderTop: 'none' }}>
                             <thead>
                                 <tr style={{ background: colors.surfaceMuted, borderBottom: `1px solid ${colors.border}` }}>
-                                    <th style={{ textAlign: 'left', padding: '4px 6px', width: hasEditableColumn ? '32%' : '45%' }}>Action</th>
-                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: '12%' }}>{isPstType ? 'Tap Start' : 'MW Start'}</th>
-                                    {isLsOrRcType && <th style={{ textAlign: 'right', padding: '4px 6px', width: '14%' }}>Target MW</th>}
-                                    {isPstType && <th style={{ textAlign: 'right', padding: '4px 6px', width: '14%' }}>Target Tap</th>}
+                                    <th style={{ textAlign: 'left', padding: '4px 6px', width: hasEditableColumn ? '24%' : '34%' }}>Action</th>
+                                    {/* Score sits in column 2 so the operator's eye reaches the
+                                        ranking before any of the per-row inputs / simulation
+                                        outputs — mirrors the prioritised-actions card layout. */}
+                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: '10%' }}>Score</th>
+                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: '10%' }}>{isPstType ? 'Tap Start' : 'MW Start'}</th>
+                                    {isLsOrRcType && <th style={{ textAlign: 'right', padding: '4px 6px', width: '12%' }}>Target MW</th>}
+                                    {isPstType && <th style={{ textAlign: 'right', padding: '4px 6px', width: '12%' }}>Target Tap</th>}
                                     <th
-                                        style={{ textAlign: 'right', padding: '4px 6px', width: '20%' }}
+                                        style={{ textAlign: 'right', padding: '4px 6px', width: '16%' }}
                                         title="Max ρ on the contingency's overloads after this action has been simulated (dash when not yet simulated)."
                                     >Simulated Max ρ</th>
-                                    <th style={{ textAlign: 'right', padding: '4px 6px', width: hasEditableColumn ? '12%' : '20%' }}>Score</th>
+                                    <th
+                                        style={{ textAlign: 'left', padding: '4px 6px', width: hasEditableColumn ? '28%' : '30%' }}
+                                        title="Branch carrying Max ρ in the post-action state — friendly pypowsybl name when available."
+                                    >Simulated Line</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -493,6 +540,12 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                                                     >i</span>
                                                 )}
                                             </td>
+                                            <td
+                                                data-testid={`score-${item.actionId}`}
+                                                style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace' }}
+                                            >
+                                                {item.score.toFixed(2)}
+                                            </td>
                                             <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: (isPstType ? tapInfo == null : item.mwStart == null) ? colors.textTertiary : colors.textPrimary }}>
                                                 {isPstType
                                                     ? (tapInfo != null ? `${tapInfo.tap}` : 'N/A')
@@ -554,9 +607,11 @@ const ScoreTable: React.FC<ScoreTableProps> = ({
                                                 detail={isComputed ? actions[item.actionId] : null}
                                                 monitoringFactor={monitoringFactor}
                                             />
-                                            <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace' }}>
-                                                {item.score.toFixed(2)}
-                                            </td>
+                                            <SimulatedLineCell
+                                                actionId={item.actionId}
+                                                detail={isComputed ? actions[item.actionId] : null}
+                                                displayName={displayName}
+                                            />
                                         </tr>
                                     );
                                 })}
@@ -643,6 +698,69 @@ const SimulatedMaxRhoCell: React.FC<SimulatedMaxRhoCellProps> = ({ actionId, det
             style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: severityColor, fontWeight: 600 }}
         >
             {(maxRho * 100).toFixed(1)}%
+        </td>
+    );
+};
+
+// --- SimulatedLineCell ---
+//
+// Renders the "Simulated Line" column — the branch carrying max ρ on
+// the post-action observation. Mirrors the ``ComputedPairsTable``
+// column of the same name so the manual-selection modal carries the
+// same vocabulary the operator already learned in the Combined
+// Actions modal. Resolved through ``displayName`` so the friendly
+// pypowsybl substation-pair label appears whenever the ID is keyed
+// in the name map. Renders a dash for pending / divergent /
+// islanded rows where the post-action max-ρ branch is not
+// meaningful (the load-flow either didn't converge or the action
+// disconnected part of the grid).
+
+interface SimulatedLineCellProps {
+    actionId: string;
+    detail: ActionDetail | null;
+    displayName: (id: string) => string;
+}
+
+const SimulatedLineCell: React.FC<SimulatedLineCellProps> = ({ actionId, detail, displayName }) => {
+    const placeholderStyle: React.CSSProperties = {
+        padding: '4px 6px',
+        textAlign: 'left',
+        color: colors.textTertiary,
+        fontStyle: 'italic',
+    };
+    if (!detail) {
+        return (
+            <td data-testid={`sim-line-${actionId}`} data-state="pending" style={placeholderStyle}>—</td>
+        );
+    }
+    if (detail.non_convergence || detail.is_islanded) {
+        return (
+            <td data-testid={`sim-line-${actionId}`} data-state="unavailable" style={placeholderStyle}>—</td>
+        );
+    }
+    const line = detail.max_rho_line;
+    if (!line || line === 'N/A') {
+        return (
+            <td data-testid={`sim-line-${actionId}`} data-state="pending" style={placeholderStyle}>—</td>
+        );
+    }
+    return (
+        <td
+            data-testid={`sim-line-${actionId}`}
+            data-state="resolved"
+            title={line}
+            style={{
+                padding: '4px 6px',
+                textAlign: 'left',
+                fontWeight: 600,
+                color: colors.textPrimary,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: 0,
+            }}
+        >
+            {displayName(line)}
         </td>
     );
 };
