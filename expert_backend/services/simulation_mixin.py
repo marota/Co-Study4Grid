@@ -130,7 +130,7 @@ class SimulationMixin:
     def simulate_manual_action(
         self,
         raw_action_id: str,
-        disconnected_element: str,
+        disconnected_elements,
         action_content=None,
         lines_overloaded=None,
         target_mw=None,
@@ -151,10 +151,11 @@ class SimulationMixin:
         if not self._dict_action:
             raise ValueError("No action dictionary loaded. Load a config first.")
 
+        norm_contingency = self._normalize_contingency_elements(disconnected_elements)
         # Variant-state guard — drains the NAD prefetch and pins the
-        # working variant on the contingency N-1 before reading obs.
+        # working variant on the contingency variant before reading obs.
         # See docs/performance/history/grid2op-shared-network.md.
-        self._ensure_n1_state_ready(disconnected_element)
+        self._ensure_contingency_state_ready(norm_contingency)
 
         action_id = self._canonicalize_id(raw_action_id.strip())
         if lines_overloaded is None:
@@ -199,7 +200,7 @@ class SimulationMixin:
             # step1, or session reload — ``restore_analysis_context``
             # doesn't serialize obs objects). The stale-obs desync still
             # applies on this path; tracked as a follow-up.
-            obs, obs_simu_defaut = self._fetch_n_and_n1_observations(env, n, disconnected_element)
+            obs, obs_simu_defaut = self._fetch_n_and_contingency_observations(env, n, norm_contingency)
         obs_n1 = obs_simu_defaut
 
         self._create_dynamic_actions_if_needed(
@@ -212,7 +213,7 @@ class SimulationMixin:
                     f"Action '{aid}' not found in the loaded action dictionary or recent analysis."
                 )
 
-        self._last_disconnected_element = disconnected_element
+        self._last_disconnected_elements = list(norm_contingency)
 
         lines_we_care_about, branches_with_limits = self._get_monitoring_parameters(obs_simu_defaut)
         monitoring_factor = getattr(config, "MONITORING_FACTOR_THERMAL_LIMITS", 0.95)
@@ -246,7 +247,7 @@ class SimulationMixin:
         # kept N-1 variant, which ``pypowsybl_backend.observation.simulate``
         # clones from directly (independent of the working variant).
         if not used_context_obs:
-            n.set_working_variant(self._get_n1_variant(disconnected_element))
+            n.set_working_variant(self._get_contingency_variant(norm_contingency))
 
         actual_fast_mode = getattr(config, "PYPOWSYBL_FAST_MODE", False)
         obs_simu_action, _, _, info_action = obs_simu_defaut.simulate(
@@ -342,13 +343,13 @@ class SimulationMixin:
                 "[simulate_manual_action] Injected restored action '%s' into dict", aid
             )
 
-    def _fetch_n_and_n1_observations(self, env, n, disconnected_element):
-        """Return `(obs_n, obs_n1)` for the current simulation.
+    def _fetch_n_and_contingency_observations(self, env, n, disconnected_elements):
+        """Return ``(obs_n, obs_contingency)`` for the current simulation.
 
-        Maintains the CALL ORDER (N first, then N-1) that legacy tests
-        assert on `env.get_obs.call_count == 2`. Also tags
-        `obs_n1._variant_id` explicitly so downstream diagram code knows
-        which state to compare against.
+        Maintains the CALL ORDER (N first, then contingency) that legacy
+        tests assert on ``env.get_obs.call_count == 2``. Also tags
+        ``obs_contingency._variant_id`` explicitly so downstream diagram
+        code knows which state to compare against.
         """
         # Call 1: N state
         n_variant_id = self._get_n_variant()
@@ -360,19 +361,19 @@ class SimulationMixin:
             self._cached_obs_n = obs
             self._cached_obs_n_id = n_variant_id
 
-        # Call 2: N-1 contingency state
-        n1_variant_id = self._get_n1_variant(disconnected_element)
-        if self._cached_obs_n1 is not None and self._cached_obs_n1_id == n1_variant_id:
+        # Call 2: contingency state (N-1, N-2, ..., N-K)
+        cont_variant_id = self._get_contingency_variant(disconnected_elements)
+        if self._cached_obs_n1 is not None and self._cached_obs_n1_id == cont_variant_id:
             obs_simu_defaut = self._cached_obs_n1
         else:
-            n.set_working_variant(n1_variant_id)
+            n.set_working_variant(cont_variant_id)
             obs_simu_defaut = env.get_obs()
             self._cached_obs_n1 = obs_simu_defaut
-            self._cached_obs_n1_id = n1_variant_id
+            self._cached_obs_n1_id = cont_variant_id
 
-        # Explicitly tag the variant so get_action_variant_diagram knows
-        # what to compare against downstream.
-        obs_simu_defaut._variant_id = n1_variant_id
+        # Explicitly tag the variant so the action-variant diagram code
+        # knows what to compare against downstream.
+        obs_simu_defaut._variant_id = cont_variant_id
         return obs, obs_simu_defaut
 
     def _create_dynamic_actions_if_needed(
@@ -632,7 +633,7 @@ class SimulationMixin:
             self._dict_action[action_id] = action_data
 
 
-    def compute_superposition(self, action1_id: str, action2_id: str, disconnected_element: str):
+    def compute_superposition(self, action1_id: str, action2_id: str, disconnected_elements):
         """Compute the combined effect of two actions via the superposition theorem.
 
         Orchestrator — delegates to private helpers so the flow stays
@@ -640,10 +641,11 @@ class SimulationMixin:
         (e.g. two manually-simulated actions). Always re-runs
         simulations for any missing action before computing betas.
         """
-        # Same N-1 variant guard as simulate_manual_action.
-        self._ensure_n1_state_ready(disconnected_element)
+        norm_contingency = self._normalize_contingency_elements(disconnected_elements)
+        # Same contingency variant guard as simulate_manual_action.
+        self._ensure_contingency_state_ready(norm_contingency)
 
-        all_actions = self._ensure_pair_simulated(action1_id, action2_id, disconnected_element)
+        all_actions = self._ensure_pair_simulated(action1_id, action2_id, norm_contingency)
 
         env = self._get_simulation_env()
         classifier = ActionClassifier()
@@ -680,7 +682,7 @@ class SimulationMixin:
         if ctx_obs_n1 is not None:
             obs_start = ctx_obs_n1
         else:
-            n.set_working_variant(self._get_n1_variant(disconnected_element))
+            n.set_working_variant(self._get_contingency_variant(norm_contingency))
             obs_start = env.get_obs()
         self._log_per_line_rho(action1_id, action2_id, line_idxs1, line_idxs2, obs_start, env, all_actions)
 
@@ -765,19 +767,19 @@ class SimulationMixin:
     # Private helpers for compute_superposition
     # ------------------------------------------------------------------
 
-    def _ensure_pair_simulated(self, action1_id, action2_id, disconnected_element):
-        """Re-run `simulate_manual_action` for any pair member missing from
-        `_last_result.prioritized_actions`. Returns the up-to-date
-        prioritized_actions dict.
+    def _ensure_pair_simulated(self, action1_id, action2_id, disconnected_elements):
+        """Re-run ``simulate_manual_action`` for any pair member missing from
+        ``_last_result.prioritized_actions``. Returns the up-to-date
+        ``prioritized_actions`` dict.
         """
         all_actions = (
             self._last_result.get("prioritized_actions", {}) if self._last_result else {}
         )
         if action1_id not in all_actions:
-            self.simulate_manual_action(action1_id, disconnected_element)
+            self.simulate_manual_action(action1_id, disconnected_elements)
             all_actions = self._last_result["prioritized_actions"]
         if action2_id not in all_actions:
-            self.simulate_manual_action(action2_id, disconnected_element)
+            self.simulate_manual_action(action2_id, disconnected_elements)
             all_actions = self._last_result["prioritized_actions"]
         return all_actions
 

@@ -52,7 +52,7 @@ function makePZMap(
 ): PZMap {
     return {
         'n': makePZ(nVb),
-        'n-1': makePZ(n1Vb),
+        'contingency': makePZ(n1Vb),
         'action': makePZ(actionVb),
     };
 }
@@ -75,7 +75,7 @@ describe('useTiedTabsSync', () => {
         );
         expect(result.current.tiedTabs.size).toBe(0);
         expect(result.current.isTied('n')).toBe(false);
-        expect(result.current.isTied('n-1')).toBe(false);
+        expect(result.current.isTied('contingency')).toBe(false);
         expect(result.current.isTied('action')).toBe(false);
     });
 
@@ -85,12 +85,12 @@ describe('useTiedTabsSync', () => {
             useTiedTabsSync(pz, 'n', {}),
         );
 
-        act(() => { result.current.tie('n-1'); });
-        expect(result.current.isTied('n-1')).toBe(true);
+        act(() => { result.current.tie('contingency'); });
+        expect(result.current.isTied('contingency')).toBe(true);
         expect(interactionLogger.getLog().some(e => e.type === 'tab_tied')).toBe(true);
 
-        act(() => { result.current.untie('n-1'); });
-        expect(result.current.isTied('n-1')).toBe(false);
+        act(() => { result.current.untie('contingency'); });
+        expect(result.current.isTied('contingency')).toBe(false);
         expect(interactionLogger.getLog().some(e => e.type === 'tab_untied')).toBe(true);
     });
 
@@ -180,7 +180,7 @@ describe('useTiedTabsSync', () => {
         act(() => { result.current.tie('n'); });
         // None of the PZs should have been written.
         expect(setViewBoxSpy(pz['n'])).not.toHaveBeenCalled();
-        expect(setViewBoxSpy(pz['n-1'])).not.toHaveBeenCalled();
+        expect(setViewBoxSpy(pz['contingency'])).not.toHaveBeenCalled();
         expect(setViewBoxSpy(pz['action'])).not.toHaveBeenCalled();
     });
 
@@ -214,7 +214,7 @@ describe('useTiedTabsSync', () => {
             const newActionVb: ViewBox = { x: 5, y: 5, w: 50, h: 50 };
             const newPz: PZMap = {
                 'n': pz['n'],
-                'n-1': pz['n-1'],
+                'contingency': pz['contingency'],
                 'action': { ...pz['action'], viewBox: newActionVb } as unknown as PZInstance,
             };
             rerender({ pzmap: newPz });
@@ -251,7 +251,7 @@ describe('useTiedTabsSync', () => {
             const newNVb: ViewBox = { x: 10, y: 10, w: 80, h: 80 };
             const newPz: PZMap = {
                 'n': { ...pz['n'], viewBox: newNVb } as unknown as PZInstance,
-                'n-1': pz['n-1'],
+                'contingency': pz['contingency'],
                 'action': pz['action'],
             };
             rerender({ pzmap: newPz });

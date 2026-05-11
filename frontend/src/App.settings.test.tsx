@@ -125,13 +125,13 @@ const mockApi = vi.hoisted(() => ({
   getNominalVoltages: vi.fn().mockResolvedValue({ mapping: {}, unique_kv: [63, 225] }),
   getVoltageLevelSubstations: vi.fn().mockResolvedValue({ mapping: {} }),
   getNetworkDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
-  getN1Diagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] }),
+  getContingencyDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null, lines_overloaded: [] }),
   pickPath: vi.fn(),
   runAnalysisStep1: vi.fn().mockResolvedValue({ can_proceed: true, lines_overloaded: ['LINE_OL1'] }),
   runAnalysisStep2Stream: vi.fn(),
   getActionVariantDiagram: vi.fn().mockResolvedValue({ svg: '<svg></svg>', metadata: null }),
   getNSld: vi.fn(),
-  getN1Sld: vi.fn(),
+  getContingencySld: vi.fn(),
   getActionVariantSld: vi.fn(),
 }));
 
@@ -157,16 +157,21 @@ async function renderAndLoadStudy() {
   }, { timeout: 5000 });
 }
 
-// Helper: select a valid branch by typing the full name
+// Helper: pick ``branchName`` from the react-select multi-select
+// then click the Trigger button to commit the contingency.
 async function selectBranch(branchName: string) {
-  const input = screen.getByPlaceholderText('Search line/bus...');
+  const combobox = screen.getByRole('combobox');
   await act(async () => {
-    await userEvent.clear(input);
-    await userEvent.type(input, branchName);
+    await userEvent.click(combobox);
+    await userEvent.type(combobox, branchName);
+    await userEvent.keyboard('{Enter}');
   });
-  // Wait for N-1 diagram fetch to complete
+  const trigger = await screen.findByRole('button', { name: /Trigger/ });
+  await act(async () => {
+    await userEvent.click(trigger);
+  });
   await waitFor(() => {
-    expect(mockApi.getN1Diagram).toHaveBeenCalledWith(branchName);
+    expect(mockApi.getContingencyDiagram).toHaveBeenCalledWith([branchName]);
   });
 }
 
@@ -259,6 +264,10 @@ describe('Save Results button', () => {
     expect(sessionItems.configuration).toHaveProperty('layout_path');
     expect(sessionItems.configuration).toHaveProperty('monitoring_factor');
     expect(sessionItems).toHaveProperty('contingency');
+    // New session schema: ordered list. ``disconnected_element`` is
+    // still emitted as a backwards-compat alias for single-element
+    // contingencies.
+    expect(sessionItems.contingency.disconnected_elements).toEqual(['BRANCH_A']);
     expect(sessionItems.contingency.disconnected_element).toBe('BRANCH_A');
     expect(sessionItems).toHaveProperty('overloads');
     expect(sessionItems).toHaveProperty('analysis');
@@ -544,13 +553,11 @@ describe('Settings Modal Enhancements', () => {
       const loadBtn = screen.getByText('🔄 Load Study');
       await userEvent.click(loadBtn);
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Search line/bus...')).toBeInTheDocument();
+        expect(screen.getByText('🎯 Select Contingency')).toBeInTheDocument();
       });
 
-      // Select branch
-      const branchInput = screen.getByPlaceholderText('Search line/bus...');
-      await userEvent.type(branchInput, 'BRANCH_A');
-      await waitFor(() => expect(mockApi.getN1Diagram).toHaveBeenCalledWith('BRANCH_A'));
+      // Pick a branch from the multi-select then click Trigger.
+      await selectBranch('BRANCH_A');
 
       // Setup streaming mock for step2 (keep stream open to simulate "Running" state)
       const mockStream = new ReadableStream({

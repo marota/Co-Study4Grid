@@ -104,7 +104,7 @@ class TestResimulateRegressions:
         try:
             with patch.object(svc, "_last_result", {"prioritized_actions": recent_actions}), \
                  patch.object(svc, "_get_monitoring_parameters", return_value=(set(["LINE_1"]), set(["LINE_1"]))), \
-                 patch.object(svc, "_get_n1_variant", return_value="LINE_X_VAR"), \
+                 patch.object(svc, "_get_contingency_variant", return_value="LINE_X_VAR"), \
                  patch.object(svc, "_compute_deltas", return_value={}):
                 
                 # First call: should promote and apply target_mw=3.8
@@ -133,7 +133,7 @@ class TestResimulateRegressions:
         patcher, env = _setup_env_mock()
         try:
             with patch.object(svc, "_get_monitoring_parameters", return_value=(set(["LINE_1"]), set(["LINE_1"]))), \
-                 patch.object(svc, "_get_n1_variant", return_value="LINE_X_VAR"), \
+                 patch.object(svc, "_get_contingency_variant", return_value="LINE_X_VAR"), \
                  patch.object(svc, "_compute_deltas", return_value={}):
                 
                 result = svc.simulate_manual_action("test_action", "LINE_X")
@@ -166,7 +166,7 @@ class TestResimulateRegressions:
         patcher, env = _setup_env_mock(name_gen=["GEN_WIND"], gen_p=[6.8])
         try:
             with patch.object(svc, "_get_monitoring_parameters", return_value=(set(["LINE_1"]), set(["LINE_1"]))), \
-                 patch.object(svc, "_get_n1_variant", return_value="LINE_X_VAR"), \
+                 patch.object(svc, "_get_contingency_variant", return_value="LINE_X_VAR"), \
                  patch.object(svc, "_compute_deltas", return_value={}):
                 
                 result = svc.simulate_manual_action("curtail_GEN_WIND", "LINE_X")

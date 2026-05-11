@@ -13,6 +13,7 @@ import { api } from '../api';
 import { interactionLogger } from '../utils/interactionLogger';
 import CombinedActionsModal from './CombinedActionsModal';
 import ActionCard from './ActionCard';
+import AdditionalLinesPicker from './AdditionalLinesPicker';
 import ActionSearchDropdown from './ActionSearchDropdown';
 import { colors } from '../styles/tokens';
 
@@ -37,10 +38,11 @@ interface ActionFeedProps {
     onActionSelect: (actionId: string | null) => void;
     onActionFavorite: (actionId: string) => void;
     onActionReject: (actionId: string) => void;
-    onAssetClick: (actionId: string, assetName: string, tab?: 'action' | 'n-1') => void;
+    onAssetClick: (actionId: string, assetName: string, tab?: 'action' | 'contingency') => void;
     nodesByEquipmentId: Map<string, NodeMeta> | null;
     edgesByEquipmentId: Map<string, EdgeMeta> | null;
-    disconnectedElement: string | null;
+    /** Currently APPLIED contingency (list of element IDs disconnected). */
+    disconnectedElement: string[];
     onManualActionAdded: (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => void;
     onActionResimulated: (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => void;
     analysisLoading: boolean;
@@ -76,6 +78,17 @@ interface ActionFeedProps {
     overviewFilters?: ActionOverviewFilters;
     /** Update the shared filter state (owned by App.tsx). */
     onOverviewFiltersChange?: (next: ActionOverviewFilters) => void;
+    /**
+     * Catalogue of disconnectable elements feeding the
+     * "additional lines to prevent flow increase" picker rendered
+     * above the Analyze & Suggest button.
+     */
+    branches?: string[];
+    /** Operator-selected extras (ExpertAgent's `additionalLinesToCut`). */
+    additionalLinesToCut?: Set<string>;
+    onToggleAdditionalLineToCut?: (line: string) => void;
+    /** N-1 detected overloads — excluded from the picker suggestions. */
+    n1Overloads?: string[];
 }
 
 const ActionFeed: React.FC<ActionFeedProps> = ({
@@ -109,6 +122,10 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     onActionDiagramPrimed,
     voltageLevelsLength,
     overviewFilters,
+    branches,
+    additionalLinesToCut,
+    onToggleAdditionalLineToCut,
+    n1Overloads,
 }) => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -158,7 +175,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     const canPrimeDiagram = !!onActionDiagramPrimed && voltageLevelsLength != null;
     const streamSimulateAndPrimeDiagram = async (
         actionId: string,
-        disconnectedEl: string,
+        disconnectedEls: string[],
         actionContent: Record<string, unknown> | null,
         linesOvl: string[] | null,
         targetMw: number | null | undefined,
@@ -166,7 +183,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     ): Promise<Awaited<ReturnType<typeof api.simulateManualAction>>> => {
         const response = await api.simulateAndVariantDiagramStream({
             action_id: actionId,
-            disconnected_element: disconnectedEl,
+            disconnected_elements: disconnectedEls,
             action_content: actionContent,
             lines_overloaded: linesOvl,
             target_mw: targetMw ?? null,
@@ -292,7 +309,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
 
     const handleAddAction = async (actionId: string, targetMw?: number, targetTap?: number) => {
         const trimmedId = actionId.trim();
-        if (!disconnectedElement) {
+        if (!disconnectedElement || disconnectedElement.length === 0) {
             setError('Select a contingency first.');
             return;
         }
@@ -358,7 +375,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             'combinedActions:', combinedActions ? Object.keys(combinedActions).length : null,
             'disconnectedElement:', disconnectedElement,
             'hasCallback:', !!onUpdateCombinedEstimation);
-        if (!combinedActions || !disconnectedElement || !onUpdateCombinedEstimation) return;
+        if (!combinedActions || !disconnectedElement || disconnectedElement.length === 0 || !onUpdateCombinedEstimation) return;
         const relatedPairs = Object.entries(combinedActions).filter(([pairId]) => {
             const parts = pairId.split('+').map(p => p.trim());
             return parts.includes(actionId);
@@ -390,7 +407,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
 
     // Re-simulate an existing action with a new target MW value
     const handleResimulate = async (actionId: string, newTargetMw: number) => {
-        if (!disconnectedElement) return;
+        if (!disconnectedElement || disconnectedElement.length === 0) return;
         // Log the user-edited target value so a replay agent can type
         // the exact same MW into the card's input before clicking
         // Re-simulate. Distinct from manual_action_simulated because
@@ -442,7 +459,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
 
     // Re-simulate an existing PST action with a new tap position
     const handleResimulateTap = async (actionId: string, newTap: number) => {
-        if (!disconnectedElement) return;
+        if (!disconnectedElement || disconnectedElement.length === 0) return;
         // Log the new tap position so a replay agent can enter the
         // same value in the PST detail input before clicking
         // Re-simulate. Backend clamps out-of-range values to
@@ -923,23 +940,34 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                 📊 Display {Object.keys(pendingAnalysisResult.actions || {}).length} prioritized actions
                             </button>
                         ) : (
-                            <button
-                                onClick={onRunAnalysis}
-                                disabled={!canRunAnalysis}
-                                style={{
-                                    width: '100%', padding: '10px 16px',
-                                    background: canRunAnalysis ? colors.success : colors.disabled,
-                                    color: colors.textOnBrand, border: 'none', borderRadius: '8px',
-                                    cursor: canRunAnalysis ? 'pointer' : 'not-allowed',
-                                    fontSize: '14px', fontWeight: 700,
-                                    boxShadow: canRunAnalysis ? '0 2px 8px rgba(39,174,96,0.3)' : 'none',
-                                    transition: 'transform 0.1s',
-                                }}
-                                onMouseEnter={(e) => { if (canRunAnalysis) (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'; }}
-                                onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
-                            >
-                                🔍 Analyze & Suggest
-                            </button>
+                            <>
+                                {branches && additionalLinesToCut && onToggleAdditionalLineToCut && (
+                                    <AdditionalLinesPicker
+                                        branches={branches}
+                                        n1Overloads={n1Overloads ?? []}
+                                        additionalLinesToCut={additionalLinesToCut}
+                                        onToggle={onToggleAdditionalLineToCut}
+                                        displayName={displayName}
+                                    />
+                                )}
+                                <button
+                                    onClick={onRunAnalysis}
+                                    disabled={!canRunAnalysis}
+                                    style={{
+                                        width: '100%', padding: '10px 16px',
+                                        background: canRunAnalysis ? colors.success : colors.disabled,
+                                        color: colors.textOnBrand, border: 'none', borderRadius: '8px',
+                                        cursor: canRunAnalysis ? 'pointer' : 'not-allowed',
+                                        fontSize: '14px', fontWeight: 700,
+                                        boxShadow: canRunAnalysis ? '0 2px 8px rgba(39,174,96,0.3)' : 'none',
+                                        transition: 'transform 0.1s',
+                                    }}
+                                    onMouseEnter={(e) => { if (canRunAnalysis) (e.target as HTMLButtonElement).style.transform = 'scale(1.02)'; }}
+                                    onMouseLeave={(e) => (e.target as HTMLButtonElement).style.transform = 'scale(1)'}
+                                >
+                                    🔍 Analyze & Suggest
+                                </button>
+                            </>
                         )}
                     </div>
                 )}

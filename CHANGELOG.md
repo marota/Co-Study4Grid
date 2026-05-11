@@ -32,6 +32,20 @@ and the project (informally) follows [Semantic Versioning](https://semver.org/).
 
 - _Other work in progress — new entries land here before the next
   tagged release._
+### Added
+
+- **"Combined only" pin filter** on the Action Overview tab and the
+  Overflow Analysis iframe. New `showCombinedOnly` field on the shared
+  `ActionOverviewFilters` state — when enabled, both pin layers render
+  combined-action pins (computed pairs) plus their two constituents
+  (dimmed for context) and drop every other unitary / un-simulated
+  pin. The flag is pin-scoped — Action Feed cards are NOT gated by it,
+  preserving the explore-pairs triage surface. The iframe sidebar
+  carries a matching checkbox; both sides round-trip the boolean
+  through the existing `cs4g:filters` postMessage envelope. See
+  `docs/features/action-overview-diagram.md` §Filtering and
+  `docs/features/interactive-overflow-analysis.md` §7 for the
+  contract and rendering rules.
 
 ---
 

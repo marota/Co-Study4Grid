@@ -70,7 +70,7 @@ def _setup_service_with_env():
     nm = MagicMock()
     network = MagicMock()
     network.get_working_variant_id.return_value = "initial"
-    network.get_variant_ids.return_value = ["initial", "N_state_cached", "N_1_state_DISCO_X"]
+    network.get_variant_ids.return_value = ["initial", "N_state_cached", "contingency_state_DISCO_X"]
     nm.network = network
     nm.get_pst_tap_info.return_value = {"tap": 30, "low_tap": 0, "high_tap": 40}
     env.network_manager = nm
@@ -86,10 +86,10 @@ def _setup_service_with_env():
 
     # N-1 obs (contingency — CANTEY761 overloaded at 110%)
     obs_n1 = _make_obs(rho=[0.5, 0.3, 1.1])
-    obs_n1._variant_id = "N_1_state_DISCO_X"
+    obs_n1._variant_id = "contingency_state_DISCO_X"
     obs_n1._network_manager = nm
     svc._cached_obs_n1 = obs_n1
-    svc._cached_obs_n1_id = "N_1_state_DISCO_X"
+    svc._cached_obs_n1_id = "contingency_state_DISCO_X"
 
     return svc, env, obs_n, obs_n1
 
@@ -97,7 +97,7 @@ def _setup_service_with_env():
 class TestPstCombinedActionSimulation:
     """Tests that PST + switching combined actions apply BOTH changes."""
 
-    @patch.object(RecommenderService, '_get_n1_variant', return_value="N_1_state_DISCO_X")
+    @patch.object(RecommenderService, '_get_contingency_variant', return_value="contingency_state_DISCO_X")
     @patch.object(RecommenderService, '_get_n_variant', return_value="N_state_cached")
     def test_combined_pst_switching_applies_both_actions(self, mock_n, mock_n1):
         """When Re-Simulating a PST+switching pair, both actions must be applied.
@@ -161,7 +161,7 @@ class TestPstCombinedActionSimulation:
         assert result["max_rho"] < 1.0, \
             f"Combined action should reduce max_rho below 1.0, got {result['max_rho']}"
 
-    @patch.object(RecommenderService, '_get_n1_variant', return_value="N_1_state_DISCO_X")
+    @patch.object(RecommenderService, '_get_contingency_variant', return_value="contingency_state_DISCO_X")
     @patch.object(RecommenderService, '_get_n_variant', return_value="N_state_cached")
     def test_pst_action_content_preserved_in_dict_action(self, mock_n, mock_n1):
         """PST actions loaded from the action file must keep pst_tap in content."""
@@ -185,7 +185,7 @@ class TestPstCombinedActionSimulation:
         assert "pst_tap" in entry.get("content", {}), \
             f"pst_tap must be preserved in _dict_action content after simulation. Keys: {list(entry.get('content', {}).keys())}"
 
-    @patch.object(RecommenderService, '_get_n1_variant', return_value="N_1_state_DISCO_X")
+    @patch.object(RecommenderService, '_get_contingency_variant', return_value="contingency_state_DISCO_X")
     @patch.object(RecommenderService, '_get_n_variant', return_value="N_state_cached")
     def test_heuristic_promotion_preserves_pst_tap(self, mock_n, mock_n1):
         """When promoting a PST action from recent_actions to _dict_action,
@@ -223,7 +223,7 @@ class TestPstCombinedActionSimulation:
 class TestPstResimulationWithTargetTap:
     """Tests that target_tap updates are correctly applied."""
 
-    @patch.object(RecommenderService, '_get_n1_variant', return_value="N_1_state_DISCO_X")
+    @patch.object(RecommenderService, '_get_contingency_variant', return_value="contingency_state_DISCO_X")
     @patch.object(RecommenderService, '_get_n_variant', return_value="N_state_cached")
     def test_target_tap_updates_pst_content(self, mock_n, mock_n1):
         """When target_tap is provided, pst_tap content must be updated before simulation."""
@@ -247,7 +247,7 @@ class TestPstResimulationWithTargetTap:
         assert content["pst_tap"][".ARKA TD 661"] == 35, \
             f"pst_tap should be updated to target_tap=35, got {content['pst_tap']}"
 
-    @patch.object(RecommenderService, '_get_n1_variant', return_value="N_1_state_DISCO_X")
+    @patch.object(RecommenderService, '_get_contingency_variant', return_value="contingency_state_DISCO_X")
     @patch.object(RecommenderService, '_get_n_variant', return_value="N_state_cached")
     def test_target_tap_clamped_to_bounds(self, mock_n, mock_n1):
         """target_tap must be clamped to [low_tap, high_tap] from network."""

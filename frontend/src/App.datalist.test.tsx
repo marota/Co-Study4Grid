@@ -35,7 +35,13 @@ describe('Datalist performance clamping', () => {
     cleanup();
   });
 
-  it('clamps contingency datalist options to exactly 50 items', async () => {
+  it('exposes all branches through the contingency multi-select dropdown', async () => {
+    // The legacy <datalist> input was replaced by a react-select
+    // multi-select (PR `claude/add-nk-contingency-support-hnMwD`),
+    // which renders an internal <input role="combobox">. The Chromium
+    // lockup from 1000+ <option> children no longer applies because
+    // react-select filters as the user types. Sanity-check that the
+    // combobox is wired up and opens its menu when focused.
     const largeBranches = Array.from({ length: 150 }, (_, i) => `BRANCH_${i}`);
     mockApi.getBranches.mockResolvedValue({ branches: largeBranches, name_map: {} });
 
@@ -47,9 +53,14 @@ describe('Datalist performance clamping', () => {
       expect(screen.getByText('🎯 Select Contingency')).toBeInTheDocument();
     }, { timeout: 5000 });
 
-    const datalist = document.querySelector('#contingencies');
-    expect(datalist).not.toBeNull();
-    // Because it's clamped to max 50 items to prevent Chromium lockup
-    expect(datalist!.children.length).toBe(50);
+    const combobox = screen.getByRole('combobox');
+    expect(combobox).toBeInTheDocument();
+    await act(async () => { await userEvent.click(combobox); });
+    // Filtering on a unique substring narrows the menu to a single
+    // hit — guards that the option list is fed from ``branches``.
+    await act(async () => { await userEvent.type(combobox, 'BRANCH_42'); });
+    await waitFor(() => {
+      expect(screen.getByText('BRANCH_42')).toBeInTheDocument();
+    });
   });
 });

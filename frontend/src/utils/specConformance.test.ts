@@ -50,13 +50,17 @@ const SPEC: Record<string, SpecRow> = {
   settings_applied:               { required: CONFIG_FIELDS },
   settings_cancelled:             { required: new Set() },
   path_picked:                    { required: new Set(['type', 'path']) },
-  // --- Contingency ---
+  // --- Contingency (single + N-K multi-element) ---
   contingency_selected:           { required: new Set(['element']) },
   contingency_confirmed:          { required: new Set(['type']), optional: new Set(['pending_branch']) },
+  contingency_element_added:      { required: new Set(['element']) },
+  contingency_element_removed:    { required: new Set(['element']) },
+  contingency_applied:            { required: new Set(['elements']) },
   // --- Two-Step Analysis ---
   analysis_step1_started:         { required: new Set(['element']) },
   overload_toggled:               { required: new Set(['overload', 'selected']) },
-  analysis_step2_started:         { required: new Set(['element', 'selected_overloads', 'all_overloads', 'monitor_deselected']) },
+  additional_line_to_cut_toggled: { required: new Set(['line', 'selected']) },
+  analysis_step2_started:         { required: new Set(['element', 'selected_overloads', 'all_overloads', 'monitor_deselected']), optional: new Set(['additional_lines_to_cut']) },
   prioritized_actions_displayed:  { required: new Set(['n_actions']) },
   // --- Action ---
   action_selected:                { required: new Set(['action_id']) },

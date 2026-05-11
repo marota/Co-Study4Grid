@@ -137,14 +137,13 @@ describe('UX consistency — Recommendation #1 (design tokens)', () => {
         const notice: Notice = { id: 'mon', title: 'Monitoring', body: 'body', severity: 'warning' };
         const { container } = render(
             <AppSidebar
-                selectedBranch=""
+                selectedContingency={[]} pendingContingency={[]} onPendingContingencyChange={vi.fn()} onContingencyApply={vi.fn()}
                 branches={[]}
                 nameMap={{}}
                 n1LinesOverloaded={undefined}
                 n1LinesOverloadedRho={undefined}
                 selectedOverloads={undefined}
-                contingencyOptions={null}
-                onContingencyChange={vi.fn()}
+                
                 displayName={(id) => id}
                 onContingencyZoom={vi.fn()}
                 onOverloadClick={vi.fn()}
@@ -309,14 +308,13 @@ describe('UX consistency — Recommendation #4 (tier the warning system)', () =>
         ];
         render(
             <AppSidebar
-                selectedBranch=""
+                selectedContingency={[]} pendingContingency={[]} onPendingContingencyChange={vi.fn()} onContingencyApply={vi.fn()}
                 branches={[]}
                 nameMap={{}}
                 n1LinesOverloaded={undefined}
                 n1LinesOverloadedRho={undefined}
                 selectedOverloads={undefined}
-                contingencyOptions={null}
-                onContingencyChange={vi.fn()}
+                
                 displayName={(id) => id}
                 onContingencyZoom={vi.fn()}
                 onOverloadClick={vi.fn()}
@@ -339,14 +337,13 @@ describe('UX consistency — Recommendation #4 (tier the warning system)', () =>
         ];
         render(
             <AppSidebar
-                selectedBranch="LINE_A"
+                selectedContingency={["LINE_A"]} pendingContingency={["LINE_A"]} onPendingContingencyChange={vi.fn()} onContingencyApply={vi.fn()}
                 branches={[]}
                 nameMap={{}}
                 n1LinesOverloaded={['LINE_X']}
                 n1LinesOverloadedRho={[1.05]}
                 selectedOverloads={undefined}
-                contingencyOptions={null}
-                onContingencyChange={vi.fn()}
+                
                 displayName={(id) => id}
                 onContingencyZoom={vi.fn()}
                 onOverloadClick={vi.fn()}
@@ -359,24 +356,26 @@ describe('UX consistency — Recommendation #4 (tier the warning system)', () =>
         // Both the contingency-zoom button and the notices pill are
         // descendants of the same strip.
         expect(within(summary).getByTestId('notices-pill')).toBeInTheDocument();
+        // The strip surfaces the "🎯 Contingency:" applied-contingency
+        // header and the "⚠️ Overloads:" overloads header.
         expect(within(summary).getByText(/Contingency:/i)).toBeInTheDocument();
-        // The strip is laid out as a flex row so the two cluster
-        // horizontally rather than stacking.
+        expect(within(summary).getByText(/Overloads:/i)).toBeInTheDocument();
+        // The strip stacks vertically so the notices pill sits on
+        // its own line above the contingency / overload rows.
         expect(summary.style.display).toBe('flex');
-        expect(summary.style.justifyContent).toBe('space-between');
+        expect(summary.style.flexDirection).toBe('column');
     });
 
     it('AppSidebar omits the NoticesPanel entirely when no notices are active', () => {
         render(
             <AppSidebar
-                selectedBranch=""
+                selectedContingency={[]} pendingContingency={[]} onPendingContingencyChange={vi.fn()} onContingencyApply={vi.fn()}
                 branches={[]}
                 nameMap={{}}
                 n1LinesOverloaded={undefined}
                 n1LinesOverloadedRho={undefined}
                 selectedOverloads={undefined}
-                contingencyOptions={null}
-                onContingencyChange={vi.fn()}
+                
                 displayName={(id) => id}
                 onContingencyZoom={vi.fn()}
                 onOverloadClick={vi.fn()}
@@ -430,7 +429,7 @@ describe('UX consistency — Recommendation #5 (diagram legend)', () => {
                 onZoomIn={vi.fn()}
                 onZoomOut={vi.fn()}
                 hasBranches={true}
-                selectedBranch={'BRANCH_A'}
+                selectedContingency={['BRANCH_A']}
                 vlOverlay={null}
                 onOverlayClose={vi.fn()}
                 onOverlaySldTabChange={vi.fn()}
@@ -450,8 +449,8 @@ describe('UX consistency — Recommendation #5 (diagram legend)', () => {
     });
 
     it('mounts a Legend pill on the Contingency (N-1) tab when the diagram is loaded', () => {
-        renderPanel('n-1');
-        expect(screen.getByTestId('diagram-legend-pill-n-1')).toBeInTheDocument();
+        renderPanel('contingency');
+        expect(screen.getByTestId('diagram-legend-pill-contingency')).toBeInTheDocument();
     });
 
     it('mounts a Legend pill on the Remedial Action tab when the diagram is loaded', () => {
@@ -500,7 +499,7 @@ describe('UX consistency — source-text invariants', () => {
     it('VisualizationPanel.tsx wires <DiagramLegend /> for n / n-1 / action', () => {
         const src = readSource('components/VisualizationPanel.tsx');
         expect(src).toMatch(/<DiagramLegend\s+tabId="n"/);
-        expect(src).toMatch(/<DiagramLegend\s+tabId="n-1"/);
+        expect(src).toMatch(/<DiagramLegend\s+tabId="contingency"/);
         expect(src).toMatch(/<DiagramLegend\s+tabId="action"/);
     });
 });
@@ -513,14 +512,13 @@ describe('UX consistency — component import smoke', () => {
     it('AppSidebar children slot keeps rendering even with an active notices list', () => {
         render(
             <AppSidebar
-                selectedBranch=""
+                selectedContingency={[]} pendingContingency={[]} onPendingContingencyChange={vi.fn()} onContingencyApply={vi.fn()}
                 branches={[]}
                 nameMap={{}}
                 n1LinesOverloaded={undefined}
                 n1LinesOverloadedRho={undefined}
                 selectedOverloads={undefined}
-                contingencyOptions={null}
-                onContingencyChange={vi.fn()}
+                
                 displayName={(id) => id}
                 onContingencyZoom={vi.fn()}
                 onOverloadClick={vi.fn()}

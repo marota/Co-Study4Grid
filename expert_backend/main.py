@@ -297,12 +297,20 @@ class ConfigRequest(BaseModel):
     force_layout: bool = False
 
 class AnalysisRequest(BaseModel):
-    disconnected_element: str
+    # List of element IDs to disconnect simultaneously. A single-item list
+    # is the legacy N-1 case; longer lists drive N-K contingency studies.
+    disconnected_elements: list[str]
 
 class AnalysisStep2Request(BaseModel):
     selected_overloads: list[str]
     all_overloads: list[str] = []
     monitor_deselected: bool = False
+    # Extra line IDs the operator wants the recommender to treat as
+    # "lines to cut" (akin to ExpertAgent's additionalLinesToCut). They
+    # are not actually overloaded but are appended to the overflow-graph
+    # target set so resolving actions also relieve flow on them, and
+    # they are kept inside `lines_we_care_about` for monitoring.
+    additional_lines_to_cut: list[str] = []
 
 class RegenerateOverflowGraphRequest(BaseModel):
     mode: str  # "hierarchical" or "geo"
@@ -310,7 +318,7 @@ class RegenerateOverflowGraphRequest(BaseModel):
 class FocusedDiagramRequest(BaseModel):
     element_id: str
     depth: int = 1
-    disconnected_element: str = None
+    disconnected_elements: list[str] | None = None
 
 class ActionVariantRequest(BaseModel):
     action_id: str
@@ -319,17 +327,17 @@ class ActionVariantRequest(BaseModel):
 class ComputeSuperpositionRequest(BaseModel):
     action1_id: str
     action2_id: str
-    disconnected_element: str
+    disconnected_elements: list[str]
 
 class RestoreAnalysisContextRequest(BaseModel):
     lines_we_care_about: list[str] | None = None
-    disconnected_element: str | None = None
+    disconnected_elements: list[str] | None = None
     lines_overloaded: list[str] | None = None
     computed_pairs: dict | None = None
 
 class ManualActionRequest(BaseModel):
     action_id: str
-    disconnected_element: str
+    disconnected_elements: list[str]
     action_content: dict | None = None  # Optional switches dict for actions not in the dictionary
     lines_overloaded: list[str] | None = None  # Optional overloaded line names from saved session
     target_mw: float | None = None  # Optional MW reduction amount for load shedding / curtailment
@@ -664,7 +672,7 @@ def restore_analysis_context(request: RestoreAnalysisContextRequest) -> dict:
     try:
         recommender_service.restore_analysis_context(
             lines_we_care_about=request.lines_we_care_about,
-            disconnected_element=request.disconnected_element,
+            disconnected_elements=request.disconnected_elements,
             lines_overloaded=request.lines_overloaded,
             computed_pairs=request.computed_pairs,
         )
@@ -682,11 +690,11 @@ import json
 async def run_analysis(request: AnalysisRequest) -> StreamingResponse:
     def event_generator():
         try:
-            for event in recommender_service.run_analysis(request.disconnected_element):
+            for event in recommender_service.run_analysis(request.disconnected_elements):
                 if event.get("pdf_path"):
                     filename = os.path.basename(event["pdf_path"])
                     event["pdf_url"] = f"/results/pdf/{filename}"
-                
+
                 # Yield JSON line
                 yield json.dumps(event) + "\n"
         except Exception as e:
@@ -697,7 +705,7 @@ async def run_analysis(request: AnalysisRequest) -> StreamingResponse:
 @app.post("/api/run-analysis-step1")
 async def run_analysis_step1(request: AnalysisRequest) -> dict:
     try:
-        result = recommender_service.run_analysis_step1(request.disconnected_element)
+        result = recommender_service.run_analysis_step1(request.disconnected_elements)
         return result
     except Exception as e:
         logger.exception("API boundary error")
@@ -710,7 +718,8 @@ async def run_analysis_step2(request: AnalysisStep2Request) -> StreamingResponse
             for event in recommender_service.run_analysis_step2(
                 request.selected_overloads,
                 all_overloads=request.all_overloads,
-                monitor_deselected=request.monitor_deselected
+                monitor_deselected=request.monitor_deselected,
+                additional_lines_to_cut=request.additional_lines_to_cut,
             ):
                 if event.get("pdf_path"):
                     filename = os.path.basename(event["pdf_path"])
@@ -768,10 +777,16 @@ def get_network_diagram(http_request: Request, format: str = Query("json")) -> R
         logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/api/n1-diagram")
-def get_n1_diagram(request: AnalysisRequest, http_request: Request) -> Response:
+@app.post("/api/contingency-diagram")
+def get_contingency_diagram(request: AnalysisRequest, http_request: Request) -> Response:
+    """Post-contingency NAD (N-1, N-2, ..., N-K).
+
+    ``request.disconnected_elements`` is the ordered list of element
+    IDs to disconnect simultaneously. A single-item list is the
+    legacy N-1 case; longer lists drive N-K studies.
+    """
     try:
-        diagram = recommender_service.get_n1_diagram(request.disconnected_element)
+        diagram = recommender_service.get_contingency_diagram(request.disconnected_elements)
         return _maybe_gzip_json(diagram, http_request)
     except Exception as e:
         logger.exception("API boundary error")
@@ -792,17 +807,18 @@ def get_action_variant_diagram(request: ActionVariantRequest, http_request: Requ
         logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/api/n1-diagram-patch")
-def get_n1_diagram_patch(request: AnalysisRequest, http_request: Request) -> Response:
+@app.post("/api/contingency-diagram-patch")
+def get_contingency_diagram_patch(request: AnalysisRequest, http_request: Request) -> Response:
     """Return an SVG-less patch payload that the frontend applies to a
-    clone of the N-state NAD to produce the N-1 view.
+    clone of the N-state NAD to produce the contingency view.
 
-    Paired with the full-SVG `/api/n1-diagram` endpoint: on client-side
-    error or any unexpected condition the frontend must fall back to the
-    full endpoint. See docs/performance/history/svg-dom-recycling.md.
+    Paired with the full-SVG ``/api/contingency-diagram`` endpoint: on
+    client-side error or any unexpected condition the frontend must
+    fall back to the full endpoint. See
+    ``docs/performance/history/svg-dom-recycling.md``.
     """
     try:
-        payload = recommender_service.get_n1_diagram_patch(request.disconnected_element)
+        payload = recommender_service.get_contingency_diagram_patch(request.disconnected_elements)
         return _maybe_gzip_json(payload, http_request)
     except Exception as e:
         logger.exception("API boundary error")
@@ -837,17 +853,18 @@ def get_element_voltage_levels(element_id: str = Query(...)) -> dict:
 def get_focused_diagram(request: FocusedDiagramRequest, http_request: Request) -> Response:
     """Generate a NAD focused on a specific element's voltage levels.
 
-    If disconnected_element is provided, generates the N-1 state.
-    Uses voltage_level_ids + depth to produce a readable sub-diagram.
+    If ``disconnected_elements`` is provided, generates the contingency
+    state (N-1 / N-K).  Uses ``voltage_level_ids`` + ``depth`` to produce
+    a readable sub-diagram.
     """
     try:
         vl_ids = network_service.get_element_voltage_levels(request.element_id)
         if not vl_ids:
             raise HTTPException(status_code=404, detail=f"No voltage levels found for {request.element_id}")
 
-        if request.disconnected_element:
-            diagram = recommender_service.get_n1_diagram(
-                request.disconnected_element,
+        if request.disconnected_elements:
+            diagram = recommender_service.get_contingency_diagram(
+                request.disconnected_elements,
                 voltage_level_ids=vl_ids,
                 depth=request.depth
             )
@@ -924,16 +941,16 @@ def get_n_sld(request: NSldRequest, http_request: Request) -> Response:
         logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))
 
-class N1SldRequest(BaseModel):
-    disconnected_element: str
+class ContingencySldRequest(BaseModel):
+    disconnected_elements: list[str]
     voltage_level_id: str
 
-@app.post("/api/n1-sld")
-def get_n1_sld(request: N1SldRequest, http_request: Request) -> Response:
-    """Generate a Single Line Diagram (SLD) for a voltage level in the N-1 network state."""
+@app.post("/api/contingency-sld")
+def get_contingency_sld(request: ContingencySldRequest, http_request: Request) -> Response:
+    """Generate a Single Line Diagram (SLD) for a voltage level in the contingency network state."""
     try:
-        diagram = recommender_service.get_n1_sld(
-            request.disconnected_element,
+        diagram = recommender_service.get_contingency_sld(
+            request.disconnected_elements,
             request.voltage_level_id,
         )
         return _maybe_gzip_json(diagram, http_request)
@@ -957,7 +974,7 @@ def simulate_manual_action(request: ManualActionRequest) -> dict:
     """Simulate a specific action from the loaded dictionary against a contingency."""
     try:
         result = recommender_service.simulate_manual_action(
-            request.action_id, request.disconnected_element,
+            request.action_id, request.disconnected_elements,
             action_content=request.action_content,
             lines_overloaded=request.lines_overloaded,
             target_mw=request.target_mw,
@@ -972,7 +989,7 @@ def simulate_manual_action(request: ManualActionRequest) -> dict:
 class SimulateAndVariantDiagramRequest(BaseModel):
     # Simulation parameters — same as ManualActionRequest
     action_id: str
-    disconnected_element: str
+    disconnected_elements: list[str]
     action_content: dict | None = None
     lines_overloaded: list[str] | None = None
     target_mw: float | None = None
@@ -1012,7 +1029,7 @@ async def simulate_and_variant_diagram(request: SimulateAndVariantDiagramRequest
             # in `self._last_result["prioritized_actions"][action_id]`, which is what the
             # subsequent `get_action_variant_diagram` reads to pick the post-action variant.
             sim_result = recommender_service.simulate_manual_action(
-                request.action_id, request.disconnected_element,
+                request.action_id, request.disconnected_elements,
                 action_content=request.action_content,
                 lines_overloaded=request.lines_overloaded,
                 target_mw=request.target_mw,
@@ -1037,7 +1054,7 @@ def compute_superposition(request: ComputeSuperpositionRequest) -> dict:
     """Compute the combined effect of two actions using the superposition theorem."""
     try:
         result = recommender_service.compute_superposition(
-            request.action1_id, request.action2_id, request.disconnected_element
+            request.action1_id, request.action2_id, request.disconnected_elements
         )
         return result
     except Exception as e:

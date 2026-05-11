@@ -28,7 +28,7 @@ interface OverloadPanelProps {
      * action cards so the operator lands directly on the relevant
      * network state.
      */
-    onAssetClick: (actionId: string, assetName: string, tab?: 'n' | 'n-1') => void;
+    onAssetClick: (actionId: string, assetName: string, tab?: 'n' | 'contingency') => void;
     /**
      * Inline contextual hint shown beneath the heading. Replaces the
      * previous full yellow banner — the full notice now lives in
@@ -73,10 +73,10 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
     const formatRho = (v: number | undefined) =>
         v == null || Number.isNaN(v) ? null : `${(v * 100).toFixed(1)}%`;
 
-    const renderLinks = (lines: string[], rhos: number[] | undefined, tab: 'n' | 'n-1') => {
+    const renderLinks = (lines: string[], rhos: number[] | undefined, tab: 'n' | 'contingency') => {
         if (!lines || lines.length === 0) return <span style={{ color: colors.textTertiary, fontStyle: 'italic' }}>None</span>;
         return lines.map((lineName, i) => {
-            const isSelected = tab === 'n-1' ? (selectedOverloads?.has(lineName) ?? true) : true;
+            const isSelected = tab === 'contingency' ? (selectedOverloads?.has(lineName) ?? true) : true;
             const rhoPct = formatRho(rhos?.[i]);
             return (
                 <React.Fragment key={i}>
@@ -88,12 +88,12 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                             fontWeight: isSelected ? 600 : 400,
                             textDecoration: isSelected ? 'underline dotted' : 'none'
                         }}
-                        title={tab === 'n-1'
+                        title={tab === 'contingency'
                             ? (isSelected ? `Zoom to ${lineName} (Double-click to unselect)` : `Zoom to ${lineName} (Double-click to select)`)
                             : `Zoom to ${lineName}`}
                         onClick={(e) => { e.stopPropagation(); onAssetClick('', lineName, tab); }}
                         onDoubleClick={(e) => {
-                            if (tab === 'n-1') {
+                            if (tab === 'contingency') {
                                 e.stopPropagation();
                                 onToggleOverload?.(lineName);
                             }
@@ -215,7 +215,7 @@ const OverloadPanel: React.FC<OverloadPanelProps> = ({
                         </label>
                     )}
                     <span style={{ wordBreak: 'break-word' }}>
-                        {renderLinks(n1Overloads, n1OverloadsRho, 'n-1')}
+                        {renderLinks(n1Overloads, n1OverloadsRho, 'contingency')}
                     </span>
                 </div>
             </div>

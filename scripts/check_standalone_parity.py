@@ -126,9 +126,12 @@ SPEC_DETAILS: dict[str, dict] = {
     "settings_applied":        _spec_row(_CONFIG_FIELDS),
     "settings_cancelled":      _spec_row(set()),
     "path_picked":             _spec_row({"type", "path"}),
-    # --- Contingency ---
-    "contingency_selected":    _spec_row({"element"}),
-    "contingency_confirmed":   _spec_row({"type"}, optional={"pending_branch"}),
+    # --- Contingency (single + N-K multi-element) ---
+    "contingency_selected":         _spec_row({"element"}),
+    "contingency_confirmed":        _spec_row({"type"}, optional={"pending_branch"}),
+    "contingency_element_added":    _spec_row({"element"}),
+    "contingency_element_removed":  _spec_row({"element"}),
+    "contingency_applied":          _spec_row({"elements"}),
     # --- Two-Step Analysis ---
     "analysis_step1_started":   _spec_row({"element"}),
     "analysis_step1_completed": _spec_row({
@@ -138,7 +141,11 @@ SPEC_DETAILS: dict[str, dict] = {
     "overload_toggled":         _spec_row({"overload", "selected"}),
     "analysis_step2_started":   _spec_row({
         "element", "selected_overloads", "all_overloads", "monitor_deselected",
+        # PR #134 — operator-selectable extra "lines to cut" forwarded
+        # to the discovery engine as ``extra_lines_to_cut_ids``.
+        "additional_lines_to_cut",
     }),
+    "additional_line_to_cut_toggled": _spec_row({"line", "selected"}),
     "analysis_step2_completed": _spec_row({
         "n_actions", "action_ids", "dc_fallback", "message", "pdf_url",
     }),

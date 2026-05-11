@@ -59,14 +59,14 @@ export default function DiagramLegend({ tabId, uniqueVoltages, vlNamesHidden }: 
 
   const rows = useMemo<LegendRow[]>(() => {
     const list: LegendRow[] = [];
-    if (tabId === 'n-1' || tabId === 'action') {
+    if (tabId === 'contingency' || tabId === 'action') {
       list.push({ color: 'var(--signal-contingency)', label: 'Contingency', detail: 'yellow halo on the disconnected element' });
     }
     if (tabId === 'action') {
       list.push({ color: 'var(--signal-action-target)', label: 'Action target', detail: 'pink halo on the remedial action' });
     }
     list.push({ color: 'var(--signal-overload)', label: 'Overloaded line', detail: 'orange halo (ρ ≥ 100% of monitoring factor)' });
-    if (tabId === 'n-1' || tabId === 'action') {
+    if (tabId === 'contingency' || tabId === 'action') {
       list.push({ color: 'var(--signal-delta-positive)', label: 'Flow up after change', detail: 'orange line in delta view' });
       list.push({ color: 'var(--signal-delta-negative)', label: 'Flow down after change', detail: 'blue line in delta view' });
     }

@@ -34,9 +34,9 @@ describe('useSldOverlay', () => {
         expect(result.current.vlOverlay).toBeNull();
     });
 
-    it('initializes selectedBranchForSld ref with empty string', () => {
+    it('initializes selectedContingencyForSld ref with an empty list', () => {
         const { result } = renderHook(() => useSldOverlay('n'));
-        expect(result.current.selectedBranchForSld.current).toBe('');
+        expect(result.current.selectedContingencyForSld.current).toEqual([]);
     });
 
     it('handleVlDoubleClick sets vlOverlay with loading state', () => {
@@ -70,13 +70,13 @@ describe('useSldOverlay', () => {
 
     it('handleVlDoubleClick uses correct initial tab based on activeTab', () => {
         vi.mocked(api.getN1Sld).mockImplementation(() => new Promise(() => { /* never resolves */ }));
-        const { result } = renderHook(() => useSldOverlay('n-1'));
+        const { result } = renderHook(() => useSldOverlay('contingency'));
 
         act(() => {
             result.current.handleVlDoubleClick('act1', 'VL_220');
         });
 
-        expect(result.current.vlOverlay!.tab).toBe('n-1');
+        expect(result.current.vlOverlay!.tab).toBe('contingency');
     });
 
     it('handleVlDoubleClick sets tab to action for action activeTab', () => {
@@ -130,7 +130,7 @@ describe('useSldOverlay', () => {
     it('handleOverlaySldTabChange does nothing when vlOverlay is null', () => {
         const { result } = renderHook(() => useSldOverlay('n'));
         act(() => {
-            result.current.handleOverlaySldTabChange('n-1');
+            result.current.handleOverlaySldTabChange('contingency');
         });
         // No error thrown, no overlay set
         expect(result.current.vlOverlay).toBeNull();
@@ -146,11 +146,11 @@ describe('useSldOverlay', () => {
 
         vi.mocked(api.getN1Sld).mockImplementation(() => new Promise(() => { /* never resolves */ }));
         act(() => {
-            result.current.handleOverlaySldTabChange('n-1');
+            result.current.handleOverlaySldTabChange('contingency');
         });
 
         expect(interactionLogger.record).toHaveBeenCalledWith('sld_overlay_tab_changed', {
-            tab: 'n-1',
+            tab: 'contingency',
             vl_name: 'VL_400',
         });
     });

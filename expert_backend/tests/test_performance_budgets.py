@@ -27,7 +27,7 @@ class TestPerformanceBudgets:
         network.get_operational_limits.return_value = limits_df
         return obs
 
-    @patch.object(RecommenderService, '_get_n1_variant')
+    @patch.object(RecommenderService, '_get_contingency_variant')
     @patch.object(RecommenderService, '_get_n_variant')
     @patch.object(RecommenderService, '_get_simulation_env')
     @patch.object(RecommenderService, '_get_base_network')
@@ -66,7 +66,7 @@ class TestPerformanceBudgets:
             # Target: < 50ms. Vectorized logic should easily be < 10ms on modern CPUs.
             assert duration_ms < 50, f"Performance regression! Logic took {duration_ms:.2f}ms (budget: 50ms)"
 
-    @patch.object(RecommenderService, '_get_n1_variant')
+    @patch.object(RecommenderService, '_get_contingency_variant')
     @patch.object(RecommenderService, '_get_n_variant')
     @patch.object(RecommenderService, '_get_simulation_env')
     def test_simulation_logic_budget_small_grid(self, mock_get_env, mock_get_n, mock_get_n1):

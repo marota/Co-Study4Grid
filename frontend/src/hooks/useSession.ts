@@ -41,9 +41,20 @@ export interface SaveParams {
   preExistingOverloadThreshold: number;
   ignoreReconnections: boolean;
   pypowsyblFastMode: boolean;
-  selectedBranch: string;
+  /**
+   * Legacy single-string contingency (joined by ``+`` for multi-element
+   * contingencies, populated by App.tsx for backwards compatibility
+   * with older callers and existing tests).
+   */
+  selectedBranch?: string;
+  /** Currently APPLIED contingency (list of element IDs). */
+  selectedContingency?: string[];
   selectedOverloads: Set<string>;
   monitorDeselected: boolean;
+  /** Snapshot of the "additional lines to prevent flow increase"
+   *  picker at the moment Step 2 was posted; persisted so the
+   *  post-run sidebar notice survives a session reload. */
+  committedAdditionalLinesToCut?: Set<string>;
   nOverloads: string[];
   n1Overloads: string[];
   nOverloadsRho?: number[];
@@ -86,13 +97,18 @@ export interface RestoreContext {
   ingestBaseDiagram: (raw: DiagramData & { svg: string }, vlCount: number) => void;
   setMonitorDeselected: (v: boolean) => void;
   setSelectedOverloads: (v: Set<string>) => void;
+  /** Restore the committed "additional lines to prevent flow
+   *  increase" snapshot so the post-run sidebar notice surfaces
+   *  again after a reload. Optional so test mocks predating the
+   *  field don't have to know about it. */
+  setCommittedAdditionalLinesToCut?: (v: Set<string>) => void;
   setResult: Dispatch<SetStateAction<AnalysisResult | null>>;
   setSelectedActionIds: Dispatch<SetStateAction<Set<string>>>;
   setRejectedActionIds: Dispatch<SetStateAction<Set<string>>>;
   setManuallyAddedIds: Dispatch<SetStateAction<Set<string>>>;
   setSuggestedByRecommenderIds: Dispatch<SetStateAction<Set<string>>>;
   restoringSessionRef: MutableRefObject<boolean>;
-  committedBranchRef: MutableRefObject<string>;
+  committedBranchRef: MutableRefObject<string[]>;
   // Tracks the network path of the currently-loaded study so that
   // subsequent edits to the Header path input know whether to prompt
   // the "Change Network?" confirmation dialog. Must be updated on
@@ -100,7 +116,7 @@ export interface RestoreContext {
   // path after a reload either silently drops the study (ref empty)
   // or fires a spurious dialog against a stale value. See PR #83.
   committedNetworkPathRef: MutableRefObject<string>;
-  setSelectedBranch: (v: string) => void;
+  setSelectedContingency: (v: string[]) => void;
   setInfoMessage: (v: string) => void;
   setError: (v: string) => void;
 }
@@ -130,9 +146,11 @@ export function useSession(): SessionState {
       preExistingOverloadThreshold: params.preExistingOverloadThreshold,
       ignoreReconnections: params.ignoreReconnections,
       pypowsyblFastMode: params.pypowsyblFastMode,
+      selectedContingency: params.selectedContingency,
       selectedBranch: params.selectedBranch,
       selectedOverloads: params.selectedOverloads,
       monitorDeselected: params.monitorDeselected,
+      committedAdditionalLinesToCut: params.committedAdditionalLinesToCut,
       nOverloads: params.nOverloads,
       n1Overloads: params.n1Overloads,
       nOverloadsRho: params.nOverloadsRho,
@@ -146,7 +164,11 @@ export function useSession(): SessionState {
     });
 
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const contingencyLabel = params.selectedBranch ? `_${params.selectedBranch.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
+    const contingencyLabelSrc = params.selectedBranch
+      ?? (params.selectedContingency && params.selectedContingency.length > 0
+            ? params.selectedContingency.join('+')
+            : '');
+    const contingencyLabel = contingencyLabelSrc ? `_${contingencyLabelSrc.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
     const sessionName = `costudy4grid_session${contingencyLabel}_${ts}`;
 
     if (params.outputFolderPath) {
@@ -281,9 +303,15 @@ export function useSession(): SessionState {
       // silently for older session dumps that predate the fields.
       if (session.analysis?.lines_we_care_about) {
         try {
+          // Backwards compat: older sessions saved a single
+          // ``disconnected_element`` (string); promote to the new
+          // ``disconnected_elements`` list shape before sending.
+          const restoredElements: string[] = session.contingency.disconnected_elements
+            ? session.contingency.disconnected_elements
+            : (session.contingency.disconnected_element ? [session.contingency.disconnected_element] : []);
           await api.restoreAnalysisContext({
             lines_we_care_about: session.analysis.lines_we_care_about,
-            disconnected_element: session.contingency.disconnected_element,
+            disconnected_elements: restoredElements,
             lines_overloaded: session.overloads?.resolved_overloads ?? null,
             computed_pairs: session.analysis.computed_pairs ?? null,
           });
@@ -296,6 +324,13 @@ export function useSession(): SessionState {
       const contingency = session.contingency;
       ctx.setMonitorDeselected(contingency.monitor_deselected);
       ctx.setSelectedOverloads(new Set(contingency.selected_overloads));
+      // Restore the "additional lines to prevent flow increase"
+      // snapshot so the post-run sidebar notice resurfaces. Older
+      // session dumps that predate the picker simply set an empty
+      // set, which keeps the notice hidden.
+      ctx.setCommittedAdditionalLinesToCut?.(
+        new Set(contingency.additional_lines_to_cut ?? []),
+      );
 
       // 6. Restore analysis result
       if (session.analysis) {
@@ -389,10 +424,15 @@ export function useSession(): SessionState {
         ctx.setSuggestedByRecommenderIds(new Set());
       }
 
-      // 7. Set the selected branch last (triggers N-1 diagram fetch)
+      // 7. Set the selected contingency last (triggers diagram fetch).
+      // Backwards-compat with older sessions that only carry
+      // ``disconnected_element``: promote to a 1-element list.
+      const restoredElements: string[] = contingency.disconnected_elements
+        ? contingency.disconnected_elements
+        : (contingency.disconnected_element ? [contingency.disconnected_element] : []);
       ctx.restoringSessionRef.current = true;
-      ctx.committedBranchRef.current = contingency.disconnected_element;
-      ctx.setSelectedBranch(contingency.disconnected_element);
+      ctx.committedBranchRef.current = [...restoredElements];
+      ctx.setSelectedContingency(restoredElements);
 
       setShowReloadModal(false);
       interactionLogger.record('session_reloaded', { session_name: sessionName });

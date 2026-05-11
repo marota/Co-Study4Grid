@@ -60,7 +60,7 @@ class TestRecommenderRegressions:
         mock_n = MagicMock()
         mock_nm.network = mock_n
         mock_n.get_working_variant_id.return_value = "base"
-        mock_n.get_variant_ids.return_value = ["base", "N_state_cached", "N_1_state_NONE"]
+        mock_n.get_variant_ids.return_value = ["base", "N_state_cached", "contingency_state_NONE"]
         
         # Mock observations
         mock_obs = MagicMock()
@@ -86,7 +86,7 @@ class TestRecommenderRegressions:
         
         with patch.object(self.service, "_get_simulation_env", return_value=mock_env), \
              patch.object(self.service, "_get_n_variant", return_value="N_state_cached"), \
-             patch.object(self.service, "_get_n1_variant", return_value="N_1_state_NONE"), \
+             patch.object(self.service, "_get_contingency_variant", return_value="contingency_state_NONE"), \
              patch.object(self.service, "_get_monitoring_parameters", return_value=(["LINE_1"], {"LINE_1"})), \
              patch.object(self.service, "_is_renewable_gen", return_value=True), \
              patch("expert_backend.services.network_service.network_service.get_generator_voltage_level", return_value="VL_TEST"), \

@@ -602,6 +602,9 @@ interface ActionOverviewFilters {
     threshold: number;          // 0–3 (max-loading rate)
     showUnsimulated: boolean;
     actionType: 'all' | 'disco' | 'reco' | 'ls' | 'rc' | 'open' | 'close' | 'pst';
+    /** Pin-only — restricts both the NAD overview AND the overflow
+     *  iframe to combined pins + their two constituents (dimmed). */
+    showCombinedOnly: boolean;
 }
 ```
 
@@ -640,6 +643,31 @@ simulated pins are posted. Toggling the field from EITHER side
 re-broadcast through `cs4g:filters` / `cs4g:overflow-filter-changed`,
 keeping the two surfaces in lockstep.
 
+**`showCombinedOnly` — combined-only pin filter.** A pin-scoped
+checkbox in both the React filter header and the iframe sidebar
+restricts the overflow graph to combined-action pins + their two
+constituents (the constituents come through with `dimmedByFilter:
+true` so the overlay renders them at reduced opacity, matching the
+"context for the pair glyph" treatment of the Action Overview NAD).
+When the flag is on, `buildOverflowPinPayload`:
+
+1. Drops every unitary pin whose id is NOT in `protectedIds` (i.e.
+   not referenced by any passing combined pair).
+2. Marks the surviving constituents with `dimmedByFilter: true`
+   regardless of whether their own severity / threshold filter
+   would have passed — they are emitted as context only.
+3. Combined pins themselves still go through the normal severity /
+   threshold / action-type chip; a pair that fails its own filter
+   disappears, taking its constituents with it.
+
+`buildOverflowUnsimulatedPinPayload` short-circuits to `[]` when
+`showCombinedOnly` is on — un-simulated actions can never be in a
+computed pair.
+
+The flag is **pin-scoped on purpose**: the Action Feed cards do not
+consult it (the feed already exposes the explore-pairs surface for
+combined-action triage). Only the two pin layers are gated.
+
 ### 7.3 Iframe sidebar filter panel
 
 The overlay injects an **Action pins filters** section appended at
@@ -654,6 +682,11 @@ The panel mirrors every Action Overview filter chip:
 - `All` / `None` bulk-select pills.
 - `Max loading %` numeric input (0–300, stored × 100 internally).
 - `Show unsimulated` checkbox.
+- `Combined only` checkbox — restricts the graph to combined-action
+  pins plus their two constituents (dimmed for context). Wired both
+  ways through the `cs4g:filters` envelope: clicking it posts
+  `{ ..., showCombinedOnly: true }` to the parent, and a parent-side
+  toggle (Action Overview NAD) re-syncs the iframe checkbox.
 - `ALL DISCO RECO LS RC OPEN CLOSE PST` action-type chip row
   (single-select).
 - A `📌 N` pin counter in the section header showing the number of

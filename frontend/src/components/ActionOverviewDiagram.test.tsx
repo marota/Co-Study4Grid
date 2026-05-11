@@ -1574,4 +1574,162 @@ describe('ActionOverviewDiagram', () => {
             expect(container.querySelector('[data-action-id="disco_LINE_B"]')).toBeNull();
         });
     });
+
+    // ----------------------------------------------------------------
+    // "Combined only" toggle. Adds a new pin-scoped filter that
+    // hides every unitary / un-simulated pin that is NOT a
+    // constituent of a passing combined pair, so the operator can
+    // focus on the recommender's multi-action remediations.
+    // ----------------------------------------------------------------
+    describe('combined-only filter', () => {
+        const allCategoriesCO = { green: true, orange: true, red: true, grey: true };
+
+        const propsWithMix = () => {
+            const actions: Record<string, ActionDetail> = {
+                'disco_LINE_A': makeAction({
+                    action_topology: { lines_ex_bus: { LINE_A: -1 }, lines_or_bus: { LINE_A: -1 }, gens_bus: {}, loads_bus: {} },
+                    max_rho: 0.5,
+                    max_rho_line: 'LINE_A',
+                }),
+                'disco_LINE_B': makeAction({
+                    action_topology: { lines_ex_bus: { LINE_B: -1 }, lines_or_bus: { LINE_B: -1 }, gens_bus: {}, loads_bus: {} },
+                    max_rho: 0.5,
+                    max_rho_line: 'LINE_B',
+                }),
+                // Solo pin — no combined pair references it. Must be
+                // hidden in combined-only mode.
+                'disco_LINE_C': makeAction({
+                    action_topology: { lines_ex_bus: { LINE_C: -1 }, lines_or_bus: { LINE_C: -1 }, gens_bus: {}, loads_bus: {} },
+                    max_rho: 0.5,
+                    max_rho_line: 'LINE_C',
+                }),
+                'disco_LINE_A+disco_LINE_B': makeAction({
+                    description_unitaire: 'A + B combined',
+                    rho_after: [0.6, 0.7],
+                    rho_before: [0.8, 0.9],
+                    max_rho: 0.7,
+                    max_rho_line: 'LINE_A',
+                    is_rho_reduction: true,
+                }),
+            };
+            return {
+                ...defaultProps(),
+                actions,
+                overloadedLines: [] as readonly string[],
+                contingency: null as string | null,
+            };
+        };
+
+        it('renders the "Combined only" checkbox in the filter row', () => {
+            const { getByTestId } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{
+                        categories: allCategoriesCO,
+                        threshold: 1.5,
+                        showUnsimulated: false,
+                        actionType: 'all',
+                        showCombinedOnly: false,
+                    }}
+                />,
+            );
+            const label = getByTestId('filter-combined-only');
+            expect(label).toBeInTheDocument();
+            const checkbox = label.querySelector('input[type="checkbox"]') as HTMLInputElement;
+            expect(checkbox).not.toBeNull();
+            expect(checkbox.checked).toBe(false);
+        });
+
+        it('clicking the checkbox fires onFiltersChange with showCombinedOnly: true', () => {
+            const onFiltersChange = vi.fn();
+            const { getByTestId } = render(
+                <ActionOverviewDiagram
+                    {...defaultProps()}
+                    filters={{
+                        categories: allCategoriesCO,
+                        threshold: 1.5,
+                        showUnsimulated: false,
+                        actionType: 'all',
+                        showCombinedOnly: false,
+                    }}
+                    onFiltersChange={onFiltersChange}
+                />,
+            );
+            const label = getByTestId('filter-combined-only');
+            const checkbox = label.querySelector('input[type="checkbox"]') as HTMLInputElement;
+            fireEvent.click(checkbox);
+            expect(onFiltersChange).toHaveBeenCalledTimes(1);
+            expect(onFiltersChange.mock.calls[0][0].showCombinedOnly).toBe(true);
+        });
+
+        it('hides the solo pin and dims the combined-pair constituents when toggled on', () => {
+            const { container } = render(
+                <ActionOverviewDiagram
+                    {...propsWithMix()}
+                    filters={{
+                        categories: allCategoriesCO,
+                        threshold: 2.0,
+                        showUnsimulated: false,
+                        actionType: 'all',
+                        showCombinedOnly: true,
+                    }}
+                />,
+            );
+            // Solo pin disappears.
+            expect(container.querySelector('[data-action-id="disco_LINE_C"]')).toBeNull();
+            // Pair constituents stay, dimmed.
+            const pinA = container.querySelector('[data-action-id="disco_LINE_A"]');
+            const pinB = container.querySelector('[data-action-id="disco_LINE_B"]');
+            expect(pinA).not.toBeNull();
+            expect(pinB).not.toBeNull();
+            expect(pinA!.getAttribute('data-dimmed-by-filter')).toBe('true');
+            expect(pinB!.getAttribute('data-dimmed-by-filter')).toBe('true');
+            // Combined pin itself is rendered.
+            expect(container.querySelector('[data-action-id="disco_LINE_A+disco_LINE_B"]')).not.toBeNull();
+        });
+
+        it('keeps every pin at full strength when toggled off', () => {
+            const { container } = render(
+                <ActionOverviewDiagram
+                    {...propsWithMix()}
+                    filters={{
+                        categories: allCategoriesCO,
+                        threshold: 2.0,
+                        showUnsimulated: false,
+                        actionType: 'all',
+                        showCombinedOnly: false,
+                    }}
+                />,
+            );
+            // Solo pin survives.
+            expect(container.querySelector('[data-action-id="disco_LINE_C"]')).not.toBeNull();
+            // Constituents are NOT dimmed when the combined pin
+            // doesn't need them as protected context.
+            const pinA = container.querySelector('[data-action-id="disco_LINE_A"]');
+            expect(pinA!.getAttribute('data-dimmed-by-filter')).toBeNull();
+        });
+
+        it('drops every un-simulated pin when toggled on (un-simulated never combined)', () => {
+            const props = propsWithMix();
+            const { container } = render(
+                <ActionOverviewDiagram
+                    {...props}
+                    unsimulatedActionIds={['LINE_D']}
+                    filters={{
+                        categories: allCategoriesCO,
+                        threshold: 2.0,
+                        showUnsimulated: true,
+                        actionType: 'all',
+                        showCombinedOnly: true,
+                    }}
+                />,
+            );
+            // Even with showUnsimulated=true, no un-simulated pin is
+            // rendered when the operator restricts to combined-only.
+            const unsimulated = container.querySelectorAll(
+                '.nad-action-overview-pin-unsimulated',
+            );
+            expect(unsimulated.length).toBe(0);
+        });
+    });
 });

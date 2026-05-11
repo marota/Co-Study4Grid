@@ -4,7 +4,7 @@
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
 
-"""Tests that _get_n1_variant clones from the clean N state variant,
+"""Tests that _get_contingency_variant clones from the clean N state variant,
 not from whatever working variant happens to be active.
 
 Regression test for a bug where switching contingencies after running
@@ -56,9 +56,9 @@ class TestGetN1VariantClonesFromNState:
         # Simulate a dirty working variant (as if left by a prior simulation)
         network.get_working_variant_id.return_value = "dirty_simulation_variant"
 
-        # _get_n1_variant must clone from N_state_cached, NOT dirty_simulation_variant
-        n1_var = service._get_n1_variant("LINE_FAULT")
-        assert n1_var == "N_1_state_LINE_FAULT"
+        # _get_contingency_variant must clone from N_state_cached, NOT dirty_simulation_variant
+        n1_var = service._get_contingency_variant("LINE_FAULT")
+        assert n1_var == "contingency_state_LINE_FAULT"
 
         # The clone source must be N_state_cached
         source, target = clone_calls[-1]
@@ -66,14 +66,14 @@ class TestGetN1VariantClonesFromNState:
             f"Expected clone from N_state_cached but got {source}. "
             "N-1 variant would inherit dirty state from prior simulations."
         )
-        assert target == "N_1_state_LINE_FAULT"
+        assert target == "contingency_state_LINE_FAULT"
 
     @patch.object(RecommenderService, '_run_ac_with_fallback', return_value=[])
     def test_n1_variant_disconnects_contingency_element(self, _mock_ac):
         """After cloning, the contingency element must be disconnected."""
         service, network, _ = self._make_service_with_mock_network()
 
-        service._get_n1_variant("LINE_X")
+        service._get_contingency_variant("LINE_X")
         network.disconnect.assert_called_once_with("LINE_X")
 
     @patch.object(RecommenderService, '_run_ac_with_fallback', return_value=[])
@@ -81,7 +81,7 @@ class TestGetN1VariantClonesFromNState:
         """After cloning and disconnecting, AC load flow must run."""
         service, _, _ = self._make_service_with_mock_network()
 
-        service._get_n1_variant("LINE_Y")
+        service._get_contingency_variant("LINE_Y")
         mock_ac.assert_called()
 
     @patch.object(RecommenderService, '_run_ac_with_fallback', return_value=[])
@@ -92,7 +92,7 @@ class TestGetN1VariantClonesFromNState:
         # Working variant is "dirty" before call
         network.get_working_variant_id.return_value = "dirty_var"
 
-        service._get_n1_variant("LINE_Z")
+        service._get_contingency_variant("LINE_Z")
 
         # Last set_working_variant call should restore to the original
         last_call = network.set_working_variant.call_args_list[-1]
@@ -100,14 +100,14 @@ class TestGetN1VariantClonesFromNState:
 
     @patch.object(RecommenderService, '_run_ac_with_fallback', return_value=[])
     def test_n1_variant_is_cached_on_second_call(self, mock_ac):
-        """Calling _get_n1_variant with the same contingency twice should
+        """Calling _get_contingency_variant with the same contingency twice should
         reuse the cached variant (no second clone)."""
         service, network, clone_calls = self._make_service_with_mock_network()
 
-        v1 = service._get_n1_variant("LINE_A")
+        v1 = service._get_contingency_variant("LINE_A")
         clone_count_after_first = len(clone_calls)
 
-        v2 = service._get_n1_variant("LINE_A")
+        v2 = service._get_contingency_variant("LINE_A")
         assert v1 == v2
         assert len(clone_calls) == clone_count_after_first  # no new clone
 
@@ -116,12 +116,12 @@ class TestGetN1VariantClonesFromNState:
         """Each contingency must get its own variant ID."""
         service, _, clone_calls = self._make_service_with_mock_network()
 
-        v1 = service._get_n1_variant("LINE_A")
-        v2 = service._get_n1_variant("LINE_B")
+        v1 = service._get_contingency_variant("LINE_A")
+        v2 = service._get_contingency_variant("LINE_B")
 
         assert v1 != v2
-        assert v1 == "N_1_state_LINE_A"
-        assert v2 == "N_1_state_LINE_B"
+        assert v1 == "contingency_state_LINE_A"
+        assert v2 == "contingency_state_LINE_B"
 
     @patch.object(RecommenderService, '_run_ac_with_fallback', return_value=[])
     def test_n1_variant_clones_from_n_after_multiple_simulations(self, _mock_ac):
@@ -137,7 +137,7 @@ class TestGetN1VariantClonesFromNState:
             network.get_working_variant_id.return_value = dirty
 
         # Create N-1 for a brand new contingency
-        service._get_n1_variant("NEW_CONTINGENCY")
+        service._get_contingency_variant("NEW_CONTINGENCY")
 
         # Must still clone from N_state_cached
         source, _ = clone_calls[-1]
@@ -150,5 +150,5 @@ class TestGetN1VariantClonesFromNState:
         network.disconnect.side_effect = Exception("Element not found")
 
         # Should not raise
-        variant = service._get_n1_variant("MISSING_LINE")
-        assert variant == "N_1_state_MISSING_LINE"
+        variant = service._get_contingency_variant("MISSING_LINE")
+        assert variant == "contingency_state_MISSING_LINE"
