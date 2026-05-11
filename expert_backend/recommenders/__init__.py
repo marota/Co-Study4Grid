@@ -40,6 +40,13 @@ register(ExpertRecommender)
 register(RandomRecommender)
 register(RandomOverflowRecommender)
 
+# Side-effect: patches RecommenderService to consume the registry
+# (state + getters + update_config wrap + reset wrap + model-aware
+# run_analysis_step2). Imported AFTER the models are registered so the
+# patched method can find them. See _service_integration.py for the
+# full integration.
+from expert_backend.recommenders import _service_integration  # noqa: F401, E402
+
 __all__ = [
     "DEFAULT_MODEL",
     "build_recommender",
