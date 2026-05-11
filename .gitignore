@@ -1,5 +1,7 @@
 session*
-data/
+# Anchor `data/` to the project root so it doesn't accidentally match
+# `docs/data/` (where pipeline / coordinate-scale design docs live).
+/data/
 __pycache__/
 *.pyc
 *.pyo

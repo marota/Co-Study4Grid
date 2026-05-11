@@ -30,6 +30,37 @@ and the project (informally) follows [Semantic Versioning](https://semver.org/).
   fresh value when a config switch just happened. Regression test
   in `frontend/src/App.configUpload.test.tsx`.
 
+
+
+- **PyPSA-EUR grid layouts now use raw Mercator metres**
+  (`scripts/pypsa_eur/regenerate_grid_layout.py`). The default output
+  was rescaling every coordinate to a 8 000-unit target width, which
+  forced the median nearest-neighbour distance down to ≈ 0.95 ×
+  pypowsybl's fixed VL-circle radius (`r = 27.5` user-units). On
+  dense regions like Paris, every voltage-level circle therefore
+  overlapped its neighbours by definition, regardless of any
+  client-side shrinking.
+
+  Side-by-side comparison with the operator reference layout (RTE
+  study format, `*.json` checked into ops studies) showed the
+  operator file uses raw projected metres with a span of
+  ~1.6 M units — neighbours land ~65 × `r` apart, which is the
+  geometry pypowsybl assumes when sizing its glyphs. The PyPSA-EUR
+  bundles regenerated under the new default land at ~166 × `r`
+  (sparser since they only carry transmission-level VLs), well
+  inside the operator-clean reading range.
+
+  - Default behaviour: write raw Mercator metres, span ≈ 1.4 M for
+    the French grid.
+  - Pass `--target-width N` to reproduce the legacy rescaled output;
+    a warning fires for any value below 500 000 since that is the
+    boundary below which VL circles start touching.
+  - `data/pypsa_eur_fr225_400/grid_layout.json` and
+    `data/pypsa_eur_fr400/grid_layout.json` regenerated. Old files
+    saved as `.bak.8000width` siblings if you need to revert.
+  - `scripts/pypsa_eur/test_regenerate_grid_layout.py` updated to
+    assert the new Mercator-metres span.
+
 - _Other work in progress — new entries land here before the next
   tagged release._
 ### Added

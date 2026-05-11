@@ -367,6 +367,7 @@ NAD/SLD payloads:
 - **Frontend unit tests** use Vitest + React Testing Library. Isolated component tests live as `*.test.tsx` files next to their component. Run with `cd frontend && npm run test`. No backend mocking is needed for component tests since they only use mocked props.
 - The two-step analysis flow (step1: detect overloads, step2: resolve) is the primary user workflow; the single-step `/api/run-analysis` is a legacy alternative
 - Session save/load is documented in `docs/features/save-results.md`
+- **`grid_layout.json` coordinate scale (2026-05-08)**: the on-disk layout MUST be in raw Mercator metres (span ≈ 1.4–1.6 M for the French grid). pypowsybl emits VL outer circles at a *fixed* `r = 27.5` user-space units, so any layout squashed below ~500 000 units forces overlap on dense regions (Paris/Lyon). `scripts/pypsa_eur/regenerate_grid_layout.py` defaults to raw metres; the legacy `--target-width 8000` flag is preserved but warns. Full rationale + operator-vs-PyPSA comparison in [`docs/data/grid-layout-coordinate-scale.md`](docs/data/grid-layout-coordinate-scale.md).
 
 ---
 

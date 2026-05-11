@@ -35,7 +35,14 @@ import pytest
 # ─────────────────────────────────────────────────────────────────────────────
 
 EARTH_RADIUS = 6_378_137.0
-TARGET_WIDTH = 8_000.0
+# Default behaviour as of 2026-05-08: regenerate_grid_layout.py writes raw
+# Mercator metres, so the layout's x-span equals the network's east-west
+# extent in metres (≈ 1.4–1.6 M for the French grid). The legacy
+# 8 000-unit target width is still reachable via ``--target-width 8000``
+# but should NOT be the on-disk format — it forces VL-circle overlap on
+# dense grids (see the script's module docstring).
+EXPECTED_X_SPAN_MIN = 1_300_000.0
+EXPECTED_X_SPAN_MAX = 1_700_000.0
 
 
 def safe_id(raw: str) -> str:
@@ -225,12 +232,25 @@ class TestCoordinateSanity:
             f"expected Mercator-projected coordinates (span > 1000)"
         )
 
-    def test_x_span_near_target_width(self, network_dir):
+    def test_x_span_matches_france_mercator(self, network_dir):
+        """Default output is raw Mercator metres → French east-west extent.
+
+        Regression guard: if someone reverts the script to the old
+        ``--target-width 8000`` rescale, the on-disk layout will compress
+        the French grid into 8 000 units and pypowsybl's fixed
+        r = 27.5 user-unit VL circles will overlap their neighbours in
+        every dense region. See ``regenerate_grid_layout.py`` module
+        docstring.
+        """
         layout = _load_layout(network_dir)
         xs = [c[0] for c in layout.values()]
         x_span = max(xs) - min(xs)
-        assert 7_000 <= x_span <= 9_000, (
-            f"X span {x_span:.0f} is not near TARGET_WIDTH 8000"
+        assert EXPECTED_X_SPAN_MIN <= x_span <= EXPECTED_X_SPAN_MAX, (
+            f"X span {x_span:.0f} is not in the expected Mercator-metres "
+            f"range [{EXPECTED_X_SPAN_MIN:.0f}, {EXPECTED_X_SPAN_MAX:.0f}]. "
+            "If you intentionally regenerated with --target-width N, also "
+            "update this test (and remember pypowsybl's r=27.5 — the "
+            "smaller the span, the more crowded the rendering)."
         )
 
     def test_centered_near_origin(self, network_dir):
