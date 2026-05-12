@@ -48,12 +48,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onApply }) => {
   // Resolve the active model descriptor (or null when the registry is
   // still loading). The set of parameter names it declares drives which
   // recommender inputs are visible.
-  const activeModel = availableModels.find(m => m.name === recommenderModel) ?? null;
+  //
+  // ``availableModels`` may be ``undefined`` when the parent test
+  // suite hand-builds a partial ``SettingsState`` mock that pre-dates
+  // the pluggable recommender feature — fall back to an empty list so
+  // those tests don't crash on a ``find`` lookup of ``undefined``.
+  const models = availableModels ?? [];
+  const activeModel = models.find(m => m.name === recommenderModel) ?? null;
   const declaredParamNames = new Set((activeModel?.params ?? []).map(p => p.name));
   // When `availableModels` is empty (initial load or fetch failure) we
   // fall back to showing every input — same behaviour as before the
   // pluggable model selector existed.
-  const showAll = availableModels.length === 0 || activeModel === null;
+  const showAll = models.length === 0 || activeModel === null;
   const showField = (name: string): boolean => showAll || declaredParamNames.has(name);
 
   // When the active model declares `requires_overflow_graph`, the step
@@ -177,10 +183,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onApply }) => {
                 onChange={e => setRecommenderModel(e.target.value)}
                 style={{ padding: '6px', border: `1px solid ${colors.border}`, borderRadius: '4px', background: colors.surface, color: colors.textPrimary }}
               >
-                {availableModels.length === 0 && (
+                {models.length === 0 && (
                   <option value="expert">Expert system</option>
                 )}
-                {availableModels.map(m => (
+                {models.map(m => (
                   <option key={m.name} value={m.name}>{m.label}</option>
                 ))}
               </select>
