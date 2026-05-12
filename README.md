@@ -10,7 +10,7 @@ See [Plug Your Own Recommendation Model](#plug-your-own-recommendation-model)
 to extend it.
 
 ![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)
-![Release](https://img.shields.io/badge/release-0.7.0-green)
+![Release](https://img.shields.io/badge/release-0.7.5-green)
 
 ---
 
@@ -558,7 +558,7 @@ layers of automated checks (`scripts/check_standalone_parity.py`,
 
 ## Changelog
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the list of changes per release. The current release is **0.7.0**.
+See [`CHANGELOG.md`](CHANGELOG.md) for the list of changes per release. The current release is **0.7.5**.
 
 ---
 
