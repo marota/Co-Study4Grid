@@ -126,14 +126,16 @@ Each event's `details` field contains **all parameters needed to replay** the us
 
 | Event | Details | Replay Action |
 |-------|---------|---------------|
-| `config_loaded` | `{ network_path, action_file_path, layout_path, output_folder_path, min_line_reconnections, min_close_coupling, min_open_coupling, min_line_disconnections, min_pst, min_load_shedding, min_renewable_curtailment_actions, n_prioritized_actions, lines_monitoring_path, monitoring_factor, pre_existing_overload_threshold, ignore_reconnections, pypowsybl_fast_mode }` | Click "Load Study" with these config values |
+| `config_loaded` | `{ network_path, action_file_path, layout_path, output_folder_path, min_line_reconnections, min_close_coupling, min_open_coupling, min_line_disconnections, min_pst, min_load_shedding, min_renewable_curtailment_actions, n_prioritized_actions, lines_monitoring_path, monitoring_factor, pre_existing_overload_threshold, ignore_reconnections, pypowsybl_fast_mode, model, compute_overflow_graph }` | Click "Load Study" with these config values |
 | `settings_opened` | `{ tab: 'paths'\|'recommender'\|'configurations' }` | Click gear icon |
 | `settings_tab_changed` | `{ from_tab: 'paths'\|'recommender'\|'configurations', to_tab: 'paths'\|'recommender'\|'configurations' }` — only emitted when `from_tab !== to_tab` | Click tab in settings modal |
-| `settings_applied` | Same payload as `config_loaded` (full settings snapshot). Treated as a wait-point: the replay agent must wait for the network reload to finish before proceeding. | Fill all fields → click Apply |
+| `settings_applied` | Same payload as `config_loaded` (full settings snapshot, including `model` and `compute_overflow_graph`). Treated as a wait-point: the replay agent must wait for the network reload to finish before proceeding. | Fill all fields → click Apply |
 | `settings_cancelled` | `{}` | Click Cancel / close settings |
 | `path_picked` | `{ type: 'file'\|'dir', path: string }` — the setter (network/action/layout/output/monitoring) is implicit from the preceding UI sequence (the settings modal field focused before the picker opened). | Click file picker → select path |
 
 > **Note on new recommender thresholds**: `min_load_shedding` and `min_renewable_curtailment_actions` were introduced alongside the new `loads_p` / `gens_p` power-reduction action format. They MUST be present in both `config_loaded` and `settings_applied` details so a replay agent can set the thresholds before loading the study. Older logs that predate these fields will be replayed with the backend defaults (`0.0`).
+
+> **Note on pluggable recommender model**: `model` (the string id of the selected recommender, e.g. `"expert"`, `"random"`, `"random_overflow"`) and `compute_overflow_graph` (boolean — whether step 1 must regenerate the overflow analysis graph) were added with the pluggable recommendation model feature. Both fields are now part of every `config_loaded` and `settings_applied` payload so a replay agent can reproduce the exact model + step-1 configuration the operator chose. Older logs that predate these fields fall back to `"expert"` and `true` respectively on replay (matching the historical hard-coded behaviour). See [`docs/backend/recommender_models.md`](../backend/recommender_models.md) for the full model contract and how to plug a third-party model.
 
 ### Contingency Selection
 
@@ -151,7 +153,7 @@ Each event's `details` field contains **all parameters needed to replay** the us
 | `overload_toggled` | `{ overload: string, selected: bool }` | Click checkbox for overload |
 | `additional_line_to_cut_toggled` | `{ line: string, selected: bool }` | Add/remove an extra "line to cut" beyond the detected overloads |
 | `analysis_step2_started` | `{ element, selected_overloads: string[], all_overloads: string[], monitor_deselected: bool, additional_lines_to_cut?: string[] }` | Click "Resolve Selected Overloads" |
-| `analysis_step2_completed` | `{ n_actions: number, action_ids: string[], dc_fallback: bool, message: string, pdf_url: string\|null }` | *(wait point)* |
+| `analysis_step2_completed` | `{ n_actions: number, action_ids: string[], dc_fallback: bool, message: string, pdf_url: string\|null, active_model?: string, compute_overflow_graph?: boolean }` — `active_model` echoes the recommender id that actually produced the action set on the backend; `compute_overflow_graph` echoes whether the overflow analysis graph was generated for this run. Both are sourced from the final `result` event of the step-2 NDJSON stream. | *(wait point)* |
 | `prioritized_actions_displayed` | `{ n_actions: number }` | Click "Display Prioritized Actions" button |
 
 ### Action Interactions
@@ -267,9 +269,9 @@ These events trigger async API calls. The replay agent must wait for the operati
 
 | Trigger Event | Wait Condition |
 |---------------|----------------|
-| `config_loaded` | Network loaded, branches list populated |
+| `config_loaded` | Network loaded, branches list populated. The selected `model` is honoured backend-side — if the model requires the overflow analysis graph, `compute_overflow_graph` is forced to `true` regardless of what was logged. |
 | `analysis_step1_started` | Loading spinner gone, overload list populated |
-| `analysis_step2_started` | Streaming complete, action cards visible, `lines_overloaded_rho` populated on the N-1 payload for the sidebar sticky header |
+| `analysis_step2_started` | Streaming complete, action cards visible, `lines_overloaded_rho` populated on the N-1 payload for the sidebar sticky header. The `active_model` carried by the completion event must match the requested `model` (or the recorded fallback if the requested model was unknown). |
 | `action_selected` | Action diagram loaded (or simulation fallback complete) |
 | `manual_action_simulated` | Action card appears in feed |
 | `action_mw_resimulated` | Action card updates with new `rho_after` and refreshed `load_shedding_details` / `curtailment_details`; the card stays in its current bucket |
@@ -277,7 +279,7 @@ These events trigger async API calls. The replay agent must wait for the operati
 | `combine_pair_estimated` | Estimation values appear in modal |
 | `combine_pair_simulated` | Simulation values appear in modal |
 | `session_reloaded` | Full session state restored (see "Session reload fidelity" below) |
-| `settings_applied` | Network reloaded, branches refreshed |
+| `settings_applied` | Network reloaded, branches refreshed. Same `model` / `compute_overflow_graph` semantics as `config_loaded`. |
 | `tab_detached` | Popup opened, React portal target mounted — or the event is skipped if the runner can't open real popups |
 | `tab_reattached` | Popup closed, content re-rendered in the main window |
 | `overflow_layout_mode_toggled` | Overflow iframe URL refreshes after the backend regenerates / serves the requested layout (`POST /api/regenerate-overflow-graph`); the matching `_completed` event carries `cached: bool` or `error: string`. |
@@ -299,13 +301,28 @@ Async start/complete pairs share a `correlation_id` (UUID). This allows the agen
 
 ---
 
+## Pluggable recommender model
+
+The `model` and `compute_overflow_graph` fields surfaced in `config_loaded`, `settings_applied` and `analysis_step2_completed` map directly to the pluggable recommendation model contract documented in [`docs/backend/recommender_models.md`](../backend/recommender_models.md).
+
+- `model` is the **registry id** of the selected recommender. Built-in ids are `"expert"` (default, equivalent to the legacy hard-coded pipeline), `"random"` and `"random_overflow"` (canonical examples shipped under `expert_backend/recommenders/`). Third-party models registered by external packages add their own ids.
+- `compute_overflow_graph` is the **operator-level toggle** for the overflow analysis graph generated by step 1. It is independent of the model choice **unless** the active recommender declares `requires_overflow_graph = True`, in which case the toggle is locked to `true` in the UI and forced to `true` on the backend. The Random model is the canonical test example of a model that does NOT require the graph but can still benefit from it when the operator opts in.
+- On the backend, the final `result` event of the step-2 NDJSON stream echoes `active_model` (the recommender that actually ran — may differ from the requested `model` if it was unknown, in which case the backend falls back to `"expert"`) and `compute_overflow_graph` (whether the overflow analysis graph was generated for this run). The replay logger forwards both into `analysis_step2_completed` details.
+
+A replay agent that wants to faithfully reproduce a session MUST honour both fields when restoring settings before clicking "Load Study" / "Apply". Older logs that predate the feature lack these fields and replay against the default `"expert"` / `true` pair — which matches the historical hard-coded behaviour byte-for-byte.
+
+---
+
 ## Session reload fidelity
 
 The `session_reloaded` wait-point above is only meaningful if the saved session actually contains everything the UI needs. Because several features have been added to `session.json` incrementally, this section documents exactly what is persisted and restored so replay agents and downstream tools know which fields are trustworthy on reload.
 
 ### Configuration
 
-Every field listed in `config_loaded` / `settings_applied` is persisted under `session.configuration` and restored by `useSession.handleRestoreSession`. This includes `min_load_shedding` and `min_renewable_curtailment_actions` — required for the new `loads_p` / `gens_p` power-reduction format. Older session dumps that predate these fields fall back to `0.0` on reload.
+Every field listed in `config_loaded` / `settings_applied` is persisted under `session.configuration` and restored by `useSession.handleRestoreSession`. This includes:
+
+- `min_load_shedding` and `min_renewable_curtailment_actions` — required for the new `loads_p` / `gens_p` power-reduction format. Older session dumps that predate these fields fall back to `0.0` on reload.
+- `model` and `compute_overflow_graph` — the operator's recommender model id and overflow-graph toggle at save time (pluggable recommendation model feature). Older session dumps that predate these fields fall back to `"expert"` and `true` on reload, matching the historical hard-coded behaviour. See `docs/features/save-results.md` for the full persistence contract (configuration vs. analysis split).
 
 On restore, `committedNetworkPathRef` is set to the restored `network_path`. This is important: it's what gates the "Change Network?" confirmation dialog when the user subsequently edits the Header network input. Without this update the dialog would either misfire (empty ref) or fire against a stale previous value.
 
@@ -381,7 +398,9 @@ After saving, the session folder contains:
       "monitoring_factor": 0.95,
       "pre_existing_overload_threshold": 0.02,
       "ignore_reconnections": false,
-      "pypowsybl_fast_mode": true
+      "pypowsybl_fast_mode": true,
+      "model": "expert",
+      "compute_overflow_graph": true
     }
   },
   {
@@ -441,7 +460,9 @@ After saving, the session folder contains:
       "action_ids": ["disco_42", "reco_17", "topo_03", "pst_01", "disco_88"],
       "dc_fallback": false,
       "message": "Found 5 prioritized actions",
-      "pdf_url": "/results/pdf/overflow_abc123.pdf"
+      "pdf_url": "/results/pdf/overflow_abc123.pdf",
+      "active_model": "expert",
+      "compute_overflow_graph": true
     },
     "duration_ms": 25123
   },
@@ -539,6 +560,8 @@ const handleRunAnalysis = useCallback(async () => {
   } catch (e) { /* ... */ }
 }, [selectedBranch]);
 ```
+
+The `config_loaded` and `settings_applied` payloads are built in `useSettings.ts` from the live form state — including the recommender model dropdown value (`recommenderModel`) and the Compute Overflow Graph toggle (`computeOverflowGraph`) — so they always reflect what the operator actually submitted, not the backend defaults.
 
 ### Save Flow
 
