@@ -271,7 +271,9 @@ The frontend picks up your model automatically:
   pipeline phases): [`marota/Expert_op4grid_recommender` — README §Pluggable Recommendation Models](https://github.com/marota/Expert_op4grid_recommender#pluggable-recommendation-models)
   and [`docs/recommender_models.md`](https://github.com/marota/Expert_op4grid_recommender/blob/main/docs/recommender_models.md).
 - **App-side integration + filter chain + step-by-step guide**:
-  [`docs/recommender_models.md`](docs/recommender_models.md).
+  [`docs/backend/recommender_models.md`](docs/backend/recommender_models.md).
+- **Backend overview** (mixin architecture, data flow, conventions):
+  [`docs/backend/README.md`](docs/backend/README.md).
 - **Canonical examples**:
   [`expert_backend/recommenders/random_basic.py`](expert_backend/recommenders/random_basic.py),
   [`expert_backend/recommenders/random_overflow.py`](expert_backend/recommenders/random_overflow.py).
@@ -325,7 +327,8 @@ Co-Study4Grid/
 │                                    # ActionTypeFilterChips, modals/, …
 ├── standalone_interface_legacy.html # DECOMMISSIONED frozen snapshot (do not edit)
 ├── docs/                        # features/, performance/, architecture/,
-│                                # proposals/, data/  + recommender_models.md
+│                                # proposals/, data/  +  backend/ (README.md,
+│                                # recommender_models.md)
 ├── benchmarks/                  # Offline micro-benches (warm / cold timings)
 ├── scripts/                     # Parity + quality gates + PyPSA-EUR pipeline
 └── Overflow_Graph/              # Generated PDF output directory (created at runtime)
