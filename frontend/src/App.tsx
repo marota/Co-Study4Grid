@@ -1042,12 +1042,16 @@ function App() {
     setError,
   });
 
+  // Re-seed selectedOverloads with the full N-1 overload list only when a
+  // new n1Diagram is loaded. Comparing against the live selectedOverloads
+  // would clobber user-initiated double-click unselects: the analysis memo
+  // refreshes on every toggle, retriggering this effect and re-adding the
+  // overload the user just removed.
+  const prevN1DiagramRef = useRef<typeof n1Diagram>(null);
   useEffect(() => {
+    if (prevN1DiagramRef.current === n1Diagram) return;
+    prevN1DiagramRef.current = n1Diagram;
     const nextSet = n1Diagram?.lines_overloaded ? new Set(n1Diagram.lines_overloaded) : new Set<string>();
-    const currentSet = analysis.selectedOverloads;
-    if (nextSet.size === currentSet.size && [...nextSet].every(x => currentSet.has(x))) {
-      return;
-    }
     analysis.setSelectedOverloads(nextSet);
   }, [n1Diagram, analysisLoading, n1Loading, analysis]);
 
