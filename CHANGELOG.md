@@ -7,76 +7,222 @@ and the project (informally) follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
-
-- **Settings modal now updates every path/parameter when a new config
-  file is loaded.** Switching the config-file path (typing then
-  clicking Apply, or clicking Apply right after typing without
-  blurring the input) used to silently send the *previous* config to
-  `/api/config`. The auto-save effect then persisted those stale
-  values back into the freshly-loaded config file, undoing the
-  operator's selection — the modal looked unchanged on reopen.
-
-  Root cause: `applySettingsImmediate` and `handleLoadConfig` called
-  `await changeConfigFilePath(...)` followed by
-  `buildConfigRequest()`. The first call queues React state updates
-  via `applyLoadedConfig`, but those don't flush until the next
-  render — so `buildConfigRequest`, a `useCallback` over the
-  pre-update closures, replayed the previous render's values.
-
-  Fix: `changeConfigFilePath` now returns the resolved `UserConfig`,
-  and a new `configRequestFromUserConfig` helper derives the request
-  shape directly from it. Both call sites in `App.tsx` use the
-  fresh value when a config switch just happened. Regression test
-  in `frontend/src/App.configUpload.test.tsx`.
-
-
-
-- **PyPSA-EUR grid layouts now use raw Mercator metres**
-  (`scripts/pypsa_eur/regenerate_grid_layout.py`). The default output
-  was rescaling every coordinate to a 8 000-unit target width, which
-  forced the median nearest-neighbour distance down to ≈ 0.95 ×
-  pypowsybl's fixed VL-circle radius (`r = 27.5` user-units). On
-  dense regions like Paris, every voltage-level circle therefore
-  overlapped its neighbours by definition, regardless of any
-  client-side shrinking.
-
-  Side-by-side comparison with the operator reference layout (RTE
-  study format, `*.json` checked into ops studies) showed the
-  operator file uses raw projected metres with a span of
-  ~1.6 M units — neighbours land ~65 × `r` apart, which is the
-  geometry pypowsybl assumes when sizing its glyphs. The PyPSA-EUR
-  bundles regenerated under the new default land at ~166 × `r`
-  (sparser since they only carry transmission-level VLs), well
-  inside the operator-clean reading range.
-
-  - Default behaviour: write raw Mercator metres, span ≈ 1.4 M for
-    the French grid.
-  - Pass `--target-width N` to reproduce the legacy rescaled output;
-    a warning fires for any value below 500 000 since that is the
-    boundary below which VL circles start touching.
-  - `data/pypsa_eur_fr225_400/grid_layout.json` and
-    `data/pypsa_eur_fr400/grid_layout.json` regenerated. Old files
-    saved as `.bak.8000width` siblings if you need to revert.
-  - `scripts/pypsa_eur/test_regenerate_grid_layout.py` updated to
-    assert the new Mercator-metres span.
-
 - _Other work in progress — new entries land here before the next
   tagged release._
+
+---
+
+## [0.7.5] — 2026-05-12
+
+Feature + polish release headlined by the **pluggable recommendation
+models** integration (paired with `expert_op4grid_recommender`
+0.2.2), plus a couple of operator-reported regressions and the
+new **"Combined only"** pin filter that landed on the way.
+
+### Highlights
+
+- **Pluggable recommendation models** (PR #145 — paired with
+  `expert_op4grid_recommender` PR #90 / 0.2.2). The analysis
+  pipeline no longer hardcodes the expert system: it dispatches to
+  any class implementing the `RecommenderModel` ABC. Three models
+  ship out of the box — `expert` (default, identical to the legacy
+  behaviour), `random` (sanity-check baseline that does NOT require
+  the overflow analysis graph), `random_overflow` (samples within
+  the expert-reduced action space). Selecting a model is a
+  one-dropdown gesture in **Settings → Recommender**; the
+  parameter inputs render dynamically from each model's
+  `params_spec()`, and the **Compute Overflow Graph (step 1)**
+  toggle is locked-on for models that require it and editable for
+  the others. See [Plug Your Own Recommendation Model](README.md#plug-your-own-recommendation-model)
+  for the third-party plug-in guide.
+- **"Combined only" pin filter** on the Action Overview tab and the
+  Overflow Analysis iframe. Pin-scoped filter that renders combined
+  pairs plus their two constituents (dimmed for context) and drops
+  every other unitary / un-simulated pin; the Action Feed cards
+  remain unfiltered. Round-tripped through the existing
+  `cs4g:filters` postMessage envelope so both surfaces stay in
+  lock-step. See `docs/features/action-overview-diagram.md`
+  §Filtering and `docs/features/interactive-overflow-analysis.md`
+  §7.
+- **Config-modal stale-write fix**. Switching the config-file path
+  + clicking Apply now sends the freshly loaded config to
+  `/api/config` (was sending the previous render's closure values,
+  which the auto-save effect then persisted back into the new file,
+  silently undoing the operator's selection).
+- **PyPSA-EUR grid layouts** now use raw Mercator metres by default;
+  the previous 8 000-unit rescaling forced pypowsybl VL circles to
+  overlap in dense regions like Paris.
+
 ### Added
 
-- **"Combined only" pin filter** on the Action Overview tab and the
-  Overflow Analysis iframe. New `showCombinedOnly` field on the shared
-  `ActionOverviewFilters` state — when enabled, both pin layers render
-  combined-action pins (computed pairs) plus their two constituents
-  (dimmed for context) and drop every other unitary / un-simulated
-  pin. The flag is pin-scoped — Action Feed cards are NOT gated by it,
-  preserving the explore-pairs triage surface. The iframe sidebar
-  carries a matching checkbox; both sides round-trip the boolean
-  through the existing `cs4g:filters` postMessage envelope. See
-  `docs/features/action-overview-diagram.md` §Filtering and
-  `docs/features/interactive-overflow-analysis.md` §7 for the
-  contract and rendering rules.
+- **Recommender model registry** (`expert_backend/recommenders/`):
+  - `registry.py` — `register` decorator + `build_recommender` /
+    `list_models` / `get_model_class` API.
+  - `random_basic.py` — `RandomRecommender` (canonical example,
+    `requires_overflow_graph=False`); augments the action dictionary
+    with on-the-fly synthetic reconnection / load-shedding /
+    curtailment actions.
+  - `random_overflow.py` — `RandomOverflowRecommender` (canonical
+    example, `requires_overflow_graph=True`); samples uniformly
+    inside the three-layer reduced pool.
+  - `synthetic_actions.py` — shared helper used by both random
+    recommenders to surface the same `reco_*` / `load_shedding_*`
+    / `curtail_*` / `pst_*` synthetic actions the operator can
+    type into the manual selection box.
+  - `overflow_path_filter.py` — Layer 2 of the sampling filter
+    chain (`restrict_to_overflow_paths`): narrows the candidate
+    set to actions touching the dispatch / constrained / loop /
+    hub paths. Conservative on failure (returns input unchanged).
+    Includes `_resolve_node_to_name` polymorphic helper to handle
+    `int`, `numpy.integer`, `str`, `numpy.str_`, `bytes`, and
+    `None` distribution-graph node IDs across legacy and current
+    builds.
+  - `network_existence.py` — Layer 3 (`filter_to_existing_network_elements`):
+    drops actions whose `VoltageLevelId` /
+    `set_bus.lines_*_id` references an element that doesn't exist
+    on the loaded pypowsybl Network. Fixes the "AUBE P4 case" where
+    actions for the larger grid leaked through for a smaller grid.
+  - `_service_integration.py` — side-effect module that attaches
+    `ModelSelectionMixin` to `RecommenderService`, wraps
+    `update_config` / `reset` to remember the operator's selection,
+    and replaces `run_analysis_step2` with a model-aware generator
+    that computes `needs_graph = requires_overflow_graph OR get_compute_overflow_graph()`.
+- **`GET /api/models` endpoint** — returns the full list of
+  registered recommenders with their `params_spec()`, label and
+  capability flags. Frontend `api.getModels()` powers the
+  **Settings → Recommender** dropdown.
+- **`ConfigRequest` fields** — `model` (string id of the selected
+  recommender) and `compute_overflow_graph` (boolean, operator-
+  level toggle for step 1). The final `result` event of the
+  step-2 NDJSON stream echoes both as `active_model` and
+  `compute_overflow_graph` so the UI / replay logger see the
+  recommender that actually ran (may differ from the requested
+  `model` if the backend fell back to `expert` on an unknown id).
+- **Saved session model echo** — `session.analysis.active_model`
+  (backend ground truth, echoed in the step-2 result event) and
+  `session.configuration.model` (operator intent at save time);
+  same split for `compute_overflow_graph`. Legacy-default fallbacks
+  (`"expert"` / `true`) on reload of older session dumps.
+- **Frontend**: `ModelDescriptor` / `ModelParamSpec` types in
+  `api.ts`, `recommenderModel` / `computeOverflowGraph` /
+  `availableModels` state in `useSettings` (fetched once via
+  `api.getModels()`), dynamic dropdown + locked-vs-optional toggle
+  states in `SettingsModal`, action-card VL chip now reads
+  `action_topology.voltage_level_id` for non-disconnection
+  actions (so OPEN / CLOSE coupling cards land their double-click
+  zoom on the correct voltage level).
+- **"Combined only" pin filter** (Action Overview + Overflow
+  Analysis iframe).
+- **`docs/backend/`** subfolder — new `README.md` covering
+  the backend at large (mixin architecture, data flow,
+  conventions, endpoints, tests) and `recommender_models.md`
+  (relocated from `docs/recommender_models.md`) covering the
+  app-side integration + filter chain + step-by-step guide.
+- **Plug Your Own Recommendation Model** section in the root
+  `README.md` — built-in model table, three-layer filter chain
+  walkthrough, three-step plug-in guide, cross-links to the
+  library-side contract.
+- **Backend tests**:
+  `tests/test_recommenders_registry.py`,
+  `tests/test_random_recommenders.py`,
+  `tests/test_model_selection_mixin.py`,
+  `tests/test_service_integration.py`,
+  `tests/test_models_api.py`,
+  `tests/test_network_existence.py`,
+  `tests/test_overflow_path_filter.py`,
+  `tests/test_action_enrichment.py`.
+
+### Changed
+
+- **`extract_action_topology` robustness**
+  (`expert_backend/services/analysis/action_enrichment.py`):
+  backfills empty `lines_or_bus` / `lines_ex_bus` / `gens_bus` /
+  `loads_bus` from `dict_action[id].content.set_bus`, surfaces
+  the action's `voltage_level_id` from upstream `VoltageLevelId`,
+  and tolerates numpy arrays via a new `_is_meaningful_dict`
+  truthy-check. Fixes the "pins all stack on `max_rho_line`"
+  rendering observed when running the Random model on the small
+  grid.
+- **`build_recommender_inputs` propagation**: the expert-rule
+  filter result (`context["filtered_candidate_actions"]`) is now
+  forwarded to the DTO so sampling models actually see the
+  filtered pool. Caught a silent bypass where
+  `RandomOverflowRecommender` ran against the full action
+  dictionary while the filter was running upstream.
+- **`overview_filter_changed` interaction-log event** now carries
+  a `combined_only` discriminator (pin-scoped Combined-only
+  checkbox toggle).
+- **README architecture tree** now shows the
+  `docs/backend/ (README.md, recommender_models.md)` subfolder.
+
+### Fixed
+
+- **Settings modal stale-write on config-file switch** (config
+  modal Apply / `handleLoadConfig` flow): `changeConfigFilePath`
+  now returns the resolved `UserConfig`, and a new
+  `configRequestFromUserConfig` helper derives the request shape
+  directly from it. Both call sites in `App.tsx` use the fresh
+  value when a config switch just happened. Regression test in
+  `frontend/src/App.configUpload.test.tsx`.
+- **PyPSA-EUR grid-layout rescaling**
+  (`scripts/pypsa_eur/regenerate_grid_layout.py`). Default
+  behaviour is now raw Mercator metres (span ≈ 1.4 M for the
+  French grid); pass `--target-width N` to reproduce the legacy
+  rescaled output with a warning below 500 000.
+  `data/pypsa_eur_fr225_400/grid_layout.json` and
+  `data/pypsa_eur_fr400/grid_layout.json` regenerated. Old files
+  saved as `.bak.8000width` siblings.
+- **Action overview pin localisation** for non-disconnection
+  actions (Random / Random Overflow runs): pins are now anchored
+  on the action's voltage level rather than the contingency
+  `max_rho_line`.
+- **`numpy.str_` comparison crash** in `_resolve_node_to_name`
+  on legacy distribution graphs.
+
+### Documentation
+
+- **`docs/features/save-results.md`** — UPDATED: `model`,
+  `active_model`, `compute_overflow_graph` fields in the JSON
+  example, full field reference tables, new "Recommender model
+  persistence" section covering the
+  `session.configuration.{model,compute_overflow_graph}` /
+  `session.analysis.{active_model,compute_overflow_graph}`
+  split, Implementation Details + Testing updates.
+- **`docs/features/interaction-logging.md`** — UPDATED:
+  `model` and `compute_overflow_graph` added to `config_loaded` /
+  `settings_applied` event details; `active_model` +
+  `compute_overflow_graph` added to `analysis_step2_completed`;
+  example `interaction_log.json` reflects the new fields; new
+  "Pluggable recommender model" section cross-referencing
+  `docs/backend/recommender_models.md`.
+- **`docs/backend/README.md`** — NEW: backend overview covering
+  architecture, mixins, data flow, conventions, endpoints, tests.
+- **`docs/backend/recommender_models.md`** — NEW (relocated from
+  `docs/recommender_models.md`): app-side integration + filter
+  chain + step-by-step guide for plugging a third-party model.
+- **`README.md`** — NEW "Plug Your Own Recommendation Model"
+  section; corrected stale `docs/recommender_models.md` link to
+  the new `docs/backend/` subfolder.
+
+### Compatibility
+
+- **`model` and `compute_overflow_graph` fields default to
+  `"expert"` and `true`** at every entry point that lacks them
+  (older session dumps, missing form values, third-party callers
+  that didn't update their request shape) — byte-for-byte the
+  same behaviour as 0.7.0.
+- **Frontend dynamic UI from `params_spec()`** — adding a model
+  requires zero UI code; the dropdown and the parameter inputs
+  refresh automatically.
+- **Step-2 NDJSON contract unchanged** — `active_model` and
+  `compute_overflow_graph` are additive fields on the existing
+  `result` event.
+- **Requires `expert_op4grid_recommender>=0.2.2`** (for the
+  `RecommenderModel` ABC, the `RecommenderInputs` /
+  `RecommenderOutput` DTOs, the reusable reassessment phase and
+  the idempotent `_run_expert_action_filter` helper). Older
+  versions raise an `ImportError` from
+  `expert_op4grid_recommender.models.base` on backend startup.
 
 ---
 
@@ -801,7 +947,8 @@ the authoritative reference for pre-0.5.0 work.
 
 ---
 
-[Unreleased]: https://github.com/marota/Co-Study4Grid/compare/0.7.0...HEAD
+[Unreleased]: https://github.com/marota/Co-Study4Grid/compare/0.7.5...HEAD
+[0.7.5]: https://github.com/marota/Co-Study4Grid/releases/tag/0.7.5
 [0.7.0]: https://github.com/marota/Co-Study4Grid/releases/tag/0.7.0
 [0.6.5]: https://github.com/marota/Co-Study4Grid/releases/tag/0.6.5
 [0.6.0]: https://github.com/marota/Co-Study4Grid/releases/tag/0.6.0
