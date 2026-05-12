@@ -30,6 +30,36 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+def _resolve_node_to_name(node: Any, name_sub_arr: Any, n_subs: int) -> Optional[str]:
+    """Coerce a node reference from the distribution graph to a substation name.
+
+    Different builds of ``Structured_Overload_Distribution_Graph`` expose
+    nodes either as integer indices into ``obs.name_sub`` (legacy) or
+    directly as substation-name strings (current). Both shapes are
+    accepted; anything that fails the dual coercion returns ``None``.
+    """
+    if node is None:
+        return None
+    # Native Python int OR any numpy integer.
+    if isinstance(node, (int, np.integer)):
+        if name_sub_arr is not None and int(node) < n_subs:
+            return str(name_sub_arr[int(node)])
+        return None
+    # Numpy / Python strings, plus the rare bytes case.
+    if isinstance(node, (str, np.str_)):
+        return str(node)
+    if isinstance(node, bytes):
+        try:
+            return node.decode("utf-8")
+        except Exception:
+            return None
+    # Last-ditch attempt.
+    try:
+        return str(node)
+    except Exception:
+        return None
+
+
 def _extract_path_targets(
     distribution_graph: Any,
     obs: Any,
@@ -46,42 +76,57 @@ def _extract_path_targets(
       substations (node splitting candidates) → ``relevant_subs``
 
     Returns ``None`` when the graph is missing or extraction fails —
-    callers treat that as "can't narrow, keep everything".
+    callers treat that as "can't narrow, keep everything". Node-id
+    coercion handles both integer-indexed and string-name graphs.
     """
-    if distribution_graph is None or obs is None:
+    if distribution_graph is None:
         return None
     try:
-        name_sub_arr = np.array(obs.name_sub)
-        n_subs = len(name_sub_arr)
+        name_sub_arr = None
+        n_subs = 0
+        if obs is not None:
+            try:
+                name_sub_arr = np.array(obs.name_sub)
+                n_subs = len(name_sub_arr)
+            except Exception as e:
+                logger.debug(
+                    "overflow-path-filter: obs.name_sub unavailable (%s); "
+                    "node coercion will rely on already-named entries.", e,
+                )
 
         lines_dispatch, _ = distribution_graph.get_dispatch_edges_nodes(
             only_loop_paths=False
         )
-        _, nodes_dispatch_loop_idx = distribution_graph.get_dispatch_edges_nodes(
+        _, nodes_dispatch_loop = distribution_graph.get_dispatch_edges_nodes(
             only_loop_paths=True
         )
         (
             lines_constrained,
-            nodes_constrained_idx,
+            nodes_constrained,
             _other_blue_edges,
-            other_blue_nodes_idx,
+            other_blue_nodes,
         ) = distribution_graph.get_constrained_edges_nodes()
 
         relevant_lines: set = set()
         for line in lines_dispatch:
-            relevant_lines.add(line)
+            if line is not None:
+                relevant_lines.add(str(line))
         for line in lines_constrained:
-            relevant_lines.add(line)
+            if line is not None:
+                relevant_lines.add(str(line))
 
         relevant_subs: set = set()
-        for idx in nodes_dispatch_loop_idx:
-            if idx < n_subs:
-                relevant_subs.add(str(name_sub_arr[idx]))
-        for idx in list(nodes_constrained_idx) + list(other_blue_nodes_idx):
-            if idx < n_subs:
-                relevant_subs.add(str(name_sub_arr[idx]))
+        for node in nodes_dispatch_loop:
+            resolved = _resolve_node_to_name(node, name_sub_arr, n_subs)
+            if resolved:
+                relevant_subs.add(resolved)
+        for node in list(nodes_constrained) + list(other_blue_nodes):
+            resolved = _resolve_node_to_name(node, name_sub_arr, n_subs)
+            if resolved:
+                relevant_subs.add(resolved)
         for hub in hubs or []:
-            relevant_subs.add(str(hub))
+            if hub is not None:
+                relevant_subs.add(str(hub))
 
         return relevant_lines, relevant_subs
     except Exception as e:
@@ -106,7 +151,7 @@ def _action_touches_path(
     # node-splitting actions land here when their VoltageLevelId is
     # part of the blue / dispatch-loop path or a hub.
     vl = entry.get("VoltageLevelId") or entry.get("voltage_level_id")
-    if vl and vl in relevant_subs:
+    if vl and str(vl) in relevant_subs:
         return True
 
     # 2. set_bus line ids (grid2op-style line actions). Disco / reco
@@ -120,25 +165,32 @@ def _action_touches_path(
                 ids = set_bus.get(key)
                 if isinstance(ids, dict):
                     for line_id in ids:
-                        if line_id in relevant_lines:
+                        if str(line_id) in relevant_lines:
                             return True
         # PST tap entries also count.
         pst_tap = content.get("pst_tap")
         if isinstance(pst_tap, dict):
             for line_id in pst_tap:
-                if line_id in relevant_lines:
+                if str(line_id) in relevant_lines:
                     return True
 
     # 3. action-id suffix heuristic for synthetic / auto-generated
     # disco_/reco_ entries whose `content` is built lazily and may not
-    # be loaded at filter time. Mirrors the fallback parsing in
-    # ``frontend/src/utils/svg/highlights.ts:getActionTargetLines``.
+    # be loaded at filter time.
     for prefix in ("disco_", "reco_"):
         if action_id.startswith(prefix):
             line_candidate = action_id[len(prefix):]
             if line_candidate in relevant_lines:
                 return True
             break
+
+    # 4. UUID-prefixed coupling action IDs of the form
+    # ``<uuid>_<VL>_<switch>`` or ``<uuid>_<VL>_coupling``. Split on
+    # underscores and check whether any segment matches a relevant
+    # substation. Conservative: a hit on a relevant_sub is enough.
+    for chunk in str(action_id).split("_"):
+        if chunk and chunk in relevant_subs:
+            return True
 
     return False
 
@@ -162,9 +214,6 @@ def restrict_to_overflow_paths(
     relevant_lines, relevant_subs = targets
 
     if not relevant_lines and not relevant_subs:
-        # Empty path — nothing to narrow to. Returning [] would mean
-        # "no actions for this contingency", which is the correct
-        # behaviour (no overflow paths → no overflow-relevant actions).
         logger.info(
             "overflow-path-filter: distribution graph yielded empty path "
             "target sets; returning []."
