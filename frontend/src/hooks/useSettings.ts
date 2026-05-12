@@ -181,15 +181,22 @@ export function useSettings(): SettingsState {
         console.warn('Failed to load user config from backend, using defaults');
         configLoadedRef.current = true;
       });
-    api.getModels()
-      .then(({ models }) => setAvailableModels(models))
-      .catch(() => {
-        console.warn('Failed to load recommender models, using static defaults');
-        setAvailableModels([{
-          name: 'expert', label: 'Expert system',
-          requires_overflow_graph: true, is_default: true, params: [],
-        }]);
-      });
+    // Guard against test stubs of the `api` module that don't define
+    // `getModels` (most pre-existing test suites only mock the methods
+    // they exercise). Without this check the effect throws
+    // `api.getModels is not a function` on first render and the whole
+    // App tree fails to mount.
+    if (typeof api.getModels === 'function') {
+      api.getModels()
+        .then(({ models }) => setAvailableModels(models))
+        .catch(() => {
+          console.warn('Failed to load recommender models, using static defaults');
+          setAvailableModels([{
+            name: 'expert', label: 'Expert system',
+            requires_overflow_graph: true, is_default: true, params: [],
+          }]);
+        });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
