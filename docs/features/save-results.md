@@ -4,12 +4,12 @@
 
 Co-Study4Grid supports **saving** and **reloading** full analysis sessions:
 
-- **Save Results** exports the complete state (configuration, contingency, actions, combined pairs, overflow graph) to a session folder
+- **Save Results** exports the complete state (configuration, contingency, **active recommender model**, actions, combined pairs, overflow graph) to a session folder
 - **Reload Session** restores a previously saved session, bringing the UI back to the state when it was saved
 
 ### What is saved
 
-- **`session.json`** — all inputs, outputs, user decisions, combined action pairs, per-action enrichment details (`load_shedding_details` / `curtailment_details` / `pst_details` / `lines_overloaded_after`) and, when available, the per-element sidebar sticky-header loading ratios (`n_overloads_rho` / `n1_overloads_rho`)
+- **`session.json`** — all inputs, outputs, user decisions, combined action pairs, per-action enrichment details (`load_shedding_details` / `curtailment_details` / `pst_details` / `lines_overloaded_after`), the **active recommender model** that produced the suggestions (`analysis.active_model`, mirrored at `configuration.model`), and — when available — the per-element sidebar sticky-header loading ratios (`n_overloads_rho` / `n1_overloads_rho`).
 - **`interaction_log.json`** — timestamped log of every user interaction, suitable for automated session replay (see [docs/features/interaction-logging.md](interaction-logging.md))
 - **`<overflow>.html`** — a copy of the interactive overflow graph viewer (when an analysis has been run). Legacy sessions saved before the HTML switch contain `<overflow>.pdf` instead; reload handles both transparently.
 
@@ -43,10 +43,11 @@ Settings → gear icon → Paths tab → Output Folder Path
 ## How to Save
 
 1. Open **Settings → Paths** and configure Action Dictionary File Path and Output Folder Path.
-2. Load a study (click **Load Study**).
-3. Select a contingency in the **Select Contingency** box.
-4. Optionally run analysis, select/reject actions, simulate manual/combined actions.
-5. Click **Save Results** in the header.
+2. Open **Settings → Recommender** and pick the recommendation model. The selection is captured at save time under `configuration.model`; the model the backend actually executed is captured separately under `analysis.active_model` (the two may differ when an unknown name silently falls back to the default).
+3. Load a study (click **Load Study**).
+4. Select a contingency in the **Select Contingency** box.
+5. Optionally run analysis, select/reject actions, simulate manual/combined actions.
+6. Click **Save Results** in the header.
 
 ### Output
 
@@ -71,9 +72,9 @@ Settings → gear icon → Paths tab → Output Folder Path
 
 ### What happens on reload
 
-1. **Configuration** is restored (all paths and algorithm parameters, including `min_load_shedding` and `min_renewable_curtailment_actions`)
+1. **Configuration** is restored (all paths and algorithm parameters, including `min_load_shedding` and `min_renewable_curtailment_actions`; the active recommender `model` and `compute_overflow_graph` toggle are also restored from `configuration.model` / `configuration.compute_overflow_graph` when present)
 2. **`committedNetworkPathRef`** is set to the restored `network_path` — this gates the "Change Network?" confirmation dialog the next time the user edits the Header network input. Without this the dialog would either misfire (empty ref) or fire against a stale previous value.
-3. **Network** is loaded on the backend with the saved configuration
+3. **Network** is loaded on the backend with the saved configuration, **including the recommender model selection** so that any subsequent run-analysis call uses the same model as the saved session
 4. **Monitored-line set + computed-pair cache** — `useSession` calls `POST /api/restore-analysis-context` with the saved `lines_we_care_about` and `computed_pairs` so any subsequent simulate-action uses the SAME monitored-line policy as the original study instead of the backend default. Wrapped in try/catch so an offline backend does not abort the reload.
 5. **N-1 diagram fetch** — `restoringSessionRef.current = true` is set before `setSelectedBranch(disconnected_element)` so the N-1 effect in `App.tsx` bypasses its `hasAnalysisState()` short-circuit (the restored actions would otherwise cause the effect to skip the fetch, leaving the N-1 tab blank and the N-1 Overloads panel empty). `clearContingencyState()` is also skipped on restore so the just-restored actions / overloads / result survive. Active-tab switching is suppressed so the user lands on whichever tab the VisualizationPanel default resolves to given the restored state.
 6. **Overflow graph PDF** is restored (backend copies the PDF from the session folder back to `Overflow_Graph/` if missing, so the iframe URL resolves)
@@ -83,7 +84,7 @@ Settings → gear icon → Paths tab → Output Folder Path
 10. **No action card is active** initially — no re-simulation until the user clicks one
 11. When the user **clicks an action card**, the action is simulated on-demand to generate its diagram
 
-> **Key design decision:** Actions are not re-simulated on reload. The saved rho values, status tags, enrichment details and combined pairs are displayed immediately. Simulation only happens when the user actively selects an action card to view its diagram.
+> **Key design decision:** Actions are not re-simulated on reload. The saved rho values, status tags, enrichment details, combined pairs **and the active recommender model** are displayed immediately. Simulation only happens when the user actively selects an action card to view its diagram.
 
 ### What is NOT persisted
 
@@ -118,7 +119,9 @@ Some pieces of in-memory state are deliberately ephemeral and will reset on relo
     "monitoring_factor": 0.95,
     "pre_existing_overload_threshold": 0.02,
     "ignore_reconnections": false,
-    "pypowsybl_fast_mode": true
+    "pypowsybl_fast_mode": true,
+    "model": "expert",
+    "compute_overflow_graph": true
   },
 
   "contingency": {
@@ -143,6 +146,8 @@ Some pieces of in-memory state are deliberately ephemeral and will reset on relo
   "analysis": {
     "message":      "Found 5 prioritized actions",
     "dc_fallback":  false,
+    "active_model":  "expert",
+    "compute_overflow_graph": true,
     "action_scores": { ... },
     "lines_we_care_about": ["LINE_A", "LINE_B", "LINE_C"],
     "computed_pairs": { "act1+act2": { "max_rho": 0.87, "max_rho_line": "LINE_C" } },
@@ -164,7 +169,8 @@ Some pieces of in-memory state are deliberately ephemeral and will reset on relo
           "gens_bus":     {},
           "loads_bus":    {},
           "loads_p":      {},
-          "gens_p":       {}
+          "gens_p":       {},
+          "voltage_level_id": "VL_HUB"
         },
         "lines_overloaded_after": ["LINE_C"],
         "load_shedding_details": [
@@ -219,10 +225,12 @@ All settings active when the analysis was run. Matches the fields sent to `POST 
 | `min_pst` | Minimum PST actions threshold |
 | `min_load_shedding` | Minimum load-shedding actions threshold (PR #73/#78 — new `loads_p` format) |
 | `min_renewable_curtailment_actions` | Minimum renewable-curtailment actions threshold (PR #73/#78 — new `gens_p` format) |
+| `model` | *(optional)* Registry key of the recommender model selected at save time. Captures **what the operator picked** in the Settings → Recommender tab — useful for replay agents that want to reproduce the same model selection before re-running analysis. Defaults to `"expert"`. See [docs/backend/recommender_models.md](../backend/recommender_models.md). |
+| `compute_overflow_graph` | *(optional)* Whether the Compute Overflow Graph toggle was ON at save time. Locked-on for models with `requires_overflow_graph=true`; opt-in for the others. |
 
 *(Other fields match the Recommender and Configurations settings tabs.)*
 
-> **Legacy sessions:** `min_load_shedding` and `min_renewable_curtailment_actions` were added alongside the new `loads_p` / `gens_p` power-reduction action format. Older session dumps that predate these fields are restored with the default value `0.0`, matching the backend default.
+> **Legacy sessions:** `min_load_shedding` / `min_renewable_curtailment_actions` / `model` / `compute_overflow_graph` were each added to the schema after the original release. Older session dumps that predate any of these fields are restored with sensible defaults (`0.0` for the threshold fields, `"expert"` for `model`, `true` for `compute_overflow_graph`) so reload remains byte-compatible.
 
 ### `contingency`
 
@@ -254,6 +262,8 @@ URL and file path to the overflow graph artifact generated by `expert_op4grid_re
 |---|---|
 | `message` | Human-readable summary from the recommender |
 | `dc_fallback` | `true` if AC load flow did not converge and DC was used |
+| `active_model` | *(optional)* Registry key of the recommender model the backend actually executed (echoed in the `result` event from `/api/run-analysis-step2`). Differs from `configuration.model` (= what the operator picked) only when an unknown name silently fell back to the default — this field is the ground truth. See [docs/backend/recommender_models.md](../backend/recommender_models.md). |
+| `compute_overflow_graph` | *(optional)* Whether step-2 overflow graph was actually computed for this run. True for any model with `requires_overflow_graph=true`, OR when the operator opted in. Useful when reloading a session to know whether the Overflow Analysis tab will have content. |
 | `action_scores` | Raw scoring metrics returned by the recommender (varies by version) |
 | `actions` | Map of action ID -> enriched action data (see below) |
 | `combined_actions` | Map of combined pair ID -> computed pair data (see below) |
@@ -280,7 +290,7 @@ Each action entry mirrors the `ActionDetail` type plus a `status` object:
 | `n_components` | Number of connected components after action |
 | `disconnected_mw` | MW disconnected by islanding |
 | `non_convergence` | Error message when the AC load flow did not converge; `null` otherwise |
-| `action_topology` | Bus assignments changed by the action (`lines_ex_bus`, `lines_or_bus`, `loads_p`, `gens_p`, etc.) |
+| `action_topology` | Bus assignments changed by the action (`lines_ex_bus`, `lines_or_bus`, `loads_p`, `gens_p`, etc.) plus the optional `voltage_level_id` hint surfaced from the dict_action entry (pypowsybl switch-based / coupling shape) — used by the Action Overview pin anchor and the ActionCard VL chip. |
 | `lines_overloaded_after` | Overloaded lines remaining **after** the action is applied — drives the post-action overload halos on the Remedial Action NAD / SLD tab (PR #83). |
 | `load_shedding_details` | Per-load MW values for the load-shedding editor card. Array of `{ load_name, voltage_level_id, shedded_mw }` (PR #73). |
 | `curtailment_details` | Per-generator MW values for the renewable-curtailment editor card. Array of `{ gen_name, voltage_level_id, curtailed_mw }` (PR #73). |
@@ -368,6 +378,35 @@ Returns `{ "status": "success", "lines_we_care_about_count": int, "computed_pair
 
 ---
 
+## Recommender model persistence
+
+The pluggable recommender selection ships through the session JSON via
+**two distinct fields**, captured at different points of the request
+lifecycle so reloaded sessions can distinguish operator intent from
+backend behaviour:
+
+- **`configuration.model`** — captures **what the operator picked** in
+  the Settings → Recommender dropdown at save time. Restored on reload
+  so the UI shows the same selection.
+- **`analysis.active_model`** — captures **what the backend actually
+  executed** (echoed in the `result` event from
+  `/api/run-analysis-step2`). Differs from `configuration.model` only
+  when an unknown name silently fell back to the default — this field
+  is the ground truth and what the action cards were produced by.
+- **`configuration.compute_overflow_graph`** /
+  **`analysis.compute_overflow_graph`** — same split for the
+  Compute-Overflow-Graph toggle.
+
+Older session dumps that predate these fields reload unchanged and
+silently fall back to `"expert"` / `true` defaults so the legacy
+user-experience is preserved.
+
+Full pluggable-recommender reference (registry, three-layer filter
+chain, step-by-step plug-in guide, troubleshooting):
+[docs/backend/recommender_models.md](../backend/recommender_models.md).
+
+---
+
 ## Implementation Details
 
 ### Frontend (`hooks/useSession.ts`, `utils/sessionUtils.ts`)
@@ -376,15 +415,16 @@ Returns `{ "status": "success", "lines_we_care_about_count": int, "computed_pair
 1. `handleSaveResults` in `hooks/useSession.ts` calls `buildSessionResult(input: SessionInput)` to build the JSON
 2. The `SessionInput` it passes includes `nOverloadsRho` / `n1OverloadsRho` from `nDiagram.lines_overloaded_rho` / `n1Diagram.lines_overloaded_rho` (when present)
 3. `buildSessionResult` writes them into `session.overloads.n_overloads_rho` / `n1_overloads_rho` only if the arrays match the corresponding name arrays in length (length guard, see "Overloads" section above)
-4. If `outputFolderPath` is set: calls `api.saveSession(...)` with the JSON **and** the current `interactionLogger.getLog()` serialised as `interaction_log` → backend writes both `session.json` and `interaction_log.json`
-5. If empty: falls back to browser download (no `interaction_log.json` is written in that case)
+4. `buildSessionResult` also propagates `result.active_model` and `result.compute_overflow_graph` (echoed by the backend in the `result` event) into `session.analysis.active_model` / `session.analysis.compute_overflow_graph`; the captured `recommenderModel` / `computeOverflowGraph` from `useSettings` go into `session.configuration.model` / `session.configuration.compute_overflow_graph` (conditional spread — omitted when undefined so legacy callers stay byte-compatible)
+5. If `outputFolderPath` is set: calls `api.saveSession(...)` with the JSON **and** the current `interactionLogger.getLog()` serialised as `interaction_log` → backend writes both `session.json` and `interaction_log.json`
+6. If empty: falls back to browser download (no `interaction_log.json` is written in that case)
 
 **Reload flow:**
 1. `handleOpenReloadModal` calls `api.listSessions(outputFolderPath)` and displays the modal
 2. User clicks a session → `handleRestoreSession(sessionName, restoreContext)`:
    - Calls `api.loadSession(...)` to fetch the session JSON
-   - Restores every configuration field — including `min_load_shedding` and `min_renewable_curtailment_actions`, falling back to `0.0` when absent — via the setters in `restoreContext`
-   - Calls `api.updateConfig(...)` to load the network, forwarding every threshold
+   - Restores every configuration field — including `min_load_shedding`, `min_renewable_curtailment_actions`, **the active recommender `model` and `compute_overflow_graph` toggle**, falling back to defaults (`0.0` / `"expert"` / `true`) when absent — via the setters in `restoreContext`
+   - Calls `api.updateConfig(...)` to load the network, forwarding every threshold and the model selection
    - **Updates `committedNetworkPathRef.current`** to the restored `network_path`
    - Fetches branches, voltage levels, nominal voltages **and the base diagram** in parallel
    - **Calls `api.restoreAnalysisContext(...)`** to re-push `lines_we_care_about` + `computed_pairs` into the backend service (wrapped in try/catch — failures log a warning but let the reload complete)
@@ -398,7 +438,7 @@ Returns `{ "status": "success", "lines_we_care_about_count": int, "computed_pair
 
 **`SessionInput` / `RestoreContext` signatures:**
 
-- `SessionInput` (in `utils/sessionUtils.ts`) is the plain-data interface consumed by `buildSessionResult`. It carries every configuration field, the action-status sets, the interaction log, and the optional `nOverloadsRho` / `n1OverloadsRho` arrays.
+- `SessionInput` (in `utils/sessionUtils.ts`) is the plain-data interface consumed by `buildSessionResult`. It carries every configuration field, the action-status sets, the interaction log, the optional `nOverloadsRho` / `n1OverloadsRho` arrays, and the optional `recommenderModel` / `computeOverflowGraph` snapshot from `useSettings`.
 - `RestoreContext` (in `hooks/useSession.ts`) is the companion interface for `handleRestoreSession`. It includes `committedNetworkPathRef` so the restore path can update it in place — a missed setter would silently break the "Change Network?" confirmation dialog after a reload.
 
 ### Standalone Interface (auto-generated)
@@ -418,6 +458,12 @@ as a frozen snapshot — do NOT edit further).
 ### `frontend/src/utils/sessionUtils.test.ts` (pure unit tests on `buildSessionResult`)
 
 - Configuration fields including `layout_path`, `min_pst`, `min_load_shedding`, `min_renewable_curtailment_actions`
+- **Recommender model persistence:** `result.active_model` and
+  `result.compute_overflow_graph` are written into
+  `session.analysis.active_model` / `session.analysis.compute_overflow_graph`;
+  `recommenderModel` and `computeOverflowGraph` from `SessionInput` go
+  to `session.configuration.model` / `session.configuration.compute_overflow_graph`
+  (conditional — omitted when undefined for legacy callers).
 - All four status tags independently computed
 - **Combined actions:** serialised with estimation and simulation data
 - **Combined actions:** `is_simulated` flag based on presence in `result.actions`

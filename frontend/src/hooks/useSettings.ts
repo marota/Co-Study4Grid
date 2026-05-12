@@ -7,33 +7,17 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../api';
-import type { UserConfig } from '../api';
+import type { ModelDescriptor, UserConfig } from '../api';
 import type { SettingsBackup } from '../types';
 import { interactionLogger } from '../utils/interactionLogger';
 
 export interface SettingsState {
-  // Config file path
   configFilePath: string;
   setConfigFilePath: (v: string) => void;
   lastActiveConfigFilePath: string;
-  /**
-   * Switch the active config file: POSTs the new path to the backend,
-   * applies the loaded config to every settings field, and **returns the
-   * fresh `UserConfig` object**. Callers that need to chain a follow-up
-   * backend call (e.g. `api.updateConfig` in `applySettingsImmediate`)
-   * MUST use the returned value rather than calling `buildConfigRequest()`
-   * — React state updates from `applyLoadedConfig` haven't flushed yet
-   * when this resolves, so reading via `buildConfigRequest()` still
-   * captures the previous render's values (the stale-closure bug fixed
-   * 2026-05-08).
-   */
   changeConfigFilePath: (newPath: string) => Promise<UserConfig>;
-  /** Convert a fresh `UserConfig` (typically the resolved value of
-   *  `changeConfigFilePath`) into the same `ConfigRequest` shape that
-   *  `buildConfigRequest()` produces, bypassing React state. */
   configRequestFromUserConfig: (cfg: UserConfig) => ReturnType<SettingsState['buildConfigRequest']>;
 
-  // Paths
   networkPath: string;
   setNetworkPath: (v: string) => void;
   actionPath: string;
@@ -43,7 +27,6 @@ export interface SettingsState {
   outputFolderPath: string;
   setOutputFolderPath: (v: string) => void;
 
-  // Recommender
   minLineReconnections: number;
   setMinLineReconnections: (v: number) => void;
   minCloseCoupling: number;
@@ -62,8 +45,12 @@ export interface SettingsState {
   setMinRenewableCurtailmentActions: (v: number) => void;
   ignoreReconnections: boolean;
   setIgnoreReconnections: (v: boolean) => void;
+  recommenderModel: string;
+  setRecommenderModel: (v: string) => void;
+  computeOverflowGraph: boolean;
+  setComputeOverflowGraph: (v: boolean) => void;
+  availableModels: ModelDescriptor[];
 
-  // Monitoring
   linesMonitoringPath: string;
   setLinesMonitoringPath: (v: string) => void;
   monitoredLinesCount: number;
@@ -79,13 +66,11 @@ export interface SettingsState {
   pypowsyblFastMode: boolean;
   setPypowsyblFastMode: (v: boolean) => void;
 
-  // Action dict info
   actionDictFileName: string | null;
   setActionDictFileName: (v: string | null) => void;
   actionDictStats: { reco: number; disco: number; pst: number; open_coupling: number; close_coupling: number; total: number } | null;
   setActionDictStats: (v: { reco: number; disco: number; pst: number; open_coupling: number; close_coupling: number; total: number } | null) => void;
 
-  // Settings modal
   isSettingsOpen: boolean;
   setIsSettingsOpen: (v: boolean) => void;
   settingsTab: 'recommender' | 'configurations' | 'paths';
@@ -93,7 +78,6 @@ export interface SettingsState {
   settingsBackup: SettingsBackup | null;
   setSettingsBackup: (v: SettingsBackup | null) => void;
 
-  // Helpers
   pickSettingsPath: (type: 'file' | 'dir', setter: (path: string) => void) => Promise<void>;
   handleOpenSettings: (tab?: 'recommender' | 'configurations' | 'paths') => void;
   handleCloseSettings: () => void;
@@ -114,6 +98,8 @@ export interface SettingsState {
     pre_existing_overload_threshold: number;
     ignore_reconnections: boolean;
     pypowsybl_fast_mode: boolean;
+    model: string;
+    compute_overflow_graph: boolean;
   };
   applyConfigResponse: (configRes: Record<string, unknown>) => void;
   createCurrentBackup: () => SettingsBackup;
@@ -138,6 +124,12 @@ export function useSettings(): SettingsState {
   const [minRenewableCurtailmentActions, setMinRenewableCurtailmentActions] = useState(0.0);
   const [ignoreReconnections, setIgnoreReconnections] = useState(false);
 
+  const [recommenderModel, setRecommenderModel] = useState<string>(localStorage.getItem('recommenderModel') || 'expert');
+  const [computeOverflowGraph, setComputeOverflowGraph] = useState<boolean>(
+    (localStorage.getItem('computeOverflowGraph') ?? 'true') !== 'false'
+  );
+  const [availableModels, setAvailableModels] = useState<ModelDescriptor[]>([]);
+
   const [linesMonitoringPath, setLinesMonitoringPath] = useState('');
   const [monitoredLinesCount, setMonitoredLinesCount] = useState(0);
   const [totalLinesCount, setTotalLinesCount] = useState(0);
@@ -153,10 +145,8 @@ export function useSettings(): SettingsState {
   const [settingsTab, setSettingsTab] = useState<'recommender' | 'configurations' | 'paths'>('paths');
   const [settingsBackup, setSettingsBackup] = useState<SettingsBackup | null>(null);
 
-  // Track whether initial config load from backend is complete
   const configLoadedRef = useRef(false);
 
-  // Helper to apply a loaded UserConfig object to all state fields
   const applyLoadedConfig = useCallback((cfg: UserConfig) => {
     if (cfg.network_path !== undefined) setNetworkPath(cfg.network_path);
     if (cfg.action_file_path !== undefined) setActionPath(cfg.action_file_path);
@@ -175,9 +165,10 @@ export function useSettings(): SettingsState {
     if (cfg.pre_existing_overload_threshold !== undefined) setPreExistingOverloadThreshold(cfg.pre_existing_overload_threshold);
     if (cfg.ignore_reconnections !== undefined) setIgnoreReconnections(cfg.ignore_reconnections);
     if (cfg.pypowsybl_fast_mode !== undefined) setPypowsyblFastMode(cfg.pypowsybl_fast_mode);
+    if (cfg.model !== undefined && cfg.model) setRecommenderModel(cfg.model);
+    if (cfg.compute_overflow_graph !== undefined) setComputeOverflowGraph(cfg.compute_overflow_graph);
   }, []);
 
-  // Load persisted config from backend on mount
   useEffect(() => {
     Promise.all([api.getUserConfig(), api.getConfigFilePath()])
       .then(([cfg, cfgPath]) => {
@@ -190,31 +181,51 @@ export function useSettings(): SettingsState {
         console.warn('Failed to load user config from backend, using defaults');
         configLoadedRef.current = true;
       });
+    // Guard against test stubs of the `api` module that don't define
+    // `getModels` (most pre-existing test suites only mock the methods
+    // they exercise). Without this check the effect throws
+    // `api.getModels is not a function` on first render and the whole
+    // App tree fails to mount.
+    if (typeof api.getModels === 'function') {
+      api.getModels()
+        .then(({ models }) => setAvailableModels(models))
+        .catch(() => {
+          console.warn('Failed to load recommender models, using static defaults');
+          setAvailableModels([{
+            name: 'expert', label: 'Expert system',
+            requires_overflow_graph: true, is_default: true, params: [],
+          }]);
+        });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep ``computeOverflowGraph`` consistent with the active model's
+  // ``requires_overflow_graph`` flag: when the operator switches to a
+  // model that needs the graph, force the toggle on so the saved
+  // user-config matches what the backend will actually do. The UI also
+  // greys out the checkbox for these models — this effect is the
+  // belt-and-suspenders that makes sure persisted state stays correct
+  // when the user toggled it off on a previous (non-requiring) model and
+  // then picked a requiring one.
+  useEffect(() => {
+    if (!availableModels.length) return;
+    const active = availableModels.find(m => m.name === recommenderModel);
+    if (active?.requires_overflow_graph && !computeOverflowGraph) {
+      setComputeOverflowGraph(true);
+    }
+  }, [recommenderModel, availableModels, computeOverflowGraph]);
 
   const changeConfigFilePath = useCallback(async (newPath: string): Promise<UserConfig> => {
     const result = await api.setConfigFilePath(newPath);
     setConfigFilePath(result.config_file_path);
     lastConfigFilePathRef.current = result.config_file_path;
-    // Temporarily block auto-save so applying new config doesn't immediately overwrite
     configLoadedRef.current = false;
     applyLoadedConfig(result.config);
     configLoadedRef.current = true;
     return result.config;
   }, [applyLoadedConfig]);
 
-  /**
-   * Mirror `buildConfigRequest()` but read every value from the passed
-   * `UserConfig` instead of from React state. Used by
-   * `applySettingsImmediate` / `handleLoadConfig` immediately after
-   * `await changeConfigFilePath()` resolves: at that point the
-   * `applyLoadedConfig` setters have only been QUEUED, not flushed, so
-   * the `buildConfigRequest` closure still captures the previous
-   * render's values. Skipping React state and reading directly from the
-   * just-resolved config keeps the next backend call in lockstep with
-   * the file the operator just loaded.
-   */
   const configRequestFromUserConfig = useCallback((cfg: UserConfig) => ({
     network_path: cfg.network_path,
     action_file_path: cfg.action_file_path,
@@ -232,11 +243,12 @@ export function useSettings(): SettingsState {
     pre_existing_overload_threshold: cfg.pre_existing_overload_threshold,
     ignore_reconnections: cfg.ignore_reconnections,
     pypowsybl_fast_mode: cfg.pypowsybl_fast_mode,
+    model: cfg.model ?? 'expert',
+    compute_overflow_graph: cfg.compute_overflow_graph ?? true,
   }), []);
 
-  // Persist settings to backend config file whenever they change
   useEffect(() => {
-    if (!configLoadedRef.current) return; // skip until initial load is done
+    if (!configLoadedRef.current) return;
     const configToSave: UserConfig = {
       network_path: networkPath,
       action_file_path: actionPath,
@@ -255,13 +267,16 @@ export function useSettings(): SettingsState {
       pre_existing_overload_threshold: preExistingOverloadThreshold,
       ignore_reconnections: ignoreReconnections,
       pypowsybl_fast_mode: pypowsyblFastMode,
+      model: recommenderModel,
+      compute_overflow_graph: computeOverflowGraph,
     };
 
-    // Sync to localStorage for instant UI availability on next reload/test
     localStorage.setItem('networkPath', networkPath);
     localStorage.setItem('actionPath', actionPath);
     localStorage.setItem('layoutPath', layoutPath);
     localStorage.setItem('outputFolderPath', outputFolderPath);
+    localStorage.setItem('recommenderModel', recommenderModel);
+    localStorage.setItem('computeOverflowGraph', String(computeOverflowGraph));
 
     api.saveUserConfig(configToSave).catch(() => {
       console.warn('Failed to persist user config to backend');
@@ -269,7 +284,7 @@ export function useSettings(): SettingsState {
   }, [networkPath, actionPath, layoutPath, outputFolderPath, linesMonitoringPath,
     minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
     minPst, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, monitoringFactor, preExistingOverloadThreshold,
-    ignoreReconnections, pypowsyblFastMode]);
+    ignoreReconnections, pypowsyblFastMode, recommenderModel, computeOverflowGraph]);
 
   const pickSettingsPath = useCallback(async (type: 'file' | 'dir', setter: (path: string) => void) => {
     try {
@@ -279,16 +294,7 @@ export function useSettings(): SettingsState {
         setter(path);
       }
     } catch (e) {
-      // Surface the backend error so the user knows why the dialog didn't
-      // open (e.g. tkinter unavailable on a headless server). Previously
-      // this was silently logged to the console and looked like a broken
-      // button.
       const baseMessage = e instanceof Error ? e.message : 'Failed to open file picker';
-      // Transport-level failures (404 / connection refused / network
-      // error) almost always mean the backend isn't running on
-      // http://127.0.0.1:8000 OR is an out-of-date instance that
-      // pre-dates the /api/pick-path endpoint. Hint at the most
-      // common fix instead of just echoing the axios error.
       const axiosErr = e as { response?: { status?: number }, code?: string };
       const status = axiosErr?.response?.status;
       const isNetworkError = !axiosErr?.response && (axiosErr?.code === 'ERR_NETWORK' || /Network Error/i.test(baseMessage));
@@ -371,7 +377,9 @@ export function useSettings(): SettingsState {
     pre_existing_overload_threshold: preExistingOverloadThreshold,
     ignore_reconnections: ignoreReconnections,
     pypowsybl_fast_mode: pypowsyblFastMode,
-  }), [networkPath, actionPath, layoutPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode]);
+    model: recommenderModel,
+    compute_overflow_graph: computeOverflowGraph,
+  }), [networkPath, actionPath, layoutPath, minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst, minLoadShedding, minRenewableCurtailmentActions, nPrioritizedActions, linesMonitoringPath, monitoringFactor, preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode, recommenderModel, computeOverflowGraph]);
 
   const applyConfigResponse = useCallback((configRes: Record<string, unknown>) => {
     if (configRes && configRes.total_lines_count !== undefined) {
@@ -400,6 +408,9 @@ export function useSettings(): SettingsState {
     minLoadShedding, setMinLoadShedding,
     minRenewableCurtailmentActions, setMinRenewableCurtailmentActions,
     ignoreReconnections, setIgnoreReconnections,
+    recommenderModel, setRecommenderModel,
+    computeOverflowGraph, setComputeOverflowGraph,
+    availableModels,
     linesMonitoringPath, setLinesMonitoringPath,
     monitoredLinesCount, setMonitoredLinesCount,
     totalLinesCount, setTotalLinesCount,
@@ -423,6 +434,7 @@ export function useSettings(): SettingsState {
     networkPath, actionPath, layoutPath, outputFolderPath,
     minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections,
     nPrioritizedActions, minPst, minLoadShedding, minRenewableCurtailmentActions, ignoreReconnections,
+    recommenderModel, computeOverflowGraph, availableModels,
     linesMonitoringPath, monitoredLinesCount, totalLinesCount, showMonitoringWarning, monitoringFactor, preExistingOverloadThreshold, pypowsyblFastMode,
     actionDictFileName, actionDictStats,
     isSettingsOpen, settingsTab, settingsBackup,
