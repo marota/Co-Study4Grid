@@ -74,12 +74,20 @@ vi.mock('./components/ActionFeed', () => ({
   ),
 }));
 vi.mock('./components/OverloadPanel', () => ({
-  default: (props: { n1Overloads: string[]; selectedOverloads: Set<string> }) => (
+  default: (props: { n1Overloads: string[]; selectedOverloads: Set<string>; onToggleOverload?: (overload: string) => void }) => (
     <div
       data-testid="overload-panel"
       data-n1-ol-count={props.n1Overloads?.length || 0}
       data-sel-ol-count={props.selectedOverloads?.size || 0}
-    />
+    >
+      {(props.n1Overloads ?? []).map((name) => (
+        <button
+          key={name}
+          data-testid={`toggle-overload-${name}`}
+          onClick={() => props.onToggleOverload?.(name)}
+        />
+      ))}
+    </div>
   ),
 }));
 
@@ -596,6 +604,46 @@ describe('N-1 overload state is populated before action analysis', () => {
         'data-ol-names',
         'LINE_OL1',
       );
+    });
+  });
+
+  // Regression: a useEffect in App.tsx re-seeds selectedOverloads to the
+  // full n1Diagram.lines_overloaded list when the analysis memo refreshes.
+  // The original implementation compared against the live selectedOverloads
+  // set, so every user toggle retriggered the effect and re-added the
+  // overload that was just removed ("blinks but does not switch to
+  // unselected"). Lock in the fix: deselecting an overload must persist.
+  it('preserves user-deselected overloads across re-renders (double-click unselect)', async () => {
+    mockApi.getContingencyDiagram.mockResolvedValueOnce({
+      svg: '<svg></svg>',
+      metadata: null,
+      lines_overloaded: ['LINE_OL_A', 'LINE_OL_B'],
+    });
+
+    await renderAndLoadStudy();
+    await selectBranch('BRANCH_A');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-n1-ol-count', '2');
+      expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-sel-ol-count', '2');
+    });
+
+    await act(async () => {
+      screen.getByTestId('toggle-overload-LINE_OL_A').click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-sel-ol-count', '1');
+    });
+
+    // Force an additional render cycle — the buggy effect retriggered on
+    // every analysis-memo refresh and re-added the deselected overload.
+    await act(async () => {
+      screen.getByTestId('toggle-overload-LINE_OL_B').click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('overload-panel')).toHaveAttribute('data-sel-ol-count', '0');
     });
   });
 
