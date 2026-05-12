@@ -114,13 +114,16 @@ def _run_analysis_step2_with_model(
     - Passes the recommender to ``run_analysis_step2_discovery`` so the
       dispatch happens at the library boundary.
     """
-    # Late imports so this module stays cheap at startup and matches
-    # the test-patch points used by ``analysis_mixin``.
+    # Resolve the upstream library helpers via ``analysis_mixin`` so
+    # that existing test patches on
+    # ``expert_backend.services.analysis_mixin.run_analysis_step2_graph``
+    # (and ``…_discovery``) — the long-standing seam used by the
+    # legacy step-2 generator — still intercept the calls here.
+    # Looking up the attributes at call time (not at import) is what
+    # makes the patch effective: replacing the module-level binding on
+    # ``analysis_mixin`` is observed by the next ``getattr``.
     from expert_op4grid_recommender import config
-    from expert_op4grid_recommender.main import (
-        run_analysis_step2_discovery,
-        run_analysis_step2_graph,
-    )
+    from expert_backend.services import analysis_mixin
 
     if not self._analysis_context:
         raise ValueError("Analysis context not found. Run step 1 first.")
@@ -153,7 +156,7 @@ def _run_analysis_step2_with_model(
 
     try:
         if needs_graph:
-            context = run_analysis_step2_graph(context)
+            context = analysis_mixin.run_analysis_step2_graph(context)
             produced_pdf = self._get_latest_pdf_path(analysis_start_time)
             if produced_pdf:
                 self._overflow_layout_cache["hierarchical"] = produced_pdf
@@ -167,7 +170,7 @@ def _run_analysis_step2_with_model(
             yield {"type": "pdf", "pdf_path": None}
 
         params = {"n_prioritized_actions": config.N_PRIORITIZED_ACTIONS}
-        results = run_analysis_step2_discovery(
+        results = analysis_mixin.run_analysis_step2_discovery(
             context, recommender=recommender, params=params,
         )
         self._last_result = results
