@@ -24,6 +24,9 @@ from expert_op4grid_recommender.models.base import (
     RecommenderOutput,
 )
 
+from expert_backend.recommenders.network_existence import (
+    filter_to_existing_network_elements,
+)
 from expert_backend.recommenders.synthetic_actions import (
     build_curtailment_actions,
     build_load_shedding_actions,
@@ -57,10 +60,20 @@ class RandomRecommender(RecommenderModel):
         env = inputs.env
         obs = inputs.obs_defaut
 
+        # Drop dict entries whose target VL / line isn't on the loaded
+        # network (e.g. dict shipped for a larger grid). Same defensive
+        # check as RandomOverflow — the expert pipeline doesn't run for
+        # this model so without it bad entries leak through to the UI.
+        dict_ids = list((inputs.dict_action or {}).keys())
+        dict_ids = filter_to_existing_network_elements(
+            dict_ids, inputs.dict_action, inputs.network,
+        )
+
         pool: Dict[str, Any] = {}
         # Materialise dict_action entries into grid2op/pypowsybl actions.
         # Entries without a usable `content` field are skipped.
-        for action_id, desc in (inputs.dict_action or {}).items():
+        for action_id in dict_ids:
+            desc = (inputs.dict_action or {}).get(action_id)
             content = desc.get("content") if isinstance(desc, dict) else None
             if content is None:
                 continue

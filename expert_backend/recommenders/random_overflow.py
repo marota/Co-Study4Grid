@@ -7,7 +7,7 @@
 
 Requires the step-2 overflow-graph build. Samples uniformly from the
 actions retained by the expert rule filter
-(``context["filtered_candidate_actions"]``), so the random pick
+(``context['filtered_candidate_actions']``), so the random pick
 benefits from the topological analysis without inheriting the expert
 scoring. Useful as a "is the overflow analysis useful?" baseline.
 """
@@ -22,6 +22,10 @@ from expert_op4grid_recommender.models.base import (
     RecommenderInputs,
     RecommenderModel,
     RecommenderOutput,
+)
+
+from expert_backend.recommenders.network_existence import (
+    filter_to_existing_network_elements,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,16 +57,48 @@ class RandomOverflowRecommender(RecommenderModel):
         n = int(params.get("n_prioritized_actions", 5))
         env = inputs.env
 
-        # Prefer the filtered set from the expert rules; fall back to
-        # the whole dictionary when the upstream pipeline did not
-        # populate it (e.g. step-2 graph skipped).
+        # The pipeline runs the expert rule filter when the model
+        # declares ``requires_overflow_graph=True``, so this is
+        # populated whenever step-2 graph was produced. We do NOT
+        # silently fall back to ``dict_action.keys()`` when the
+        # filter returned an empty set — that would defeat the point
+        # of the model (sampling within the reduced action space).
+        # When the field is None (filter genuinely wasn't run), log
+        # and fall back so the model still produces something for the
+        # operator to inspect, but flag it so the regression is visible
+        # in logs.
         candidate_ids = inputs.filtered_candidate_actions
-        if not candidate_ids:
+        if candidate_ids is None:
             logger.warning(
-                "RandomOverflowRecommender: no filtered candidates available, "
-                "falling back to the full action dictionary."
+                "RandomOverflowRecommender: filtered_candidate_actions is None "
+                "(expert rule filter did not run). Falling back to the full "
+                "action dictionary — expected ONLY when step-2 graph was skipped."
             )
             candidate_ids = list((inputs.dict_action or {}).keys())
+        elif not candidate_ids:
+            logger.info(
+                "RandomOverflowRecommender: expert rule filter returned an "
+                "empty candidate set for this contingency. Returning {} "
+                "rather than sampling from outside the reduced action space."
+            )
+            return RecommenderOutput(prioritized_actions={})
+
+        # Defensive existence check: drop actions whose target VL or
+        # line is unknown to the loaded network. The expert rule
+        # validator filters by overflow-graph paths but doesn't
+        # verify that an action's targets actually live on this
+        # network — so dict entries left over from a larger grid
+        # would otherwise leak through as "Network element not found"
+        # errors when the operator clicks the action card.
+        candidate_ids = filter_to_existing_network_elements(
+            candidate_ids, inputs.dict_action, inputs.network,
+        )
+        if not candidate_ids:
+            logger.info(
+                "RandomOverflowRecommender: no candidate action targets a "
+                "network element present in the loaded grid. Returning {}."
+            )
+            return RecommenderOutput(prioritized_actions={})
 
         pool: Dict[str, Any] = {}
         for action_id in candidate_ids:
