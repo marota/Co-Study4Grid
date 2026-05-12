@@ -65,12 +65,6 @@ export const applyOverloadedHighlights = (
                     const clone = el.cloneNode(true) as SVGGraphicsElement;
                     clone.classList.add('nad-overloaded');
                     clone.classList.add('nad-highlight-clone');
-                    // Strip any nad-delta-* class the original may
-                    // already be tagged with — those rules are declared
-                    // later in App.css and would otherwise win the
-                    // cascade and turn the orange halo into a 3px
-                    // delta-colored stroke (effectively making the
-                    // overload highlight disappear in Impacts mode).
                     clone.classList.remove('nad-delta-positive', 'nad-delta-negative', 'nad-delta-grey');
                     clone.removeAttribute('id');
                     clone.style.display = 'block';
@@ -171,9 +165,6 @@ export const getActionTargetLines = (
     // so combined disco+coupling actions correctly extract the disco
     // line even though the combined string contains "coupling".
     parts.forEach(part => {
-        // Coupling / node-merging / node-splitting sub-parts target
-        // voltage levels, not lines — their highlights come from
-        // `getActionTargetVoltageLevels`.
         if (isCouplingAction(part)) return;
 
         const cleanPart = part.replace(/_(inc|dec)\d+$/, '');
@@ -215,6 +206,14 @@ export const getActionTargetVoltageLevels = (
 ): string[] => {
     const targets = new Set<string>();
     const desc = actionDetail?.description_unitaire;
+    const topo = actionDetail?.action_topology as (Record<string, unknown> & { voltage_level_id?: string }) | undefined;
+
+    // Backend-supplied VL hint (e.g. pypowsybl switch-based actions
+    // expose ``VoltageLevelId`` on the dict_action entry). Highest-
+    // priority signal because it doesn't rely on string heuristics.
+    if (topo?.voltage_level_id && nodesByEquipmentId.has(topo.voltage_level_id)) {
+        targets.add(topo.voltage_level_id);
+    }
     if (desc && desc !== 'No description available') {
         // Try all quoted strings — any might be the VL name
         const quotedMatches = desc.match(/'([^']+)'/g);
@@ -245,12 +244,14 @@ export const getActionTargetVoltageLevels = (
     }
 
     // Fallback: action ID suffix — skip for pure line reconnection actions
-    const topo = actionDetail?.action_topology;
     const isCoupling = isCouplingAction(actionId, actionDetail?.description_unitaire);
     const isLineReconnection = !isCoupling && !!topo
-        && (Object.keys(topo.gens_bus || {}).length === 0 && Object.keys(topo.loads_bus || {}).length === 0
-            && Object.keys(topo.loads_p || {}).length === 0 && Object.keys(topo.gens_p || {}).length === 0)
-        && ([...Object.values(topo.lines_ex_bus || {}), ...Object.values(topo.lines_or_bus || {})] as number[]).some(v => v >= 0);
+        && (Object.keys((topo.gens_bus as Record<string, unknown>) || {}).length === 0
+            && Object.keys((topo.loads_bus as Record<string, unknown>) || {}).length === 0
+            && Object.keys((topo.loads_p as Record<string, unknown>) || {}).length === 0
+            && Object.keys((topo.gens_p as Record<string, unknown>) || {}).length === 0)
+        && ([...Object.values((topo.lines_ex_bus as Record<string, number>) || {}),
+             ...Object.values((topo.lines_or_bus as Record<string, number>) || {})] as number[]).some(v => v >= 0);
 
     if (actionId && !isLineReconnection) {
         actionId.split('+').forEach(part => {
@@ -298,19 +299,6 @@ export const applyActionTargetHighlights = (
     actionId: string | null,
 ) => {
     if (!container) return;
-    // IMPORTANT: remove OUR action-target clones BEFORE stripping the
-    // `.nad-action-target` class from originals — otherwise the class
-    // gets stripped from the clones too (they also carry it) and the
-    // follow-up cleanup selector would no longer match them, leaving
-    // stale clones in the background layer. Use a compound selector
-    // (`.nad-highlight-clone.nad-action-target`) so we only wipe our
-    // own clones and leave `.nad-overloaded` halos planted by
-    // applyOverloadedHighlights untouched — the Action tab calls us
-    // straight after applyOverloadedHighlights, so a blanket
-    // `.nad-highlight-clone` removal silently deleted every
-    // persistent / newly-created overload highlight on the Remedial
-    // Action NAD (the SLD was unaffected because it uses a different
-    // highlight pipeline).
     container
         .querySelectorAll('.nad-highlight-clone.nad-action-target')
         .forEach(el => el.remove());
@@ -321,10 +309,8 @@ export const applyActionTargetHighlights = (
 
     const { edgesByEquipmentId, nodesByEquipmentId } = metaIndex;
 
-    // Create or find background layer at the root of the SVG
     const backgroundLayer = getBackgroundLayer(container);
 
-    // Cache bgCTM per call — constant for all highlights in a single pass
     let cachedBgCTM: DOMMatrix | null = null;
 
     const applyHighlight = (el: Element) => {
@@ -335,9 +321,6 @@ export const applyActionTargetHighlights = (
             clone.removeAttribute('id');
             clone.classList.add('nad-action-target');
             clone.classList.add('nad-highlight-clone');
-            // See comment in applyOverloadedHighlights: strip any
-            // nad-delta-* class the original carries so the late
-            // delta CSS rules don't override the action-target halo.
             clone.classList.remove('nad-delta-positive', 'nad-delta-negative', 'nad-delta-grey');
 
             try {
@@ -360,7 +343,6 @@ export const applyActionTargetHighlights = (
 
     const idMap = getIdMap(container);
 
-    // 1. Identify all VL targets
     const vlNames = getActionTargetVoltageLevels(actionDetail, actionId, nodesByEquipmentId);
     vlNames.forEach(vlName => {
         const node = nodesByEquipmentId.get(vlName);
@@ -370,7 +352,6 @@ export const applyActionTargetHighlights = (
         }
     });
 
-    // 2. Identify all line/equipment targets
     const targetLines = getActionTargetLines(actionDetail, actionId, edgesByEquipmentId);
     targetLines.forEach(lineName => {
         const edge = edgesByEquipmentId.get(lineName);
@@ -421,14 +402,9 @@ export const applyContingencyHighlight = (
             const clone = el.cloneNode(true) as SVGGraphicsElement;
             clone.classList.add('nad-contingency-highlight');
             clone.classList.add('nad-highlight-clone');
-            // See comment in applyOverloadedHighlights: strip any
-            // nad-delta-* class the original may carry so the late
-            // delta CSS rules don't override the yellow contingency
-            // halo.
             clone.classList.remove('nad-delta-positive', 'nad-delta-negative', 'nad-delta-grey');
             clone.removeAttribute('id');
 
-            // Ensure highlight is visible even if the original is hidden
             clone.style.display = 'block';
             clone.style.visibility = 'visible';
 
