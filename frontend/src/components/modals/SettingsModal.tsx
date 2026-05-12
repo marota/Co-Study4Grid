@@ -56,6 +56,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onApply }) => {
   const showAll = availableModels.length === 0 || activeModel === null;
   const showField = (name: string): boolean => showAll || declaredParamNames.has(name);
 
+  // When the active model declares `requires_overflow_graph`, the step
+  // is not optional: the checkbox is forced ON + disabled so the
+  // operator can see WHY it's locked rather than wondering where the
+  // toggle went. The backend mirrors this guarantee
+  // (`needs_graph = requires_overflow_graph OR compute_overflow_graph`)
+  // so a direct API call can't bypass it either.
+  const graphRequired = !!activeModel?.requires_overflow_graph;
+
   const tabButton = (id: 'paths' | 'recommender' | 'configurations', label: string) => (
     <button
       onClick={() => {
@@ -176,7 +184,44 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onApply }) => {
                   <option key={m.name} value={m.name}>{m.label}</option>
                 ))}
               </select>
-              {activeModel?.requires_overflow_graph && (
+
+              {/* Compute Overflow Graph toggle:
+                  - models that REQUIRE the graph → forced checked + disabled,
+                    label suffixed with "required by this model" so the
+                    operator understands why the choice is locked;
+                  - models that don't require it → toggle hidden entirely
+                    (no choice to make, computing it would be wasted work). */}
+              {activeModel && graphRequired && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '5px' }}>
+                  <input
+                    type="checkbox" id="computeOverflowGraph"
+                    checked={true}
+                    disabled={true}
+                    readOnly
+                    style={{
+                      width: '16px', height: '16px',
+                      cursor: 'not-allowed', opacity: 0.7,
+                    }}
+                  />
+                  <label
+                    htmlFor="computeOverflowGraph"
+                    style={{
+                      fontSize: '0.85rem',
+                      cursor: 'not-allowed', opacity: 0.7,
+                    }}
+                  >
+                    Compute Overflow Graph (step 1)
+                    <span style={{ marginLeft: '6px', fontStyle: 'italic', fontSize: '0.75rem', color: colors.textTertiary }}>
+                      required by this model
+                    </span>
+                  </label>
+                </div>
+              )}
+              {activeModel && !graphRequired && (
+                // Models that don't consume the graph: expose the toggle
+                // as an opt-in (default off). Useful only for ops who
+                // want to inspect the overflow analysis alongside a
+                // graph-agnostic recommender.
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '5px' }}>
                   <input
                     type="checkbox" id="computeOverflowGraph"
@@ -184,13 +229,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onApply }) => {
                     onChange={e => setComputeOverflowGraph(e.target.checked)}
                     style={{ width: '16px', height: '16px' }}
                   />
-                  <label htmlFor="computeOverflowGraph" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>
+                  <label
+                    htmlFor="computeOverflowGraph"
+                    style={{ fontSize: '0.85rem', cursor: 'pointer' }}
+                  >
                     Compute Overflow Graph (step 1)
+                    <span style={{ marginLeft: '6px', fontStyle: 'italic', fontSize: '0.75rem', color: colors.textTertiary }}>
+                      optional for this model
+                    </span>
                   </label>
                 </div>
-              )}
-              {activeModel?.description && (
-                <div style={{ fontSize: '0.75rem', color: colors.textTertiary }}>{activeModel.description}</div>
               )}
             </div>
 

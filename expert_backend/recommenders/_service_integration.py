@@ -104,12 +104,15 @@ def _run_analysis_step2_with_model(
     don't need to change. Differences:
 
     - Builds the recommender from the registry (``settings.model``).
-    - Skips ``run_analysis_step2_graph`` when the chosen model does
-      not require it OR the operator disabled
-      ``compute_overflow_graph`` — a None ``pdf_path`` is sent in that
-      case so the UI knows there is no overflow HTML to render.
-    - Passes the recommender to ``run_analysis_step2_discovery`` so
-      the dispatch happens at the library boundary.
+    - Runs ``run_analysis_step2_graph`` when the chosen model REQUIRES
+      the overflow graph (``requires_overflow_graph=True``), OR when the
+      operator explicitly opted into computing it via
+      ``compute_overflow_graph=True``. A model that declares it requires
+      the graph cannot be skipped — the toggle is enforced server-side
+      so that direct API calls cannot bypass the requirement either
+      (mirrors the UI lock on the Settings → Recommender checkbox).
+    - Passes the recommender to ``run_analysis_step2_discovery`` so the
+      dispatch happens at the library boundary.
     """
     # Late imports so this module stays cheap at startup and matches
     # the test-patch points used by ``analysis_mixin``.
@@ -128,9 +131,13 @@ def _run_analysis_step2_with_model(
         yield {"type": "error", "message": str(exc)}
         return
 
+    # OR (not AND): a model that declares `requires_overflow_graph=True`
+    # always runs the graph step, even if the client somehow sent
+    # `compute_overflow_graph=False`. The operator opt-in flag only
+    # affects models that don't intrinsically need the graph.
     needs_graph = (
         recommender.requires_overflow_graph
-        and self.get_compute_overflow_graph()
+        or self.get_compute_overflow_graph()
     )
 
     context = self._narrow_context_to_selected_overloads(
@@ -197,11 +204,8 @@ def _run_analysis_step2_with_model(
                 list(lines_we_care_about) if lines_we_care_about is not None else None,
             "message": "Analysis completed",
             "dc_fallback": False,
-            # Echo the model that produced these actions so the UI can
-            # surface it (and so saved sessions know what model the
-            # results came from).
             "active_model": recommender.name,
-            "compute_overflow_graph": self.get_compute_overflow_graph(),
+            "compute_overflow_graph": needs_graph,
         })
     except Exception as e:
         logger.exception("Backend Error in Analysis Resolution")
