@@ -30,29 +30,21 @@ export interface SessionInput {
     preExistingOverloadThreshold: number;
     ignoreReconnections: boolean;
     pypowsyblFastMode: boolean;
+    // Pluggable-recommender selection. Captured at save time so a
+    // reloaded session shows which model was active. Optional for
+    // backwards compatibility with builders that haven't been updated
+    // yet.
+    recommenderModel?: string;
+    computeOverflowGraph?: boolean;
 
     // Contingency
-    /**
-     * Currently APPLIED contingency. The new multi-element shape is
-     * a list of element IDs; legacy callers (and many existing tests)
-     * still pass a single string under ``selectedBranch``. The
-     * builder accepts either and normalises internally.
-     */
     selectedContingency?: string[];
     selectedBranch?: string;
     selectedOverloads: Set<string>;
     monitorDeselected: boolean;
-    /**
-     * Snapshot of the "additional lines to prevent flow increase"
-     * picker captured at the moment Step 2 was posted. Persisted so
-     * the post-run "Additional lines integrated…" notice survives a
-     * session reload. Optional — older sessions or runs that didn't
-     * use the picker omit the field entirely.
-     */
     committedAdditionalLinesToCut?: Set<string>;
 
-    // Overload lists from diagrams (parallel rho arrays are optional,
-    // backend only populates them on the N-1 payload today — see PR #88).
+    // Overload lists from diagrams
     nOverloads: string[];
     n1Overloads: string[];
     nOverloadsRho?: number[];
@@ -62,10 +54,10 @@ export interface SessionInput {
     result: AnalysisResult | null;
 
     // Action status tracking
-    selectedActionIds: Set<string>;          // actions user starred / favorited
-    rejectedActionIds: Set<string>;          // actions user explicitly rejected
-    manuallyAddedIds: Set<string>;           // actions user simulated manually
-    suggestedByRecommenderIds: Set<string>;  // actions ever returned by the recommender
+    selectedActionIds: Set<string>;
+    rejectedActionIds: Set<string>;
+    manuallyAddedIds: Set<string>;
+    suggestedByRecommenderIds: Set<string>;
 
     // Interaction log
     interactionLog: InteractionLogEntry[];
@@ -73,13 +65,6 @@ export interface SessionInput {
 
 /**
  * Builds a serialisable SessionResult snapshot from the current App state.
- *
- * Key design decision for `is_suggested`:
- *   An action is considered "suggested" if the recommender ever returned it,
- *   regardless of whether the user had already manually simulated it before.
- *   `suggestedByRecommenderIds` accumulates all IDs from every streaming
- *   result event for the current contingency and is separate from
- *   `manuallyAddedIds`, which tracks user-initiated simulations.
  */
 export function buildSessionResult(input: SessionInput): SessionResult {
     const {
@@ -87,6 +72,7 @@ export function buildSessionResult(input: SessionInput): SessionResult {
         minLineReconnections, minCloseCoupling, minOpenCoupling, minLineDisconnections, minPst, minLoadShedding, minRenewableCurtailmentActions,
         nPrioritizedActions, linesMonitoringPath, monitoringFactor,
         preExistingOverloadThreshold, ignoreReconnections, pypowsyblFastMode,
+        recommenderModel, computeOverflowGraph,
         selectedContingency: contingencyInput,
         selectedBranch: legacyBranch,
         selectedOverloads, monitorDeselected,
@@ -102,8 +88,6 @@ export function buildSessionResult(input: SessionInput): SessionResult {
     const savedCombinedActions: Record<string, SavedCombinedAction> = {};
     if (result?.combined_actions) {
         for (const [id, ca] of Object.entries(result.combined_actions)) {
-            // Check if there's a simulated version in result.actions
-            // Look up by both original key and canonical (sorted) key to handle ordering mismatches
             const canonicalId = id.includes('+') ? id.split('+').map(p => p.trim()).sort().join('+') : id;
             const simData = result.actions[id] || result.actions[canonicalId];
             const isSimulated = !!simData && !simData.is_estimated && simData.rho_after != null && simData.rho_after.length > 0;
@@ -132,14 +116,18 @@ export function buildSessionResult(input: SessionInput): SessionResult {
             message: result.message,
             dc_fallback: result.dc_fallback,
             action_scores: result.action_scores,
-            // Persist the monitored-line set and the superposition cache
-            // so `useSession::handleRestoreSession` can re-push them to
-            // the backend via `/api/restore-analysis-context`. Without
-            // this, reloaded sessions silently fall back to the
-            // backend's default monitored-line policy on the next
-            // simulate-action call — a regression invisible to the UI.
             lines_we_care_about: result.lines_we_care_about ?? null,
             computed_pairs: result.computed_pairs ?? null,
+            // Persist the model the BACKEND actually executed (echoed in
+            // the result event). Differs from `configuration.model`
+            // (= what was requested) when an unknown name silently fell
+            // back to the default — the active_model is the ground truth.
+            active_model: result.active_model ?? null,
+            // Whether step-2 overflow graph was computed for this run.
+            // True for any model that declares requires_overflow_graph,
+            // OR when the operator opted in. Persisted so a reload knows
+            // whether the Overflow Analysis tab will have content.
+            compute_overflow_graph: result.compute_overflow_graph ?? null,
             actions: Object.fromEntries(
                 Object.entries(result.actions).map(([id, detail]): [string, SavedActionEntry] => [
                     id,
@@ -158,20 +146,12 @@ export function buildSessionResult(input: SessionInput): SessionResult {
                         is_islanded: detail.is_islanded,
                         n_components: detail.n_components,
                         disconnected_mw: detail.disconnected_mw,
-                        // Post-action overload list is read back in
-                        // useSession.handleRestoreSession and is required
-                        // for the Remedial-Action NAD/SLD overload halos
-                        // (PR #83). Previously omitted here, so reload
-                        // silently dropped the field and halos disappeared
-                        // until the user re-ran analysis.
                         lines_overloaded_after: detail.lines_overloaded_after,
                         load_shedding_details: detail.load_shedding_details,
                         curtailment_details: detail.curtailment_details,
                         pst_details: detail.pst_details,
                         status: {
                             is_selected: selectedActionIds.has(id),
-                            // An action is "suggested" if the recommender ever returned it —
-                            // even if the user had also manually simulated it beforehand.
                             is_suggested: suggestedByRecommenderIds.has(id),
                             is_rejected: rejectedActionIds.has(id),
                             is_manually_simulated: manuallyAddedIds.has(id),
@@ -202,32 +182,25 @@ export function buildSessionResult(input: SessionInput): SessionResult {
             pre_existing_overload_threshold: preExistingOverloadThreshold,
             ignore_reconnections: ignoreReconnections,
             pypowsybl_fast_mode: pypowsyblFastMode,
+            // Pluggable-recommender selection at save time. Optional —
+            // older session builders that didn't pass these fields
+            // emit `undefined`, which `JSON.stringify` drops from the
+            // output (preserves backwards compatibility for the
+            // existing session-reader code paths).
+            ...(recommenderModel !== undefined ? { model: recommenderModel } : {}),
+            ...(computeOverflowGraph !== undefined ? { compute_overflow_graph: computeOverflowGraph } : {}),
         },
         contingency: (() => {
-            // Resolve the contingency from either the new list-shaped
-            // ``selectedContingency`` field OR the legacy single-string
-            // ``selectedBranch`` field. New code paths populate the
-            // first; many existing tests still build session inputs
-            // with the second.
             const elements: string[] = contingencyInput && contingencyInput.length > 0
                 ? [...contingencyInput]
                 : (legacyBranch ? [legacyBranch] : []);
             return {
                 disconnected_elements: elements,
-                // Keep ``disconnected_element`` populated when a
-                // single element is disconnected so older session
-                // viewers / tools that read the legacy field still
-                // work. Multi-element contingencies omit it entirely.
                 ...(elements.length === 1
                     ? { disconnected_element: elements[0] }
                     : {}),
                 selected_overloads: Array.from(selectedOverloads),
                 monitor_deselected: monitorDeselected,
-                // Snapshot of the "additional lines to prevent flow
-                // increase" picker captured at Step 2 post-time, so
-                // the post-run notice survives a session reload.
-                // Optional — older session dumps and runs that didn't
-                // use the picker omit the field.
                 ...(committedAdditionalLinesToCut && committedAdditionalLinesToCut.size > 0
                     ? { additional_lines_to_cut: Array.from(committedAdditionalLinesToCut) }
                     : {}),
@@ -237,12 +210,6 @@ export function buildSessionResult(input: SessionInput): SessionResult {
             n_overloads: nOverloads,
             n1_overloads: n1Overloads,
             resolved_overloads: result?.lines_overloaded ?? [],
-            // Only persist rho arrays when they match the element list
-            // length — a shorter or missing array means the diagram
-            // payload predates the rho feature (older backend / older
-            // session). Keeping them out of the JSON in that case lets
-            // session consumers know the data is unavailable rather
-            // than showing misleading zeros.
             ...(nOverloadsRho && nOverloadsRho.length === nOverloads.length ? { n_overloads_rho: nOverloadsRho } : {}),
             ...(n1OverloadsRho && n1OverloadsRho.length === n1Overloads.length ? { n1_overloads_rho: n1OverloadsRho } : {}),
         },
