@@ -155,6 +155,21 @@ const ActionCard: React.FC<ActionCardProps> = ({
         // the pair also contained a load-shedding or curtailment leg.
         const vlSet = new Set<string>();
 
+        // Highest-priority signal: backend-supplied VL hint on the
+        // topology blob. The recommender pipeline writes this for
+        // pypowsybl switch-based / coupling actions (the dict_action
+        // entry's ``VoltageLevelId``) so the operator gets a
+        // clickable, double-clickable VL chip even when the action ID
+        // is opaque (e.g. UUID-prefixed ``..._VLNAME_..._coupling``).
+        const explicitVlHint = (details.action_topology as { voltage_level_id?: string } | undefined)?.voltage_level_id;
+        if (explicitVlHint && !vlSet.has(explicitVlHint)) {
+            vlSet.add(explicitVlHint);
+            badges.push(badgeBtn(explicitVlHint, colors.successSoft, colors.successText, `Click: zoom to ${explicitVlHint} | Double-click: open SLD`, (e) => {
+                e.stopPropagation();
+                onVlDoubleClick?.(id, explicitVlHint);
+            }));
+        }
+
         details.load_shedding_details?.forEach(ls => {
             if (ls.voltage_level_id && !vlSet.has(ls.voltage_level_id)) {
                 vlSet.add(ls.voltage_level_id);
