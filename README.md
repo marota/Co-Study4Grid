@@ -4,6 +4,11 @@
 
 > Formerly known as **ExpertAssist**. Rebranded to Co-Study4Grid in release 0.4 (PR #65).
 
+The recommender is **pluggable**: pick the expert rule-based system, a random
+baseline, or any third-party model from the **Settings → Recommender** tab.
+See [Plug Your Own Recommendation Model](#plug-your-own-recommendation-model)
+to extend it.
+
 ![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)
 ![Release](https://img.shields.io/badge/release-0.7.0-green)
 
@@ -13,6 +18,11 @@
 
 ### Contingency analysis & remediation
 - **Two-step N-1 workflow**: detect overloads first (`run-analysis-step1`), let the operator pick which ones to resolve, then stream suggestions (`run-analysis-step2`). The legacy one-shot `run-analysis` endpoint is still exposed for backward compatibility.
+- **Pluggable recommendation models**: select Expert / Random / RandomOverflow
+  from the Settings dropdown, or plug in a third-party model. The pipeline
+  dispatches via the `RecommenderModel` contract; the UI hides parameters the
+  active model doesn't consume. See
+  [Plug Your Own Recommendation Model](#plug-your-own-recommendation-model).
 - **AC/DC fallback**: analysis runs on the AC load flow and transparently falls back to DC when AC fails to converge.
 - **Prioritized action feed** with search, filter, star / reject, and per-action metadata — severity, MW deltas, rho after action, impacted overloaded lines.
 - **Manual action simulation** from the score table, including a *"Make a first guess"* shortcut when no suggestion is loaded.
@@ -48,7 +58,7 @@ Co-Study4Grid is built around the operator's ability to triage hundreds of remed
 - **Replay-ready interaction log**: every click, chip toggle, simulation, save, and reload is recorded with correlation IDs in `interaction_log.json`, suitable for both deterministic browser-automation replay and UI benchmarking. Full schema in [Sessions & replay](#sessions--replay) below.
 
 ### Sessions & replay
-- **Save Results** / **Reload Session**: export the complete analysis state (config, contingency, actions with status tags, combined pairs, overflow PDF, loading ratios) to a timestamped session folder. See [`docs/features/save-results.md`](docs/features/save-results.md).
+- **Save Results** / **Reload Session**: export the complete analysis state (config, contingency, **active recommender model**, actions with status tags, combined pairs, overflow PDF, loading ratios) to a timestamped session folder. See [`docs/features/save-results.md`](docs/features/save-results.md).
 - **Replay-ready interaction log**: every UI interaction is written to `interaction_log.json` as a self-contained, timestamped event with correlation IDs for async completions — suitable for deterministic browser-automation replay. See [`docs/features/interaction-logging.md`](docs/features/interaction-logging.md).
 - **Persistent user config**: paths, recommender parameters and UI preferences persist across sessions through a user-writable config file outside the repo (PR #59).
 - **Confirmation dialogs** before destructive state resets (switching network, applying settings on an active study) so operators never lose work by accident.
@@ -122,6 +132,152 @@ coupling / node-merging / node-splitting actions.
 
 ---
 
+## Plug Your Own Recommendation Model
+
+The analysis pipeline does NOT hardcode the expert system. It dispatches to
+any class implementing the `RecommenderModel` ABC from
+[`expert_op4grid_recommender.models.base`](https://github.com/marota/Expert_op4grid_recommender/blob/main/expert_op4grid_recommender/models/base.py).
+Three models ship out of the box; you can add your own with a few lines of code.
+
+### Built-in models
+
+| Name              | Label                              | Requires overflow graph | Best for                                                                                |
+|-------------------|------------------------------------|-------------------------|-----------------------------------------------------------------------------------------|
+| `expert`          | Expert system                      | Yes                     | Default — rule-based discovery + scoring on every action type.                          |
+| `random`          | Random                             | No                      | Sanity-check baseline. Samples uniformly from the action dictionary, augmented with synthetic reconnection / load-shedding / curtailment actions. |
+| `random_overflow` | Random (post overflow analysis)    | Yes                     | "Is the overflow analysis useful?" baseline. Samples uniformly inside the expert-reduced action space (rule filter + overflow paths + network existence). |
+
+The model is selected from the **Settings → Recommender** tab via a dropdown
+populated dynamically by `GET /api/models`. The parameter inputs below the
+dropdown follow the model's `params_spec()`: each recommender declares which
+knobs the operator can tune, and the UI hides the rest. The `Compute Overflow
+Graph (step 1)` toggle is locked-on for models with
+`requires_overflow_graph=true` and editable for the others (opt-in).
+
+### Three-layer filter chain for sampling models
+
+If your model samples within the overflow-graph-reduced action space (like
+`random_overflow`), three filters are stacked before sampling, each
+conservative on internal failure (returns the input list unchanged so a
+single bug never silently empties the pool):
+
+1. **Expert rule filter** — `inputs.filtered_candidate_actions` populated
+   by `_run_expert_action_filter`. Available whenever the overflow graph
+   is in context.
+2. **Overflow path filter** — `restrict_to_overflow_paths(...)` from
+   `expert_backend/recommenders/overflow_path_filter.py`. Narrows to
+   actions touching the dispatch / constrained / loop / hub paths.
+3. **Network existence filter** —
+   `filter_to_existing_network_elements(...)` from
+   `expert_backend/recommenders/network_existence.py`. Drops actions
+   whose `VoltageLevelId` / `set_bus.lines_*_id` references an element
+   that doesn't exist on the loaded network.
+
+See
+[`expert_backend/recommenders/random_overflow.py`](expert_backend/recommenders/random_overflow.py)
+for the canonical chained example.
+
+### Writing your own model
+
+Three steps, no further wiring needed.
+
+#### 1. Implement the contract
+
+In any Python package importable by the backend:
+
+```python
+from expert_op4grid_recommender.models.base import (
+    RecommenderModel, RecommenderInputs, RecommenderOutput, ParamSpec,
+)
+
+class MyMLPolicy(RecommenderModel):
+    name = "ml_policy"                    # registry key
+    label = "ML policy v3"                # UI label
+    requires_overflow_graph = True        # set False if step-2 graph is unneeded
+
+    @classmethod
+    def params_spec(cls):
+        return [
+            ParamSpec("n_prioritized_actions", "N Actions", "int",
+                      default=5, min=1, max=20),
+            ParamSpec("temperature", "Sampling temperature", "float",
+                      default=0.7, min=0.0, max=2.0),
+        ]
+
+    def recommend(self, inputs: RecommenderInputs, params: dict) -> RecommenderOutput:
+        # Available on `inputs` (DTO docs in the library):
+        #   obs / obs_defaut                         N and N-K observations
+        #   network / network_defaut                 paired pypowsybl Networks
+        #   lines_defaut                             N-K contingency lines
+        #   lines_overloaded_names + _ids + _rho     constrained lines (post N-K)
+        #   lines_overloaded_ids_kept                kept after island guard
+        #   pre_existing_rho                         N-state rho of pre-existing overloads
+        #   dict_action                              full action dictionary
+        #   env                                      simulation environment
+        #   filtered_candidate_actions               expert-rule-filtered action IDs
+        #                                            (populated whenever the
+        #                                            overflow graph is available —
+        #                                            either because your model
+        #                                            required it OR the operator
+        #                                            opted in)
+        #   overflow_graph / distribution_graph      alphaDeesp artefacts
+        #   overflow_sim / hubs / node_name_mapping
+        my_picks = pick_actions_with_ml(inputs, params)
+        return RecommenderOutput(
+            prioritized_actions=my_picks,    # {action_id: action_object}
+            action_scores={},                # free-form; UI is OK with empty
+        )
+```
+
+The reassessment phase (rho-before / rho-after / `max_rho` / simulated
+observation / non-convergence reason / combined-pair superposition) runs
+automatically on whatever your `recommend()` returns. Action cards in the
+UI look identical to the expert's.
+
+#### 2. Register it
+
+Decorate with `@register` at import time:
+
+```python
+from expert_backend.recommenders.registry import register
+
+@register
+class MyMLPolicy(RecommenderModel):
+    ...
+```
+
+For a third-party package, make sure it's imported by the backend before
+`GET /api/models` is hit — the typical pattern is to import it from
+`expert_backend/recommenders/__init__.py`, or via your own backend startup
+hook. The decorator pattern works either way.
+
+#### 3. That's it
+
+The frontend picks up your model automatically:
+
+- `GET /api/models` lists it,
+- the **Settings → Recommender** dropdown shows it,
+- the parameter inputs render dynamically from `params_spec()`,
+- the `Compute Overflow Graph` toggle is locked-on or editable based on
+  `requires_overflow_graph`,
+- the analysis pipeline calls your `recommend()` via
+  `run_analysis_step2_discovery`,
+- saved sessions persist the active model under `analysis.active_model`
+  so reloaded studies show which recommender produced the suggestions.
+
+### Reference
+
+- **Library-side contract** (`RecommenderModel` ABC, DTO field list, reusable
+  pipeline phases): [`marota/Expert_op4grid_recommender` — README §Pluggable Recommendation Models](https://github.com/marota/Expert_op4grid_recommender#pluggable-recommendation-models)
+  and [`docs/recommender_models.md`](https://github.com/marota/Expert_op4grid_recommender/blob/main/docs/recommender_models.md).
+- **App-side integration + filter chain + step-by-step guide**:
+  [`docs/recommender_models.md`](docs/recommender_models.md).
+- **Canonical examples**:
+  [`expert_backend/recommenders/random_basic.py`](expert_backend/recommenders/random_basic.py),
+  [`expert_backend/recommenders/random_overflow.py`](expert_backend/recommenders/random_overflow.py).
+
+---
+
 ## Architecture
 
 Co-Study4Grid is a monorepo with a **Python FastAPI backend** and a **React + TypeScript frontend**.
@@ -130,6 +286,14 @@ Co-Study4Grid is a monorepo with a **Python FastAPI backend** and a **React + Ty
 Co-Study4Grid/
 ├── expert_backend/              # FastAPI backend (Python)
 │   ├── main.py                  # API endpoints and app configuration
+│   ├── recommenders/            # Pluggable model registry + canonical examples
+│   │   ├── registry.py              # register / build / list_models
+│   │   ├── random_basic.py          # RandomRecommender
+│   │   ├── random_overflow.py       # RandomOverflowRecommender
+│   │   ├── overflow_path_filter.py  # Layer 2 of the sampling filter chain
+│   │   ├── network_existence.py     # Layer 3 of the sampling filter chain
+│   │   └── _service_integration.py  # Patches RecommenderService
+│   │                                # (model selection + dispatch)
 │   └── services/
 │       ├── network_service.py       # Network loading and queries (pypowsybl)
 │       ├── recommender_service.py   # Analysis orchestration, PDF/SVG generation
@@ -161,7 +325,7 @@ Co-Study4Grid/
 │                                    # ActionTypeFilterChips, modals/, …
 ├── standalone_interface_legacy.html # DECOMMISSIONED frozen snapshot (do not edit)
 ├── docs/                        # features/, performance/, architecture/,
-│                                # proposals/, data/  — see docs/README.md
+│                                # proposals/, data/  + recommender_models.md
 ├── benchmarks/                  # Offline micro-benches (warm / cold timings)
 ├── scripts/                     # Parity + quality gates + PyPSA-EUR pipeline
 └── Overflow_Graph/              # Generated PDF output directory (created at runtime)
@@ -213,12 +377,15 @@ Open the Vite dev-server URL shown in the terminal (typically `http://localhost:
 ### 4. Use the application
 
 1. Open **Settings → Paths** and set the network directory (containing `.xiidm` files), the action definition JSON, and optionally an output folder for saved sessions.
-2. Click **Load Study** to load the network.
-3. Pick a disconnectable element (line or transformer) from the searchable dropdown — the N-1 diagram is fetched with overloads highlighted automatically.
-4. Click **Analyze & Suggest** (two-step flow): select which overloads to resolve, then watch the action feed stream in.
-5. Inspect prioritized actions, simulate manual ones, or open the **Combine** modal to explore action pairs.
-6. Detach any visualization tab (`⧉`) onto a second screen for dual-monitor studies.
-7. Hit **Save Results** to export the full session; **Reload Session** restores it exactly, without re-simulating anything.
+2. Open **Settings → Recommender** and pick which recommendation model to run
+   (Expert by default). The parameter inputs below the dropdown render
+   dynamically from the active model's `params_spec()`.
+3. Click **Load Study** to load the network.
+4. Pick a disconnectable element (line or transformer) from the searchable dropdown — the N-1 diagram is fetched with overloads highlighted automatically.
+5. Click **Analyze & Suggest** (two-step flow): select which overloads to resolve, then watch the action feed stream in.
+6. Inspect prioritized actions, simulate manual ones, or open the **Combine** modal to explore action pairs.
+7. Detach any visualization tab (`⧉`) onto a second screen for dual-monitor studies.
+8. Hit **Save Results** to export the full session (including the active recommender model under `analysis.active_model`); **Reload Session** restores it exactly, without re-simulating anything.
 
 ---
 
@@ -231,9 +398,10 @@ Open the Vite dev-server URL shown in the terminal (typically `http://localhost:
 | `POST` | `/api/user-config` | Persist user configuration (paths, recommender params) |
 | `GET`  | `/api/config-file-path` | Get the current user config file path |
 | `POST` | `/api/config-file-path` | Set a custom user config file path |
-| `POST` | `/api/config` | Load network + set all recommender parameters |
+| `POST` | `/api/config` | Load network + set all recommender parameters (incl. `model` and `compute_overflow_graph`) |
+| `GET`  | `/api/models` | List registered recommendation models with their `params_spec()` and capability flags |
 | `GET`  | `/api/pick-path` | Open the native OS file / directory picker |
-| `POST` | `/api/save-session` | Save a session folder (JSON snapshot + PDF + interaction log) |
+| `POST` | `/api/save-session` | Save a session folder (JSON snapshot + PDF + interaction log; includes `analysis.active_model`) |
 | `GET`  | `/api/list-sessions` | List saved session folders |
 | `POST` | `/api/load-session` | Load a session JSON and restore PDFs |
 | `POST` | `/api/restore-analysis-context` | Restore the backend analysis context from a saved session |
@@ -253,7 +421,7 @@ Open the Vite dev-server URL shown in the terminal (typically `http://localhost:
 |--------|------|-------------|
 | `POST` | `/api/run-analysis` | Legacy one-shot N-1 analysis (streaming NDJSON) |
 | `POST` | `/api/run-analysis-step1` | Two-step flow — step 1: detect overloads |
-| `POST` | `/api/run-analysis-step2` | Two-step flow — step 2: resolve with actions (streaming NDJSON) |
+| `POST` | `/api/run-analysis-step2` | Two-step flow — step 2: resolve with the active recommender model (streaming NDJSON; `result` event includes `active_model` + `compute_overflow_graph`) |
 | `POST` | `/api/simulate-manual-action` | Simulate a specific action against a contingency |
 | `POST` | `/api/compute-superposition` | Compute the combined effect of two actions (superposition) |
 
@@ -381,7 +549,7 @@ layers of automated checks (`scripts/check_standalone_parity.py`,
 - **Action definitions**: `.json` mapping action IDs to descriptions, supporting topology, PST, `set_load_p`, and `set_gen_p` formats
 - **Network layouts**: `grid_layout.json` with node-ID → `[x, y]` coordinates
 - **Generated outputs**: PDF overflow graphs in `Overflow_Graph/`
-- **Session folder**: `costudy4grid_session_<contingency>_<timestamp>/` containing `session.json`, `interaction_log.json`, and an overflow PDF copy
+- **Session folder**: `costudy4grid_session_<contingency>_<timestamp>/` containing `session.json`, `interaction_log.json`, and an overflow PDF copy. `session.json` includes `analysis.active_model` (the recommender that produced the suggestions) and `analysis.compute_overflow_graph` (whether step-2 graph ran).
 
 ---
 
