@@ -431,36 +431,72 @@ class AnalysisMixin:
         if not self._analysis_context:
             raise ValueError("Analysis context not found. Run step 1 first.")
 
-        context = self._narrow_context_to_selected_overloads(
-            self._analysis_context,
-            selected_overloads,
-            all_overloads,
-            monitor_deselected,
-            additional_lines_to_cut=additional_lines_to_cut,
+        # Signature for the overflow-graph fast path: when the operator
+        # re-runs the analysis against the same contingency + same Step-2
+        # inputs (selected overloads, monitor toggle, additional-lines
+        # picker), the OverFlowGraph object and the produced HTML viewer
+        # are byte-for-byte the same as the previous run. Skipping
+        # `_narrow_context_to_selected_overloads` + `run_analysis_step2_graph`
+        # + the PDF mtime poll lets a re-run with a different recommender
+        # model jump straight to action discovery. The discovery step is
+        # the only part that depends on the active model.
+        step2_signature = (
+            tuple(self._last_disconnected_elements or []),
+            tuple(sorted(selected_overloads or [])),
+            tuple(sorted(all_overloads or [])),
+            bool(monitor_deselected),
+            tuple(sorted(additional_lines_to_cut or [])),
         )
-        analysis_start_time = time.time()
-        # Fresh Step-2: drop any cached overflow files from a previous
-        # contingency resolution. The library always produces the
-        # hierarchical layout (graphviz `dot`); the Geo toggle is
-        # handled by a pure SVG transform in the regen endpoint, NOT
-        # by re-invoking the library. That keeps the analysis step
-        # fast and deterministic regardless of layout-file state.
-        self._overflow_layout_cache = {}
-        self._overflow_layout_mode = "hierarchical"
+        cached_pdf = self._overflow_layout_cache.get("hierarchical")
+        reuse_graph = (
+            getattr(self, "_last_step2_signature", None) == step2_signature
+            and self._last_step2_context is not None
+            and cached_pdf is not None
+            and os.path.exists(cached_pdf)
+        )
+
         try:
-            # Part 1: graph generation + HTML
-            context = run_analysis_step2_graph(context)
-            produced_pdf = self._get_latest_pdf_path(analysis_start_time)
-            if produced_pdf:
-                # Step-2 always produces the hierarchical layout — the
-                # regen endpoint transforms it into the geo layout on
-                # demand without re-invoking graphviz.
-                self._overflow_layout_cache["hierarchical"] = produced_pdf
-            # Preserve the enriched context (kept for future features
-            # that might need to re-run graph generation). The Geo
-            # toggle itself no longer uses this.
-            self._last_step2_context = context
-            yield {"type": "pdf", "pdf_path": produced_pdf}
+            if reuse_graph:
+                logger.info(
+                    "[Step 2] Reusing cached overflow graph (signature unchanged)"
+                )
+                context = self._last_step2_context
+                produced_pdf = cached_pdf
+                # Geo cache is keyed off the same hierarchical source; keep
+                # whatever the previous run produced so the toggle stays
+                # instant. `_overflow_layout_mode` is left untouched.
+                yield {"type": "pdf", "pdf_path": produced_pdf, "cached": True}
+            else:
+                context = self._narrow_context_to_selected_overloads(
+                    self._analysis_context,
+                    selected_overloads,
+                    all_overloads,
+                    monitor_deselected,
+                    additional_lines_to_cut=additional_lines_to_cut,
+                )
+                analysis_start_time = time.time()
+                # Fresh Step-2: drop any cached overflow files from a previous
+                # contingency resolution. The library always produces the
+                # hierarchical layout (graphviz `dot`); the Geo toggle is
+                # handled by a pure SVG transform in the regen endpoint, NOT
+                # by re-invoking the library. That keeps the analysis step
+                # fast and deterministic regardless of layout-file state.
+                self._overflow_layout_cache = {}
+                self._overflow_layout_mode = "hierarchical"
+                # Part 1: graph generation + HTML
+                context = run_analysis_step2_graph(context)
+                produced_pdf = self._get_latest_pdf_path(analysis_start_time)
+                if produced_pdf:
+                    # Step-2 always produces the hierarchical layout — the
+                    # regen endpoint transforms it into the geo layout on
+                    # demand without re-invoking graphviz.
+                    self._overflow_layout_cache["hierarchical"] = produced_pdf
+                # Preserve the enriched context (kept for future features
+                # that might need to re-run graph generation). The Geo
+                # toggle itself no longer uses this.
+                self._last_step2_context = context
+                self._last_step2_signature = step2_signature
+                yield {"type": "pdf", "pdf_path": produced_pdf}
 
             # Part 2: action discovery
             results = run_analysis_step2_discovery(context)
@@ -497,6 +533,11 @@ class AnalysisMixin:
                 "pre_existing_overloads": results.get("pre_existing_overloads", []),
                 "combined_actions": results.get("combined_actions", {}),
                 "lines_we_care_about": list(lines_we_care_about) if lines_we_care_about is not None else None,
+                "active_model": (
+                    self.get_active_model_name()
+                    if hasattr(self, "get_active_model_name")
+                    else None
+                ),
                 "message": "Analysis completed",
                 "dc_fallback": False,
             })

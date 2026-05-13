@@ -452,6 +452,8 @@ export type InteractionType =
     | 'analysis_step1_completed'
     | 'overload_toggled'
     | 'additional_line_to_cut_toggled'
+    | 'recommender_model_changed'
+    | 'suggested_actions_cleared'
     | 'analysis_step2_started'
     | 'analysis_step2_completed'
     | 'prioritized_actions_displayed'

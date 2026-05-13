@@ -64,6 +64,7 @@ function App() {
     setIsSettingsOpen, setSettingsTab,
     pickSettingsPath,
     handleOpenSettings,
+    recommenderModel, setRecommenderModel, availableModels,
     buildConfigRequest, configRequestFromUserConfig, applyConfigResponse, createCurrentBackup, setSettingsBackup
   } = settings;
 
@@ -646,6 +647,40 @@ function App() {
     () => analysis.handleRunAnalysis(selectedContingency, resetForAnalysisRun, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab),
     [analysis, selectedContingency, resetForAnalysisRun, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab]
   );
+
+  // Wipe recommender-produced suggestions the operator has NOT
+  // interacted with — keeps starred (selectedActionIds), rejected
+  // (rejectedActionIds) and manually-added (manuallyAddedIds /
+  // is_manual) entries intact so the user can re-run with a
+  // different model without losing their decisions. Tracking
+  // ``suggestedByRecommenderIds`` (the source-of-truth set populated
+  // during the step-2 stream) keeps us from accidentally dropping
+  // manual-only entries that happen to share an id.
+  const handleClearSuggested = useCallback(() => {
+    interactionLogger.record('suggested_actions_cleared', {
+      n_cleared: Array.from(suggestedByRecommenderIds).filter(id =>
+        !selectedActionIds.has(id) && !rejectedActionIds.has(id) && !manuallyAddedIds.has(id)
+      ).length,
+    });
+    setResult(prev => {
+      if (!prev?.actions) return prev;
+      const filtered: Record<string, import('./types').ActionDetail> = {};
+      for (const [id, data] of Object.entries(prev.actions)) {
+        const userTouched = selectedActionIds.has(id) || rejectedActionIds.has(id) || manuallyAddedIds.has(id) || data.is_manual;
+        const isSuggested = suggestedByRecommenderIds.has(id);
+        if (userTouched || !isSuggested) filtered[id] = data;
+      }
+      return { ...prev, actions: filtered, active_model: undefined };
+    });
+    actionsHook.setSuggestedByRecommenderIds(prev => {
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (selectedActionIds.has(id) || rejectedActionIds.has(id) || manuallyAddedIds.has(id)) next.add(id);
+      }
+      return next;
+    });
+    analysis.setPendingAnalysisResult(null);
+  }, [setResult, actionsHook, analysis, selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds]);
 
   const wrappedDisplayPrioritized = useCallback(
     () => analysis.handleDisplayPrioritizedActions(selectedActionIds, diagrams.setActiveTab),
@@ -1440,6 +1475,15 @@ function App() {
             additionalLinesToCut={additionalLinesToCut}
             onToggleAdditionalLineToCut={analysis.handleToggleAdditionalLineToCut}
             n1Overloads={n1Diagram?.lines_overloaded || []}
+            recommenderModel={recommenderModel}
+            setRecommenderModel={setRecommenderModel}
+            availableModels={availableModels}
+            activeModelLabel={
+              result?.active_model
+                ? (availableModels?.find(m => m.name === result.active_model)?.label || result.active_model)
+                : null
+            }
+            onClearSuggested={handleClearSuggested}
           />
         </AppSidebar>
         <div style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column' }}>
