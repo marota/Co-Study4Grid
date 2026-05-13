@@ -75,6 +75,139 @@ Co-Study4Grid is built around the operator's ability to triage hundreds of remed
 
 ---
 
+## European-Wide Studies in Practice
+
+Co-Study4Grid is grid-agnostic: any pypowsybl-readable `.xiidm` network
+with a `grid_layout.json` companion drops in. The three studies below
+were captured on the same dataset — the
+`pypsa_eur_eur220_225_380_400` environment, a full pan-European 220 /
+225 / 380 / 400 kV network derived from the PyPSA-EUR pipeline (see
+[`scripts/pypsa_eur/`](scripts/pypsa_eur/)). Each contingency lights
+up a different region — the French / Spanish Pyrenean border, Spain's
+inland 400 kV backbone, and Italy's Campania 220 kV ring — and each
+exercises a different facet of the workflow. They are reproducible
+end-to-end: load the `pypsa_eur_eur220_225_380_400` study, set the
+contingency to the value below, click **Analyze & Suggest**.
+
+### What the interface shows
+
+Across every study, the same panels are at work:
+
+- **Top bar** — network path input, **Load Study** / **Save Results** /
+  **Reload Session** controls; the **Notices** pill in the top-left
+  surfaces tier-ranked issues (info / warning / critical) tied to the
+  current study.
+- **Sidebar** —
+  - **Contingency selector** and a sticky summary strip listing the
+    applied disconnections, the detected N-1 overloads (clickable to
+    zoom on the offending line) and the active monitoring ratio.
+  - The **Analyze & Suggest** trigger, with an *Additional lines to
+    prevent flow increase* picker right above it and a **Model**
+    dropdown (Expert / Random / RandomOverflow / any plug-in model).
+  - The **Suggested Actions** feed — colour-coded severity badges
+    (Solves overload / Low margin / Still overloaded / Divergent or
+    islanded), per-action max-loading %, target substation chip, and a
+    star/reject pair on each card. Below the tab header, the model
+    that produced the suggestions is reminded with a *Clear & rerun*
+    button so the operator can relaunch with a different recommender
+    without losing starred / rejected / manually-added decisions.
+- **Visualization panel** — four synchronized tabs (*Network N*,
+  *Contingency N-1*, *Remedial Action*, *Overflow Analysis*) rendered
+  as pypowsybl NADs with flow-delta overlays, halos on impacted
+  assets, and an **Inspect** field at the bottom for direct
+  asset-focus + halo.
+- **Overflow Analysis tab** — the interactive HTML viewer with a
+  layer-toggle sidebar (Constrained path, Red-loop, Overloads, Low
+  margin, Hubs, Consumption nodes, flow polarities), a *Hierarchical*
+  ↔ *Geo* layout switch and a *Pins* overlay that mirrors the action
+  pins of the Action Overview onto the overflow graph.
+
+### Pyrenean border (France / Spain) — `LANNEL61PRAGN`
+
+![France / Spain border study](docs/images/readme/study-pyrenees-france-spain.png)
+
+A 63 kV interconnect on the French side trips and re-routes flow
+toward the Spanish side, triggering a single overload on
+`MARSIL61PRAGN` at 106.1 %. The recommender returns four
+disconnection candidates centred on the Spanish substations
+(Sabiñánigo, Hernani, Itxaso) — every card carries the green *Solves
+overload* badge. The right pane illustrates the **interactive
+overflow analysis** running in *Hierarchical* mode: the layer panel
+exposes the Constrained-path, Red-loop, Overloads, Low-margin, Hubs
+and Consumption-node layers; the Flow Redispatch values give the
+positive / negative dispatch count on the constrained path; the stats
+strip at the bottom reports 93 nodes / 110 edges for the dispatch
+graph. The two views stay in lock-step: a click on a pin on either
+side opens the same `ActionCardPopover`.
+
+### Spain (400 kV) — `virtual_way_170479579_0-400 — virtual_way_170479590_0-400`
+
+![Spain N-K 400 kV study near Hinojosa](docs/images/readme/study-spain-hinojosa.png)
+
+This is an **N-K** (multi-element) study: two parallel 400 kV
+branches are disconnected simultaneously around *Subestación de
+Hinojosa*. The contingency strip shows both disconnections as
+chips; the single remaining N-1 overload reaches 102.2 % on the same
+corridor. Eighteen disconnection / coupler-opening candidates come
+back from the Expert model — all green — illustrating how dense the
+remediation space gets when the operator hunts for relief paths on a
+400 kV backbone. The auto-zoom places the highlighted contingency
+(orange dashed line) and the impacted assets at the centre of the
+NAD, and the sticky N-1 overload chip lets the operator jump back to
+the offending corridor with one click.
+
+### Italy (220 kV Campania) — `Santa Sofia — Montecorvino`
+
+![Italian Campania study around Brusciano-Nola](docs/images/readme/study-italy-brusciano-nola.png)
+
+A single 220 kV line trips between *Santa Sofia* and *Montecorvino*,
+overloading the Brusciano-Nola corridor at 106.1 %. The 18 suggested
+actions span every action class the platform handles — *Load
+shedding* on Frattamaggiore and Acerra-Maddaloni loads, *Coupler
+opening* on Avezza 220 kV (note the French description rendered
+verbatim from the action dictionary: *"Ouverture du couplage
+'VL_way_132701980-220_COUPL' dans le poste 'Avezza 220kV'"*),
+*Disconnection* on the Montecorvino–Laino axis — and the severity
+badges blend the three colour codes side by side: green *Solves
+overload*, yellow *Solved – low margin*, red *Still overloaded*. The
+overlapping red / green / yellow pins on the NAD reflect the
+operator's triage in progress: starred, rejected and unsimulated
+actions render with distinct glyphs that survive zoom, pan, and the
+*Filter* chips.
+
+### Reproducing the three studies
+
+```bash
+# Backend
+python -m expert_backend.main
+
+# Frontend
+cd frontend && npm run dev
+```
+
+1. **Settings → Paths**: point *Network Path* to
+   `data/pypsa_eur_eur220_225_380_400/network.xiidm` (and the matching
+   `grid_layout.json` / action-dictionary file).
+2. Click **Load Study**.
+3. Type one of the contingency identifiers from the table below into
+   the **Select Contingency** field — autocompletion will match.
+
+| Region                        | Contingency identifier                                              |
+|-------------------------------|---------------------------------------------------------------------|
+| France / Spain (Pyrenees)     | `LANNEL61PRAGN`                                                     |
+| Italy (Campania, 220 kV)      | `Santa Sofia — Montecorvino`                                        |
+| Spain (Hinojosa, 400 kV, N-K) | `virtual_way_170479579_0-400 — virtual_way_170479590_0-400`         |
+
+4. Press **Analyze & Suggest**, optionally change the recommender via
+   the model dropdown right above the button.
+
+The same gesture grammar applies in every region: the platform makes
+no assumption on TSO, voltage level, action vocabulary, or the
+language of the action descriptions — every panel and every shortcut
+adapts to whatever the loaded dataset declares.
+
+---
+
 ## Performance Highlights
 
 Measured on the full French grid (`bare_env_20240828T0100Z`, ~10k
