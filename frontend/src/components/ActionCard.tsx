@@ -268,7 +268,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                 padding: '10px',
                 position: 'relative',
             }} onClick={() => onActionSelect(id)}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
                 <h4 style={{
                     margin: 0,
                     fontSize: '12px',
@@ -277,6 +277,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                     minWidth: 0,
                     overflowWrap: 'anywhere',
                     fontWeight: 700,
+                    lineHeight: 1.35,
                 }}>
                     #{index + 1} {'—'} {id}
                 </h4>
@@ -302,9 +303,14 @@ const ActionCard: React.FC<ActionCardProps> = ({
 
             {/* Compact at-rest body: max loading + target badges. The
                 rail (⭐ / ❌) sits to the right and fades in on
-                hover or when this card is being viewed. */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '8px', marginTop: '6px' }}>
-                <div style={{ flex: 1, fontSize: '12px', minWidth: 0 }}>
+                hover or when this card is being viewed. The row wraps
+                so multi-VL badge stacks flow to a second line when
+                the title is long or the badges don't fit alongside
+                the loading metric — without that, ``flexShrink:0`` on
+                the badges + rail forces the loading text to collapse
+                into a one-word-per-line vertical strip. */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', rowGap: '6px', gap: '8px', marginTop: '6px' }}>
+                <div style={{ flex: '1 1 160px', fontSize: '12px', minWidth: 'min-content' }}>
                     {maxRhoPct != null ? (
                         <div>
                             Max loading: <strong style={{ color: sc.border }}>{maxRhoPct}%</strong>

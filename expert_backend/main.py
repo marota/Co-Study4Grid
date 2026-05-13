@@ -359,6 +359,35 @@ def update_config(config: ConfigRequest) -> dict:
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
+class RecommenderModelRequest(BaseModel):
+    model: str
+    compute_overflow_graph: bool | None = None
+
+
+@app.post("/api/recommender-model")
+def set_recommender_model(req: RecommenderModelRequest) -> dict:
+    """Swap the active recommender model on the running service.
+
+    Lightweight counterpart to ``POST /api/config``: only updates the
+    model + ``compute_overflow_graph`` toggle, leaves the loaded
+    network, action dictionary, and analysis context untouched. The
+    Step-2 graph cache (`_last_step2_signature`) is also left intact —
+    the overflow graph itself doesn't depend on the model, only the
+    discovery step does, so a model swap can reuse the cached graph
+    and re-run only ``run_analysis_step2_discovery``.
+    """
+    try:
+        recommender_service._apply_model_settings(req)
+        return {
+            "status": "success",
+            "active_model": recommender_service.get_active_model_name(),
+            "compute_overflow_graph": recommender_service.get_compute_overflow_graph(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/api/branches")
 def get_branches() -> dict:
     try:

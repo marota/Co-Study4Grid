@@ -333,15 +333,31 @@ function App() {
   // to the is_manual subset (with pdf / lines_overloaded cleared so
   // the UI correctly shows the "analysis in progress" state).
   const resetForAnalysisRun = useCallback(() => {
+    // Keep entries the operator has invested in across a re-run:
+    //   - manually-added "first guess" actions (`is_manual=true`),
+    //   - starred recommender suggestions (handleActionFavorite stamps
+    //     `is_manual=true` on those too — but the `selectedActionIds`
+    //     trim below also has to keep them for the post-step2 merge
+    //     to recognise them as Selected),
+    //   - rejected recommender suggestions (so the operator's veto
+    //     survives the re-run — the new step2 may re-emit the id but
+    //     the rejected-id set still rules).
+    // Wipe pdf / lines_overloaded so the UI renders the
+    // "analysis in progress" state.
     analysis.setResult(prev => {
       if (!prev) return null;
-      const manuals: Record<string, import('./types').ActionDetail> = {};
+      const kept: Record<string, import('./types').ActionDetail> = {};
       for (const [id, data] of Object.entries(prev.actions || {})) {
-        if (data.is_manual) manuals[id] = data;
+        const userTouched =
+          data.is_manual
+          || actionsHook.selectedActionIds.has(id)
+          || actionsHook.rejectedActionIds.has(id)
+          || actionsHook.manuallyAddedIds.has(id);
+        if (userTouched) kept[id] = data;
       }
       return {
         ...prev,
-        actions: manuals,
+        actions: kept,
         lines_overloaded: [],
         pdf_url: null,
         pdf_path: null,
@@ -349,22 +365,18 @@ function App() {
     });
     analysis.setPendingAnalysisResult(null);
     analysis.setMonitorDeselected(false);
-    // Keep manuallyAddedIds intact and trim selectedActionIds down
-    // to the manually-added subset — that way any favorited
-    // recommender suggestions are dropped (the new run will
-    // re-emit them) while the user's own "first guess" stays put.
-    actionsHook.setSelectedActionIds(prev => {
-      const manuallyAdded = actionsHook.manuallyAddedIds;
-      const next = new Set<string>();
-      for (const id of prev) if (manuallyAdded.has(id)) next.add(id);
-      return next;
-    });
-    actionsHook.setRejectedActionIds(new Set());
+    // Preserve the full starred / rejected sets — only the
+    // recommender-only suggestions set is wiped (step2 rebuilds it).
     actionsHook.setSuggestedByRecommenderIds(new Set());
-    // Don't wipe selectedActionId if it points to a manual action —
-    // keep the user's variant diagram around through the re-run.
+    // Don't wipe selectedActionId if it points to an action the
+    // operator has invested in — keeps the variant diagram mounted
+    // through the re-run.
     const sel = diagrams.selectedActionId;
-    if (sel && !actionsHook.manuallyAddedIds.has(sel)) {
+    if (
+      sel
+      && !actionsHook.manuallyAddedIds.has(sel)
+      && !actionsHook.selectedActionIds.has(sel)
+    ) {
       diagrams.setSelectedActionId(null);
       diagrams.setActionDiagram(null);
     }
@@ -649,13 +661,18 @@ function App() {
   );
 
   // Wipe recommender-produced suggestions the operator has NOT
-  // interacted with — keeps starred (selectedActionIds), rejected
-  // (rejectedActionIds) and manually-added (manuallyAddedIds /
-  // is_manual) entries intact so the user can re-run with a
-  // different model without losing their decisions. Tracking
-  // ``suggestedByRecommenderIds`` (the source-of-truth set populated
-  // during the step-2 stream) keeps us from accidentally dropping
-  // manual-only entries that happen to share an id.
+  // interacted with, then re-trigger the analysis. Keeps starred
+  // (selectedActionIds), rejected (rejectedActionIds) and
+  // manually-added (manuallyAddedIds / is_manual) entries intact so
+  // the user can re-run with a different model without losing their
+  // decisions. Tracking ``suggestedByRecommenderIds`` (the
+  // source-of-truth set populated during the step-2 stream) keeps us
+  // from accidentally dropping manual-only entries that happen to
+  // share an id with a previous recommender suggestion. The clear
+  // happens first via state updaters (so the in-flight step-2 reset
+  // sees the trimmed result), then the analysis is launched — both
+  // bookended in the same gesture because the button is labelled
+  // "Clear & rerun".
   const handleClearSuggested = useCallback(() => {
     interactionLogger.record('suggested_actions_cleared', {
       n_cleared: Array.from(suggestedByRecommenderIds).filter(id =>
@@ -680,7 +697,12 @@ function App() {
       return next;
     });
     analysis.setPendingAnalysisResult(null);
-  }, [setResult, actionsHook, analysis, selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds]);
+    // Kick off the re-analysis in the same gesture. resetForAnalysisRun
+    // (called inside handleRunAnalysis) re-filters result.actions on
+    // top of the just-applied clear via prev=>updater, so the kept
+    // user-touched entries survive both passes.
+    wrappedRunAnalysis();
+  }, [setResult, actionsHook, analysis, selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds, wrappedRunAnalysis]);
 
   const wrappedDisplayPrioritized = useCallback(
     () => analysis.handleDisplayPrioritizedActions(selectedActionIds, diagrams.setActiveTab),

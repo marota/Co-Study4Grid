@@ -216,6 +216,25 @@ export function useSettings(): SettingsState {
     }
   }, [recommenderModel, availableModels, computeOverflowGraph]);
 
+  // Push the active recommender model to the running RecommenderService
+  // whenever the operator changes it (from Settings OR from the new
+  // dropdown above the Analyze & Suggest button). Without this the
+  // backend keeps the previously-applied model (set on /api/config) and
+  // a re-run produces suggestions from the OLD model regardless of
+  // the dropdown choice. Cheap: the endpoint only updates two
+  // attributes — no network reload, no action dictionary rebuild.
+  const lastPushedModelRef = useRef<{ model: string; computeOverflowGraph: boolean } | null>(null);
+  useEffect(() => {
+    if (!configLoadedRef.current) return;
+    const last = lastPushedModelRef.current;
+    if (last && last.model === recommenderModel && last.computeOverflowGraph === computeOverflowGraph) return;
+    lastPushedModelRef.current = { model: recommenderModel, computeOverflowGraph };
+    if (typeof api.setRecommenderModel !== 'function') return;
+    api.setRecommenderModel(recommenderModel, computeOverflowGraph).catch(err => {
+      console.warn('Failed to push recommender-model to backend', err);
+    });
+  }, [recommenderModel, computeOverflowGraph]);
+
   const changeConfigFilePath = useCallback(async (newPath: string): Promise<UserConfig> => {
     const result = await api.setConfigFilePath(newPath);
     setConfigFilePath(result.config_file_path);

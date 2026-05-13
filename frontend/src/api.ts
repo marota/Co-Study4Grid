@@ -274,6 +274,15 @@ export const api = {
         const response = await axios.post(`${API_BASE_URL}/api/restore-analysis-context`, params);
         return response.data;
     },
+    setRecommenderModel: async (
+        model: string,
+        computeOverflowGraph: boolean,
+    ): Promise<{ status: string; active_model: string; compute_overflow_graph: boolean }> => {
+        const response = await axios.post(`${API_BASE_URL}/api/recommender-model`, {
+            model, compute_overflow_graph: computeOverflowGraph,
+        });
+        return response.data;
+    },
     runAnalysisStep1: async (disconnectedElements: string[]): Promise<{ lines_overloaded: string[]; message: string; can_proceed: boolean }> => {
         const response = await axios.post(`${API_BASE_URL}/api/run-analysis-step1`, { disconnected_elements: disconnectedElements });
         return response.data;
