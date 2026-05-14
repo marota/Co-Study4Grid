@@ -735,7 +735,96 @@ describe('useAnalysis', () => {
 
             expect(interactionLogger.getLog()).toHaveLength(0);
         });
+    });
 
+    describe('action origin from recommender model', () => {
+        const actionPayload = {
+            description_unitaire: 'A', rho_before: [1.1], rho_after: [0.9],
+            max_rho: 0.9, max_rho_line: 'LINE_A', is_rho_reduction: true,
+        };
+
+        it('stamps origin from active_model on step-2 recommender actions', async () => {
+            mockRunAnalysisStep1.mockResolvedValue({ can_proceed: true, message: '', lines_overloaded: ['LINE_A'] });
+            const resultEvent = JSON.stringify({
+                type: 'result', actions: { act_1: actionPayload },
+                active_model: 'random_overflow',
+                lines_overloaded: ['LINE_A'], message: 'Done', dc_fallback: false,
+            });
+            mockRunAnalysisStep2Stream.mockResolvedValue({ ok: true, body: makeStream(`${resultEvent}\n`) });
+
+            const { result } = renderHook(() => useAnalysis());
+            await act(async () => {
+                await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
+            });
+
+            expect(result.current.pendingAnalysisResult?.actions?.act_1?.origin).toBe('random_overflow');
+        });
+
+        it('defaults origin to "expert" when the result event omits active_model', async () => {
+            mockRunAnalysisStep1.mockResolvedValue({ can_proceed: true, message: '', lines_overloaded: ['LINE_A'] });
+            const resultEvent = JSON.stringify({
+                type: 'result', actions: { act_1: actionPayload },
+                lines_overloaded: ['LINE_A'], message: 'Done', dc_fallback: false,
+            });
+            mockRunAnalysisStep2Stream.mockResolvedValue({ ok: true, body: makeStream(`${resultEvent}\n`) });
+
+            const { result } = renderHook(() => useAnalysis());
+            await act(async () => {
+                await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
+            });
+
+            expect(result.current.pendingAnalysisResult?.actions?.act_1?.origin).toBe('expert');
+        });
+
+        it('preserves an existing "user" origin when the recommender re-emits the same action', async () => {
+            mockRunAnalysisStep1.mockResolvedValue({ can_proceed: true, message: '', lines_overloaded: ['LINE_A'] });
+            const resultEvent = JSON.stringify({
+                type: 'result', actions: { firstguess: actionPayload },
+                active_model: 'expert',
+                lines_overloaded: ['LINE_A'], message: 'Done', dc_fallback: false,
+            });
+            mockRunAnalysisStep2Stream.mockResolvedValue({ ok: true, body: makeStream(`${resultEvent}\n`) });
+
+            const { result } = renderHook(() => useAnalysis());
+            // Operator made a "first guess" before analysis — origin "user".
+            act(() => {
+                result.current.setResult({
+                    pdf_path: null, pdf_url: null,
+                    actions: {
+                        firstguess: { ...actionPayload, rho_before: null, is_manual: true, origin: 'user' },
+                    },
+                    lines_overloaded: ['LINE_A'], message: '', dc_fallback: false,
+                });
+            });
+
+            await act(async () => {
+                await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
+            });
+
+            // The recommender re-emitted "firstguess" but the operator's
+            // provenance wins — it was their idea first.
+            expect(result.current.pendingAnalysisResult?.actions?.firstguess?.origin).toBe('user');
+        });
+
+        it('handleDisplayPrioritizedActions preserves origin through the merge', () => {
+            const { result } = renderHook(() => useAnalysis());
+            act(() => {
+                result.current.setPendingAnalysisResult({
+                    pdf_path: null, pdf_url: null,
+                    actions: {
+                        reco_1: { ...actionPayload, origin: 'random_overflow' },
+                    },
+                    lines_overloaded: ['LINE_A'], message: 'OK', dc_fallback: false,
+                });
+            });
+            act(() => {
+                result.current.handleDisplayPrioritizedActions(new Set());
+            });
+            expect(result.current.result?.actions?.reco_1?.origin).toBe('random_overflow');
+        });
+    });
+
+    describe('interaction logging — step2 payload', () => {
         it('step2_started carries the full spec payload (element + selected_overloads + all_overloads + monitor_deselected)', async () => {
             // Replay contract (docs/features/interaction-logging.md):
             //   { element, selected_overloads, all_overloads, monitor_deselected }

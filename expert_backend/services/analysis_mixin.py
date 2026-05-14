@@ -403,6 +403,56 @@ class AnalysisMixin:
             self._analysis_context = None
             raise
 
+    # ------------------------------------------------------------------
+    # Step-2 overflow-graph cache helpers — shared by the legacy
+    # ``run_analysis_step2`` below AND the model-aware production
+    # replacement in ``expert_backend/recommenders/_service_integration.py``.
+    # Kept as plain methods on the mixin so both code paths (and their
+    # unit tests) reuse the exact same signature + reuse-decision logic.
+    # ------------------------------------------------------------------
+
+    def _step2_graph_signature(
+        self,
+        selected_overloads,
+        all_overloads,
+        monitor_deselected,
+        additional_lines_to_cut,
+    ) -> tuple:
+        """Input signature gating the Step-2 overflow-graph cache.
+
+        When the operator re-runs the analysis against the same
+        contingency + the same Step-2 inputs (selected overloads,
+        monitor toggle, additional-lines picker), the OverFlowGraph and
+        the HTML viewer it produces are byte-for-byte identical — only
+        the recommender model (consumed by action discovery) may have
+        changed. A matching signature lets ``run_analysis_step2`` skip
+        ``_narrow_context_to_selected_overloads`` +
+        ``run_analysis_step2_graph`` + the PDF mtime poll, so swapping
+        only the model is near-instant.
+        """
+        return (
+            tuple(self._last_disconnected_elements or []),
+            tuple(sorted(selected_overloads or [])),
+            tuple(sorted(all_overloads or [])),
+            bool(monitor_deselected),
+            tuple(sorted(additional_lines_to_cut or [])),
+        )
+
+    def _can_reuse_step2_graph(self, signature: tuple) -> bool:
+        """True when the cached overflow graph still matches ``signature``.
+
+        Requires the previous run to have stored the same signature,
+        kept its enriched ``_last_step2_context``, and left the produced
+        hierarchical HTML on disk.
+        """
+        cached_pdf = self._overflow_layout_cache.get("hierarchical")
+        return (
+            getattr(self, "_last_step2_signature", None) == signature
+            and self._last_step2_context is not None
+            and cached_pdf is not None
+            and os.path.exists(cached_pdf)
+        )
+
     def run_analysis_step2(
         self,
         selected_overloads: list[str],
@@ -431,36 +481,57 @@ class AnalysisMixin:
         if not self._analysis_context:
             raise ValueError("Analysis context not found. Run step 1 first.")
 
-        context = self._narrow_context_to_selected_overloads(
-            self._analysis_context,
-            selected_overloads,
-            all_overloads,
-            monitor_deselected,
-            additional_lines_to_cut=additional_lines_to_cut,
+        # Overflow-graph fast path — see `_step2_graph_signature` /
+        # `_can_reuse_step2_graph`. The shared helpers are used by the
+        # model-aware production replacement too, so a re-run with only
+        # the recommender model changed skips the graph rebuild.
+        step2_signature = self._step2_graph_signature(
+            selected_overloads, all_overloads, monitor_deselected, additional_lines_to_cut,
         )
-        analysis_start_time = time.time()
-        # Fresh Step-2: drop any cached overflow files from a previous
-        # contingency resolution. The library always produces the
-        # hierarchical layout (graphviz `dot`); the Geo toggle is
-        # handled by a pure SVG transform in the regen endpoint, NOT
-        # by re-invoking the library. That keeps the analysis step
-        # fast and deterministic regardless of layout-file state.
-        self._overflow_layout_cache = {}
-        self._overflow_layout_mode = "hierarchical"
+        reuse_graph = self._can_reuse_step2_graph(step2_signature)
+
         try:
-            # Part 1: graph generation + HTML
-            context = run_analysis_step2_graph(context)
-            produced_pdf = self._get_latest_pdf_path(analysis_start_time)
-            if produced_pdf:
-                # Step-2 always produces the hierarchical layout — the
-                # regen endpoint transforms it into the geo layout on
-                # demand without re-invoking graphviz.
-                self._overflow_layout_cache["hierarchical"] = produced_pdf
-            # Preserve the enriched context (kept for future features
-            # that might need to re-run graph generation). The Geo
-            # toggle itself no longer uses this.
-            self._last_step2_context = context
-            yield {"type": "pdf", "pdf_path": produced_pdf}
+            if reuse_graph:
+                logger.info(
+                    "[Step 2] Reusing cached overflow graph (signature unchanged)"
+                )
+                context = self._last_step2_context
+                produced_pdf = self._overflow_layout_cache.get("hierarchical")
+                # Geo cache is keyed off the same hierarchical source; keep
+                # whatever the previous run produced so the toggle stays
+                # instant. `_overflow_layout_mode` is left untouched.
+                yield {"type": "pdf", "pdf_path": produced_pdf, "cached": True}
+            else:
+                context = self._narrow_context_to_selected_overloads(
+                    self._analysis_context,
+                    selected_overloads,
+                    all_overloads,
+                    monitor_deselected,
+                    additional_lines_to_cut=additional_lines_to_cut,
+                )
+                analysis_start_time = time.time()
+                # Fresh Step-2: drop any cached overflow files from a previous
+                # contingency resolution. The library always produces the
+                # hierarchical layout (graphviz `dot`); the Geo toggle is
+                # handled by a pure SVG transform in the regen endpoint, NOT
+                # by re-invoking the library. That keeps the analysis step
+                # fast and deterministic regardless of layout-file state.
+                self._overflow_layout_cache = {}
+                self._overflow_layout_mode = "hierarchical"
+                # Part 1: graph generation + HTML
+                context = run_analysis_step2_graph(context)
+                produced_pdf = self._get_latest_pdf_path(analysis_start_time)
+                if produced_pdf:
+                    # Step-2 always produces the hierarchical layout — the
+                    # regen endpoint transforms it into the geo layout on
+                    # demand without re-invoking graphviz.
+                    self._overflow_layout_cache["hierarchical"] = produced_pdf
+                # Preserve the enriched context (kept for future features
+                # that might need to re-run graph generation). The Geo
+                # toggle itself no longer uses this.
+                self._last_step2_context = context
+                self._last_step2_signature = step2_signature
+                yield {"type": "pdf", "pdf_path": produced_pdf}
 
             # Part 2: action discovery
             results = run_analysis_step2_discovery(context)
@@ -497,6 +568,11 @@ class AnalysisMixin:
                 "pre_existing_overloads": results.get("pre_existing_overloads", []),
                 "combined_actions": results.get("combined_actions", {}),
                 "lines_we_care_about": list(lines_we_care_about) if lines_we_care_about is not None else None,
+                "active_model": (
+                    self.get_active_model_name()
+                    if hasattr(self, "get_active_model_name")
+                    else None
+                ),
                 "message": "Analysis completed",
                 "dc_fallback": False,
             })

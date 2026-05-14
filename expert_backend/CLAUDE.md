@@ -138,7 +138,7 @@ why enabling that is unsafe for the FastAPI thread pool today.
   `_lf_status_by_variant`, `_layout_cache`,
   `_prefetched_base_nad*`, `_overflow_layout_mode` (back to
   `"hierarchical"`), `_overflow_layout_cache` (empty dict),
-  `_last_step2_context`. Adding a new instance-level cache?
+  `_last_step2_context`, `_last_step2_signature`. Adding a new instance-level cache?
   Add it here too — otherwise it WILL leak across studies (see the
   `_layout_cache` regression fixed on
   `claude/fix-grid-layout-reset-8TYEV`).
@@ -173,7 +173,16 @@ Diagram & topology:
 Analysis:
 - `POST /api/run-analysis-step1` — detect overloads (returns once).
 - `POST /api/run-analysis-step2` — resolve, **streaming** NDJSON.
+  Caches the overflow graph by an input signature
+  (`_last_step2_signature`); a re-run with an identical signature
+  skips the graph rebuild and re-executes only action discovery — the
+  model-swap fast path.
 - `POST /api/run-analysis` — single-step legacy NDJSON stream.
+- `GET  /api/models` — list registered recommender models.
+- `POST /api/recommender-model` — lightweight swap of the active
+  recommender model (`_apply_model_settings`); no network reload, no
+  action-dictionary rebuild. Leaves `_last_step2_signature` intact so
+  the overflow-graph cache is reused across a model swap.
 - `POST /api/regenerate-overflow-graph` — toggle overflow-graph
   layout between hierarchical (graphviz `dot`, produced by
   `run_analysis_step2`) and geo (pure SVG transform that

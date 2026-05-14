@@ -64,6 +64,7 @@ function App() {
     setIsSettingsOpen, setSettingsTab,
     pickSettingsPath,
     handleOpenSettings,
+    recommenderModel, setRecommenderModel, availableModels,
     buildConfigRequest, configRequestFromUserConfig, applyConfigResponse, createCurrentBackup, setSettingsBackup
   } = settings;
 
@@ -332,15 +333,31 @@ function App() {
   // to the is_manual subset (with pdf / lines_overloaded cleared so
   // the UI correctly shows the "analysis in progress" state).
   const resetForAnalysisRun = useCallback(() => {
+    // Keep entries the operator has invested in across a re-run:
+    //   - manually-added "first guess" actions (`is_manual=true`),
+    //   - starred recommender suggestions (handleActionFavorite stamps
+    //     `is_manual=true` on those too — but the `selectedActionIds`
+    //     trim below also has to keep them for the post-step2 merge
+    //     to recognise them as Selected),
+    //   - rejected recommender suggestions (so the operator's veto
+    //     survives the re-run — the new step2 may re-emit the id but
+    //     the rejected-id set still rules).
+    // Wipe pdf / lines_overloaded so the UI renders the
+    // "analysis in progress" state.
     analysis.setResult(prev => {
       if (!prev) return null;
-      const manuals: Record<string, import('./types').ActionDetail> = {};
+      const kept: Record<string, import('./types').ActionDetail> = {};
       for (const [id, data] of Object.entries(prev.actions || {})) {
-        if (data.is_manual) manuals[id] = data;
+        const userTouched =
+          data.is_manual
+          || actionsHook.selectedActionIds.has(id)
+          || actionsHook.rejectedActionIds.has(id)
+          || actionsHook.manuallyAddedIds.has(id);
+        if (userTouched) kept[id] = data;
       }
       return {
         ...prev,
-        actions: manuals,
+        actions: kept,
         lines_overloaded: [],
         pdf_url: null,
         pdf_path: null,
@@ -348,22 +365,18 @@ function App() {
     });
     analysis.setPendingAnalysisResult(null);
     analysis.setMonitorDeselected(false);
-    // Keep manuallyAddedIds intact and trim selectedActionIds down
-    // to the manually-added subset — that way any favorited
-    // recommender suggestions are dropped (the new run will
-    // re-emit them) while the user's own "first guess" stays put.
-    actionsHook.setSelectedActionIds(prev => {
-      const manuallyAdded = actionsHook.manuallyAddedIds;
-      const next = new Set<string>();
-      for (const id of prev) if (manuallyAdded.has(id)) next.add(id);
-      return next;
-    });
-    actionsHook.setRejectedActionIds(new Set());
+    // Preserve the full starred / rejected sets — only the
+    // recommender-only suggestions set is wiped (step2 rebuilds it).
     actionsHook.setSuggestedByRecommenderIds(new Set());
-    // Don't wipe selectedActionId if it points to a manual action —
-    // keep the user's variant diagram around through the re-run.
+    // Don't wipe selectedActionId if it points to an action the
+    // operator has invested in — keeps the variant diagram mounted
+    // through the re-run.
     const sel = diagrams.selectedActionId;
-    if (sel && !actionsHook.manuallyAddedIds.has(sel)) {
+    if (
+      sel
+      && !actionsHook.manuallyAddedIds.has(sel)
+      && !actionsHook.selectedActionIds.has(sel)
+    ) {
       diagrams.setSelectedActionId(null);
       diagrams.setActionDiagram(null);
     }
@@ -497,8 +510,8 @@ function App() {
   // carries fresh `load_shedding_details` / `curtailment_details` /
   // `pst_details` arrays which the SLD highlight pass needs to see.
   const wrappedManualActionAdded = useCallback(
-    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => {
-      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect);
+    (actionId: string, detail: ActionDetail, linesOverloaded: string[], origin: string = 'user') => {
+      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect, origin);
       diagrams.refreshSldIfAction(actionId);
     },
     [actionsHook, setResult, wrappedForcedActionSelect, diagrams]
@@ -593,14 +606,20 @@ function App() {
           curtailment_details: metrics.curtailment_details,
           pst_details: metrics.pst_details,
         };
-        wrappedManualActionAdded(actionId, detail, metrics.lines_overloaded || []);
+        // An unsimulated pin is a scored-but-not-yet-materialised
+        // action from the recommender's score table — the operator
+        // only triggered its simulation, so its provenance is the
+        // model that scored it, NOT "user".
+        wrappedManualActionAdded(
+          actionId, detail, metrics.lines_overloaded || [], result?.active_model || 'expert',
+        );
       } catch (e: unknown) {
         console.error('Unsimulated pin simulation failed:', e);
         const err = e as { response?: { data?: { detail?: string } } };
         setError(err?.response?.data?.detail || 'Simulation failed');
       }
     },
-    [selectedContingency, result?.lines_overloaded, diagrams, voltageLevels.length, wrappedManualActionAdded]
+    [selectedContingency, result?.lines_overloaded, result?.active_model, diagrams, voltageLevels.length, wrappedManualActionAdded]
   );
 
   // Re-simulation of an already-present action (edit Target MW / tap on a
@@ -646,6 +665,50 @@ function App() {
     () => analysis.handleRunAnalysis(selectedContingency, resetForAnalysisRun, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab),
     [analysis, selectedContingency, resetForAnalysisRun, actionsHook.setSuggestedByRecommenderIds, diagrams.setActiveTab]
   );
+
+  // Wipe recommender-produced suggestions the operator has NOT
+  // interacted with. Keeps starred (selectedActionIds), rejected
+  // (rejectedActionIds) and manually-added (manuallyAddedIds /
+  // is_manual) entries intact so the user can re-run with a
+  // different model without losing their decisions. Tracking
+  // ``suggestedByRecommenderIds`` (the source-of-truth set populated
+  // during the step-2 stream) keeps us from accidentally dropping
+  // manual-only entries that happen to share an id with a previous
+  // recommender suggestion. This does NOT re-run the analysis — the
+  // operator clears, optionally swaps the model, then presses
+  // Analyze & Suggest themselves.
+  const performClearSuggested = useCallback(() => {
+    interactionLogger.record('suggested_actions_cleared', {
+      n_cleared: Array.from(suggestedByRecommenderIds).filter(id =>
+        !selectedActionIds.has(id) && !rejectedActionIds.has(id) && !manuallyAddedIds.has(id)
+      ).length,
+    });
+    setResult(prev => {
+      if (!prev?.actions) return prev;
+      const filtered: Record<string, import('./types').ActionDetail> = {};
+      for (const [id, data] of Object.entries(prev.actions)) {
+        const userTouched = selectedActionIds.has(id) || rejectedActionIds.has(id) || manuallyAddedIds.has(id) || data.is_manual;
+        const isSuggested = suggestedByRecommenderIds.has(id);
+        if (userTouched || !isSuggested) filtered[id] = data;
+      }
+      return { ...prev, actions: filtered, active_model: undefined };
+    });
+    actionsHook.setSuggestedByRecommenderIds(prev => {
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (selectedActionIds.has(id) || rejectedActionIds.has(id) || manuallyAddedIds.has(id)) next.add(id);
+      }
+      return next;
+    });
+    analysis.setPendingAnalysisResult(null);
+  }, [setResult, actionsHook, analysis, selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds]);
+
+  // The Clear button opens a confirmation dialog first (reusing the
+  // shared <ConfirmationDialog/> template) so the operator sees
+  // exactly what is removed and what is kept before committing.
+  const requestClearSuggested = useCallback(() => {
+    setConfirmDialog({ type: 'clearSuggested' });
+  }, []);
 
   const wrappedDisplayPrioritized = useCallback(
     () => analysis.handleDisplayPrioritizedActions(selectedActionIds, diagrams.setActiveTab),
@@ -982,6 +1045,15 @@ function App() {
 
   const handleConfirmDialog = useCallback(() => {
     if (!confirmDialog) return;
+    // `clearSuggested` is not a study-reset gesture — it keeps the
+    // network, the contingency, and the operator's decisions. It logs
+    // its own `suggested_actions_cleared` event inside
+    // `performClearSuggested`, so skip the `contingency_confirmed` log.
+    if (confirmDialog.type === 'clearSuggested') {
+      performClearSuggested();
+      setConfirmDialog(null);
+      return;
+    }
     interactionLogger.record('contingency_confirmed', { type: confirmDialog.type, pending_branch: confirmDialog.pendingBranch });
     if (confirmDialog.type === 'contingency') {
       clearContingencyState();
@@ -1001,7 +1073,7 @@ function App() {
       handleLoadConfig();
     }
     setConfirmDialog(null);
-  }, [confirmDialog, clearContingencyState, handleLoadConfig, applySettingsImmediate]);
+  }, [confirmDialog, clearContingencyState, handleLoadConfig, applySettingsImmediate, performClearSuggested]);
 
 
   // ===== App-Level Effects =====
@@ -1440,6 +1512,15 @@ function App() {
             additionalLinesToCut={additionalLinesToCut}
             onToggleAdditionalLineToCut={analysis.handleToggleAdditionalLineToCut}
             n1Overloads={n1Diagram?.lines_overloaded || []}
+            recommenderModel={recommenderModel}
+            setRecommenderModel={setRecommenderModel}
+            availableModels={availableModels}
+            activeModelLabel={
+              result?.active_model
+                ? (availableModels?.find(m => m.name === result.active_model)?.label || result.active_model)
+                : null
+            }
+            onClearSuggested={requestClearSuggested}
           />
         </AppSidebar>
         <div style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column' }}>

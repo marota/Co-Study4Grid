@@ -179,6 +179,25 @@ Lists every registered model with its `label`,
 populate the dropdown and render only the parameter inputs the active
 model actually consumes.
 
+### `POST /api/recommender-model`
+
+Lightweight model swap on the **running** `RecommenderService`. Body:
+`{ model: str, compute_overflow_graph?: bool }`. Calls
+`_apply_model_settings(req)` and echoes back
+`{ status, active_model, compute_overflow_graph }`.
+
+Unlike `POST /api/config`, this does **not** reload the network or
+rebuild the action dictionary — it only updates the two
+`ModelSelectionMixin` attributes. The frontend fires it from
+`useSettings` whenever `recommenderModel` / `computeOverflowGraph`
+change, so a model picked in **either** the Settings → Recommender
+tab **or** the dropdown above the Analyze & Suggest button takes
+effect on the very next `POST /api/run-analysis-step2` — without an
+expensive study reload. The Step-2 graph cache (see below) is
+deliberately left intact across a model swap: the overflow graph
+doesn't depend on the model, so a swap re-runs only the discovery
+step.
+
 ### `RecommenderService` integration
 
 Three concerns, kept in `expert_backend/recommenders/_service_integration.py`
@@ -208,6 +227,29 @@ The patches are applied as a side-effect of importing
 `expert_backend.recommenders`. `expert_backend/main.py` only needs
 that single import to enable everything.
 
+### Step-2 overflow-graph cache (model-swap fast path)
+
+`run_analysis_step2` keys the overflow graph on a **signature** of its
+inputs: `(disconnected_elements, selected_overloads, all_overloads,
+monitor_deselected, additional_lines_to_cut)`. The signature + the
+enriched context are stored on `_last_step2_signature` /
+`_last_step2_context`, and the produced HTML viewer path on
+`_overflow_layout_cache["hierarchical"]`.
+
+When a re-run posts an **identical** signature, the orchestrator skips
+`_narrow_context_to_selected_overloads` + `run_analysis_step2_graph` +
+the PDF mtime poll, yields the cached `pdf` event with `cached: true`,
+and jumps straight to `run_analysis_step2_discovery`. Because the
+overflow graph depends only on topology — never on the recommender —
+this makes the common "swap model and re-run" loop near-instant: only
+the discovery step actually re-executes. Any change to the
+contingency or the additional-lines hypothesis changes the signature
+and forces a full rebuild.
+
+`_last_step2_signature` and `_last_step2_context` are per-study caches
+— both are cleared by `RecommenderService.reset()` so a freshly
+loaded study never reuses the previous study's graph.
+
 ---
 
 ## 5. Frontend wiring
@@ -223,8 +265,64 @@ that single import to enable everything.
 - `useEffect` forces `computeOverflowGraph = true` whenever the active
   model declares `requires_overflow_graph = true`. Keeps persisted
   user config in sync with what the backend will actually run.
+- A second `useEffect` pushes the model to the running backend via
+  `api.setRecommenderModel()` (→ `POST /api/recommender-model`)
+  whenever `recommenderModel` / `computeOverflowGraph` change. A
+  `lastPushedModelRef` guard skips redundant pushes. This is what
+  makes a mid-session model swap (from either dropdown) actually
+  reach the backend without an Apply Settings round-trip.
 - `buildConfigRequest()` carries `model` and `compute_overflow_graph`
   through every `/api/config` call.
+
+### `ActionFeed` — model selector + active-model reminder + Clear
+
+`frontend/src/components/ActionFeed.tsx`:
+
+- **Model dropdown above "Analyze & Suggest"** — a mirror of the
+  Settings → Recommender selector, populated from `availableModels`.
+  Lets the operator swap model and re-run without opening Settings.
+  Every change emits a `recommender_model_changed` interaction event
+  with `source: 'action_feed'`.
+- **Active-model reminder** — once a run has produced suggestions, an
+  italic *"Suggestions produced by &lt;model label&gt;"* line sits
+  just below the Suggested Actions tab header. The label is resolved
+  from `result.active_model` against `availableModels`.
+- **Clear button** — a danger-coloured button on that reminder line.
+  It opens the shared `<ConfirmationDialog/>` (`type:
+  'clearSuggested'`); on confirm, `App.performClearSuggested` wipes
+  the recommender suggestions the operator has NOT triaged (un-starred,
+  un-rejected, not manually added) and emits `suggested_actions_cleared`.
+  It does **not** re-run the analysis — the operator clears, optionally
+  swaps the model, then presses Analyze & Suggest. The analysis-trigger
+  slot is gated on `prioritizedEntries.length === 0`, so it reappears
+  the moment the Suggested feed empties out.
+
+### `ActionCard` — origin / "Source" row
+
+`frontend/src/components/ActionCard.tsx`:
+
+Every action carries an `origin` field (`ActionDetail.origin`)
+recording its provenance — set once at creation, never changed by
+starring or re-simulating:
+
+- `"user"` — the operator simulated it themselves (manual search
+  dropdown / "Make a first guess"). Set by
+  `useActions.handleManualActionAdded` (default).
+- `<model id>` — produced by a recommender. Set by the step-2 result
+  loop in `useAnalysis` from the `active_model` echoed on the stream's
+  `result` event. The unsimulated-pin path
+  (`App.handleSimulateUnsimulatedAction`) also stamps the model id,
+  not `"user"`, because that pin was *scored* by the model — the
+  operator only triggered its materialisation.
+
+`origin` is distinct from the `is_manual` flag, which is overloaded
+UI state (also `true` when the operator merely *stars* a recommender
+suggestion). The unfolded action card renders an `origin`-derived
+"Source" row — `ActionCard` resolves a model id to its label via
+`availableModels`, falling back to the raw id. The field is persisted
+in `session.json` (`SavedActionEntry.origin`) and restored verbatim;
+legacy dumps get a derived `origin` on reload. See
+[`docs/features/save-results.md`](../features/save-results.md).
 
 ### `SettingsModal` — Recommender tab
 

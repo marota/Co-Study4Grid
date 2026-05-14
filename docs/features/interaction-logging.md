@@ -55,6 +55,8 @@ type InteractionType =
   | 'analysis_step2_started'       // Step 2 launched (resolve overloads)
   | 'analysis_step2_completed'     // Step 2 finished (actions received)
   | 'prioritized_actions_displayed'// User clicked "Display Prioritized Actions"
+  | 'recommender_model_changed'    // User picked a different recommender model
+  | 'suggested_actions_cleared'    // User cleared the un-touched suggestions ("Clear")
   // === Action Interactions ===
   | 'action_selected'              // User clicked an action card
   | 'action_deselected'            // User clicked away / deselected action
@@ -155,6 +157,8 @@ Each event's `details` field contains **all parameters needed to replay** the us
 | `analysis_step2_started` | `{ element, selected_overloads: string[], all_overloads: string[], monitor_deselected: bool, additional_lines_to_cut?: string[] }` | Click "Resolve Selected Overloads" |
 | `analysis_step2_completed` | `{ n_actions: number, action_ids: string[], dc_fallback: bool, message: string, pdf_url: string\|null, active_model?: string, compute_overflow_graph?: boolean }` — `active_model` echoes the recommender id that actually produced the action set on the backend; `compute_overflow_graph` echoes whether the overflow analysis graph was generated for this run. Both are sourced from the final `result` event of the step-2 NDJSON stream. | *(wait point)* |
 | `prioritized_actions_displayed` | `{ n_actions: number }` | Click "Display Prioritized Actions" button |
+| `recommender_model_changed` | `{ model: string, source?: 'action_feed' \| 'settings' }` — `model` is the new recommender registry id the operator selected. `source` identifies which dropdown changed: the selector above the Analyze & Suggest button (`'action_feed'`) or the Settings → Recommender tab (`'settings'`, omitted on older logs). The change is pushed to the backend via `POST /api/recommender-model` so the **next** analysis run uses it — replay must therefore emit this event *before* the following `analysis_step2_started`. | Pick a model in the dropdown above Analyze & Suggest, or in Settings → Recommender |
+| `suggested_actions_cleared` | `{ n_cleared: number }` — `n_cleared` is the count of recommender suggestions removed from the feed (those the operator had NOT starred / rejected / manually added — those are kept). Fired only after the operator confirms the "Clear Suggestions?" dialog. Does not re-run the analysis on its own. | Click the **Clear** button under the Suggested Actions tab header → confirm the dialog |
 
 ### Action Interactions
 
@@ -284,6 +288,7 @@ These events trigger async API calls. The replay agent must wait for the operati
 | `tab_reattached` | Popup closed, content re-rendered in the main window |
 | `overflow_layout_mode_toggled` | Overflow iframe URL refreshes after the backend regenerates / serves the requested layout (`POST /api/regenerate-overflow-graph`); the matching `_completed` event carries `cached: bool` or `error: string`. |
 | `overview_unsimulated_pin_simulated` | The dashed `?` pin is replaced by a coloured pin once the manual simulation lands in `result.actions`. |
+| `recommender_model_changed` | The model is pushed to the running backend via `POST /api/recommender-model` (a lightweight swap — no network reload). The replay agent must let that POST settle before the next `analysis_step2_started`, otherwise the run uses the previous model. |
 
 ### Handling `*_completed` Events
 
@@ -310,6 +315,14 @@ The `model` and `compute_overflow_graph` fields surfaced in `config_loaded`, `se
 - On the backend, the final `result` event of the step-2 NDJSON stream echoes `active_model` (the recommender that actually ran — may differ from the requested `model` if it was unknown, in which case the backend falls back to `"expert"`) and `compute_overflow_graph` (whether the overflow analysis graph was generated for this run). The replay logger forwards both into `analysis_step2_completed` details.
 
 A replay agent that wants to faithfully reproduce a session MUST honour both fields when restoring settings before clicking "Load Study" / "Apply". Older logs that predate the feature lack these fields and replay against the default `"expert"` / `true` pair — which matches the historical hard-coded behaviour byte-for-byte.
+
+### Mid-session model swaps
+
+The model can also be changed **without** re-opening Settings — via the dropdown directly above the **Analyze & Suggest** button (a mirror of the Settings → Recommender selector). Every change to either dropdown emits a `recommender_model_changed` event and is pushed to the running `RecommenderService` through the lightweight `POST /api/recommender-model` endpoint (no network reload, no action-dictionary rebuild). The next `analysis_step2_started` then runs against the new model.
+
+The companion **Clear** button under the Suggested Actions tab header wipes the recommender suggestions the operator has not triaged (un-starred, un-rejected, not manually added) and emits `suggested_actions_cleared`. It is confirmation-gated (shared `<ConfirmationDialog/>`, `type: 'clearSuggested'`) and does **not** re-run the analysis — the operator clears, optionally swaps the model, then presses Analyze & Suggest. A replay agent reproducing a "swap model and re-run" sequence will therefore see, in order: `suggested_actions_cleared` → `recommender_model_changed` → `analysis_step1_started` → `analysis_step2_started`.
+
+Neither event needs separate session persistence: the model choice survives a reload through `configuration.model` / `analysis.active_model` (see [Session reload fidelity](#session-reload-fidelity)), and the *effect* of a clear is captured in the saved action set + status flags. They are pure replay-log gestures.
 
 ---
 

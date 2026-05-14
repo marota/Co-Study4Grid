@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
+from expert_backend.services.diagram_mixin import ActionResultUnavailableError
 from expert_backend.services.network_service import network_service
 from expert_backend.services.overflow_overlay import inject_overlay
 from expert_backend.services.recommender_service import recommender_service
@@ -359,6 +360,35 @@ def update_config(config: ConfigRequest) -> dict:
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
+class RecommenderModelRequest(BaseModel):
+    model: str
+    compute_overflow_graph: bool | None = None
+
+
+@app.post("/api/recommender-model")
+def set_recommender_model(req: RecommenderModelRequest) -> dict:
+    """Swap the active recommender model on the running service.
+
+    Lightweight counterpart to ``POST /api/config``: only updates the
+    model + ``compute_overflow_graph`` toggle, leaves the loaded
+    network, action dictionary, and analysis context untouched. The
+    Step-2 graph cache (`_last_step2_signature`) is also left intact —
+    the overflow graph itself doesn't depend on the model, only the
+    discovery step does, so a model swap can reuse the cached graph
+    and re-run only ``run_analysis_step2_discovery``.
+    """
+    try:
+        recommender_service._apply_model_settings(req)
+        return {
+            "status": "success",
+            "active_model": recommender_service.get_active_model_name(),
+            "compute_overflow_graph": recommender_service.get_compute_overflow_graph(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/api/branches")
 def get_branches() -> dict:
     try:
@@ -664,6 +694,16 @@ def get_action_variant_diagram(request: ActionVariantRequest, http_request: Requ
             request.action_id, mode=request.mode
         )
         return _maybe_gzip_json(diagram, http_request)
+    except ActionResultUnavailableError as e:
+        # Expected after a session reload (and for any manually-added
+        # action): the backend has no cached observation, so it can't
+        # render the post-action NAD. Still a 400 — the frontend needs
+        # it to trigger the `/api/simulate-and-variant-diagram` fallback
+        # — but log it quietly instead of as an ERROR-level traceback.
+        logger.info(
+            "action-variant-diagram: %s — client falls back to live simulation", e
+        )
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception("API boundary error")
         raise HTTPException(status_code=400, detail=str(e))

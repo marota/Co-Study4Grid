@@ -429,6 +429,256 @@ class TestOverloadFiltering:
             all_overloads=["L1", "L2"],
             monitor_deselected=True
         ))
-        
+
         result_event = next(e for e in events if e.get("type") == "result")
         assert result_event["lines_we_care_about"] == ["L1", "L2"]
+
+
+class TestStep2GraphCacheReuse:
+    """Step-2 caches the overflow graph keyed by an input signature
+    (contingency + selected/all overloads + monitor toggle +
+    additional_lines_to_cut). A re-run with an identical signature
+    skips ``run_analysis_step2_graph`` and reuses the cached graph +
+    the enriched context, jumping straight to action discovery — so
+    swapping only the recommender model is near-instant. A changed
+    signature (e.g. different additional_lines_to_cut) rebuilds.
+    """
+
+    @pytest.fixture
+    def service(self):
+        return RecommenderService()
+
+    def _seed_context(self, service):
+        # Mimics what run_analysis_step1 leaves on the service.
+        service._last_disconnected_elements = ["LINE_C"]
+        service._analysis_context = {
+            "env": MagicMock(),
+            "lines_overloaded_names": ["L1", "L2"],
+            "lines_overloaded_ids": [0, 1],
+            "lines_overloaded_ids_kept": [0, 1],
+            "lines_we_care_about": {"L1", "L2"},
+        }
+
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
+    def test_identical_signature_skips_graph_rebuild(self, mock_discovery, mock_graph, service, tmp_path):
+        pdf = tmp_path / "overflow.html"
+        pdf.write_text("<html></html>")
+        mock_graph.side_effect = lambda ctx: ctx
+        mock_discovery.return_value = {
+            "prioritized_actions": {},
+            "action_scores": {},
+            "lines_overloaded_names": ["L1"],
+        }
+        service._get_latest_pdf_path = MagicMock(return_value=str(pdf))
+
+        # First run — builds the graph and seeds the cache.
+        self._seed_context(service)
+        list(service.run_analysis_step2(
+            selected_overloads=["L1"], all_overloads=["L1", "L2"],
+            monitor_deselected=False, additional_lines_to_cut=["EXTRA"],
+        ))
+        assert mock_graph.call_count == 1
+        assert mock_discovery.call_count == 1
+        assert service._last_step2_context is not None
+        assert service._last_step2_signature is not None
+        assert service._overflow_layout_cache.get("hierarchical") == str(pdf)
+
+        # Second run, identical signature — the graph rebuild is skipped
+        # but discovery still runs (it's where the recommender model is
+        # consumed, so a model swap re-runs only this step).
+        events = list(service.run_analysis_step2(
+            selected_overloads=["L1"], all_overloads=["L1", "L2"],
+            monitor_deselected=False, additional_lines_to_cut=["EXTRA"],
+        ))
+        assert mock_graph.call_count == 1   # NOT rebuilt
+        assert mock_discovery.call_count == 2  # discovery re-ran
+        pdf_event = next(e for e in events if e.get("type") == "pdf")
+        assert pdf_event["pdf_path"] == str(pdf)
+        assert pdf_event.get("cached") is True
+
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
+    def test_changed_additional_lines_rebuilds_graph(self, mock_discovery, mock_graph, service, tmp_path):
+        pdf = tmp_path / "overflow.html"
+        pdf.write_text("<html></html>")
+        mock_graph.side_effect = lambda ctx: ctx
+        mock_discovery.return_value = {
+            "prioritized_actions": {},
+            "action_scores": {},
+            "lines_overloaded_names": ["L1"],
+        }
+        service._get_latest_pdf_path = MagicMock(return_value=str(pdf))
+
+        self._seed_context(service)
+        list(service.run_analysis_step2(
+            selected_overloads=["L1"], all_overloads=["L1", "L2"],
+            monitor_deselected=False, additional_lines_to_cut=["EXTRA"],
+        ))
+        assert mock_graph.call_count == 1
+
+        # Re-seed (step1 re-runs in the real flow) and change the
+        # additional-lines hypothesis → signature differs → rebuild.
+        self._seed_context(service)
+        list(service.run_analysis_step2(
+            selected_overloads=["L1"], all_overloads=["L1", "L2"],
+            monitor_deselected=False, additional_lines_to_cut=["OTHER"],
+        ))
+        assert mock_graph.call_count == 2  # rebuilt for the new signature
+
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
+    def test_result_event_carries_active_model(self, mock_discovery, mock_graph, service):
+        mock_graph.side_effect = lambda ctx: ctx
+        mock_discovery.return_value = {
+            "prioritized_actions": {},
+            "action_scores": {},
+            "lines_overloaded_names": ["L1"],
+        }
+        # ModelSelectionMixin getters are attached via the
+        # expert_backend.recommenders import side-effect — stub the
+        # getter directly so the result event echoes the active model.
+        service.get_active_model_name = MagicMock(return_value="random_overflow")
+        self._seed_context(service)
+
+        events = list(service.run_analysis_step2(selected_overloads=["L1"], all_overloads=["L1"]))
+        result_event = next(e for e in events if e.get("type") == "result")
+        assert result_event["active_model"] == "random_overflow"
+
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
+    def test_result_event_active_model_none_when_getter_absent(
+        self, mock_discovery, mock_graph, service
+    ):
+        # The legacy `AnalysisMixin.run_analysis_step2` result event
+        # guards `get_active_model_name` with `hasattr` so a bare
+        # RecommenderService (no ModelSelectionMixin) still emits the
+        # event with active_model=None instead of crashing.
+        #
+        # This scenario only applies to the LEGACY generator. In
+        # production `expert_backend.recommenders` is imported, which
+        # BOTH attaches `get_active_model_name` AND replaces
+        # `run_analysis_step2` with `_run_analysis_step2_with_model`
+        # (which calls the getter unconditionally — no guard, none
+        # needed). Skip unless the legacy method is the active one and
+        # the getter is genuinely absent, i.e. the recommenders package
+        # was never imported in this pytest process (the mock-layer
+        # sandbox). Checked at call time — collection order can't be
+        # relied on.
+        if type(service).run_analysis_step2.__name__ != "run_analysis_step2":
+            pytest.skip(
+                "legacy AnalysisMixin.run_analysis_step2 is shadowed by the "
+                "production model-aware replacement"
+            )
+        if hasattr(type(service), "get_active_model_name"):
+            pytest.skip(
+                "get_active_model_name was attached by a recommenders import "
+                "earlier in this process — the 'getter absent' path can't be staged"
+            )
+        mock_graph.side_effect = lambda ctx: ctx
+        mock_discovery.return_value = {
+            "prioritized_actions": {},
+            "action_scores": {},
+            "lines_overloaded_names": ["L1"],
+        }
+        self._seed_context(service)
+
+        events = list(service.run_analysis_step2(selected_overloads=["L1"], all_overloads=["L1"]))
+        result_event = next(e for e in events if e.get("type") == "result")
+        assert result_event["active_model"] is None
+
+    def test_reset_clears_step2_signature(self, service):
+        # The signature is a per-study cache — reset() MUST clear it so
+        # a freshly loaded study never reuses the previous study's
+        # overflow graph.
+        service._last_step2_signature = ("LINE_C", ("L1",), ("L1",), False, ())
+        service._last_step2_context = {"foo": "bar"}
+        service.reset()
+        assert service._last_step2_signature is None
+        assert service._last_step2_context is None
+
+
+class TestStep2GraphCacheHelpers:
+    """Unit coverage for the shared `_step2_graph_signature` /
+    `_can_reuse_step2_graph` helpers on AnalysisMixin. Both the legacy
+    `run_analysis_step2` and the model-aware production replacement in
+    `_service_integration` use these, so they're tested directly here
+    (the production wrapper itself needs the real recommenders package
+    and is covered in `tests/test_service_integration.py`)."""
+
+    @pytest.fixture
+    def service(self):
+        return RecommenderService()
+
+    def test_signature_is_deterministic_for_same_inputs(self, service):
+        service._last_disconnected_elements = ["LINE_C"]
+        sig_a = service._step2_graph_signature(["L1", "L2"], ["L1", "L2"], False, ["EXTRA"])
+        sig_b = service._step2_graph_signature(["L1", "L2"], ["L1", "L2"], False, ["EXTRA"])
+        assert sig_a == sig_b
+
+    def test_signature_is_order_independent_for_the_list_inputs(self, service):
+        # selected / all / additional are sorted into the signature, so
+        # the operator picking the same lines in a different order does
+        # NOT invalidate the cache.
+        service._last_disconnected_elements = ["LINE_C"]
+        sig_a = service._step2_graph_signature(["L1", "L2"], ["L2", "L1"], False, ["B", "A"])
+        sig_b = service._step2_graph_signature(["L2", "L1"], ["L1", "L2"], False, ["A", "B"])
+        assert sig_a == sig_b
+
+    def test_signature_differs_when_additional_lines_change(self, service):
+        # The whole point of the cache: only an `additional_lines_to_cut`
+        # change (or a contingency / overload-selection change) should
+        # force an overflow-graph rebuild.
+        service._last_disconnected_elements = ["LINE_C"]
+        base = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        with_extra = service._step2_graph_signature(["L1"], ["L1"], False, ["EXTRA"])
+        assert base != with_extra
+
+    def test_signature_differs_when_contingency_changes(self, service):
+        service._last_disconnected_elements = ["LINE_C"]
+        sig_c = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        service._last_disconnected_elements = ["LINE_D"]
+        sig_d = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        assert sig_c != sig_d
+
+    def test_can_reuse_when_signature_matches_and_pdf_on_disk(self, service, tmp_path):
+        pdf = tmp_path / "overflow.html"
+        pdf.write_text("<html></html>")
+        sig = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        service._last_step2_signature = sig
+        service._last_step2_context = {"enriched": True}
+        service._overflow_layout_cache = {"hierarchical": str(pdf)}
+        assert service._can_reuse_step2_graph(sig) is True
+
+    def test_cannot_reuse_when_signature_differs(self, service, tmp_path):
+        pdf = tmp_path / "overflow.html"
+        pdf.write_text("<html></html>")
+        service._last_step2_signature = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        service._last_step2_context = {"enriched": True}
+        service._overflow_layout_cache = {"hierarchical": str(pdf)}
+        other_sig = service._step2_graph_signature(["L1"], ["L1"], False, ["EXTRA"])
+        assert service._can_reuse_step2_graph(other_sig) is False
+
+    def test_cannot_reuse_when_context_missing(self, service, tmp_path):
+        pdf = tmp_path / "overflow.html"
+        pdf.write_text("<html></html>")
+        sig = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        service._last_step2_signature = sig
+        service._last_step2_context = None
+        service._overflow_layout_cache = {"hierarchical": str(pdf)}
+        assert service._can_reuse_step2_graph(sig) is False
+
+    def test_cannot_reuse_when_no_cached_pdf(self, service):
+        sig = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        service._last_step2_signature = sig
+        service._last_step2_context = {"enriched": True}
+        service._overflow_layout_cache = {}
+        assert service._can_reuse_step2_graph(sig) is False
+
+    def test_cannot_reuse_when_cached_pdf_no_longer_on_disk(self, service, tmp_path):
+        # The HTML viewer file may have been cleaned up between runs.
+        sig = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        service._last_step2_signature = sig
+        service._last_step2_context = {"enriched": True}
+        service._overflow_layout_cache = {"hierarchical": str(tmp_path / "gone.html")}
+        assert service._can_reuse_step2_graph(sig) is False

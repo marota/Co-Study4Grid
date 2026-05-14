@@ -50,6 +50,20 @@ describe('ConfirmationDialog', () => {
         expect(screen.getByTestId('confirm-dialog-applySettings')).toBeInTheDocument();
     });
 
+    it('renders correctly for clearSuggested', () => {
+        // The Clear button on the Action Feed routes through the shared
+        // confirmation dialog with a bespoke body that spells out what is
+        // removed (un-touched recommender suggestions) and what is kept
+        // (starred / rejected / manually-added actions).
+        render(<ConfirmationDialog {...defaultProps} confirmDialog={{ type: 'clearSuggested' }} />);
+        expect(screen.getByText('Clear Suggestions?')).toBeInTheDocument();
+        expect(screen.getByText(/will be removed from the feed/)).toBeInTheDocument();
+        expect(screen.getByText(/starred, rejected, and\s+manually-added actions are kept/)).toBeInTheDocument();
+        // It must NOT carry the destructive study-reset copy.
+        expect(screen.queryByText(/All previous analysis results/)).not.toBeInTheDocument();
+        expect(screen.getByTestId('confirm-dialog-clearSuggested')).toBeInTheDocument();
+    });
+
     it('calls onConfirm when confirm button is clicked', () => {
         render(<ConfirmationDialog {...defaultProps} />);
         fireEvent.click(screen.getByText('Confirm'));

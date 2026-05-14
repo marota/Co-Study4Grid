@@ -108,6 +108,12 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         # `/api/regenerate-overflow-graph` can re-invoke graph generation
         # without redoing step1 setup or action discovery.
         self._last_step2_context = None
+        # Signature of the inputs that produced ``_last_step2_context`` +
+        # the cached overflow-graph HTML. When a re-run posts the same
+        # signature, ``run_analysis_step2`` skips the OverFlowGraph
+        # rebuild and jumps straight to action discovery — see the
+        # comment on the fast path in ``analysis_mixin.run_analysis_step2``.
+        self._last_step2_signature = None
 
     def reset(self):
         """Clear all cached analysis state. Called when loading a new study."""
@@ -152,6 +158,7 @@ class RecommenderService(DiagramMixin, AnalysisMixin, SimulationMixin):
         self._overflow_layout_mode = "hierarchical"
         self._overflow_layout_cache = {}
         self._last_step2_context = None
+        self._last_step2_signature = None
 
     # ------------------------------------------------------------------
     # Overflow-graph layout (Hierarchical / Geo)

@@ -370,6 +370,17 @@ export function useSession(): SessionState {
             curtailment_details: entry.curtailment_details,
             pst_details: entry.pst_details,
             is_manual: entry.status.is_manually_simulated,
+            // Provenance. Restored verbatim when present; legacy
+            // session dumps that predate the `origin` field get a
+            // derived value from the saved status flags + the
+            // session's `analysis.active_model` so the unfolded card's
+            // "Source" row still resolves on reload.
+            origin: entry.origin
+              ?? (entry.status.is_manually_simulated
+                ? 'user'
+                : entry.status.is_suggested
+                  ? (a.active_model ?? 'expert')
+                  : undefined),
           };
 
           if (entry.status.is_selected) restoredSelected.add(id);
@@ -409,6 +420,14 @@ export function useSession(): SessionState {
           combined_actions: restoredCombinedActions,
           message: a.message,
           dc_fallback: a.dc_fallback,
+          // Restore the recommender model that produced the
+          // suggestions so the "Suggestions produced by <model>"
+          // reminder below the Suggested Actions tab header (driven by
+          // `result.active_model`) survives a reload. Without this the
+          // field was saved to `analysis.active_model` but never
+          // re-attached to the live `result`, so the reminder vanished.
+          active_model: a.active_model ?? undefined,
+          compute_overflow_graph: a.compute_overflow_graph ?? undefined,
         };
 
         ctx.setResult(restoredResult);

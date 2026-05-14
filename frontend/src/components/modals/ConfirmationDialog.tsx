@@ -8,7 +8,7 @@
 import { colors } from '../../styles/tokens';
 
 export type ConfirmDialogState = {
-  type: 'contingency' | 'loadStudy' | 'applySettings' | 'changeNetwork';
+  type: 'contingency' | 'loadStudy' | 'applySettings' | 'changeNetwork' | 'clearSuggested';
   pendingBranch?: string;
   pendingNetworkPath?: string;
 } | null;
@@ -30,16 +30,34 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
     confirmDialog.type === 'contingency' ? 'Change Contingency?'
       : confirmDialog.type === 'applySettings' ? 'Apply New Settings?'
         : confirmDialog.type === 'changeNetwork' ? 'Change Network?'
-          : 'Reload Study?';
+          : confirmDialog.type === 'clearSuggested' ? 'Clear Suggestions?'
+            : 'Reload Study?';
 
-  const trailingMessage =
-    confirmDialog.type === 'contingency'
-      ? ' The network state will be preserved.'
-      : confirmDialog.type === 'applySettings'
-        ? ' The network will be reloaded with the new configuration.'
-        : confirmDialog.type === 'changeNetwork'
-          ? ' The current study will be reloaded from the new network file.'
-          : ' The network will be reloaded from scratch.';
+  // The `clearSuggested` flow keeps the operator's decisions, so it
+  // gets a bespoke body instead of the shared "everything is cleared"
+  // copy used by the study-reset confirmations.
+  const body =
+    confirmDialog.type === 'clearSuggested'
+      ? (
+        <>
+          Recommender suggestions you have <strong>not</strong> starred, rejected, or
+          manually added will be removed from the feed. Your starred, rejected, and
+          manually-added actions are kept. You can then pick a different model and
+          re-run the analysis.
+        </>
+      )
+      : (
+        <>
+          All previous analysis results, manual simulations, action selections, and diagrams will be cleared.
+          {confirmDialog.type === 'contingency'
+            ? ' The network state will be preserved.'
+            : confirmDialog.type === 'applySettings'
+              ? ' The network will be reloaded with the new configuration.'
+              : confirmDialog.type === 'changeNetwork'
+                ? ' The current study will be reloaded from the new network file.'
+                : ' The network will be reloaded from scratch.'}
+        </>
+      );
 
   return (
     <div style={{
@@ -61,8 +79,7 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
           {title}
         </h3>
         <p style={{ margin: '0 0 20px', color: colors.textSecondary, fontSize: '0.9rem', lineHeight: '1.5' }}>
-          All previous analysis results, manual simulations, action selections, and diagrams will be cleared.
-          {trailingMessage}
+          {body}
         </p>
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
           <button

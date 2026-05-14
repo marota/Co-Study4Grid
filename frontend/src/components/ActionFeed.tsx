@@ -10,6 +10,7 @@ import type { ActionDetail, ActionTypeFilterToken, NodeMeta, EdgeMeta, Available
 import { actionPassesOverviewFilter } from '../utils/svgUtils';
 import { classifyActionType, matchesActionTypeFilter } from '../utils/actionTypes';
 import { api } from '../api';
+import type { ModelDescriptor } from '../api';
 import { interactionLogger } from '../utils/interactionLogger';
 import CombinedActionsModal from './CombinedActionsModal';
 import ActionCard from './ActionCard';
@@ -89,6 +90,29 @@ interface ActionFeedProps {
     onToggleAdditionalLineToCut?: (line: string) => void;
     /** N-1 detected overloads — excluded from the picker suggestions. */
     n1Overloads?: string[];
+    /**
+     * Recommendation model selector exposed above "Analyze & Suggest"
+     * (mirror of the same control in the Settings modal). Lets the
+     * operator pick a different model and re-run without opening
+     * Settings.
+     */
+    recommenderModel?: string;
+    setRecommenderModel?: (v: string) => void;
+    availableModels?: ModelDescriptor[];
+    /**
+     * Display label of the model that produced the currently-shown
+     * suggestions (echoed by the backend in the step-2 `result` event
+     * as ``active_model``). Rendered just below the "Suggested Actions"
+     * tab header alongside the Clear button.
+     */
+    activeModelLabel?: string | null;
+    /**
+     * Clear the un-touched recommender suggestions — wipes entries
+     * still in ``suggestedByRecommenderIds`` that the operator has
+     * NOT starred / rejected / manually added. Lets the user relaunch
+     * with a different model without losing their decisions.
+     */
+    onClearSuggested?: () => void;
 }
 
 const ActionFeed: React.FC<ActionFeedProps> = ({
@@ -126,6 +150,11 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
     additionalLinesToCut,
     onToggleAdditionalLineToCut,
     n1Overloads,
+    recommenderModel,
+    setRecommenderModel,
+    availableModels,
+    activeModelLabel,
+    onClearSuggested,
 }) => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -749,6 +778,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     onResimulate={handleResimulate}
                     onResimulateTap={handleResimulateTap}
                     displayName={displayName}
+                    availableModels={availableModels}
                 />
             );
         });
@@ -929,9 +959,50 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     >Rejected Actions {rejectedEntries.length > 0 && <span style={{ background: suggestedTab === 'rejected' ? colors.dangerSoft : colors.surfaceMuted, color: suggestedTab === 'rejected' ? colors.danger : colors.textSecondary, fontSize: '11px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>{rejectedEntries.length}</span>}</button>
                 </div>
 
+                {suggestedTab === 'prioritized' && prioritizedEntries.length > 0 && activeModelLabel && (
+                    <div
+                        data-testid="active-model-reminder"
+                        style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            gap: '8px', marginBottom: '8px',
+                            fontSize: '11px', color: colors.textTertiary, fontStyle: 'italic',
+                        }}
+                    >
+                        <span>Suggestions produced by <strong style={{ fontStyle: 'normal', color: colors.textSecondary }}>{activeModelLabel}</strong></span>
+                        {onClearSuggested && (
+                            <button
+                                type="button"
+                                onClick={onClearSuggested}
+                                title="Clear un-touched suggestions (keeps starred / rejected / manually-added actions) so a new analysis can be launched, optionally with a different model."
+                                style={{
+                                    padding: '3px 10px',
+                                    background: colors.danger,
+                                    color: colors.textOnBrand,
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '11px',
+                                    fontStyle: 'normal',
+                                    fontWeight: 'bold',
+                                    flexShrink: 0,
+                                }}
+                            >
+                                Clear
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 {/* Unified analysis action slot: Analyze & Suggest → Analyzing… → Display N prioritized actions */}
-                {(analysisLoading || pendingAnalysisResult || !Object.values(actions).some(a => !a.is_manual)) && (
+                {/* Show the analysis trigger slot whenever the Suggested
+                    feed is empty — not just when result.actions has no
+                    recommender-produced entry. After "Clear", the
+                    operator's kept rejected actions stay in
+                    result.actions with is_manual=false; gating on
+                    prioritizedEntries (which already excludes selected +
+                    rejected) is what makes the Analyze & Suggest button
+                    reappear post-Clear. */}
+                {(analysisLoading || pendingAnalysisResult || prioritizedEntries.length === 0) && (
                     <div style={{ marginBottom: '10px' }}>
                         {analysisLoading ? (
                             <button disabled style={{
@@ -968,6 +1039,43 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                                         onToggle={onToggleAdditionalLineToCut}
                                         displayName={displayName}
                                     />
+                                )}
+                                {recommenderModel != null && setRecommenderModel && (
+                                    <div style={{
+                                        display: 'flex', alignItems: 'center', gap: '6px',
+                                        marginBottom: '8px', fontSize: '12px',
+                                        color: colors.textSecondary,
+                                    }}>
+                                        <label
+                                            htmlFor="analyzeRecommenderModel"
+                                            style={{ flexShrink: 0 }}
+                                        >Model:</label>
+                                        <select
+                                            id="analyzeRecommenderModel"
+                                            value={recommenderModel}
+                                            onChange={e => {
+                                                interactionLogger.record('recommender_model_changed', {
+                                                    model: e.target.value, source: 'action_feed',
+                                                });
+                                                setRecommenderModel(e.target.value);
+                                            }}
+                                            style={{
+                                                flex: 1, padding: '4px 6px',
+                                                border: `1px solid ${colors.border}`,
+                                                borderRadius: '4px',
+                                                background: colors.surface,
+                                                color: colors.textPrimary,
+                                                fontSize: '12px',
+                                            }}
+                                        >
+                                            {(!availableModels || availableModels.length === 0) && (
+                                                <option value="expert">Expert system</option>
+                                            )}
+                                            {availableModels?.map(m => (
+                                                <option key={m.name} value={m.name}>{m.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 )}
                                 <button
                                     onClick={onRunAnalysis}

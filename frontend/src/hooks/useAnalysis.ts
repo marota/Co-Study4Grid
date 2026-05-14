@@ -194,11 +194,19 @@ export function useAnalysis(): AnalysisState {
               }
             } else if (event.type === 'result') {
               const actionsWithFlags = { ...event.actions };
+              // Provenance for recommender-produced actions: the model
+              // the backend actually ran (echoed as `active_model` on
+              // the result event). Preserve an existing `origin` so a
+              // "first guess" the operator added before analysis keeps
+              // its `"user"` provenance even when the model re-emits
+              // the same id.
+              const resultModel: string = event.active_model || 'expert';
               for (const id in actionsWithFlags) {
                 const existing = (prevResultRef.current?.actions?.[id] || {}) as Partial<ActionDetail>;
                 actionsWithFlags[id] = {
                   ...actionsWithFlags[id],
                   is_manual: false,
+                  origin: existing.origin ?? resultModel,
                   is_islanded: existing.is_islanded ?? actionsWithFlags[id].is_islanded,
                   estimated_max_rho: existing.estimated_max_rho ?? actionsWithFlags[id].max_rho,
                   estimated_max_rho_line: existing.estimated_max_rho_line ?? actionsWithFlags[id].max_rho_line,
@@ -282,6 +290,10 @@ export function useAnalysis(): AnalysisState {
           is_islanded: existing.is_islanded ?? data.is_islanded,
           estimated_max_rho: existing.estimated_max_rho ?? data.estimated_max_rho,
           estimated_max_rho_line: existing.estimated_max_rho_line ?? data.estimated_max_rho_line,
+          // Provenance: prefer the pre-display value (a "first guess"
+          // the operator added before analysis stays `"user"`), else
+          // the model-stamped origin from the step-2 stream loop.
+          origin: existing.origin ?? data.origin,
         };
       }
 
