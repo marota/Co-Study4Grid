@@ -7,6 +7,7 @@
 
 import React, { useMemo } from 'react';
 import Select, { type MultiValue } from 'react-select';
+import type { ActionOverviewFilters } from '../types';
 import SidebarSummary from './SidebarSummary';
 import { type Notice } from './NoticesPanel';
 import { colors, radius, space } from '../styles/tokens';
@@ -37,6 +38,13 @@ interface AppSidebarProps {
    *  tier-warning-system PR — `docs/proposals/ui-design-critique.md` recommendation #4).
    *  When the array is empty the pill self-hides. */
   notices?: Notice[];
+  /** Shared severity + action-type filters; forwarded to
+   *  SidebarSummary so the persistent strip can host the filter
+   *  rings alongside the contingency / overload lines. */
+  overviewFilters?: ActionOverviewFilters;
+  onOverviewFiltersChange?: (next: ActionOverviewFilters) => void;
+  /** Whether the action feed has any card to filter right now. */
+  hasActions?: boolean;
   children: React.ReactNode;
 }
 
@@ -74,6 +82,9 @@ export default function AppSidebar({
   onContingencyZoom,
   onOverloadClick,
   notices,
+  overviewFilters,
+  onOverviewFiltersChange,
+  hasActions,
   children,
 }: AppSidebarProps) {
   // Pending differs from applied → user has unconfirmed edits to the
@@ -113,6 +124,9 @@ export default function AppSidebar({
         onContingencyZoom={onContingencyZoom}
         onOverloadClick={onOverloadClick}
         notices={notices}
+        overviewFilters={overviewFilters}
+        onOverviewFiltersChange={onOverviewFiltersChange}
+        hasActions={hasActions}
       />
       <div style={{ flex: 1, overflowY: 'auto', padding: space[4], minHeight: 0, display: 'flex', flexDirection: 'column', gap: space[4] }}>
         {branches.length > 0 && (

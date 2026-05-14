@@ -9,6 +9,7 @@ import React from 'react';
 import type { ActionDetail, NodeMeta, EdgeMeta } from '../types';
 import { getActionTargetVoltageLevels, getActionTargetLines, isCouplingAction } from '../utils/svgUtils';
 import { colors } from '../styles/tokens';
+import { SeverityIcon, type SeverityKind } from './SeverityIcon';
 
 interface ActionCardProps {
     id: string;
@@ -46,36 +47,6 @@ const clickableLinkStyle: React.CSSProperties = {
     color: colors.brand,
     fontWeight: 600,
     textDecoration: 'underline dotted',
-};
-
-type SeverityKind = 'solves' | 'lowMargin' | 'unsolved' | 'divergent' | 'islanded';
-
-const SeverityIcon: React.FC<{ kind: SeverityKind }> = ({ kind }) => {
-    const common = { width: 13, height: 13, viewBox: '0 0 16 16', 'aria-hidden': true } as const;
-    if (kind === 'solves') {
-        return (
-            <svg {...common}>
-                <circle cx="8" cy="8" r="7" fill="currentColor" fillOpacity="0.18" />
-                <path d="M4.5 8.2 L7 10.5 L11.5 5.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-        );
-    }
-    if (kind === 'lowMargin') {
-        return (
-            <svg {...common}>
-                <path d="M8 1.6 L15 13.5 L1 13.5 Z" fill="currentColor" fillOpacity="0.18" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-                <path d="M8 6 L8 9.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                <circle cx="8" cy="11.5" r="0.9" fill="currentColor" />
-            </svg>
-        );
-    }
-    // unsolved / divergent / islanded → X-circle
-    return (
-        <svg {...common}>
-            <circle cx="8" cy="8" r="7" fill="currentColor" fillOpacity="0.18" />
-            <path d="M5 5 L11 11 M11 5 L5 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-    );
 };
 
 const ActionCard: React.FC<ActionCardProps> = ({

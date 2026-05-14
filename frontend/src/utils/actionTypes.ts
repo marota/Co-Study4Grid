@@ -46,6 +46,24 @@ export const DEFAULT_ACTION_OVERVIEW_FILTERS: ActionOverviewFilters = {
 
 export type { ActionTypeFilterToken };
 
+/** Action-type buckets that own a pictogram (everything except `all`). */
+export type ActionTypeKind = Exclude<ActionTypeFilterToken, 'all'>;
+
+/**
+ * Human-readable wording for each action-type bucket. Used as the
+ * hover tooltip on the uncoloured action-type pictograms (the
+ * pictogram itself carries no text — see `ActionTypeIcon`).
+ */
+export const ACTION_TYPE_LABELS: Record<ActionTypeKind, string> = {
+    disco: 'Line disconnection',
+    reco: 'Line reconnection',
+    open: 'Open coupling',
+    close: 'Close coupling',
+    ls: 'Load shedding',
+    rc: 'Renewable curtailment',
+    pst: 'Phase shifter tap',
+};
+
 /**
  * Classify an action into one of the filter-token buckets, given
  * any of these signals:

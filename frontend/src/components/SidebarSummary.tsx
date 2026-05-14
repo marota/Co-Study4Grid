@@ -6,8 +6,10 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import React from 'react';
+import type { ActionOverviewFilters } from '../types';
 import { colors, space, text } from '../styles/tokens';
 import NoticesPanel, { type Notice } from './NoticesPanel';
+import ActionFilterRings from './ActionFilterRings';
 
 interface SidebarSummaryProps {
   /** Currently APPLIED contingency — list of element IDs disconnected. */
@@ -22,6 +24,15 @@ interface SidebarSummaryProps {
    *  own line above the contingency / overload rows so the pill
    *  doesn't get crowded by the wrap-prone element list. */
   notices?: Notice[];
+  /** Shared severity + action-type filters driving the action feed.
+   *  When set together with `hasActions`, the persistent strip grows
+   *  a compact two-ring icon filter alongside the contingency /
+   *  overload rows. */
+  overviewFilters?: ActionOverviewFilters;
+  onOverviewFiltersChange?: (next: ActionOverviewFilters) => void;
+  /** Whether the action feed currently holds any card to filter —
+   *  the filter rings stay hidden until there is something to act on. */
+  hasActions?: boolean;
 }
 
 /**
@@ -41,11 +52,15 @@ export default function SidebarSummary({
   onContingencyZoom,
   onOverloadClick,
   notices,
+  overviewFilters,
+  onOverviewFiltersChange,
+  hasActions,
 }: SidebarSummaryProps) {
   const hasOverloads = (n1LinesOverloaded?.length ?? 0) > 0;
   const hasNotices = (notices?.length ?? 0) > 0;
   const hasContingency = selectedContingency.length > 0;
-  if (!hasContingency && !hasOverloads && !hasNotices) return null;
+  const hasFilters = !!hasActions && !!overviewFilters && !!onOverviewFiltersChange;
+  if (!hasContingency && !hasOverloads && !hasNotices && !hasFilters) return null;
 
   return (
     <div
@@ -136,6 +151,12 @@ export default function SidebarSummary({
             })}
           </span>
         </div>
+      )}
+      {hasFilters && (
+        <ActionFilterRings
+          filters={overviewFilters!}
+          onFiltersChange={onOverviewFiltersChange!}
+        />
       )}
     </div>
   );

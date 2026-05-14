@@ -112,6 +112,17 @@ export const pinColors = {
   grey: '#9ca3af',
 } as const;
 
+// `var(--…)` mirror of `pinColors` for use inside inline `style`
+// objects (where the browser DOES resolve custom properties). The
+// raw-hex `pinColors` export above stays reserved for SVG
+// presentation attributes set via `setAttribute`, which don't.
+export const pinColorVars = {
+  green: 'var(--pin-green)',
+  orange: 'var(--pin-orange)',
+  red: 'var(--pin-red)',
+  grey: 'var(--pin-grey)',
+} as const;
+
 export const pinColorsDimmed = {
   green: '#a3c9ab',
   orange: '#dcd0b8',

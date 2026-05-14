@@ -1371,6 +1371,9 @@ function App() {
           onContingencyZoom={handleZoomOnActiveTab}
           onOverloadClick={wrappedAssetClick as (actionId: string, assetName: string, tab: 'n' | 'contingency') => void}
           notices={sidebarNotices}
+          overviewFilters={overviewFilters}
+          onOverviewFiltersChange={setOverviewFilters}
+          hasActions={Object.keys(result?.actions || {}).length > 0}
         >
           <div style={{ flexShrink: 0 }}>
             <OverloadPanel
