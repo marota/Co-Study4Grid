@@ -547,10 +547,20 @@ class TestStep2GraphCacheReuse:
 
     @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
     @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
-    def test_result_event_active_model_none_when_getter_absent(self, mock_discovery, mock_graph, service):
-        # A bare RecommenderService (no recommenders import side-effect)
-        # has no get_active_model_name — the result event must still be
-        # emitted with active_model=None rather than crashing.
+    def test_result_event_active_model_none_when_getter_absent(
+        self, mock_discovery, mock_graph, service, monkeypatch
+    ):
+        # The result-event builder guards `get_active_model_name` with
+        # `hasattr` so a RecommenderService without the
+        # ModelSelectionMixin (the getter is attached as a side-effect
+        # of importing `expert_backend.recommenders`) still emits the
+        # event with active_model=None rather than crashing. Drop the
+        # class attribute for the duration of this test so the guard is
+        # exercised regardless of whether another test in the same
+        # pytest process already triggered the recommenders import.
+        monkeypatch.delattr(
+            type(service), "get_active_model_name", raising=False
+        )
         mock_graph.side_effect = lambda ctx: ctx
         mock_discovery.return_value = {
             "prioritized_actions": {},
