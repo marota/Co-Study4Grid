@@ -30,7 +30,11 @@ import pandas as pd
 import pytest
 from unittest.mock import MagicMock
 
-from expert_backend.services.diagram_mixin import DiagramMixin
+from expert_backend.services.diagram_mixin import (
+    ActionResultUnavailableError,
+    DiagramMixin,
+)
+from expert_backend.services.recommender_service import RecommenderService
 
 
 def _bus_snap(counts_by_vl: dict[str, int]) -> pd.DataFrame:
@@ -291,3 +295,50 @@ class TestPatchPayloadShape:
             "non_convergence": None,
         }
         assert field in payload
+
+
+class TestActionResultUnavailable:
+    """After a session reload (and for any manually-added action) the
+    backend has no cached observation for the action. The action-variant
+    *patch* endpoint must soft-fail with ``patchable: false`` — the
+    contract the frontend already handles — instead of raising a 400,
+    and ``_require_action`` must raise the dedicated
+    ``ActionResultUnavailableError`` so the API layer can log the
+    expected condition quietly. See
+    docs/features/save-results.md (post-reload action fallback)."""
+
+    @pytest.fixture
+    def service(self):
+        return RecommenderService()
+
+    def test_patch_soft_fails_when_no_analysis_result(self, service):
+        service._last_result = None
+        payload = service.get_action_variant_diagram_patch("disco_LINE_X")
+        assert payload["patchable"] is False
+        assert payload["reason"] == "no-analysis-result"
+        assert payload["action_id"] == "disco_LINE_X"
+
+    def test_patch_soft_fails_when_action_not_in_last_result(self, service):
+        # A result exists but this action id isn't one the recommender
+        # produced (e.g. a manually-added action).
+        service._last_result = {"prioritized_actions": {"some_other_action": {}}}
+        payload = service.get_action_variant_diagram_patch("manual_LINE_Y")
+        assert payload["patchable"] is False
+        assert payload["reason"] == "action-not-in-last-result"
+        assert payload["action_id"] == "manual_LINE_Y"
+
+    def test_require_action_raises_dedicated_error_when_no_result(self, service):
+        service._last_result = None
+        with pytest.raises(ActionResultUnavailableError, match="No analysis result"):
+            service._require_action("disco_LINE_X")
+
+    def test_require_action_raises_dedicated_error_when_action_missing(self, service):
+        service._last_result = {"prioritized_actions": {"known_action": {}}}
+        with pytest.raises(ActionResultUnavailableError, match="not found in last analysis result"):
+            service._require_action("unknown_action")
+
+    def test_dedicated_error_is_a_value_error(self):
+        # Subclassing ValueError keeps every existing `except ValueError`
+        # / `except Exception` boundary returning HTTP 400 unchanged —
+        # the dedicated type only adds a hook for quiet logging.
+        assert issubclass(ActionResultUnavailableError, ValueError)

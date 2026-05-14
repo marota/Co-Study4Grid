@@ -582,3 +582,89 @@ class TestStep2GraphCacheReuse:
         service.reset()
         assert service._last_step2_signature is None
         assert service._last_step2_context is None
+
+
+class TestStep2GraphCacheHelpers:
+    """Unit coverage for the shared `_step2_graph_signature` /
+    `_can_reuse_step2_graph` helpers on AnalysisMixin. Both the legacy
+    `run_analysis_step2` and the model-aware production replacement in
+    `_service_integration` use these, so they're tested directly here
+    (the production wrapper itself needs the real recommenders package
+    and is covered in `tests/test_service_integration.py`)."""
+
+    @pytest.fixture
+    def service(self):
+        return RecommenderService()
+
+    def test_signature_is_deterministic_for_same_inputs(self, service):
+        service._last_disconnected_elements = ["LINE_C"]
+        sig_a = service._step2_graph_signature(["L1", "L2"], ["L1", "L2"], False, ["EXTRA"])
+        sig_b = service._step2_graph_signature(["L1", "L2"], ["L1", "L2"], False, ["EXTRA"])
+        assert sig_a == sig_b
+
+    def test_signature_is_order_independent_for_the_list_inputs(self, service):
+        # selected / all / additional are sorted into the signature, so
+        # the operator picking the same lines in a different order does
+        # NOT invalidate the cache.
+        service._last_disconnected_elements = ["LINE_C"]
+        sig_a = service._step2_graph_signature(["L1", "L2"], ["L2", "L1"], False, ["B", "A"])
+        sig_b = service._step2_graph_signature(["L2", "L1"], ["L1", "L2"], False, ["A", "B"])
+        assert sig_a == sig_b
+
+    def test_signature_differs_when_additional_lines_change(self, service):
+        # The whole point of the cache: only an `additional_lines_to_cut`
+        # change (or a contingency / overload-selection change) should
+        # force an overflow-graph rebuild.
+        service._last_disconnected_elements = ["LINE_C"]
+        base = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        with_extra = service._step2_graph_signature(["L1"], ["L1"], False, ["EXTRA"])
+        assert base != with_extra
+
+    def test_signature_differs_when_contingency_changes(self, service):
+        service._last_disconnected_elements = ["LINE_C"]
+        sig_c = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        service._last_disconnected_elements = ["LINE_D"]
+        sig_d = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        assert sig_c != sig_d
+
+    def test_can_reuse_when_signature_matches_and_pdf_on_disk(self, service, tmp_path):
+        pdf = tmp_path / "overflow.html"
+        pdf.write_text("<html></html>")
+        sig = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        service._last_step2_signature = sig
+        service._last_step2_context = {"enriched": True}
+        service._overflow_layout_cache = {"hierarchical": str(pdf)}
+        assert service._can_reuse_step2_graph(sig) is True
+
+    def test_cannot_reuse_when_signature_differs(self, service, tmp_path):
+        pdf = tmp_path / "overflow.html"
+        pdf.write_text("<html></html>")
+        service._last_step2_signature = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        service._last_step2_context = {"enriched": True}
+        service._overflow_layout_cache = {"hierarchical": str(pdf)}
+        other_sig = service._step2_graph_signature(["L1"], ["L1"], False, ["EXTRA"])
+        assert service._can_reuse_step2_graph(other_sig) is False
+
+    def test_cannot_reuse_when_context_missing(self, service, tmp_path):
+        pdf = tmp_path / "overflow.html"
+        pdf.write_text("<html></html>")
+        sig = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        service._last_step2_signature = sig
+        service._last_step2_context = None
+        service._overflow_layout_cache = {"hierarchical": str(pdf)}
+        assert service._can_reuse_step2_graph(sig) is False
+
+    def test_cannot_reuse_when_no_cached_pdf(self, service):
+        sig = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        service._last_step2_signature = sig
+        service._last_step2_context = {"enriched": True}
+        service._overflow_layout_cache = {}
+        assert service._can_reuse_step2_graph(sig) is False
+
+    def test_cannot_reuse_when_cached_pdf_no_longer_on_disk(self, service, tmp_path):
+        # The HTML viewer file may have been cleaned up between runs.
+        sig = service._step2_graph_signature(["L1"], ["L1"], False, [])
+        service._last_step2_signature = sig
+        service._last_step2_context = {"enriched": True}
+        service._overflow_layout_cache = {"hierarchical": str(tmp_path / "gone.html")}
+        assert service._can_reuse_step2_graph(sig) is False

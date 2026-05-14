@@ -403,6 +403,56 @@ class AnalysisMixin:
             self._analysis_context = None
             raise
 
+    # ------------------------------------------------------------------
+    # Step-2 overflow-graph cache helpers — shared by the legacy
+    # ``run_analysis_step2`` below AND the model-aware production
+    # replacement in ``expert_backend/recommenders/_service_integration.py``.
+    # Kept as plain methods on the mixin so both code paths (and their
+    # unit tests) reuse the exact same signature + reuse-decision logic.
+    # ------------------------------------------------------------------
+
+    def _step2_graph_signature(
+        self,
+        selected_overloads,
+        all_overloads,
+        monitor_deselected,
+        additional_lines_to_cut,
+    ) -> tuple:
+        """Input signature gating the Step-2 overflow-graph cache.
+
+        When the operator re-runs the analysis against the same
+        contingency + the same Step-2 inputs (selected overloads,
+        monitor toggle, additional-lines picker), the OverFlowGraph and
+        the HTML viewer it produces are byte-for-byte identical — only
+        the recommender model (consumed by action discovery) may have
+        changed. A matching signature lets ``run_analysis_step2`` skip
+        ``_narrow_context_to_selected_overloads`` +
+        ``run_analysis_step2_graph`` + the PDF mtime poll, so swapping
+        only the model is near-instant.
+        """
+        return (
+            tuple(self._last_disconnected_elements or []),
+            tuple(sorted(selected_overloads or [])),
+            tuple(sorted(all_overloads or [])),
+            bool(monitor_deselected),
+            tuple(sorted(additional_lines_to_cut or [])),
+        )
+
+    def _can_reuse_step2_graph(self, signature: tuple) -> bool:
+        """True when the cached overflow graph still matches ``signature``.
+
+        Requires the previous run to have stored the same signature,
+        kept its enriched ``_last_step2_context``, and left the produced
+        hierarchical HTML on disk.
+        """
+        cached_pdf = self._overflow_layout_cache.get("hierarchical")
+        return (
+            getattr(self, "_last_step2_signature", None) == signature
+            and self._last_step2_context is not None
+            and cached_pdf is not None
+            and os.path.exists(cached_pdf)
+        )
+
     def run_analysis_step2(
         self,
         selected_overloads: list[str],
@@ -431,29 +481,14 @@ class AnalysisMixin:
         if not self._analysis_context:
             raise ValueError("Analysis context not found. Run step 1 first.")
 
-        # Signature for the overflow-graph fast path: when the operator
-        # re-runs the analysis against the same contingency + same Step-2
-        # inputs (selected overloads, monitor toggle, additional-lines
-        # picker), the OverFlowGraph object and the produced HTML viewer
-        # are byte-for-byte the same as the previous run. Skipping
-        # `_narrow_context_to_selected_overloads` + `run_analysis_step2_graph`
-        # + the PDF mtime poll lets a re-run with a different recommender
-        # model jump straight to action discovery. The discovery step is
-        # the only part that depends on the active model.
-        step2_signature = (
-            tuple(self._last_disconnected_elements or []),
-            tuple(sorted(selected_overloads or [])),
-            tuple(sorted(all_overloads or [])),
-            bool(monitor_deselected),
-            tuple(sorted(additional_lines_to_cut or [])),
+        # Overflow-graph fast path — see `_step2_graph_signature` /
+        # `_can_reuse_step2_graph`. The shared helpers are used by the
+        # model-aware production replacement too, so a re-run with only
+        # the recommender model changed skips the graph rebuild.
+        step2_signature = self._step2_graph_signature(
+            selected_overloads, all_overloads, monitor_deselected, additional_lines_to_cut,
         )
-        cached_pdf = self._overflow_layout_cache.get("hierarchical")
-        reuse_graph = (
-            getattr(self, "_last_step2_signature", None) == step2_signature
-            and self._last_step2_context is not None
-            and cached_pdf is not None
-            and os.path.exists(cached_pdf)
-        )
+        reuse_graph = self._can_reuse_step2_graph(step2_signature)
 
         try:
             if reuse_graph:
@@ -461,7 +496,7 @@ class AnalysisMixin:
                     "[Step 2] Reusing cached overflow graph (signature unchanged)"
                 )
                 context = self._last_step2_context
-                produced_pdf = cached_pdf
+                produced_pdf = self._overflow_layout_cache.get("hierarchical")
                 # Geo cache is keyed off the same hierarchical source; keep
                 # whatever the previous run produced so the toggle stays
                 # instant. `_overflow_layout_mode` is left untouched.

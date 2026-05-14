@@ -143,31 +143,56 @@ def _run_analysis_step2_with_model(
         or self.get_compute_overflow_graph()
     )
 
-    context = self._narrow_context_to_selected_overloads(
-        self._analysis_context,
-        selected_overloads,
-        all_overloads,
-        monitor_deselected,
-        additional_lines_to_cut=additional_lines_to_cut,
+    # Overflow-graph fast path: the graph is model-INDEPENDENT — only
+    # action discovery below consumes the recommender. So a re-run with
+    # the same contingency + Step-2 inputs (selected overloads, monitor
+    # toggle, additional-lines picker) but a different model reuses the
+    # cached graph and skips `_narrow_context_to_selected_overloads` +
+    # `run_analysis_step2_graph` + the PDF mtime poll entirely. The
+    # signature / reuse-decision helpers live on `AnalysisMixin` so this
+    # production replacement and the legacy generator share them.
+    step2_signature = self._step2_graph_signature(
+        selected_overloads, all_overloads, monitor_deselected, additional_lines_to_cut,
     )
-    analysis_start_time = time.time()
-    self._overflow_layout_cache = {}
-    self._overflow_layout_mode = "hierarchical"
+    reuse_graph = needs_graph and self._can_reuse_step2_graph(step2_signature)
 
     try:
-        if needs_graph:
-            context = analysis_mixin.run_analysis_step2_graph(context)
-            produced_pdf = self._get_latest_pdf_path(analysis_start_time)
-            if produced_pdf:
-                self._overflow_layout_cache["hierarchical"] = produced_pdf
-            self._last_step2_context = context
-            yield {"type": "pdf", "pdf_path": produced_pdf}
+        if reuse_graph:
+            logger.info(
+                "[Step 2] model=%s reusing cached overflow graph (signature unchanged)",
+                recommender.name,
+            )
+            context = self._last_step2_context
+            produced_pdf = self._overflow_layout_cache.get("hierarchical")
+            yield {"type": "pdf", "pdf_path": produced_pdf, "cached": True}
         else:
-            # Model does not consume the overflow graph: emit an empty
-            # `pdf` event so the frontend knows it should not wait for
-            # an overflow HTML to appear.
-            self._last_step2_context = None
-            yield {"type": "pdf", "pdf_path": None}
+            context = self._narrow_context_to_selected_overloads(
+                self._analysis_context,
+                selected_overloads,
+                all_overloads,
+                monitor_deselected,
+                additional_lines_to_cut=additional_lines_to_cut,
+            )
+            analysis_start_time = time.time()
+            self._overflow_layout_cache = {}
+            self._overflow_layout_mode = "hierarchical"
+            if needs_graph:
+                context = analysis_mixin.run_analysis_step2_graph(context)
+                produced_pdf = self._get_latest_pdf_path(analysis_start_time)
+                if produced_pdf:
+                    self._overflow_layout_cache["hierarchical"] = produced_pdf
+                self._last_step2_context = context
+                self._last_step2_signature = step2_signature
+                yield {"type": "pdf", "pdf_path": produced_pdf}
+            else:
+                # Model does not consume the overflow graph: emit an empty
+                # `pdf` event so the frontend knows it should not wait for
+                # an overflow HTML to appear. No graph is cached, so clear
+                # the signature too — a later graph-requiring run must
+                # never false-hit on it.
+                self._last_step2_context = None
+                self._last_step2_signature = None
+                yield {"type": "pdf", "pdf_path": None}
 
         params = {"n_prioritized_actions": config.N_PRIORITIZED_ACTIONS}
         results = analysis_mixin.run_analysis_step2_discovery(
