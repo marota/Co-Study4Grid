@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import type { ActionOverviewFilters, ActionSeverityCategory } from '../types';
 import { interactionLogger } from '../utils/interactionLogger';
 import { colors, pinColorVars, space } from '../styles/tokens';
@@ -18,7 +18,9 @@ import { ActionTypeIcon } from './ActionTypeIcon';
  *
  *  - the SEVERITY ring — colour-coded pictograms (one per outcome
  *    bucket: solved / low-margin / still-overloaded / divergent).
- *    Multi-select toggles, each flipping `filters.categories[cat]`.
+ *    Single-click toggles one bucket on/off; double-click "solos" it
+ *    (enables only that bucket) and double-clicking the solo bucket
+ *    again restores the full set.
  *  - the ACTION-TYPE ring — uncoloured pictograms (disco / reco /
  *    open / close / ls / rc / pst). Single-select; re-clicking the
  *    active one clears back to `all`.
@@ -26,9 +28,8 @@ import { ActionTypeIcon } from './ActionTypeIcon';
  * Both drive the SAME shared `ActionOverviewFilters` object the
  * Remedial-Action overview header already owns, so the sidebar feed
  * and the overview diagram stay in lock-step. The pictogram-only
- * styling keeps the whole control to two short rows so it can live
- * alongside the contingency / overloads lines without crowding the
- * action-id titles.
+ * styling keeps the whole control to one short row that tucks in
+ * beside the Notices pill.
  */
 
 const SEVERITY_RING: ReadonlyArray<{ cat: ActionSeverityCategory; kind: SeverityKind; label: string }> = [
@@ -38,9 +39,15 @@ const SEVERITY_RING: ReadonlyArray<{ cat: ActionSeverityCategory; kind: Severity
     { cat: 'grey', kind: 'divergent', label: 'Divergent / islanded' },
 ];
 
+const ALL_CATEGORIES: ReadonlyArray<ActionSeverityCategory> = ['green', 'orange', 'red', 'grey'];
+
 const TYPE_RING: ReadonlyArray<ActionTypeKind> = ['disco', 'reco', 'open', 'close', 'ls', 'rc', 'pst'];
 
 const TOGGLE_SIZE = 22;
+
+// Window within which a second click on the SAME severity toggle is
+// read as a double-click ("solo") rather than two independent toggles.
+const DOUBLE_CLICK_MS = 220;
 
 const toggleBase: React.CSSProperties = {
     width: TOGGLE_SIZE,
@@ -53,8 +60,17 @@ const toggleBase: React.CSSProperties = {
     cursor: 'pointer',
     flexShrink: 0,
     lineHeight: 0,
+    userSelect: 'none',
     transition: 'all 0.15s ease',
 };
+
+const allCategoriesOn = (): Record<ActionSeverityCategory, boolean> =>
+    ({ green: true, orange: true, red: true, grey: true });
+
+const isSoloOn = (
+    categories: Record<ActionSeverityCategory, boolean>,
+    cat: ActionSeverityCategory,
+): boolean => categories[cat] && ALL_CATEGORIES.every(c => (c === cat ? categories[c] : !categories[c]));
 
 interface ActionFilterRingsProps {
     filters: ActionOverviewFilters;
@@ -62,14 +78,64 @@ interface ActionFilterRingsProps {
 }
 
 const ActionFilterRings: React.FC<ActionFilterRingsProps> = ({ filters, onFiltersChange }) => {
+    // Keep the freshest filters reachable from the deferred single-click
+    // timer callback so back-to-back toggles on different categories
+    // compose instead of clobbering each other. The ref is synced in an
+    // effect (not during render) — the timer fires ~one frame later, so
+    // the committed value is always available by then.
+    const filtersRef = useRef(filters);
+    useEffect(() => { filtersRef.current = filters; }, [filters]);
+
+    const clickTimers = useRef<Map<ActionSeverityCategory, ReturnType<typeof setTimeout>>>(new Map());
+    useEffect(() => {
+        const timers = clickTimers.current;
+        return () => {
+            timers.forEach(t => clearTimeout(t));
+            timers.clear();
+        };
+    }, []);
+
     const toggleCategory = useCallback((cat: ActionSeverityCategory) => {
-        const enabled = !filters.categories[cat];
+        const f = filtersRef.current;
+        const enabled = !f.categories[cat];
         interactionLogger.record('overview_filter_changed', { kind: 'category', category: cat, enabled });
-        onFiltersChange({
-            ...filters,
-            categories: { ...filters.categories, [cat]: enabled },
-        });
-    }, [filters, onFiltersChange]);
+        onFiltersChange({ ...f, categories: { ...f.categories, [cat]: enabled } });
+    }, [onFiltersChange]);
+
+    const soloCategory = useCallback((cat: ActionSeverityCategory) => {
+        const f = filtersRef.current;
+        // Double-click flips between "only this outcome" and "all
+        // outcomes": when the category is already the sole enabled
+        // one, restore the full set, otherwise isolate it.
+        const restore = isSoloOn(f.categories, cat);
+        const categories = restore
+            ? allCategoriesOn()
+            : { green: cat === 'green', orange: cat === 'orange', red: cat === 'red', grey: cat === 'grey' };
+        // No `solo` flag in the payload — isolate-vs-restore is derived
+        // from the current category state, so the double-clicked
+        // `category` is the only replay input the contract needs.
+        interactionLogger.record('overview_filter_changed', { kind: 'category_solo', category: cat });
+        onFiltersChange({ ...f, categories });
+    }, [onFiltersChange]);
+
+    // Single-click toggles one bucket, double-click solos it. The
+    // single-click action is deferred by one double-click window so a
+    // double-click does not also fire two stray toggles first.
+    const handleCategoryClick = useCallback((cat: ActionSeverityCategory) => {
+        const timers = clickTimers.current;
+        const pending = timers.get(cat);
+        if (pending !== undefined) {
+            clearTimeout(pending);
+            timers.delete(cat);
+            soloCategory(cat);
+            return;
+        }
+        const timer = setTimeout(() => {
+            timers.delete(cat);
+            toggleCategory(cat);
+        }, DOUBLE_CLICK_MS);
+        timers.set(cat, timer);
+    }, [soloCategory, toggleCategory]);
 
     const selectType = useCallback((token: ActionTypeKind) => {
         // Single-select with toggle-off: re-clicking the active type
@@ -86,7 +152,7 @@ const ActionFilterRings: React.FC<ActionFilterRingsProps> = ({ filters, onFilter
             style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: space[1] }}
         >
             <span style={{ color: colors.textSecondary, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                Filter:
+                Actions:
             </span>
             <div role="group" aria-label="Filter actions by outcome" style={{ display: 'flex', gap: space.half }}>
                 {SEVERITY_RING.map(({ cat, kind, label }) => {
@@ -98,8 +164,8 @@ const ActionFilterRings: React.FC<ActionFilterRingsProps> = ({ filters, onFilter
                             type="button"
                             data-testid={`sidebar-filter-category-${cat}`}
                             aria-pressed={enabled}
-                            title={enabled ? `Hide: ${label}` : `Show: ${label}`}
-                            onClick={() => toggleCategory(cat)}
+                            title={`${label} — click to ${enabled ? 'hide' : 'show'}, double-click to isolate`}
+                            onClick={() => handleCategoryClick(cat)}
                             style={{
                                 ...toggleBase,
                                 border: `1.5px solid ${enabled ? tint : colors.border}`,

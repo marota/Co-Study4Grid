@@ -5,8 +5,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
 import ActionFilterRings from './ActionFilterRings';
@@ -16,6 +16,14 @@ import type { ActionOverviewFilters } from '../types';
 const baseFilters: ActionOverviewFilters = DEFAULT_ACTION_OVERVIEW_FILTERS;
 
 describe('ActionFilterRings', () => {
+    // The severity ring defers the single-click toggle by one
+    // double-click window so a double-click can "solo" instead —
+    // fake timers let the tests drive both gestures deterministically.
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    const flushClickDelay = () => act(() => { vi.advanceTimersByTime(300); });
+
     it('renders the severity ring (4 colour-coded outcome toggles)', () => {
         render(<ActionFilterRings filters={baseFilters} onFiltersChange={vi.fn()} />);
         for (const cat of ['green', 'orange', 'red', 'grey']) {
@@ -37,17 +45,20 @@ describe('ActionFilterRings', () => {
         }
     });
 
-    it('toggles a severity category off when its enabled toggle is clicked', () => {
+    it('single-click toggles a severity category off (after the double-click window)', () => {
         const onFiltersChange = vi.fn();
         render(<ActionFilterRings filters={baseFilters} onFiltersChange={onFiltersChange} />);
         fireEvent.click(screen.getByTestId('sidebar-filter-category-red'));
+        // Deferred until the double-click window elapses.
+        expect(onFiltersChange).not.toHaveBeenCalled();
+        flushClickDelay();
         expect(onFiltersChange).toHaveBeenCalledWith({
             ...baseFilters,
             categories: { ...baseFilters.categories, red: false },
         });
     });
 
-    it('toggles a disabled severity category back on', () => {
+    it('single-click toggles a disabled severity category back on', () => {
         const onFiltersChange = vi.fn();
         const filters: ActionOverviewFilters = {
             ...baseFilters,
@@ -57,9 +68,42 @@ describe('ActionFilterRings', () => {
         const greyToggle = screen.getByTestId('sidebar-filter-category-grey');
         expect(greyToggle).toHaveAttribute('aria-pressed', 'false');
         fireEvent.click(greyToggle);
+        flushClickDelay();
         expect(onFiltersChange).toHaveBeenCalledWith({
             ...filters,
             categories: { ...filters.categories, grey: true },
+        });
+    });
+
+    it('double-click solos a severity category — enables only that outcome', () => {
+        const onFiltersChange = vi.fn();
+        render(<ActionFilterRings filters={baseFilters} onFiltersChange={onFiltersChange} />);
+        const red = screen.getByTestId('sidebar-filter-category-red');
+        fireEvent.click(red);
+        fireEvent.click(red);
+        expect(onFiltersChange).toHaveBeenCalledTimes(1);
+        expect(onFiltersChange).toHaveBeenCalledWith({
+            ...baseFilters,
+            categories: { green: false, orange: false, red: true, grey: false },
+        });
+        // The deferred single-click must NOT also fire after the solo.
+        flushClickDelay();
+        expect(onFiltersChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('double-click on an already-soloed severity category restores all outcomes', () => {
+        const onFiltersChange = vi.fn();
+        const filters: ActionOverviewFilters = {
+            ...baseFilters,
+            categories: { green: false, orange: false, red: true, grey: false },
+        };
+        render(<ActionFilterRings filters={filters} onFiltersChange={onFiltersChange} />);
+        const red = screen.getByTestId('sidebar-filter-category-red');
+        fireEvent.click(red);
+        fireEvent.click(red);
+        expect(onFiltersChange).toHaveBeenCalledWith({
+            ...filters,
+            categories: { green: true, orange: true, red: true, grey: true },
         });
     });
 
@@ -82,8 +126,10 @@ describe('ActionFilterRings', () => {
 
     it('exposes the underlying wording as a hover tooltip on every toggle', () => {
         render(<ActionFilterRings filters={baseFilters} onFiltersChange={vi.fn()} />);
-        expect(screen.getByTestId('sidebar-filter-category-green')).toHaveAttribute('title', 'Hide: Solves overload');
-        expect(screen.getByTestId('sidebar-filter-type-disco')).toHaveAttribute('title', 'Show only: Line disconnection');
+        expect(screen.getByTestId('sidebar-filter-category-green'))
+            .toHaveAttribute('title', expect.stringContaining('Solves overload'));
+        expect(screen.getByTestId('sidebar-filter-type-disco'))
+            .toHaveAttribute('title', 'Show only: Line disconnection');
     });
 
     it('emits no raw hex literals in inline styles', () => {

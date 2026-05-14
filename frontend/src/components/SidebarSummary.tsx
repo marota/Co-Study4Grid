@@ -79,9 +79,15 @@ export default function SidebarSummary({
         gap: space.half,
       }}
     >
-      {hasNotices && (
-        <div style={{ flexShrink: 0 }}>
-          <NoticesPanel notices={notices!} />
+      {(hasNotices || hasFilters) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: space[2], flexWrap: 'wrap', flexShrink: 0 }}>
+          {hasNotices && <NoticesPanel notices={notices!} />}
+          {hasFilters && (
+            <ActionFilterRings
+              filters={overviewFilters!}
+              onFiltersChange={onOverviewFiltersChange!}
+            />
+          )}
         </div>
       )}
       {hasContingency && (
@@ -151,12 +157,6 @@ export default function SidebarSummary({
             })}
           </span>
         </div>
-      )}
-      {hasFilters && (
-        <ActionFilterRings
-          filters={overviewFilters!}
-          onFiltersChange={onOverviewFiltersChange!}
-        />
       )}
     </div>
   );

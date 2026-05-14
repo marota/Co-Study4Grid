@@ -30,22 +30,24 @@ const GLYPHS: Record<ActionTypeKind, React.ReactNode> = {
             <circle cx="14.5" cy="8" r="1.1" fill="currentColor" stroke="none" />
         </>
     ),
-    // Disconnector with the blade lifted off the right contact.
+    // Open bus coupling — two busbars (a voltage level's two nodes)
+    // left split by an open coupler. The twin-busbar frame is what
+    // sets coupling actions apart from the single-line disco / reco.
     open: (
         <>
-            <path d="M1.5 12 H4.5" />
-            <path d="M11.5 12 H14.5" />
-            <path d="M4.5 12 L11 5" />
-            <circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" />
+            <path d="M2.5 4.5 H13.5" />
+            <path d="M2.5 11.5 H13.5" />
+            <path d="M8 4.5 V6.7" />
+            <path d="M8 9.3 V11.5" />
         </>
     ),
-    // Disconnector with the blade seated flat on both contacts.
+    // Close bus coupling — the same two busbars joined by a closed
+    // coupler, merging the two nodes of the voltage level.
     close: (
         <>
-            <path d="M1.5 12 H4.5" />
-            <path d="M11.5 12 H14.5" />
-            <path d="M4.5 12 L11.5 12" />
-            <circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" />
+            <path d="M2.5 4.5 H13.5" />
+            <path d="M2.5 11.5 H13.5" />
+            <path d="M8 4.5 V11.5" />
         </>
     ),
     // Down arrow pressed onto a load bar.
