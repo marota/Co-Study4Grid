@@ -8,7 +8,6 @@
 import React from 'react';
 import type { ActionOverviewFilters } from '../types';
 import { colors, space, text } from '../styles/tokens';
-import NoticesPanel, { type Notice } from './NoticesPanel';
 import ActionFilterRings from './ActionFilterRings';
 
 interface SidebarSummaryProps {
@@ -20,14 +19,10 @@ interface SidebarSummaryProps {
   displayName: (id: string) => string;
   onContingencyZoom: (assetName: string) => void;
   onOverloadClick: (actionId: string, assetName: string, tab: 'n' | 'contingency') => void;
-  /** Background notices; rendered as a NoticesPanel pill on its
-   *  own line above the contingency / overload rows so the pill
-   *  doesn't get crowded by the wrap-prone element list. */
-  notices?: Notice[];
   /** Shared severity + action-type filters driving the action feed.
    *  When set together with `hasActions`, the persistent strip grows
-   *  a compact two-ring icon filter alongside the contingency /
-   *  overload rows. */
+   *  a compact two-ring icon filter below the contingency / overload
+   *  rows. */
   overviewFilters?: ActionOverviewFilters;
   onOverviewFiltersChange?: (next: ActionOverviewFilters) => void;
   /** Whether the action feed currently holds any card to filter —
@@ -51,16 +46,14 @@ export default function SidebarSummary({
   displayName,
   onContingencyZoom,
   onOverloadClick,
-  notices,
   overviewFilters,
   onOverviewFiltersChange,
   hasActions,
 }: SidebarSummaryProps) {
   const hasOverloads = (n1LinesOverloaded?.length ?? 0) > 0;
-  const hasNotices = (notices?.length ?? 0) > 0;
   const hasContingency = selectedContingency.length > 0;
   const hasFilters = !!hasActions && !!overviewFilters && !!onOverviewFiltersChange;
-  if (!hasContingency && !hasOverloads && !hasNotices && !hasFilters) return null;
+  if (!hasContingency && !hasOverloads && !hasFilters) return null;
 
   return (
     <div
@@ -79,17 +72,6 @@ export default function SidebarSummary({
         gap: space.half,
       }}
     >
-      {(hasNotices || hasFilters) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: space[2], flexWrap: 'wrap', flexShrink: 0 }}>
-          {hasNotices && <NoticesPanel notices={notices!} />}
-          {hasFilters && (
-            <ActionFilterRings
-              filters={overviewFilters!}
-              onFiltersChange={onOverviewFiltersChange!}
-            />
-          )}
-        </div>
-      )}
       {hasContingency && (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: space[1], flexWrap: 'wrap' }}>
           <span style={{ color: colors.textSecondary, fontWeight: 600, whiteSpace: 'nowrap' }}>
@@ -157,6 +139,12 @@ export default function SidebarSummary({
             })}
           </span>
         </div>
+      )}
+      {hasFilters && (
+        <ActionFilterRings
+          filters={overviewFilters!}
+          onFiltersChange={onOverviewFiltersChange!}
+        />
       )}
     </div>
   );

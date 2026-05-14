@@ -7,6 +7,7 @@
 
 import type { AnalysisResult } from '../types';
 import { colors, radius, space } from '../styles/tokens';
+import NoticesPanel, { type Notice } from './NoticesPanel';
 
 type SettingsTab = 'paths' | 'recommender' | 'configurations';
 
@@ -30,6 +31,9 @@ interface HeaderProps {
   onSaveResults: () => void;
   onOpenReloadModal: () => void;
   onOpenSettings: (tab: SettingsTab) => void;
+  /** Background notices — surfaced as a NoticesPanel pill tucked
+   *  directly under the app title. Self-hides when the list is empty. */
+  notices?: Notice[];
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -45,6 +49,7 @@ const Header: React.FC<HeaderProps> = ({
   onSaveResults,
   onOpenReloadModal,
   onOpenSettings,
+  notices,
 }) => {
   const saveDisabled = !result && selectedContingency.length === 0;
 
@@ -54,7 +59,10 @@ const Header: React.FC<HeaderProps> = ({
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       gap: space[4], flexWrap: 'wrap'
     }}>
-      <h2 style={{ margin: 0, fontSize: '1.1rem', whiteSpace: 'nowrap' }}>⚡ Co-Study4Grid</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: space.half }}>
+        <h2 style={{ margin: 0, fontSize: '1.1rem', whiteSpace: 'nowrap' }}>⚡ Co-Study4Grid</h2>
+        {notices && <NoticesPanel notices={notices} />}
+      </div>
 
       <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: space.half }}>
         <label style={{ fontSize: '0.7rem', opacity: 0.8, whiteSpace: 'nowrap' }}>Network Path</label>

@@ -20,7 +20,7 @@
 //      the rule lives in App.css).
 //   4. Tier the warning system — no inline yellow banner in the
 //      ActionFeed / OverloadPanel surfaces; NoticesPanel surfaces
-//      one entry point in AppSidebar.
+//      one entry point in the Header, under the app title.
 //   5. Diagram legend — every diagram tab carries a collapsible
 //      legend pill when its SVG is mounted.
 //
@@ -61,10 +61,28 @@ vi.mock('./utils/svgUtils', async () => {
 import OverloadPanel from './components/OverloadPanel';
 import ActionFeed from './components/ActionFeed';
 import AppSidebar from './components/AppSidebar';
+import Header from './components/Header';
 import VisualizationPanel from './components/VisualizationPanel';
 import ActionCard from './components/ActionCard';
 import type { Notice } from './components/NoticesPanel';
 import type { ActionDetail, AnalysisResult, CombinedAction, DiagramData, TabId } from './types';
+
+/** Minimal Header props — the warning-tier tests only care about the
+ *  NoticesPanel pill the Header renders under the app title. */
+const headerProps = {
+    networkPath: '',
+    setNetworkPath: vi.fn(),
+    onCommitNetworkPath: vi.fn(),
+    configLoading: false,
+    result: null,
+    selectedContingency: [] as string[],
+    sessionRestoring: false,
+    onPickSettingsPath: vi.fn(),
+    onLoadStudy: vi.fn(),
+    onSaveResults: vi.fn(),
+    onOpenReloadModal: vi.fn(),
+    onOpenSettings: vi.fn(),
+};
 
 // ------------------------------------------------------------------
 // Helpers
@@ -134,7 +152,6 @@ describe('UX consistency — Recommendation #1 (design tokens)', () => {
     });
 
     it('AppSidebar emits no raw hex literals in inline styles', () => {
-        const notice: Notice = { id: 'mon', title: 'Monitoring', body: 'body', severity: 'warning' };
         const { container } = render(
             <AppSidebar
                 selectedContingency={[]} pendingContingency={[]} onPendingContingencyChange={vi.fn()} onContingencyApply={vi.fn()}
@@ -143,11 +160,10 @@ describe('UX consistency — Recommendation #1 (design tokens)', () => {
                 n1LinesOverloaded={undefined}
                 n1LinesOverloadedRho={undefined}
                 selectedOverloads={undefined}
-                
+
                 displayName={(id) => id}
                 onContingencyZoom={vi.fn()}
                 onOverloadClick={vi.fn()}
-                notices={[notice]}
             >
                 <div />
             </AppSidebar>,
@@ -301,89 +317,34 @@ describe('UX consistency — Recommendation #4 (tier the warning system)', () =>
         expect(hasInlineWarningBanner(container)).toBeNull();
     });
 
-    it('AppSidebar surfaces the NoticesPanel pill when notices are passed', () => {
+    it('Header surfaces the NoticesPanel pill when notices are passed', () => {
         const notices: Notice[] = [
             { id: 'a', title: 'Action dict', body: 'body', severity: 'info' },
             { id: 'b', title: 'Monitoring', body: 'body', severity: 'warning' },
         ];
-        render(
-            <AppSidebar
-                selectedContingency={[]} pendingContingency={[]} onPendingContingencyChange={vi.fn()} onContingencyApply={vi.fn()}
-                branches={[]}
-                nameMap={{}}
-                n1LinesOverloaded={undefined}
-                n1LinesOverloadedRho={undefined}
-                selectedOverloads={undefined}
-                
-                displayName={(id) => id}
-                onContingencyZoom={vi.fn()}
-                onOverloadClick={vi.fn()}
-                notices={notices}
-            >
-                <div data-testid="sidebar-children" />
-            </AppSidebar>,
-        );
+        render(<Header {...headerProps} notices={notices} />);
         const pill = screen.getByTestId('notices-pill');
         expect(pill).toHaveTextContent('2');
     });
 
-    it('Notices pill sits on the same row as the contingency / N-1 strip', () => {
-        // Space-saving layout: the pill lives INSIDE the
-        // sticky-feed-summary strip (one horizontal band) rather
-        // than above it as a separate block. Regression guard
-        // against splitting them onto two rows.
+    it('Notices pill renders under the Co-Study4Grid app title in the Header', () => {
+        // Space-saving relocation: the single warning entry point now
+        // lives in the header, tucked directly beneath the app title,
+        // instead of inside the sidebar strip. Regression guard that
+        // the pill stays a sibling of the title within one column.
         const notices: Notice[] = [
             { id: 'a', title: 'Monitoring', body: 'body', severity: 'warning' },
         ];
-        render(
-            <AppSidebar
-                selectedContingency={["LINE_A"]} pendingContingency={["LINE_A"]} onPendingContingencyChange={vi.fn()} onContingencyApply={vi.fn()}
-                branches={[]}
-                nameMap={{}}
-                n1LinesOverloaded={['LINE_X']}
-                n1LinesOverloadedRho={[1.05]}
-                selectedOverloads={undefined}
-                
-                displayName={(id) => id}
-                onContingencyZoom={vi.fn()}
-                onOverloadClick={vi.fn()}
-                notices={notices}
-            >
-                <div data-testid="sidebar-children" />
-            </AppSidebar>,
-        );
-        const summary = screen.getByTestId('sticky-feed-summary');
-        // Both the contingency-zoom button and the notices pill are
-        // descendants of the same strip.
-        expect(within(summary).getByTestId('notices-pill')).toBeInTheDocument();
-        // The strip surfaces the "🎯 Contingency:" applied-contingency
-        // header and the "⚠️ Overloads:" overloads header.
-        expect(within(summary).getByText(/Contingency:/i)).toBeInTheDocument();
-        expect(within(summary).getByText(/Overloads:/i)).toBeInTheDocument();
-        // The strip stacks vertically so the notices pill sits on
-        // its own line above the contingency / overload rows.
-        expect(summary.style.display).toBe('flex');
-        expect(summary.style.flexDirection).toBe('column');
+        render(<Header {...headerProps} notices={notices} />);
+        const title = screen.getByText('⚡ Co-Study4Grid');
+        const pill = screen.getByTestId('notices-pill');
+        const wrapper = title.parentElement!;
+        expect(wrapper).toContainElement(pill);
+        expect(wrapper.style.flexDirection).toBe('column');
     });
 
-    it('AppSidebar omits the NoticesPanel entirely when no notices are active', () => {
-        render(
-            <AppSidebar
-                selectedContingency={[]} pendingContingency={[]} onPendingContingencyChange={vi.fn()} onContingencyApply={vi.fn()}
-                branches={[]}
-                nameMap={{}}
-                n1LinesOverloaded={undefined}
-                n1LinesOverloadedRho={undefined}
-                selectedOverloads={undefined}
-                
-                displayName={(id) => id}
-                onContingencyZoom={vi.fn()}
-                onOverloadClick={vi.fn()}
-                notices={[]}
-            >
-                <div data-testid="sidebar-children" />
-            </AppSidebar>,
-        );
+    it('Header omits the NoticesPanel entirely when no notices are active', () => {
+        render(<Header {...headerProps} notices={[]} />);
         expect(screen.queryByTestId('notices-pill')).not.toBeInTheDocument();
         expect(screen.queryByTestId('notices-panel')).not.toBeInTheDocument();
     });
@@ -486,14 +447,13 @@ describe('UX consistency — source-text invariants', () => {
         expect(src).not.toMatch(/onDismissWarning/);
     });
 
-    it('AppSidebar.tsx forwards `notices` into SidebarSummary as the single warning entry point', () => {
-        // The NoticesPanel pill now sits on the same row as the
-        // contingency / N-1 strip (SidebarSummary owns the layout).
-        // AppSidebar just forwards the notices array.
-        const sidebarSrc = readSource('components/AppSidebar.tsx');
-        expect(sidebarSrc).toMatch(/notices=\{notices\}/);
+    it('Header.tsx renders <NoticesPanel /> as the single warning entry point', () => {
+        // The NoticesPanel pill now lives in the Header, under the app
+        // title — the sidebar strip no longer owns it.
+        const headerSrc = readSource('components/Header.tsx');
+        expect(headerSrc).toMatch(/<NoticesPanel\s/);
         const summarySrc = readSource('components/SidebarSummary.tsx');
-        expect(summarySrc).toMatch(/<NoticesPanel\s/);
+        expect(summarySrc).not.toMatch(/<NoticesPanel\s/);
     });
 
     it('VisualizationPanel.tsx wires <DiagramLegend /> for n / n-1 / action', () => {
@@ -509,7 +469,7 @@ describe('UX consistency — source-text invariants', () => {
 // ------------------------------------------------------------------
 
 describe('UX consistency — component import smoke', () => {
-    it('AppSidebar children slot keeps rendering even with an active notices list', () => {
+    it('AppSidebar children slot keeps rendering inside the sidebar shell', () => {
         render(
             <AppSidebar
                 selectedContingency={[]} pendingContingency={[]} onPendingContingencyChange={vi.fn()} onContingencyApply={vi.fn()}
@@ -518,23 +478,17 @@ describe('UX consistency — component import smoke', () => {
                 n1LinesOverloaded={undefined}
                 n1LinesOverloadedRho={undefined}
                 selectedOverloads={undefined}
-                
+
                 displayName={(id) => id}
                 onContingencyZoom={vi.fn()}
                 onOverloadClick={vi.fn()}
-                notices={[{ id: 'x', title: 't', body: 'b' }]}
             >
                 <div data-testid="children-slot">payload</div>
             </AppSidebar>,
         );
-        // The children slot must keep rendering — the notices pill
-        // sits inside the sticky-feed-summary strip, never replacing
-        // the rest of the sidebar.
         const slot = screen.getByTestId('children-slot');
         expect(slot).toHaveTextContent('payload');
-        // Sanity — both elements live inside the sidebar shell.
         const sidebar = screen.getByTestId('sidebar');
-        expect(within(sidebar).getByTestId('notices-pill')).toBeInTheDocument();
         expect(within(sidebar).getByTestId('children-slot')).toBeInTheDocument();
     });
 });

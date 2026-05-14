@@ -9,7 +9,6 @@ import React, { useMemo } from 'react';
 import Select, { type MultiValue } from 'react-select';
 import type { ActionOverviewFilters } from '../types';
 import SidebarSummary from './SidebarSummary';
-import { type Notice } from './NoticesPanel';
 import { colors, radius, space } from '../styles/tokens';
 
 interface ContingencyOption {
@@ -34,10 +33,6 @@ interface AppSidebarProps {
   displayName: (id: string) => string;
   onContingencyZoom: (assetName: string) => void;
   onOverloadClick: (actionId: string, assetName: string, tab: 'n' | 'contingency') => void;
-  /** Background notices surfaced in the tiered warning system (the
-   *  tier-warning-system PR — `docs/proposals/ui-design-critique.md` recommendation #4).
-   *  When the array is empty the pill self-hides. */
-  notices?: Notice[];
   /** Shared severity + action-type filters; forwarded to
    *  SidebarSummary so the persistent strip can host the filter
    *  rings alongside the contingency / overload lines. */
@@ -81,7 +76,6 @@ export default function AppSidebar({
   displayName,
   onContingencyZoom,
   onOverloadClick,
-  notices,
   overviewFilters,
   onOverviewFiltersChange,
   hasActions,
@@ -123,7 +117,6 @@ export default function AppSidebar({
         displayName={displayName}
         onContingencyZoom={onContingencyZoom}
         onOverloadClick={onOverloadClick}
-        notices={notices}
         overviewFilters={overviewFilters}
         onOverviewFiltersChange={onOverviewFiltersChange}
         hasActions={hasActions}
