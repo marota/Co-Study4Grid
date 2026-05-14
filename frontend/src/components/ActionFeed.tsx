@@ -972,20 +972,21 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                             <button
                                 type="button"
                                 onClick={onClearSuggested}
-                                title="Clear un-touched suggestions so a new analysis can be launched (keeps starred / rejected / manually-added actions)."
+                                title="Clear un-touched suggestions (keeps starred / rejected / manually-added actions) so a new analysis can be launched, optionally with a different model."
                                 style={{
-                                    padding: '3px 8px',
-                                    background: 'transparent',
-                                    color: colors.textSecondary,
-                                    border: `1px solid ${colors.borderSubtle}`,
+                                    padding: '3px 10px',
+                                    background: colors.danger,
+                                    color: colors.textOnBrand,
+                                    border: 'none',
                                     borderRadius: '4px',
                                     cursor: 'pointer',
                                     fontSize: '11px',
                                     fontStyle: 'normal',
+                                    fontWeight: 'bold',
                                     flexShrink: 0,
                                 }}
                             >
-                                Clear &amp; rerun
+                                Clear
                             </button>
                         )}
                     </div>

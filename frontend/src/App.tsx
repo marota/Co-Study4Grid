@@ -661,19 +661,17 @@ function App() {
   );
 
   // Wipe recommender-produced suggestions the operator has NOT
-  // interacted with, then re-trigger the analysis. Keeps starred
-  // (selectedActionIds), rejected (rejectedActionIds) and
-  // manually-added (manuallyAddedIds / is_manual) entries intact so
-  // the user can re-run with a different model without losing their
-  // decisions. Tracking ``suggestedByRecommenderIds`` (the
-  // source-of-truth set populated during the step-2 stream) keeps us
-  // from accidentally dropping manual-only entries that happen to
-  // share an id with a previous recommender suggestion. The clear
-  // happens first via state updaters (so the in-flight step-2 reset
-  // sees the trimmed result), then the analysis is launched — both
-  // bookended in the same gesture because the button is labelled
-  // "Clear & rerun".
-  const handleClearSuggested = useCallback(() => {
+  // interacted with. Keeps starred (selectedActionIds), rejected
+  // (rejectedActionIds) and manually-added (manuallyAddedIds /
+  // is_manual) entries intact so the user can re-run with a
+  // different model without losing their decisions. Tracking
+  // ``suggestedByRecommenderIds`` (the source-of-truth set populated
+  // during the step-2 stream) keeps us from accidentally dropping
+  // manual-only entries that happen to share an id with a previous
+  // recommender suggestion. This does NOT re-run the analysis — the
+  // operator clears, optionally swaps the model, then presses
+  // Analyze & Suggest themselves.
+  const performClearSuggested = useCallback(() => {
     interactionLogger.record('suggested_actions_cleared', {
       n_cleared: Array.from(suggestedByRecommenderIds).filter(id =>
         !selectedActionIds.has(id) && !rejectedActionIds.has(id) && !manuallyAddedIds.has(id)
@@ -697,12 +695,14 @@ function App() {
       return next;
     });
     analysis.setPendingAnalysisResult(null);
-    // Kick off the re-analysis in the same gesture. resetForAnalysisRun
-    // (called inside handleRunAnalysis) re-filters result.actions on
-    // top of the just-applied clear via prev=>updater, so the kept
-    // user-touched entries survive both passes.
-    wrappedRunAnalysis();
-  }, [setResult, actionsHook, analysis, selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds, wrappedRunAnalysis]);
+  }, [setResult, actionsHook, analysis, selectedActionIds, rejectedActionIds, manuallyAddedIds, suggestedByRecommenderIds]);
+
+  // The Clear button opens a confirmation dialog first (reusing the
+  // shared <ConfirmationDialog/> template) so the operator sees
+  // exactly what is removed and what is kept before committing.
+  const requestClearSuggested = useCallback(() => {
+    setConfirmDialog({ type: 'clearSuggested' });
+  }, []);
 
   const wrappedDisplayPrioritized = useCallback(
     () => analysis.handleDisplayPrioritizedActions(selectedActionIds, diagrams.setActiveTab),
@@ -1039,6 +1039,15 @@ function App() {
 
   const handleConfirmDialog = useCallback(() => {
     if (!confirmDialog) return;
+    // `clearSuggested` is not a study-reset gesture — it keeps the
+    // network, the contingency, and the operator's decisions. It logs
+    // its own `suggested_actions_cleared` event inside
+    // `performClearSuggested`, so skip the `contingency_confirmed` log.
+    if (confirmDialog.type === 'clearSuggested') {
+      performClearSuggested();
+      setConfirmDialog(null);
+      return;
+    }
     interactionLogger.record('contingency_confirmed', { type: confirmDialog.type, pending_branch: confirmDialog.pendingBranch });
     if (confirmDialog.type === 'contingency') {
       clearContingencyState();
@@ -1058,7 +1067,7 @@ function App() {
       handleLoadConfig();
     }
     setConfirmDialog(null);
-  }, [confirmDialog, clearContingencyState, handleLoadConfig, applySettingsImmediate]);
+  }, [confirmDialog, clearContingencyState, handleLoadConfig, applySettingsImmediate, performClearSuggested]);
 
 
   // ===== App-Level Effects =====
@@ -1505,7 +1514,7 @@ function App() {
                 ? (availableModels?.find(m => m.name === result.active_model)?.label || result.active_model)
                 : null
             }
-            onClearSuggested={handleClearSuggested}
+            onClearSuggested={requestClearSuggested}
           />
         </AppSidebar>
         <div style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column' }}>
