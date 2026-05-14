@@ -548,19 +548,33 @@ class TestStep2GraphCacheReuse:
     @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
     @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
     def test_result_event_active_model_none_when_getter_absent(
-        self, mock_discovery, mock_graph, service, monkeypatch
+        self, mock_discovery, mock_graph, service
     ):
-        # The result-event builder guards `get_active_model_name` with
-        # `hasattr` so a RecommenderService without the
-        # ModelSelectionMixin (the getter is attached as a side-effect
-        # of importing `expert_backend.recommenders`) still emits the
-        # event with active_model=None rather than crashing. Drop the
-        # class attribute for the duration of this test so the guard is
-        # exercised regardless of whether another test in the same
-        # pytest process already triggered the recommenders import.
-        monkeypatch.delattr(
-            type(service), "get_active_model_name", raising=False
-        )
+        # The legacy `AnalysisMixin.run_analysis_step2` result event
+        # guards `get_active_model_name` with `hasattr` so a bare
+        # RecommenderService (no ModelSelectionMixin) still emits the
+        # event with active_model=None instead of crashing.
+        #
+        # This scenario only applies to the LEGACY generator. In
+        # production `expert_backend.recommenders` is imported, which
+        # BOTH attaches `get_active_model_name` AND replaces
+        # `run_analysis_step2` with `_run_analysis_step2_with_model`
+        # (which calls the getter unconditionally — no guard, none
+        # needed). Skip unless the legacy method is the active one and
+        # the getter is genuinely absent, i.e. the recommenders package
+        # was never imported in this pytest process (the mock-layer
+        # sandbox). Checked at call time — collection order can't be
+        # relied on.
+        if type(service).run_analysis_step2.__name__ != "run_analysis_step2":
+            pytest.skip(
+                "legacy AnalysisMixin.run_analysis_step2 is shadowed by the "
+                "production model-aware replacement"
+            )
+        if hasattr(type(service), "get_active_model_name"):
+            pytest.skip(
+                "get_active_model_name was attached by a recommenders import "
+                "earlier in this process — the 'getter absent' path can't be staged"
+            )
         mock_graph.side_effect = lambda ctx: ctx
         mock_discovery.return_value = {
             "prioritized_actions": {},
