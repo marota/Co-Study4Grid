@@ -30,6 +30,13 @@ describe('NoticesPanel', () => {
         expect(screen.queryByTestId('notices-list')).not.toBeInTheDocument();
     });
 
+    it('uses a bell glyph, NOT the ⚠️ warning sign (de-conflicted from the overloads marker)', () => {
+        render(<NoticesPanel notices={baseNotices} />);
+        const pill = screen.getByTestId('notices-pill');
+        expect(pill).toHaveTextContent('🔔');
+        expect(pill).not.toHaveTextContent('⚠️');
+    });
+
     it('expands the panel and shows each notice when the pill is clicked', async () => {
         const user = userEvent.setup();
         render(<NoticesPanel notices={baseNotices} />);

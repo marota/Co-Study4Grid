@@ -64,6 +64,7 @@ import AppSidebar from './components/AppSidebar';
 import Header from './components/Header';
 import VisualizationPanel from './components/VisualizationPanel';
 import ActionCard from './components/ActionCard';
+import { DEFAULT_ACTION_OVERVIEW_FILTERS } from './utils/actionTypes';
 import type { Notice } from './components/NoticesPanel';
 import type { ActionDetail, AnalysisResult, CombinedAction, DiagramData, TabId } from './types';
 
@@ -491,5 +492,31 @@ describe('UX consistency — component import smoke', () => {
         expect(slot).toHaveTextContent('payload');
         const sidebar = screen.getByTestId('sidebar');
         expect(within(sidebar).getByTestId('children-slot')).toBeInTheDocument();
+    });
+
+    it('AppSidebar forwards the overview filters into SidebarSummary so the rings render', () => {
+        // App → AppSidebar → SidebarSummary prop chain: when the feed
+        // has actions and the shared filter state is wired, the
+        // ActionFilterRings show up in the sticky strip.
+        render(
+            <AppSidebar
+                selectedContingency={['LINE_A']} pendingContingency={['LINE_A']} onPendingContingencyChange={vi.fn()} onContingencyApply={vi.fn()}
+                branches={[]}
+                nameMap={{}}
+                n1LinesOverloaded={undefined}
+                n1LinesOverloadedRho={undefined}
+                selectedOverloads={undefined}
+                displayName={(id) => id}
+                onContingencyZoom={vi.fn()}
+                onOverloadClick={vi.fn()}
+                overviewFilters={DEFAULT_ACTION_OVERVIEW_FILTERS}
+                onOverviewFiltersChange={vi.fn()}
+                hasActions
+            >
+                <div />
+            </AppSidebar>,
+        );
+        const summary = screen.getByTestId('sticky-feed-summary');
+        expect(within(summary).getByTestId('sidebar-action-filters')).toBeInTheDocument();
     });
 });
