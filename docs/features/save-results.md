@@ -43,7 +43,7 @@ Settings → gear icon → Paths tab → Output Folder Path
 ## How to Save
 
 1. Open **Settings → Paths** and configure Action Dictionary File Path and Output Folder Path.
-2. Open **Settings → Recommender** and pick the recommendation model. The selection is captured at save time under `configuration.model`; the model the backend actually executed is captured separately under `analysis.active_model` (the two may differ when an unknown name silently falls back to the default).
+2. Open **Settings → Recommender** and pick the recommendation model (it can also be swapped later from the model dropdown above the **Analyze & Suggest** button — same persisted `recommenderModel` state). The selection is captured at save time under `configuration.model`; the model the backend actually executed is captured separately under `analysis.active_model` (the two may differ when an unknown name silently falls back to the default).
 3. Load a study (click **Load Study**).
 4. Select a contingency in the **Select Contingency** box.
 5. Optionally run analysis, select/reject actions, simulate manual/combined actions.

@@ -134,8 +134,13 @@ The `RecommenderService.reset()` method clears, in order:
    - `_overflow_layout_cache` — cleared so file paths produced for
      the previous contingency cannot be served for the new one.
    - `_last_step2_context` — the preserved enriched Step-2 context
-     used by `/api/regenerate-overflow-graph`; stale context must
-     not be reused after a study reload.
+     used by `/api/regenerate-overflow-graph` and by the model-swap
+     fast path; stale context must not be reused after a study reload.
+   - `_last_step2_signature` — the input signature
+     `(contingency, selected_overloads, all_overloads,
+     monitor_deselected, additional_lines_to_cut)` that gates the
+     Step-2 overflow-graph cache reuse. Cleared so a freshly loaded
+     study never reuses the previous study's overflow graph.
 
 Adding a new per-study cache? It MUST be listed in
 `RecommenderService.reset()` (see

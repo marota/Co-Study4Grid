@@ -429,6 +429,146 @@ class TestOverloadFiltering:
             all_overloads=["L1", "L2"],
             monitor_deselected=True
         ))
-        
+
         result_event = next(e for e in events if e.get("type") == "result")
         assert result_event["lines_we_care_about"] == ["L1", "L2"]
+
+
+class TestStep2GraphCacheReuse:
+    """Step-2 caches the overflow graph keyed by an input signature
+    (contingency + selected/all overloads + monitor toggle +
+    additional_lines_to_cut). A re-run with an identical signature
+    skips ``run_analysis_step2_graph`` and reuses the cached graph +
+    the enriched context, jumping straight to action discovery — so
+    swapping only the recommender model is near-instant. A changed
+    signature (e.g. different additional_lines_to_cut) rebuilds.
+    """
+
+    @pytest.fixture
+    def service(self):
+        return RecommenderService()
+
+    def _seed_context(self, service):
+        # Mimics what run_analysis_step1 leaves on the service.
+        service._last_disconnected_elements = ["LINE_C"]
+        service._analysis_context = {
+            "env": MagicMock(),
+            "lines_overloaded_names": ["L1", "L2"],
+            "lines_overloaded_ids": [0, 1],
+            "lines_overloaded_ids_kept": [0, 1],
+            "lines_we_care_about": {"L1", "L2"},
+        }
+
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
+    def test_identical_signature_skips_graph_rebuild(self, mock_discovery, mock_graph, service, tmp_path):
+        pdf = tmp_path / "overflow.html"
+        pdf.write_text("<html></html>")
+        mock_graph.side_effect = lambda ctx: ctx
+        mock_discovery.return_value = {
+            "prioritized_actions": {},
+            "action_scores": {},
+            "lines_overloaded_names": ["L1"],
+        }
+        service._get_latest_pdf_path = MagicMock(return_value=str(pdf))
+
+        # First run — builds the graph and seeds the cache.
+        self._seed_context(service)
+        list(service.run_analysis_step2(
+            selected_overloads=["L1"], all_overloads=["L1", "L2"],
+            monitor_deselected=False, additional_lines_to_cut=["EXTRA"],
+        ))
+        assert mock_graph.call_count == 1
+        assert mock_discovery.call_count == 1
+        assert service._last_step2_context is not None
+        assert service._last_step2_signature is not None
+        assert service._overflow_layout_cache.get("hierarchical") == str(pdf)
+
+        # Second run, identical signature — the graph rebuild is skipped
+        # but discovery still runs (it's where the recommender model is
+        # consumed, so a model swap re-runs only this step).
+        events = list(service.run_analysis_step2(
+            selected_overloads=["L1"], all_overloads=["L1", "L2"],
+            monitor_deselected=False, additional_lines_to_cut=["EXTRA"],
+        ))
+        assert mock_graph.call_count == 1   # NOT rebuilt
+        assert mock_discovery.call_count == 2  # discovery re-ran
+        pdf_event = next(e for e in events if e.get("type") == "pdf")
+        assert pdf_event["pdf_path"] == str(pdf)
+        assert pdf_event.get("cached") is True
+
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
+    def test_changed_additional_lines_rebuilds_graph(self, mock_discovery, mock_graph, service, tmp_path):
+        pdf = tmp_path / "overflow.html"
+        pdf.write_text("<html></html>")
+        mock_graph.side_effect = lambda ctx: ctx
+        mock_discovery.return_value = {
+            "prioritized_actions": {},
+            "action_scores": {},
+            "lines_overloaded_names": ["L1"],
+        }
+        service._get_latest_pdf_path = MagicMock(return_value=str(pdf))
+
+        self._seed_context(service)
+        list(service.run_analysis_step2(
+            selected_overloads=["L1"], all_overloads=["L1", "L2"],
+            monitor_deselected=False, additional_lines_to_cut=["EXTRA"],
+        ))
+        assert mock_graph.call_count == 1
+
+        # Re-seed (step1 re-runs in the real flow) and change the
+        # additional-lines hypothesis → signature differs → rebuild.
+        self._seed_context(service)
+        list(service.run_analysis_step2(
+            selected_overloads=["L1"], all_overloads=["L1", "L2"],
+            monitor_deselected=False, additional_lines_to_cut=["OTHER"],
+        ))
+        assert mock_graph.call_count == 2  # rebuilt for the new signature
+
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
+    def test_result_event_carries_active_model(self, mock_discovery, mock_graph, service):
+        mock_graph.side_effect = lambda ctx: ctx
+        mock_discovery.return_value = {
+            "prioritized_actions": {},
+            "action_scores": {},
+            "lines_overloaded_names": ["L1"],
+        }
+        # ModelSelectionMixin getters are attached via the
+        # expert_backend.recommenders import side-effect — stub the
+        # getter directly so the result event echoes the active model.
+        service.get_active_model_name = MagicMock(return_value="random_overflow")
+        self._seed_context(service)
+
+        events = list(service.run_analysis_step2(selected_overloads=["L1"], all_overloads=["L1"]))
+        result_event = next(e for e in events if e.get("type") == "result")
+        assert result_event["active_model"] == "random_overflow"
+
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_graph")
+    @patch("expert_backend.services.analysis_mixin.run_analysis_step2_discovery")
+    def test_result_event_active_model_none_when_getter_absent(self, mock_discovery, mock_graph, service):
+        # A bare RecommenderService (no recommenders import side-effect)
+        # has no get_active_model_name — the result event must still be
+        # emitted with active_model=None rather than crashing.
+        mock_graph.side_effect = lambda ctx: ctx
+        mock_discovery.return_value = {
+            "prioritized_actions": {},
+            "action_scores": {},
+            "lines_overloaded_names": ["L1"],
+        }
+        self._seed_context(service)
+
+        events = list(service.run_analysis_step2(selected_overloads=["L1"], all_overloads=["L1"]))
+        result_event = next(e for e in events if e.get("type") == "result")
+        assert result_event["active_model"] is None
+
+    def test_reset_clears_step2_signature(self, service):
+        # The signature is a per-study cache — reset() MUST clear it so
+        # a freshly loaded study never reuses the previous study's
+        # overflow graph.
+        service._last_step2_signature = ("LINE_C", ("L1",), ("L1",), False, ())
+        service._last_step2_context = {"foo": "bar"}
+        service.reset()
+        assert service._last_step2_signature is None
+        assert service._last_step2_context is None

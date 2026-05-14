@@ -77,6 +77,64 @@ class TestGetNominalVoltages:
         assert data["unique_kv"] == [225.0, 400.0]
 
 
+class TestSetRecommenderModel:
+    """POST /api/recommender-model — lightweight model swap on the
+    running RecommenderService (no network reload, no action-dict
+    rebuild). The frontend fires this whenever the operator changes the
+    model dropdown (Settings modal OR the selector above Analyze &
+    Suggest), so the next /api/run-analysis-step2 uses the chosen
+    model.
+    """
+
+    def test_success_applies_model_and_echoes_active(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs.get_active_model_name.return_value = "random_overflow"
+        mock_rs.get_compute_overflow_graph.return_value = True
+
+        response = client.post(
+            "/api/recommender-model",
+            json={"model": "random_overflow", "compute_overflow_graph": True},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {
+            "status": "success",
+            "active_model": "random_overflow",
+            "compute_overflow_graph": True,
+        }
+        # The request object is threaded straight into _apply_model_settings.
+        mock_rs._apply_model_settings.assert_called_once()
+        applied = mock_rs._apply_model_settings.call_args[0][0]
+        assert applied.model == "random_overflow"
+        assert applied.compute_overflow_graph is True
+
+    def test_compute_overflow_graph_is_optional(self, client, mock_services):
+        # The pydantic model allows omitting compute_overflow_graph;
+        # _apply_model_settings then falls back to its own default.
+        _, mock_rs = mock_services
+        mock_rs.get_active_model_name.return_value = "random"
+        mock_rs.get_compute_overflow_graph.return_value = False
+
+        response = client.post("/api/recommender-model", json={"model": "random"})
+        assert response.status_code == 200
+        applied = mock_rs._apply_model_settings.call_args[0][0]
+        assert applied.model == "random"
+        assert applied.compute_overflow_graph is None
+
+    def test_missing_model_returns_422(self, client, mock_services):
+        # `model` is a required field on RecommenderModelRequest.
+        response = client.post("/api/recommender-model", json={})
+        assert response.status_code == 422
+
+    def test_error_returns_400(self, client, mock_services):
+        _, mock_rs = mock_services
+        mock_rs._apply_model_settings.side_effect = ValueError("bad model")
+
+        response = client.post("/api/recommender-model", json={"model": "expert"})
+        assert response.status_code == 400
+        assert "bad model" in response.json()["detail"]
+
+
 class TestGetElementVoltageLevels:
     def test_success(self, client, mock_services):
         mock_ns, _ = mock_services

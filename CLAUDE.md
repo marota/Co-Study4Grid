@@ -230,7 +230,9 @@ Both scripts run in CI (`.github/workflows/code-quality.yml` and
 | POST | `/api/user-config` | Persist user configuration |
 | GET  | `/api/config-file-path` | Get the current user-config file path |
 | POST | `/api/config-file-path` | Set a custom user-config file path |
-| POST | `/api/config` | Set network path, action file path, and all recommender parameters |
+| POST | `/api/config` | Set network path, action file path, and all recommender parameters (incl. `model` and `compute_overflow_graph`) |
+| GET  | `/api/models` | List registered recommendation models with their `params_spec()` and capability flags |
+| POST | `/api/recommender-model` | Lightweight swap of the active recommender model (no network reload) — fired by the model dropdowns in Settings and above Analyze & Suggest |
 | GET  | `/api/branches` | List disconnectable elements (lines + 2-winding transformers) |
 | GET  | `/api/voltage-levels` | List voltage levels in the network |
 | GET  | `/api/nominal-voltages` | Map voltage level IDs to nominal voltages (kV) |
