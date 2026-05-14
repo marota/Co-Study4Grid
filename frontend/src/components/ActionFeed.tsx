@@ -993,7 +993,15 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 )}
 
                 {/* Unified analysis action slot: Analyze & Suggest → Analyzing… → Display N prioritized actions */}
-                {(analysisLoading || pendingAnalysisResult || !Object.values(actions).some(a => !a.is_manual)) && (
+                {/* Show the analysis trigger slot whenever the Suggested
+                    feed is empty — not just when result.actions has no
+                    recommender-produced entry. After "Clear", the
+                    operator's kept rejected actions stay in
+                    result.actions with is_manual=false; gating on
+                    prioritizedEntries (which already excludes selected +
+                    rejected) is what makes the Analyze & Suggest button
+                    reappear post-Clear. */}
+                {(analysisLoading || pendingAnalysisResult || prioritizedEntries.length === 0) && (
                     <div style={{ marginBottom: '10px' }}>
                         {analysisLoading ? (
                             <button disabled style={{
