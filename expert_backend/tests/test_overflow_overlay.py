@@ -119,12 +119,13 @@ class TestInjectOverlay:
         )
 
     def test_action_filters_section_is_injected(self) -> None:
-        """The overlay must inject an ``Action pins filters`` section
-        that mirrors the chip-row filters of the React Action Overview
-        tab so the iframe's sidebar offers the same UX. It is hidden
-        by default (only visible when pins are toggled on) and emits
-        ``cs4g:overflow-filter-changed`` when the operator interacts
-        with it."""
+        """The overlay must inject an ``Action pins filters`` section.
+        It is hidden by default (only visible when pins are toggled
+        on) and emits ``cs4g:overflow-filter-changed`` when the
+        operator interacts with it. The severity (action-card colour)
+        and action-type filters were removed — they are driven solely
+        by the sidebar's ActionFilterRings — so this panel keeps only
+        the threshold / show-unsimulated / combined-only controls."""
         out = inject_overlay(_BASE_HTML)
         # CSS hook + JS builder.
         assert "#cs4g-filters" in out
@@ -140,14 +141,13 @@ class TestInjectOverlay:
         # pins, mirroring the Action Overview's pin counter.
         assert "data-counter-value" in out
         assert "function updatePinCounter(" in out
-        # The section labels must match the Action Overview chip text
-        # so operators recognise them across surfaces.
-        assert "Solves overload" in out
-        assert "Low margin" in out
-        assert "Still overloaded" in out
-        assert "Divergent / islanded" in out
+        # The retained controls.
         assert "Show unsimulated" in out
         assert "Max loading" in out
+        # The removed severity / action-type controls must be gone.
+        assert "data-category=" not in out
+        assert "data-action-type=" not in out
+        assert 'data-action="select-all"' not in out
 
     def test_action_filters_section_is_appended_below_existing_sections(self) -> None:
         """The pins filter panel is appended at the END of the
@@ -157,33 +157,6 @@ class TestInjectOverlay:
         assert "sidebar.appendChild(panel)" in out
         # And no longer inserted before the layers <h2>.
         assert "sidebar.insertBefore(panel, layersHeader)" not in out
-
-    def test_filter_panel_carries_all_four_severity_chips(self) -> None:
-        """Severity category chips: green / orange / red / grey.
-        Each must be wired with ``data-category="<key>"`` so
-        ``renderFilterState`` can flip ``aria-pressed`` on the right
-        element after a parent ``cs4g:filters`` broadcast."""
-        out = inject_overlay(_BASE_HTML)
-        # The category chips are produced by the catSpecs loop
-        # in buildFiltersPanel.
-        for spec_key in ('green', 'orange', 'red', 'grey'):
-            assert (
-                f"key: '{spec_key}'," in out
-            ), f"category chip spec for {spec_key} missing"
-        # And renderFilterState reads them back through data-category.
-        assert "querySelectorAll('[data-category]')" in out
-
-    def test_filter_panel_carries_all_eight_action_type_tokens(self) -> None:
-        """The action-type chip row mirrors ``ACTION_TYPE_FILTER_TOKENS``
-        in ``actionTypes.ts`` (single-select 'all' / 'disco' / 'reco' /
-        'ls' / 'rc' / 'open' / 'close' / 'pst')."""
-        out = inject_overlay(_BASE_HTML)
-        for tok in ("'all'", "'disco'", "'reco'", "'ls'",
-                    "'rc'", "'open'", "'close'", "'pst'"):
-            assert tok in out, f"action-type token {tok} missing"
-        # Single-select wire-format: actionType is a STRING (not an
-        # object).
-        assert "actionType: tok" in out
 
     def test_filter_panel_threshold_input_is_a_percent_spinner(self) -> None:
         """The threshold control is a 0–300% integer spinner; the
@@ -238,21 +211,6 @@ class TestInjectOverlay:
         assert "data-counter-value>0</span>" in out
         # The drawn counter is updated AFTER the pin loop.
         assert "updatePinCounter(drawn)" in out
-
-    def test_select_all_select_none_are_wired(self) -> None:
-        """The ``All`` / ``None`` pills bulk-flip every category at
-        once — same UX as the Action Overview's filter row."""
-        out = inject_overlay(_BASE_HTML)
-        assert 'data-action="select-all"' in out
-        assert 'data-action="select-none"' in out
-        # Body of select-all sets every category True.
-        assert (
-            "categories: { green: true, orange: true, red: true, grey: true }"
-        ) in out
-        # Body of select-none sets every category False.
-        assert (
-            "categories: { green: false, orange: false, red: false, grey: false }"
-        ) in out
 
     def test_filter_state_default_matches_action_overview(self) -> None:
         """The iframe's local default ``filterState`` matches
@@ -370,22 +328,6 @@ class TestInjectOverlay:
         assert "data-combined-constituent" not in out
         # The unitary render loop defers dimming to renderFilterState.
         assert "renderFilterState" in out
-
-    def test_filter_chips_drop_blue_solid_fill_for_dim_unselected_style(self) -> None:
-        """The iframe sidebar filter chips mirror the
-        ``CategoryToggle`` component in the React Action Overview:
-        no blue solid fill on the *selected* chip, dim the
-        *unselected* ones (lower opacity + muted background) and
-        tint the active chip's border to its swatch colour."""
-        out = inject_overlay(_BASE_HTML)
-        # Legacy blue-fill rule must be gone.
-        assert "background: #1d4ed8; color: #fff" not in out
-        # New rule: dim unselected, swatch-coloured border on
-        # active per-category chips.
-        assert "opacity: 0.65" in out
-        assert ".chip[data-category=\"green\"][aria-pressed=\"true\"]" in out
-        assert ".chip[data-category=\"red\"][aria-pressed=\"true\"]" in out
-        assert ".chip[aria-pressed=\"false\"] .swatch" in out
 
     def test_pins_fan_out_when_colocated(self) -> None:
         """Two pins resolving to the same anchor must be spread on a

@@ -6,9 +6,9 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { ActionDetail, ActionTypeFilterToken, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, DiagramData, ActionOverviewFilters } from '../types';
+import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, DiagramData, ActionOverviewFilters } from '../types';
 import { actionPassesOverviewFilter } from '../utils/svgUtils';
-import { classifyActionType, matchesActionTypeFilter } from '../utils/actionTypes';
+import { DEFAULT_ACTION_OVERVIEW_FILTERS, matchesActionTypeFilter, rowPassesActionFilters } from '../utils/actionTypes';
 import { api } from '../api';
 import { interactionLogger } from '../utils/interactionLogger';
 import CombinedActionsModal from './CombinedActionsModal';
@@ -244,40 +244,44 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         setTimeout(() => searchInputRef.current?.focus(), 50);
     };
 
-    // Local filter for the manual-selection dropdown and scored table.
-    // Independent from overviewFilters.actionType which drives the
-    // overview diagram and the action cards list.
-    const [dropdownTypeFilter, setDropdownTypeFilter] = useState<ActionTypeFilterToken>('all');
+    // Shared severity + action-type filter for the manual-selection
+    // dropdown — its own `ActionFilterRings` instance, independent of
+    // the sidebar's global overviewFilters and the Combine modal's.
+    const [dropdownFilters, setDropdownFilters] = useState<ActionOverviewFilters>(DEFAULT_ACTION_OVERVIEW_FILTERS);
 
     const filteredActions = useMemo(() => {
         const q = searchQuery.toLowerCase();
         const alreadyShown = new Set(Object.keys(actions));
+        // Catalogue search rows have no simulated / estimated value, so
+        // only the action-type ring applies here — the severity ring
+        // would otherwise empty the raw-ID search entirely.
         return availableActions
             .filter(a => !alreadyShown.has(a.id))
-            .filter(a => {
-                if (dropdownTypeFilter === 'all') return true;
-                return matchesActionTypeFilter(dropdownTypeFilter, a.id, a.description || null, a.type || null);
-            })
+            .filter(a => matchesActionTypeFilter(dropdownFilters.actionType, a.id, a.description || null, a.type || null))
             .filter(a => a.id.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q))
             .slice(0, 20);
-    }, [searchQuery, availableActions, actions, dropdownTypeFilter]);
+    }, [searchQuery, availableActions, actions, dropdownFilters.actionType]);
 
-    // Format scored actions
+    // Format scored actions — filtered by the shared rings (type +
+    // severity). Severity uses the simulated max-loading once the
+    // action has been computed; scored-but-untested rows have no
+    // value and drop out as soon as a severity bucket is deselected.
     const scoredActionsList = useMemo(() => {
         if (!actionScores) return [];
         const list: { type: string; actionId: string; score: number; mwStart: number | null }[] = [];
         for (const [type, data] of Object.entries(actionScores)) {
             const scores = data?.scores || {};
             for (const [actionId, score] of Object.entries(scores)) {
-                if (dropdownTypeFilter !== 'all') {
-                    const actionDetail = actions[actionId];
-                    const bucket = classifyActionType(
-                        actionId,
-                        actionDetail?.description_unitaire || null,
-                        type,
-                    );
-                    if (bucket === 'unknown' || bucket !== dropdownTypeFilter) continue;
-                }
+                const detail = actions[actionId];
+                const passes = rowPassesActionFilters(dropdownFilters, {
+                    actionId,
+                    description: detail?.description_unitaire ?? null,
+                    scoreType: type,
+                    simulatedMaxRho: detail?.max_rho ?? null,
+                    estimatedMaxRho: detail?.estimated_max_rho ?? null,
+                    isFault: !!(detail?.is_islanded || detail?.non_convergence),
+                }, monitoringFactor);
+                if (!passes) continue;
                 const mwStartMap = (data as { mw_start?: Record<string, number | null> })?.mw_start;
                 const mwStart = mwStartMap?.[actionId] ?? null;
                 list.push({ type, actionId, score: Number(score), mwStart: mwStart != null ? Number(mwStart) : null });
@@ -291,7 +295,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             }
             return b.score - a.score;
         });
-    }, [actionScores, dropdownTypeFilter, actions]);
+    }, [actionScores, dropdownFilters, actions, monitoringFactor]);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -822,8 +826,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         searchInputRef={searchInputRef}
                         searchQuery={searchQuery}
                         onSearchQueryChange={setSearchQuery}
-                        actionTypeFilter={dropdownTypeFilter}
-                        onActionTypeFilterChange={setDropdownTypeFilter}
+                        filters={dropdownFilters}
+                        onFiltersChange={setDropdownFilters}
                         error={error}
                         loadingActions={loadingActions}
                         scoredActionsList={scoredActionsList}

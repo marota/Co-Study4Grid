@@ -66,15 +66,6 @@ describe('ExplorePairsTab', () => {
         expect(screen.getByText('Selected Actions (2/2)')).toBeInTheDocument();
     });
 
-    it('renders all filter buttons', () => {
-        render(<ExplorePairsTab {...defaultProps} />);
-        expect(screen.getByRole('button', { name: 'ALL' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'DISCO' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'RECO' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'LS' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'PST' })).toBeInTheDocument();
-    });
-
     it('renders action rows from scored actions list', () => {
         render(<ExplorePairsTab {...defaultProps} />);
         expect(screen.getByText('act1')).toBeInTheDocument();
@@ -301,28 +292,15 @@ describe('ExplorePairsTab', () => {
         expect(screen.getByText('Superposition failed')).toBeInTheDocument();
     });
 
-    it('shows only DISCO actions after clicking the DISCO chip', () => {
-        render(<ExplorePairsTab {...defaultProps} />);
-        fireEvent.click(screen.getByRole('button', { name: 'DISCO' }));
+    // The action-type / severity filtering moved OUT of this tab — it
+    // is now driven by the shared ActionFilterRings in the Combine-modal
+    // header, which hands ExplorePairsTab an already-filtered
+    // `scoredActionsList`. The tab itself only renders what it is given.
+    it('renders exactly the rows it is handed (no in-tab filtering)', () => {
+        render(<ExplorePairsTab {...defaultProps} scoredActionsList={[scoredActionsList[0]]} />);
         expect(screen.getByText('act1')).toBeInTheDocument();
-        expect(screen.getByText('act3')).toBeInTheDocument();
         expect(screen.queryByText('act2')).not.toBeInTheDocument();
-    });
-
-    it('clicking DISCO chip updates the local filter (list re-renders)', () => {
-        render(<ExplorePairsTab {...defaultProps} />);
-        // All three visible before clicking
-        expect(screen.getByText('act2')).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'DISCO' }));
-        // act2 (reco type) disappears
-        expect(screen.queryByText('act2')).not.toBeInTheDocument();
-    });
-
-    it('shows only RECO actions after clicking the RECO chip', () => {
-        render(<ExplorePairsTab {...defaultProps} />);
-        fireEvent.click(screen.getByRole('button', { name: 'RECO' }));
-        expect(screen.getByText('act2')).toBeInTheDocument();
-        expect(screen.queryByText('act1')).not.toBeInTheDocument();
+        expect(screen.queryByText('act3')).not.toBeInTheDocument();
     });
 
     it('calls onClearSelection when Clear All is clicked', () => {
@@ -342,29 +320,15 @@ describe('ExplorePairsTab', () => {
         expect(screen.getAllByText('N/A').length).toBeGreaterThan(0);
     });
 
-    it('shows empty state when PST chip is active and no PST actions exist', () => {
-        render(<ExplorePairsTab {...defaultProps} />);
-        fireEvent.click(screen.getByRole('button', { name: 'PST' }));
+    it('shows the empty state when handed an empty scored-actions list', () => {
+        render(<ExplorePairsTab {...defaultProps} scoredActionsList={[]} />);
         expect(screen.getByText(/No scored actions available/)).toBeInTheDocument();
     });
 
-    it('defaults to showing all actions on first render', () => {
+    it('renders every row it is handed', () => {
         render(<ExplorePairsTab {...defaultProps} />);
         expect(screen.getByText('act1')).toBeInTheDocument();
         expect(screen.getByText('act2')).toBeInTheDocument();
         expect(screen.getByText('act3')).toBeInTheDocument();
-    });
-
-    it('marks the active chip with aria-pressed="true" after clicking RECO', () => {
-        render(<ExplorePairsTab {...defaultProps} />);
-        fireEvent.click(screen.getByTestId('explore-pairs-filter-reco'));
-        const recoChip = screen.getByTestId('explore-pairs-filter-reco');
-        expect(recoChip.getAttribute('aria-pressed')).toBe('true');
-        expect(screen.getByTestId('explore-pairs-filter-all').getAttribute('aria-pressed')).toBe('false');
-    });
-
-    it('clicking any chip does not throw', () => {
-        render(<ExplorePairsTab {...defaultProps} />);
-        expect(() => fireEvent.click(screen.getByTestId('explore-pairs-filter-disco'))).not.toThrow();
     });
 });

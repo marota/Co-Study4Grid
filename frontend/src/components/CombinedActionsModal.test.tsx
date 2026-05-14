@@ -94,13 +94,14 @@ describe('CombinedActionsModal', () => {
         render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithTypes as AnalysisResult} />);
         fireEvent.click(getExploreTab());
 
-        // Filter for disconnections — chip click updates local state inside ExplorePairsTab
-        fireEvent.click(screen.getByRole('button', { name: 'DISCO' }));
+        // Filter for disconnections via the shared action-type ring in
+        // the modal header (drives BOTH tabs).
+        fireEvent.click(screen.getByTestId('sidebar-filter-type-disco'));
         expect(screen.getByText('disco1')).toBeInTheDocument();
         expect(screen.queryByText('reco1')).not.toBeInTheDocument();
 
-        // Filter for load shedding
-        fireEvent.click(screen.getByRole('button', { name: 'LS' }));
+        // Filter for load shedding.
+        fireEvent.click(screen.getByTestId('sidebar-filter-type-ls'));
         expect(screen.getByText('ls1')).toBeInTheDocument();
         expect(screen.queryByText('disco1')).not.toBeInTheDocument();
     });
@@ -124,14 +125,15 @@ describe('CombinedActionsModal', () => {
         expect(screen.getByText('reco1')).toBeInTheDocument();
     });
 
-    it('chip row is present in explore tab and clicking changes the filter', () => {
+    it('renders the shared filter rings in the modal header for the explore tab', () => {
         render(<CombinedActionsModal {...defaultProps} />);
         fireEvent.click(getExploreTab());
-        const discoChip = screen.getByTestId('explore-pairs-filter-disco');
-        expect(discoChip).toBeInTheDocument();
-        // Clicking should not throw and should update internal state
-        expect(() => fireEvent.click(discoChip)).not.toThrow();
-        expect(discoChip.getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByTestId('sidebar-action-filters')).toBeInTheDocument();
+        const discoToggle = screen.getByTestId('sidebar-filter-type-disco');
+        expect(discoToggle).toBeInTheDocument();
+        // Clicking should not throw and should update the shared filter.
+        expect(() => fireEvent.click(discoToggle)).not.toThrow();
+        expect(discoToggle.getAttribute('aria-pressed')).toBe('true');
     });
 
     it('groups actions by type in explore tab table including LS', async () => {
@@ -149,8 +151,9 @@ describe('CombinedActionsModal', () => {
         render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithLS as AnalysisResult} />);
         fireEvent.click(getExploreTab());
 
+        // The explore-tab table groups rows under per-type headers.
         expect(screen.getAllByText('DISCO').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('LS').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('LOAD SHEDDING').length).toBeGreaterThan(0);
         expect(screen.getByText('ls_test')).toBeInTheDocument();
     });
 

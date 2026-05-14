@@ -17,7 +17,7 @@
  * all three stay in lock-step when a new bucket is added.
  */
 
-import type { ActionOverviewFilters, ActionTypeFilterToken } from '../types';
+import type { ActionOverviewFilters, ActionSeverityCategory, ActionTypeFilterToken } from '../types';
 
 /** Canonical chip tokens rendered in the filter row (in display order). */
 export const ACTION_TYPE_FILTER_TOKENS: readonly ActionTypeFilterToken[] = [
@@ -168,4 +168,86 @@ export const matchesActionTypeFilter = (
 ): boolean => {
     if (filter === 'all') return true;
     return classifyActionType(actionId, description, scoreType) === filter;
+};
+
+// ---------------------------------------------------------------------
+// Severity (action-card colour) classification + the shared row filter
+// ---------------------------------------------------------------------
+
+/**
+ * Severity bucket from a max-loading value. Mirrors the green / orange
+ * / red thresholds used across the UI (> mf → red, > mf - 0.05 →
+ * orange, otherwise → green). Returns `null` when there is no value to
+ * classify — callers decide whether a null-severity row passes.
+ */
+export const severityFromMaxRho = (
+    maxRho: number | null | undefined,
+    monitoringFactor: number,
+): ActionSeverityCategory | null => {
+    if (maxRho == null) return null;
+    if (maxRho > monitoringFactor) return 'red';
+    if (maxRho > monitoringFactor - 0.05) return 'orange';
+    return 'green';
+};
+
+/**
+ * Resolve a row's severity bucket from its SIMULATED max-loading when
+ * available, falling back to the ESTIMATED value. Fault rows
+ * (divergent / islanded) are always 'grey'. Returns `null` when no
+ * value of any kind is available.
+ */
+export const resolveRowSeverity = (
+    row: { simulatedMaxRho?: number | null; estimatedMaxRho?: number | null; isFault?: boolean },
+    monitoringFactor: number,
+): ActionSeverityCategory | null => {
+    if (row.isFault) return 'grey';
+    if (row.simulatedMaxRho != null) return severityFromMaxRho(row.simulatedMaxRho, monitoringFactor);
+    if (row.estimatedMaxRho != null) return severityFromMaxRho(row.estimatedMaxRho, monitoringFactor);
+    return null;
+};
+
+/**
+ * True iff a row with the given severity bucket passes the active
+ * category (action-card colour) filter. When every category is
+ * enabled the filter is inactive and everything passes — including
+ * `null`-severity rows. Once any category is disabled the filter is
+ * active and `null`-severity rows (no simulated / estimated value)
+ * are hidden.
+ */
+export const rowPassesSeverityFilter = (
+    severity: ActionSeverityCategory | null,
+    categories: Record<ActionSeverityCategory, boolean>,
+): boolean => {
+    const allOn = categories.green && categories.orange && categories.red && categories.grey;
+    if (allOn) return true;
+    if (severity == null) return false;
+    return categories[severity];
+};
+
+/** Row shape consumed by `rowPassesActionFilters`. */
+export interface FilterableActionRow {
+    actionId: string;
+    description?: string | null;
+    scoreType?: string | null;
+    simulatedMaxRho?: number | null;
+    estimatedMaxRho?: number | null;
+    isFault?: boolean;
+}
+
+/**
+ * Combined predicate for the shared `ActionFilterRings`: a row passes
+ * when its action-type bucket matches the type ring AND its severity
+ * bucket passes the colour ring. Used by the Combine-Actions modal and
+ * the manual-selection table so both surfaces filter identically.
+ */
+export const rowPassesActionFilters = (
+    filters: ActionOverviewFilters,
+    row: FilterableActionRow,
+    monitoringFactor: number,
+): boolean => {
+    if (!matchesActionTypeFilter(filters.actionType, row.actionId, row.description ?? null, row.scoreType ?? null)) {
+        return false;
+    }
+    const severity = resolveRowSeverity(row, monitoringFactor);
+    return rowPassesSeverityFilter(severity, filters.categories);
 };

@@ -10,7 +10,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { createRef } from 'react';
 import ActionSearchDropdown from './ActionSearchDropdown';
-import type { ActionDetail } from '../types';
+import { DEFAULT_ACTION_OVERVIEW_FILTERS } from '../utils/actionTypes';
+import type { ActionDetail, ActionOverviewFilters } from '../types';
 
 describe('ActionSearchDropdown', () => {
     const defaultProps = {
@@ -18,8 +19,8 @@ describe('ActionSearchDropdown', () => {
         searchInputRef: createRef<HTMLInputElement>(),
         searchQuery: '',
         onSearchQueryChange: vi.fn(),
-        actionTypeFilter: 'all' as const,
-        onActionTypeFilterChange: vi.fn(),
+        filters: DEFAULT_ACTION_OVERVIEW_FILTERS as ActionOverviewFilters,
+        onFiltersChange: vi.fn(),
         error: null as string | null,
         loadingActions: false,
         scoredActionsList: [] as { type: string; actionId: string; score: number; mwStart: number | null }[],
@@ -45,30 +46,35 @@ describe('ActionSearchDropdown', () => {
         expect(screen.getByPlaceholderText('Search action by ID or description...')).toBeInTheDocument();
     });
 
-    it('renders all action type filter chips', () => {
+    it('renders the shared ActionFilterRings (severity + action-type rings)', () => {
         render(<ActionSearchDropdown {...defaultProps} />);
-        expect(screen.getByTestId('search-dropdown-filter-all')).toBeInTheDocument();
-        expect(screen.getByTestId('search-dropdown-filter-disco')).toBeInTheDocument();
-        expect(screen.getByTestId('search-dropdown-filter-reco')).toBeInTheDocument();
-        expect(screen.getByTestId('search-dropdown-filter-ls')).toBeInTheDocument();
-        expect(screen.getByTestId('search-dropdown-filter-rc')).toBeInTheDocument();
-        expect(screen.getByTestId('search-dropdown-filter-pst')).toBeInTheDocument();
-        expect(screen.getByTestId('search-dropdown-filter-open')).toBeInTheDocument();
-        expect(screen.getByTestId('search-dropdown-filter-close')).toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-action-filters')).toBeInTheDocument();
+        for (const t of ['disco', 'reco', 'ls', 'rc', 'pst', 'open', 'close']) {
+            expect(screen.getByTestId(`sidebar-filter-type-${t}`)).toBeInTheDocument();
+        }
+        for (const c of ['green', 'orange', 'red', 'grey']) {
+            expect(screen.getByTestId(`sidebar-filter-category-${c}`)).toBeInTheDocument();
+        }
     });
 
-    it('calls onActionTypeFilterChange when a filter chip is clicked', () => {
-        const onActionTypeFilterChange = vi.fn();
-        render(<ActionSearchDropdown {...defaultProps} onActionTypeFilterChange={onActionTypeFilterChange} />);
-        fireEvent.click(screen.getByTestId('search-dropdown-filter-pst'));
-        expect(onActionTypeFilterChange).toHaveBeenCalledWith('pst');
+    it('calls onFiltersChange when an action-type ring toggle is clicked', () => {
+        const onFiltersChange = vi.fn();
+        render(<ActionSearchDropdown {...defaultProps} onFiltersChange={onFiltersChange} />);
+        fireEvent.click(screen.getByTestId('sidebar-filter-type-pst'));
+        expect(onFiltersChange).toHaveBeenCalledWith(
+            expect.objectContaining({ actionType: 'pst' }),
+        );
     });
 
-    it('marks the active chip with aria-pressed="true"', () => {
-        render(<ActionSearchDropdown {...defaultProps} actionTypeFilter="disco" />);
-        expect(screen.getByTestId('search-dropdown-filter-disco').getAttribute('aria-pressed')).toBe('true');
-        expect(screen.getByTestId('search-dropdown-filter-all').getAttribute('aria-pressed')).toBe('false');
-        expect(screen.getByTestId('search-dropdown-filter-pst').getAttribute('aria-pressed')).toBe('false');
+    it('marks the active action-type toggle with aria-pressed="true"', () => {
+        render(
+            <ActionSearchDropdown
+                {...defaultProps}
+                filters={{ ...DEFAULT_ACTION_OVERVIEW_FILTERS, actionType: 'disco' }}
+            />,
+        );
+        expect(screen.getByTestId('sidebar-filter-type-disco').getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByTestId('sidebar-filter-type-pst').getAttribute('aria-pressed')).toBe('false');
     });
 
     it('calls onSearchQueryChange when input changes', () => {
@@ -378,7 +384,7 @@ describe('ActionSearchDropdown', () => {
                 <ActionSearchDropdown
                     {...defaultProps}
                     // Type filter is RECO but the only scored action is a PST.
-                    actionTypeFilter="reco"
+                    filters={{ ...DEFAULT_ACTION_OVERVIEW_FILTERS, actionType: 'reco' }}
                     scoredActionsList={[]}
                     actionScores={actionScores}
                 />,
@@ -392,7 +398,7 @@ describe('ActionSearchDropdown', () => {
             render(
                 <ActionSearchDropdown
                     {...defaultProps}
-                    actionTypeFilter="reco"
+                    filters={{ ...DEFAULT_ACTION_OVERVIEW_FILTERS, actionType: 'reco' }}
                     scoredActionsList={[]}
                     actionScores={undefined}
                 />,
@@ -404,7 +410,7 @@ describe('ActionSearchDropdown', () => {
             render(
                 <ActionSearchDropdown
                     {...defaultProps}
-                    actionTypeFilter="reco"
+                    filters={{ ...DEFAULT_ACTION_OVERVIEW_FILTERS, actionType: 'reco' }}
                     scoredActionsList={[]}
                     actionScores={{}}
                 />,
@@ -419,7 +425,7 @@ describe('ActionSearchDropdown', () => {
             render(
                 <ActionSearchDropdown
                     {...defaultProps}
-                    actionTypeFilter="all"
+                    filters={{ ...DEFAULT_ACTION_OVERVIEW_FILTERS, actionType: 'all' }}
                     scoredActionsList={[]}
                     actionScores={actionScores}
                 />,
@@ -434,7 +440,7 @@ describe('ActionSearchDropdown', () => {
             render(
                 <ActionSearchDropdown
                     {...defaultProps}
-                    actionTypeFilter="pst"
+                    filters={{ ...DEFAULT_ACTION_OVERVIEW_FILTERS, actionType: 'pst' }}
                     scoredActionsList={[
                         { type: 'pst_tap_change', actionId: 'pst-A', score: 5, mwStart: null },
                     ]}
@@ -452,7 +458,7 @@ describe('ActionSearchDropdown', () => {
                 <ActionSearchDropdown
                     {...defaultProps}
                     searchQuery="foo"
-                    actionTypeFilter="reco"
+                    filters={{ ...DEFAULT_ACTION_OVERVIEW_FILTERS, actionType: 'reco' }}
                     scoredActionsList={[]}
                     actionScores={actionScores}
                 />,

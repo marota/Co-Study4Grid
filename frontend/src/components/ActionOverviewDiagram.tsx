@@ -6,10 +6,9 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ActionDetail, ActionOverviewFilters, ActionSeverityCategory, ActionTypeFilterToken, DiagramData, MetadataIndex, UnsimulatedActionScoreInfo, ViewBox } from '../types';
+import type { ActionDetail, ActionOverviewFilters, DiagramData, MetadataIndex, UnsimulatedActionScoreInfo, ViewBox } from '../types';
 import { DEFAULT_ACTION_OVERVIEW_FILTERS, matchesActionTypeFilter } from '../utils/actionTypes';
-import { colors, pinColors } from '../styles/tokens';
-import ActionTypeFilterChips from './ActionTypeFilterChips';
+import { colors } from '../styles/tokens';
 import {
     actionPassesOverviewFilter,
     applyActionOverviewHighlights,
@@ -787,27 +786,6 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
         onFiltersChange?.(next);
     }, [onFiltersChange]);
 
-    const toggleCategory = useCallback((cat: ActionSeverityCategory) => {
-        const nextCats = { ...activeFilters.categories, [cat]: !activeFilters.categories[cat] };
-        interactionLogger.record('overview_filter_changed', {
-            kind: 'category',
-            category: cat,
-            enabled: nextCats[cat],
-        });
-        pushFilters({ ...activeFilters, categories: nextCats });
-    }, [activeFilters, pushFilters]);
-
-    const setAllCategories = useCallback((enabled: boolean) => {
-        const nextCats: Record<ActionSeverityCategory, boolean> = {
-            green: enabled, orange: enabled, red: enabled, grey: enabled,
-        };
-        interactionLogger.record('overview_filter_changed', {
-            kind: 'categories_bulk',
-            enabled,
-        });
-        pushFilters({ ...activeFilters, categories: nextCats });
-    }, [activeFilters, pushFilters]);
-
     const setThreshold = useCallback((threshold: number) => {
         interactionLogger.record('overview_filter_changed', {
             kind: 'threshold',
@@ -829,15 +807,6 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
             enabled: next,
         });
         pushFilters({ ...activeFilters, showCombinedOnly: next });
-    }, [activeFilters, pushFilters]);
-
-    const setActionType = useCallback((token: ActionTypeFilterToken) => {
-        if (token === activeFilters.actionType) return;
-        interactionLogger.record('overview_filter_changed', {
-            kind: 'action_type',
-            action_type: token,
-        });
-        pushFilters({ ...activeFilters, actionType: token });
     }, [activeFilters, pushFilters]);
 
     // Pre-compute the props ActionCard needs for the popover render.
@@ -871,11 +840,12 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                 zIndex: 15,
             }}
         >
-            {/* Single-row header: compact pin counter (no
-                "Remedial actions overview" title — the tab label
-                already carries it) + every filter on the same line.
-                Consolidated to claim back the ~30 px row previously
-                spent on a dedicated action-type chip sub-banner. */}
+            {/* Single-row header: compact pin counter + the
+                threshold / show-unsimulated / combined-only filters.
+                The severity (action-card colour) toggles and the
+                action-type chips were removed — they are now driven
+                solely by the sidebar's ActionFilterRings, which writes
+                the same shared `overviewFilters` this view consumes. */}
             <div
                 data-testid="action-overview-header"
                 style={{
@@ -906,48 +876,6 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                         </span>
                     </span>
                 )}
-                <CategoryToggle
-                    testId="filter-category-green"
-                    color={pinColors.green} label="Solves overload"
-                    enabled={activeFilters.categories.green}
-                    onToggle={() => toggleCategory('green')}
-                />
-                <CategoryToggle
-                    testId="filter-category-orange"
-                    color={pinColors.orange} label="Low margin"
-                    enabled={activeFilters.categories.orange}
-                    onToggle={() => toggleCategory('orange')}
-                />
-                <CategoryToggle
-                    testId="filter-category-red"
-                    color={pinColors.red} label="Still overloaded"
-                    enabled={activeFilters.categories.red}
-                    onToggle={() => toggleCategory('red')}
-                />
-                <CategoryToggle
-                    testId="filter-category-grey"
-                    color={pinColors.grey} label="Divergent / islanded"
-                    enabled={activeFilters.categories.grey}
-                    onToggle={() => toggleCategory('grey')}
-                />
-                <button
-                    data-testid="filter-select-all"
-                    type="button"
-                    onClick={() => setAllCategories(true)}
-                    title="Enable all categories"
-                    style={filterChipButtonStyle}
-                >
-                    All
-                </button>
-                <button
-                    data-testid="filter-select-none"
-                    type="button"
-                    onClick={() => setAllCategories(false)}
-                    title="Disable all categories"
-                    style={filterChipButtonStyle}
-                >
-                    None
-                </button>
                 <label
                     data-testid="filter-threshold"
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
@@ -1003,22 +931,6 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                     />
                     <span style={{ color: colors.textSecondary }}>Combined only</span>
                 </label>
-                <span
-                    aria-hidden
-                    style={{
-                        display: 'inline-block',
-                        width: 1,
-                        height: 18,
-                        background: colors.border,
-                        margin: '0 2px',
-                        flexShrink: 0,
-                    }}
-                />
-                <ActionTypeFilterChips
-                    testIdPrefix="overview-action-type-filter"
-                    value={activeFilters.actionType}
-                    onChange={setActionType}
-                />
             </div>
 
             {/* SVG body: the pan/zoom container. Wheel + drag work
@@ -1277,66 +1189,5 @@ const controlButtonStyle: React.CSSProperties = {
     fontWeight: 600,
     boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
 };
-
-const filterChipButtonStyle: React.CSSProperties = {
-    background: colors.surface,
-    color: colors.textPrimary,
-    border: `1px solid ${colors.border}`,
-    borderRadius: 4,
-    padding: '3px 8px',
-    cursor: 'pointer',
-    fontSize: 12,
-    fontWeight: 600,
-    flexShrink: 0,
-};
-
-/**
- * Clickable severity chip used in the overview header. Acts as a
- * toggle: when enabled the matching pins and cards are visible,
- * when disabled both are hidden. Doubles as a legend by always
- * showing the severity colour.
- */
-const CategoryToggle: React.FC<{
-    color: string;
-    label: string;
-    enabled: boolean;
-    onToggle: () => void;
-    testId?: string;
-}> = ({ color, label, enabled, onToggle, testId }) => (
-    <button
-        type="button"
-        onClick={onToggle}
-        data-testid={testId}
-        aria-pressed={enabled}
-        title={enabled ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
-        style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            cursor: 'pointer',
-            background: enabled ? colors.surface : colors.surfaceMuted,
-            border: `1px solid ${enabled ? color : colors.border}`,
-            borderRadius: 12,
-            padding: '2px 8px',
-            fontSize: 12,
-            color: enabled ? colors.textPrimary : colors.textTertiary,
-            opacity: enabled ? 1 : 0.65,
-            flexShrink: 0,
-        }}
-    >
-        <span
-            aria-hidden
-            style={{
-                display: 'inline-block',
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                background: color,
-                opacity: enabled ? 1 : 0.5,
-            }}
-        />
-        <span>{label}</span>
-    </button>
-);
 
 export default React.memo(ActionOverviewDiagram);

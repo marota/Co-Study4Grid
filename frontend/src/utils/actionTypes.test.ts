@@ -10,8 +10,14 @@ import {
     classifyActionType,
     matchesActionTypeFilter,
     ACTION_TYPE_FILTER_TOKENS,
+    ACTION_TYPE_LABELS,
     DEFAULT_ACTION_OVERVIEW_FILTERS,
+    severityFromMaxRho,
+    resolveRowSeverity,
+    rowPassesSeverityFilter,
+    rowPassesActionFilters,
 } from './actionTypes';
+import type { ActionOverviewFilters } from '../types';
 
 describe('classifyActionType', () => {
     it('classifies line disconnection actions from their score-table type', () => {
@@ -168,5 +174,125 @@ describe('DEFAULT_ACTION_OVERVIEW_FILTERS', () => {
     it('sets threshold to 1.5 and hides un-simulated pins by default', () => {
         expect(DEFAULT_ACTION_OVERVIEW_FILTERS.threshold).toBe(1.5);
         expect(DEFAULT_ACTION_OVERVIEW_FILTERS.showUnsimulated).toBe(false);
+    });
+});
+
+describe('ACTION_TYPE_LABELS', () => {
+    it('carries a human-readable label for every non-"all" filter token', () => {
+        for (const token of ACTION_TYPE_FILTER_TOKENS) {
+            if (token === 'all') continue;
+            expect(ACTION_TYPE_LABELS[token]).toBeTruthy();
+        }
+    });
+
+    it('labels couplings as voltage-level operations and lines as line operations', () => {
+        expect(ACTION_TYPE_LABELS.disco).toBe('Line disconnection');
+        expect(ACTION_TYPE_LABELS.reco).toBe('Line reconnection');
+        expect(ACTION_TYPE_LABELS.open).toBe('Open coupling');
+        expect(ACTION_TYPE_LABELS.close).toBe('Close coupling');
+    });
+});
+
+describe('severityFromMaxRho', () => {
+    const mf = 0.95;
+
+    it('returns null when there is no value to classify', () => {
+        expect(severityFromMaxRho(null, mf)).toBeNull();
+        expect(severityFromMaxRho(undefined, mf)).toBeNull();
+    });
+
+    it('classifies above the monitoring factor as red', () => {
+        expect(severityFromMaxRho(1.1, mf)).toBe('red');
+    });
+
+    it('classifies the low-margin band (mf-0.05 .. mf) as orange', () => {
+        expect(severityFromMaxRho(0.93, mf)).toBe('orange');
+    });
+
+    it('classifies comfortably-below-limit as green', () => {
+        expect(severityFromMaxRho(0.5, mf)).toBe('green');
+    });
+});
+
+describe('resolveRowSeverity', () => {
+    const mf = 0.95;
+
+    it('classifies fault rows (divergent / islanded) as grey', () => {
+        expect(resolveRowSeverity({ isFault: true, simulatedMaxRho: 0.5 }, mf)).toBe('grey');
+    });
+
+    it('prefers the simulated value over the estimated value', () => {
+        // Simulated says green (0.5), estimated says red (1.2) — simulated wins.
+        expect(resolveRowSeverity({ simulatedMaxRho: 0.5, estimatedMaxRho: 1.2 }, mf)).toBe('green');
+    });
+
+    it('falls back to the estimated value when no simulated value is available', () => {
+        expect(resolveRowSeverity({ simulatedMaxRho: null, estimatedMaxRho: 1.2 }, mf)).toBe('red');
+    });
+
+    it('returns null when neither a simulated nor an estimated value exists', () => {
+        expect(resolveRowSeverity({}, mf)).toBeNull();
+    });
+});
+
+describe('rowPassesSeverityFilter', () => {
+    const allOn = { green: true, orange: true, red: true, grey: true };
+
+    it('passes everything — including null-severity rows — when no category is disabled', () => {
+        expect(rowPassesSeverityFilter(null, allOn)).toBe(true);
+        expect(rowPassesSeverityFilter('green', allOn)).toBe(true);
+    });
+
+    it('hides null-severity rows as soon as a category is disabled', () => {
+        const partial = { ...allOn, red: false };
+        expect(rowPassesSeverityFilter(null, partial)).toBe(false);
+    });
+
+    it('keeps a row whose severity bucket is still enabled', () => {
+        const partial = { ...allOn, red: false };
+        expect(rowPassesSeverityFilter('green', partial)).toBe(true);
+        expect(rowPassesSeverityFilter('red', partial)).toBe(false);
+    });
+});
+
+describe('rowPassesActionFilters', () => {
+    const base: ActionOverviewFilters = DEFAULT_ACTION_OVERVIEW_FILTERS;
+
+    it('passes a row that matches both the type ring and the severity ring', () => {
+        const filters: ActionOverviewFilters = { ...base, actionType: 'reco' };
+        expect(rowPassesActionFilters(filters, {
+            actionId: 'reco_GEN.PY762', scoreType: 'line_reconnection', simulatedMaxRho: 0.8,
+        }, 0.95)).toBe(true);
+    });
+
+    it('rejects a row whose action-type bucket does not match the type ring', () => {
+        const filters: ActionOverviewFilters = { ...base, actionType: 'disco' };
+        expect(rowPassesActionFilters(filters, {
+            actionId: 'reco_GEN.PY762', scoreType: 'line_reconnection', simulatedMaxRho: 0.8,
+        }, 0.95)).toBe(false);
+    });
+
+    it('rejects a row whose severity bucket is disabled', () => {
+        const filters: ActionOverviewFilters = {
+            ...base, categories: { ...base.categories, red: false },
+        };
+        expect(rowPassesActionFilters(filters, {
+            actionId: 'reco_X', scoreType: 'line_reconnection', simulatedMaxRho: 1.2,
+        }, 0.95)).toBe(false);
+    });
+
+    it('hides a scored-but-untested row (no value) once the severity ring is active', () => {
+        const filters: ActionOverviewFilters = {
+            ...base, categories: { ...base.categories, grey: false },
+        };
+        expect(rowPassesActionFilters(filters, {
+            actionId: 'reco_X', scoreType: 'line_reconnection',
+        }, 0.95)).toBe(false);
+    });
+
+    it('keeps a scored-but-untested row while no severity bucket is disabled', () => {
+        expect(rowPassesActionFilters(base, {
+            actionId: 'reco_X', scoreType: 'line_reconnection',
+        }, 0.95)).toBe(true);
     });
 });

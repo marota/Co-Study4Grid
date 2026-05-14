@@ -100,12 +100,11 @@ def _build_overlay_block() -> str:
   .cs4g-pin {{ pointer-events: auto; cursor: pointer; }}
 
   /* ``ACTION PINS FILTERS`` section appended at the BOTTOM of the
-     iframe's sidebar when the pin overlay is visible. Mirrors the
-     chip-row filters of the React Action Overview tab so operators
-     get identical filtering on both surfaces. The whole panel is
-     wrapped in its own bordered container so it visually reads as
-     a distinct, action-pin-scoped widget separate from the
-     graph-layer toggles above. */
+     iframe's sidebar when the pin overlay is visible. The severity
+     (action-card colour) and action-type filters were removed — they
+     are now driven solely by the sidebar's ActionFilterRings in the
+     React app. This panel keeps only the threshold / show-unsimulated
+     / combined-only controls plus the live pin counter. */
   #cs4g-filters {{
     display: none; margin: 14px 0 0; padding: 8px 0 0;
     border-top: 1px solid var(--border, #d1d5db);
@@ -127,46 +126,10 @@ def _build_overlay_block() -> str:
     display: flex; align-items: center; gap: 6px;
     margin-bottom: 4px; font-size: 12px; flex-wrap: wrap;
   }}
-  #cs4g-filters .swatch {{
-    width: 10px; height: 10px; border-radius: 2px;
-    border: 1px solid #ccc; display: inline-block; flex-shrink: 0;
-  }}
-  /* Filter chips mirror the CategoryToggle component
-     (frontend/src/components/ActionOverviewDiagram.tsx:1265): no
-     blue solid fill on the *selected* chip — visual differentiation
-     comes from dimming the *unselected* ones (lower opacity + muted
-     background) and tinting the active chip's border to its swatch
-     colour. Keeps the iframe sidebar consistent with the React
-     Action-Overview filter row. */
-  #cs4g-filters .chip {{
-    padding: 2px 8px; border-radius: 12px;
-    border: 1px solid #d1d5db; cursor: pointer; user-select: none;
-    background: #f3f4f6; color: #6b7280;
-    font-size: 12px; opacity: 0.65;
-    display: inline-flex; align-items: center; gap: 4px;
-    transition: opacity 0.15s ease, background 0.15s ease;
-  }}
-  #cs4g-filters .chip[aria-pressed="true"] {{
-    background: #fff; color: #111827; opacity: 1;
-  }}
-  /* Severity chip border picks up the swatch colour when active —
-     palette matches pinGlyph.js:SEVERITY_FILL exactly so the chip
-     reads as the same family as the pin glyph. */
-  #cs4g-filters .chip[data-category="green"][aria-pressed="true"]  {{ border-color: #28a745; }}
-  #cs4g-filters .chip[data-category="orange"][aria-pressed="true"] {{ border-color: #f0ad4e; }}
-  #cs4g-filters .chip[data-category="red"][aria-pressed="true"]    {{ border-color: #dc3545; }}
-  #cs4g-filters .chip[data-category="grey"][aria-pressed="true"]   {{ border-color: #9ca3af; }}
-  #cs4g-filters .chip[aria-pressed="false"] .swatch {{ opacity: 0.5; }}
   #cs4g-filters .threshold input {{
     width: 48px; padding: 1px 4px; font-size: 11px;
     border: 1px solid #ccc; border-radius: 3px;
     text-align: right; font-variant-numeric: tabular-nums;
-  }}
-  #cs4g-filters .pill {{
-    padding: 1px 6px; border-radius: 3px;
-    background: transparent; border: 1px solid transparent;
-    cursor: pointer; user-select: none; font-size: 11px;
-    color: #1d4ed8; text-decoration: underline;
   }}
   #cs4g-filters label.toggle {{
     display: inline-flex; align-items: center; gap: 4px;
@@ -189,16 +152,13 @@ def _build_overlay_block() -> str:
 
   // Last-known Action-Overview filter state (sent by the parent
   // every time it changes). The iframe never reads filter state
-  // anywhere else — it just renders chips and posts user changes
-  // back. The actual pin filtering happens in the React parent
+  // anywhere else — it just renders the threshold / show-unsimulated
+  // / combined-only controls and posts user changes back. The
+  // severity (action-card colour) and action-type buckets are NOT
+  // editable here anymore — they are kept on ``filterState`` only so
+  // the round-trip back to the parent leaves them untouched. The
+  // actual pin filtering happens in the React parent
   // (``buildOverflowPinPayload``).
-  const PIN_COLORS = {{
-    green: '#28a745', orange: '#f0ad4e',
-    red: '#dc3545', grey: '#9ca3af',
-  }};
-  const ACTION_TYPE_TOKENS = [
-    'all', 'disco', 'reco', 'ls', 'rc', 'open', 'close', 'pst',
-  ];
   let filterState = {{
     categories: {{ green: true, orange: true, red: true, grey: true }},
     threshold: 1.5,
@@ -230,11 +190,6 @@ def _build_overlay_block() -> str:
       +     '<span data-counter-value>0</span>'
       +   '</span>'
       + '</div>'
-      + '<div class="row" data-filter-row="categories"></div>'
-      + '<div class="row" data-filter-row="category-bulk">'
-      +   '<button type="button" class="pill" data-action="select-all">All</button>'
-      +   '<button type="button" class="pill" data-action="select-none">None</button>'
-      + '</div>'
       + '<div class="row threshold">'
       +   '<span style="color:#6b7280">Max loading</span>'
       +   '<input type="number" min="0" max="300" step="1" data-filter="threshold" />'
@@ -249,59 +204,12 @@ def _build_overlay_block() -> str:
       +     '<input type="checkbox" data-filter="combined-only" />'
       +     '<span style="color:#6b7280">Combined only</span>'
       +   '</label>'
-      + '</div>'
-      + '<div class="row" data-filter-row="action-types"></div>';
-    // Append to the END of the sidebar so the filter chips read as
+      + '</div>';
+    // Append to the END of the sidebar so the filter panel reads as
     // a distinct "pin-scoped" widget that follows the existing
     // graph-layer toggles, rather than competing for top-of-list
     // attention before the operator has even enabled pins.
     sidebar.appendChild(panel);
-    // Categories row (Solves overload / Low margin / Still over… / Div).
-    const catRow = panel.querySelector('[data-filter-row="categories"]');
-    const catSpecs = [
-      {{ key: 'green', label: 'Solves overload' }},
-      {{ key: 'orange', label: 'Low margin' }},
-      {{ key: 'red', label: 'Still overloaded' }},
-      {{ key: 'grey', label: 'Divergent / islanded' }},
-    ];
-    for (const spec of catSpecs) {{
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.setAttribute('data-category', spec.key);
-      chip.setAttribute('role', 'button');
-      chip.setAttribute('tabindex', '0');
-      chip.innerHTML =
-        '<span class="swatch" style="background:' + PIN_COLORS[spec.key] + '"></span> '
-        + spec.label;
-      chip.addEventListener('click', function() {{
-        filterState = {{
-          ...filterState,
-          categories: {{
-            ...filterState.categories,
-            [spec.key]: !filterState.categories[spec.key],
-          }},
-        }};
-        renderFilterState();
-        postFilters();
-      }});
-      catRow.appendChild(chip);
-    }}
-    // Bulk select-all / select-none.
-    const bulkRow = panel.querySelector('[data-filter-row="category-bulk"]');
-    bulkRow.querySelector('[data-action="select-all"]').addEventListener('click', function() {{
-      filterState = {{
-        ...filterState,
-        categories: {{ green: true, orange: true, red: true, grey: true }},
-      }};
-      renderFilterState(); postFilters();
-    }});
-    bulkRow.querySelector('[data-action="select-none"]').addEventListener('click', function() {{
-      filterState = {{
-        ...filterState,
-        categories: {{ green: false, orange: false, red: false, grey: false }},
-      }};
-      renderFilterState(); postFilters();
-    }});
     // Threshold spinner.
     const thr = panel.querySelector('input[data-filter="threshold"]');
     thr.addEventListener('change', function(ev) {{
@@ -327,37 +235,12 @@ def _build_overlay_block() -> str:
       filterState = {{ ...filterState, showCombinedOnly: !!ev.target.checked }};
       renderFilterState(); postFilters();
     }});
-    // Action-type chips.
-    const typeRow = panel.querySelector('[data-filter-row="action-types"]');
-    for (const tok of ACTION_TYPE_TOKENS) {{
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.setAttribute('data-action-type', tok);
-      chip.setAttribute('role', 'button');
-      chip.setAttribute('tabindex', '0');
-      chip.textContent = tok.toUpperCase();
-      chip.addEventListener('click', function() {{
-        filterState = {{ ...filterState, actionType: tok }};
-        renderFilterState(); postFilters();
-      }});
-      typeRow.appendChild(chip);
-    }}
     return panel;
   }}
 
   function renderFilterState() {{
     const panel = document.getElementById('cs4g-filters');
     if (!panel) return;
-    panel.querySelectorAll('[data-category]').forEach(function(el) {{
-      const k = el.getAttribute('data-category');
-      el.setAttribute('aria-pressed',
-        filterState.categories[k] ? 'true' : 'false');
-    }});
-    panel.querySelectorAll('[data-action-type]').forEach(function(el) {{
-      const k = el.getAttribute('data-action-type');
-      el.setAttribute('aria-pressed',
-        filterState.actionType === k ? 'true' : 'false');
-    }});
     const thr = panel.querySelector('input[data-filter="threshold"]');
     if (thr) thr.value = String(Math.round(filterState.threshold * 100));
     const showU = panel.querySelector('input[data-filter="show-unsimulated"]');

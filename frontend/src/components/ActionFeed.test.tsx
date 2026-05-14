@@ -501,7 +501,7 @@ describe('ActionFeed', () => {
 
         render(<ActionFeed {...defaultProps} />);
         fireEvent.click(screen.getByText('+ Manual Selection'));
-        const pstChip = await screen.findByTestId('search-dropdown-filter-pst');
+        const pstChip = await screen.findByTestId('sidebar-filter-type-pst');
         fireEvent.click(pstChip);
 
         // PST action visible, reco action hidden
@@ -531,7 +531,7 @@ describe('ActionFeed', () => {
         fireEvent.click(screen.getByText('+ Manual Selection'));
 
         // Set filter to RECO
-        const recoChip = await screen.findByTestId('search-dropdown-filter-reco');
+        const recoChip = await screen.findByTestId('sidebar-filter-type-reco');
         fireEvent.click(recoChip);
 
         // Type "pst" in search
@@ -557,7 +557,7 @@ describe('ActionFeed', () => {
 
         render(<ActionFeed {...defaultProps} />);
         fireEvent.click(screen.getByText('+ Manual Selection'));
-        const pstChip = await screen.findByTestId('search-dropdown-filter-pst');
+        const pstChip = await screen.findByTestId('sidebar-filter-type-pst');
         fireEvent.click(pstChip);
 
         expect(await screen.findByText('pst_1')).toBeInTheDocument();
@@ -573,7 +573,7 @@ describe('ActionFeed', () => {
 
         render(<ActionFeed {...defaultProps} />);
         fireEvent.click(screen.getByText('+ Manual Selection'));
-        const lsChip = await screen.findByTestId('search-dropdown-filter-ls');
+        const lsChip = await screen.findByTestId('sidebar-filter-type-ls');
         fireEvent.click(lsChip);
 
         expect(await screen.findByText('load_shedding_LOAD1')).toBeInTheDocument();
@@ -731,7 +731,7 @@ describe('ActionFeed', () => {
 
         render(<ActionFeed {...defaultProps} />);
         fireEvent.click(screen.getByText('+ Manual Selection'));
-        const pstChip = await screen.findByTestId('search-dropdown-filter-pst');
+        const pstChip = await screen.findByTestId('sidebar-filter-type-pst');
         fireEvent.click(pstChip);
 
         await waitFor(() => {
@@ -2876,30 +2876,30 @@ describe('ActionFeed', () => {
         });
     });
 
-    describe('action-type filter — dropdown chips (local state, independent of overview)', () => {
-        it('dropdown chip click does NOT call onOverviewFiltersChange', async () => {
+    describe('action-type filter — manual-selection ring (local state, independent of overview)', () => {
+        it('manual-selection ring toggle does NOT call onOverviewFiltersChange', async () => {
             const onOverviewFiltersChange = vi.fn();
             vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
             render(<ActionFeed
                 {...defaultProps}
-                overviewFilters={{ categories: { green: true, orange: true, red: true, grey: true }, threshold: 1.5, showUnsimulated: false, actionType: 'all' }}
+                overviewFilters={{ categories: { green: true, orange: true, red: true, grey: true }, threshold: 1.5, showUnsimulated: false, actionType: 'all', showCombinedOnly: false }}
                 onOverviewFiltersChange={onOverviewFiltersChange}
             />);
             fireEvent.click(screen.getByText('+ Manual Selection'));
-            const discoChip = await screen.findByTestId('search-dropdown-filter-disco');
+            const discoChip = await screen.findByTestId('sidebar-filter-type-disco');
             fireEvent.click(discoChip);
-            // Local state update — does NOT bubble up to the overview filter
+            // Local dropdown state — does NOT bubble up to the overview filter.
             expect(onOverviewFiltersChange).not.toHaveBeenCalled();
         });
 
-        it('marks the active chip with aria-pressed="true" after clicking LS in the search dropdown', async () => {
+        it('marks the active action-type toggle with aria-pressed="true" after clicking LS', async () => {
             vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
             render(<ActionFeed {...defaultProps} />);
             fireEvent.click(screen.getByText('+ Manual Selection'));
-            const lsChip = await screen.findByTestId('search-dropdown-filter-ls');
+            const lsChip = await screen.findByTestId('sidebar-filter-type-ls');
             fireEvent.click(lsChip);
             expect(lsChip.getAttribute('aria-pressed')).toBe('true');
-            expect(screen.getByTestId('search-dropdown-filter-all').getAttribute('aria-pressed')).toBe('false');
+            expect(screen.getByTestId('sidebar-filter-type-disco').getAttribute('aria-pressed')).toBe('false');
         });
 
         it('filters the Scored Actions table after clicking DISCO chip', async () => {
@@ -2910,7 +2910,7 @@ describe('ActionFeed', () => {
             vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
             render(<ActionFeed {...defaultProps} actionScores={actionScores} />);
             fireEvent.click(screen.getByText('+ Manual Selection'));
-            const discoChip = await screen.findByTestId('search-dropdown-filter-disco');
+            const discoChip = await screen.findByTestId('sidebar-filter-type-disco');
             fireEvent.click(discoChip);
             expect(await screen.findByText('disco_LINE_A')).toBeInTheDocument();
             expect(screen.queryByText('reco_LINE_B')).not.toBeInTheDocument();
@@ -2920,7 +2920,7 @@ describe('ActionFeed', () => {
             vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
             render(<ActionFeed {...defaultProps} />);
             fireEvent.click(screen.getByText('+ Manual Selection'));
-            const discoChip = await screen.findByTestId('search-dropdown-filter-disco');
+            const discoChip = await screen.findByTestId('sidebar-filter-type-disco');
             expect(() => fireEvent.click(discoChip)).not.toThrow();
         });
     });

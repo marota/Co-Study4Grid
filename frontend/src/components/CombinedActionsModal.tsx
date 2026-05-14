@@ -7,10 +7,18 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../api';
-import type { AnalysisResult, CombinedAction, ActionDetail } from '../types';
+import type { AnalysisResult, CombinedAction, ActionDetail, ActionOverviewFilters } from '../types';
 import { interactionLogger } from '../utils/interactionLogger';
+import {
+    DEFAULT_ACTION_OVERVIEW_FILTERS,
+    matchesActionTypeFilter,
+    resolveRowSeverity,
+    rowPassesActionFilters,
+    rowPassesSeverityFilter,
+} from '../utils/actionTypes';
 import ComputedPairsTable, { type ComputedPairEntry } from './ComputedPairsTable';
 import ExplorePairsTab from './ExplorePairsTab';
+import ActionFilterRings from './ActionFilterRings';
 import { colors } from '../styles/tokens';
 
 interface SimulationFeedback {
@@ -69,6 +77,25 @@ const CombinedActionsModal: React.FC<Props> = ({
     // Per-pair simulation results tracked within this modal session
     const [sessionSimResults, setSessionSimResults] = useState<Record<string, SimulationFeedback>>({});
     const lastSelectionRef = useRef<string>('');
+    // Shared severity + action-type filter for BOTH modal tabs. Modal-
+    // local (independent of the sidebar's global overviewFilters) — the
+    // ActionFilterRings instance lives next to the modal title.
+    const [filters, setFilters] = useState<ActionOverviewFilters>(DEFAULT_ACTION_OVERVIEW_FILTERS);
+
+    // actionId → recommender score-type, so pair constituents and
+    // scored rows classify by type the same way the sidebar feed does.
+    const scoreTypeByActionId = useMemo(() => {
+        const m = new Map<string, string>();
+        const scores = analysisResult?.action_scores;
+        if (!scores) return m;
+        for (const [type, data] of Object.entries(scores)) {
+            const s = data?.scores || {};
+            for (const actionId of Object.keys(s)) {
+                if (!m.has(actionId)) m.set(actionId, type);
+            }
+        }
+        return m;
+    }, [analysisResult]);
 
     // Scored actions for exploration, derived from analysisResult.action_scores
     const scoredActionsList = useMemo(() => {
@@ -92,6 +119,28 @@ const CombinedActionsModal: React.FC<Props> = ({
             return b.score - a.score;
         });
     }, [analysisResult]);
+
+    // Explore-Pairs rows after the shared filter. Severity classifies
+    // off the SIMULATED max-loading (session or analysis result) when
+    // available; scored-but-untested rows have no value, so they drop
+    // out as soon as a severity bucket is deselected.
+    const filteredScoredActionsList = useMemo(() => {
+        return scoredActionsList.filter(item => {
+            const sessionSim = sessionSimResults[item.actionId];
+            const analysisSim = analysisResult?.actions?.[item.actionId];
+            const simulatedDetail = sessionSim
+                ?? (analysisSim && !analysisSim.is_estimated && analysisSim.rho_after && analysisSim.rho_after.length > 0
+                    ? analysisSim
+                    : null);
+            return rowPassesActionFilters(filters, {
+                actionId: item.actionId,
+                scoreType: item.type,
+                simulatedMaxRho: simulatedDetail?.max_rho ?? null,
+                estimatedMaxRho: analysisSim?.estimated_max_rho ?? null,
+                isFault: !!(simulatedDetail?.is_islanded || simulatedDetail?.non_convergence),
+            }, monitoringFactor);
+        });
+    }, [scoredActionsList, filters, sessionSimResults, analysisResult, monitoringFactor]);
 
     // Pre-computed combined pairs from analysis
     const computedPairsList = useMemo(() => {
@@ -149,6 +198,26 @@ const CombinedActionsModal: React.FC<Props> = ({
                 };
             });
     }, [analysisResult, simulatedActions, sessionSimResults]);
+
+    // Computed-Pairs rows after the shared filter. A pair matches the
+    // type ring when EITHER constituent matches; severity classifies
+    // off the pair's simulated max-loading, falling back to the
+    // estimated value.
+    const filteredComputedPairsList = useMemo(() => {
+        return computedPairsList.filter(p => {
+            const typeOk = filters.actionType === 'all'
+                || matchesActionTypeFilter(filters.actionType, p.action1, null, scoreTypeByActionId.get(p.action1) ?? null)
+                || matchesActionTypeFilter(filters.actionType, p.action2, null, scoreTypeByActionId.get(p.action2) ?? null);
+            if (!typeOk) return false;
+            const simData = p.simData as (ActionDetail | SimulationFeedback) | null;
+            const severity = resolveRowSeverity({
+                simulatedMaxRho: p.isSimulated ? p.simulated_max_rho : null,
+                estimatedMaxRho: p.estimated_max_rho ?? null,
+                isFault: !!(simData?.is_islanded || simData?.non_convergence) || p.is_suspect,
+            }, monitoringFactor);
+            return rowPassesSeverityFilter(severity, filters.categories);
+        });
+    }, [computedPairsList, filters, scoreTypeByActionId, monitoringFactor]);
 
     // Log modal open/close and cleanup when modal closes
     useEffect(() => {
@@ -386,8 +455,14 @@ const CombinedActionsModal: React.FC<Props> = ({
                     overflow: 'hidden'
                 }}
             >
-                <div style={{ padding: '15px 24px', borderBottom: `1px solid ${colors.borderSubtle}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colors.surfaceRaised }}>
-                    <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Combine Actions</h2>
+                <div style={{ padding: '15px 24px', borderBottom: `1px solid ${colors.borderSubtle}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', background: colors.surfaceRaised }}>
+                    {/* Shared severity + action-type filter sits next to
+                        the title so both tabs (Computed / Explore Pairs)
+                        are driven by one control. */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                        <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Combine Actions</h2>
+                        <ActionFilterRings filters={filters} onFiltersChange={setFilters} />
+                    </div>
                     <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: '24px', cursor: 'pointer', color: colors.textTertiary }}>&times;</button>
                 </div>
 
@@ -413,7 +488,7 @@ const CombinedActionsModal: React.FC<Props> = ({
                 >
                     {activeTab === 'computed' ? (
                         <ComputedPairsTable
-                            computedPairsList={computedPairsList as ComputedPairEntry[]}
+                            computedPairsList={filteredComputedPairsList as ComputedPairEntry[]}
                             monitoringFactor={monitoringFactor}
                             simulating={simulating}
                             onSimulate={handleSimulate}
@@ -421,7 +496,7 @@ const CombinedActionsModal: React.FC<Props> = ({
                         />
                     ) : (
                         <ExplorePairsTab
-                            scoredActionsList={scoredActionsList}
+                            scoredActionsList={filteredScoredActionsList}
                             selectedIds={selectedIds}
                             onToggle={handleToggle}
                             onClearSelection={() => setSelectedIds(new Set())}
