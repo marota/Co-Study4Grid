@@ -51,7 +51,7 @@ const clickableLinkStyle: React.CSSProperties = {
 type SeverityKind = 'solves' | 'lowMargin' | 'unsolved' | 'divergent' | 'islanded';
 
 const SeverityIcon: React.FC<{ kind: SeverityKind }> = ({ kind }) => {
-    const common = { width: 11, height: 11, viewBox: '0 0 16 16', 'aria-hidden': true } as const;
+    const common = { width: 13, height: 13, viewBox: '0 0 16 16', 'aria-hidden': true } as const;
     if (kind === 'solves') {
         return (
             <svg {...common}>
@@ -280,23 +280,28 @@ const ActionCard: React.FC<ActionCardProps> = ({
                 }}>
                     #{index + 1} {'—'} {id}
                 </h4>
+                {/* Icon-only severity pictogram — the label text was
+                    redundant with the colour and ate horizontal space the
+                    action-id title needs. The full wording is reachable on
+                    hover (native title tooltip) and to assistive tech. */}
                 <span
                     data-testid={`action-card-${id}-severity`}
+                    title={sc.label}
+                    aria-label={sc.label}
+                    role="img"
                     style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '4px',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        padding: '2px 8px',
-                        borderRadius: '12px',
+                        justifyContent: 'center',
+                        padding: '3px',
+                        borderRadius: '50%',
                         background: sc.badgeBg,
                         color: sc.badgeText,
                         flexShrink: 0,
+                        lineHeight: 0,
                     }}
                 >
                     <SeverityIcon kind={sc.kind} />
-                    {sc.label}
                 </span>
             </div>
 

@@ -78,34 +78,36 @@ describe('ActionCard', () => {
         expect(screen.getByText(/^#3/)).toBeInTheDocument();
     });
 
-    it('shows "Solves overload" badge when max_rho is below monitoring factor', () => {
+    // The severity badge is an icon-only pictogram; its wording lives in
+    // the `title` (hover tooltip) / `aria-label`, not as visible text.
+    it('shows "Solves overload" severity tooltip when max_rho is below monitoring factor', () => {
         render(<ActionCard {...defaultProps} />);
-        expect(screen.getByText('Solves overload')).toBeInTheDocument();
+        expect(screen.getByTitle('Solves overload')).toBeInTheDocument();
     });
 
-    it('shows "Still overloaded" badge when max_rho exceeds monitoring factor', () => {
+    it('shows "Still overloaded" severity tooltip when max_rho exceeds monitoring factor', () => {
         const details = { ...baseDetails, max_rho: 0.98, is_rho_reduction: true };
         render(<ActionCard {...defaultProps} details={details} />);
-        expect(screen.getByText('Still overloaded')).toBeInTheDocument();
+        expect(screen.getByTitle('Still overloaded')).toBeInTheDocument();
     });
 
-    it('shows "Solved — low margin" badge when max_rho is close to monitoring factor', () => {
+    it('shows "Solved — low margin" severity tooltip when max_rho is close to monitoring factor', () => {
         const details = { ...baseDetails, max_rho: 0.92 };
         render(<ActionCard {...defaultProps} details={details} />);
-        expect(screen.getByText(/Solved.*low margin/)).toBeInTheDocument();
+        expect(screen.getByTitle(/Solved.*low margin/)).toBeInTheDocument();
     });
 
-    it('shows "divergent" badge for non-convergence actions', () => {
+    it('shows "divergent" severity tooltip for non-convergence actions', () => {
         const details = { ...baseDetails, non_convergence: 'AC did not converge' };
         render(<ActionCard {...defaultProps} details={details} />);
-        expect(screen.getByText('divergent')).toBeInTheDocument();
+        expect(screen.getByTitle('divergent')).toBeInTheDocument();
         expect(screen.getByText(/LoadFlow failure/)).toBeInTheDocument();
     });
 
-    it('shows "islanded" badge for islanded actions', () => {
+    it('shows "islanded" severity tooltip for islanded actions', () => {
         const details = { ...baseDetails, is_islanded: true, disconnected_mw: 12.5 };
         render(<ActionCard {...defaultProps} details={details} />);
-        expect(screen.getByText('islanded')).toBeInTheDocument();
+        expect(screen.getByTitle('islanded')).toBeInTheDocument();
         expect(screen.getByText(/12\.5 MW disconnected/)).toBeInTheDocument();
     });
 
@@ -344,10 +346,10 @@ describe('ActionCard', () => {
         expect(onCardEditMwChange).toHaveBeenCalledWith('act_1', '7.5');
     });
 
-    it('renders "No reduction" badge when is_rho_reduction is false', () => {
+    it('shows "No reduction" severity tooltip when is_rho_reduction is false', () => {
         const details = { ...baseDetails, max_rho: 1.1, is_rho_reduction: false };
         render(<ActionCard {...defaultProps} details={details} />);
-        expect(screen.getByText('No reduction')).toBeInTheDocument();
+        expect(screen.getByTitle('No reduction')).toBeInTheDocument();
     });
 
     // Regression: for a combined action like

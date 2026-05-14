@@ -427,8 +427,10 @@ describe('ActionFeed', () => {
 
         const card = screen.getByTestId(`action-card-${actionId}`);
 
-        // 1. Check Divergent Badge (danger token)
-        const badge = screen.getByText('divergent');
+        // 1. Check Divergent Badge (danger token) — the severity badge is
+        // an icon-only pictogram, its wording lives in the `title` tooltip.
+        const badge = screen.getByTestId(`action-card-${actionId}-severity`);
+        expect(badge).toHaveAttribute('title', 'divergent');
         expect(badge.style.background).toContain('var(--color-danger)');
 
         // 2. Check Warning Box (warning tokens)
@@ -934,8 +936,9 @@ describe('ActionFeed', () => {
         );
 
         // 1. MF = 0.95 -> 0.93 is between (0.95-0.05) and 0.95 -> Orange
+        // The severity badge is icon-only; its wording is in the tooltip.
         const { rerender } = renderWithMF(0.95);
-        expect(screen.getByText('Solved \u2014 low margin')).toBeInTheDocument();
+        expect(screen.getByTitle('Solved \u2014 low margin')).toBeInTheDocument();
 
         // 2. MF = 0.90 -> 0.93 is above 0.90 -> Red
         rerender(
@@ -946,7 +949,7 @@ describe('ActionFeed', () => {
                 monitoringFactor={0.90}
             />
         );
-        expect(screen.getByText('Still overloaded')).toBeInTheDocument();
+        expect(screen.getByTitle('Still overloaded')).toBeInTheDocument();
 
         // 3. MF = 1.00 -> 0.93 is below (1.00-0.05) -> Green
         rerender(
@@ -957,7 +960,7 @@ describe('ActionFeed', () => {
                 monitoringFactor={1.00}
             />
         );
-        expect(screen.getByText('Solves overload')).toBeInTheDocument();
+        expect(screen.getByTitle('Solves overload')).toBeInTheDocument();
     });
 
     it('displays load shedding description with MW, load name, and clickable voltage level', () => {
