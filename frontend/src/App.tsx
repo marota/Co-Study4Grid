@@ -510,8 +510,8 @@ function App() {
   // carries fresh `load_shedding_details` / `curtailment_details` /
   // `pst_details` arrays which the SLD highlight pass needs to see.
   const wrappedManualActionAdded = useCallback(
-    (actionId: string, detail: ActionDetail, linesOverloaded: string[]) => {
-      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect);
+    (actionId: string, detail: ActionDetail, linesOverloaded: string[], origin: string = 'user') => {
+      actionsHook.handleManualActionAdded(actionId, detail, linesOverloaded, setResult, wrappedForcedActionSelect, origin);
       diagrams.refreshSldIfAction(actionId);
     },
     [actionsHook, setResult, wrappedForcedActionSelect, diagrams]
@@ -606,14 +606,20 @@ function App() {
           curtailment_details: metrics.curtailment_details,
           pst_details: metrics.pst_details,
         };
-        wrappedManualActionAdded(actionId, detail, metrics.lines_overloaded || []);
+        // An unsimulated pin is a scored-but-not-yet-materialised
+        // action from the recommender's score table — the operator
+        // only triggered its simulation, so its provenance is the
+        // model that scored it, NOT "user".
+        wrappedManualActionAdded(
+          actionId, detail, metrics.lines_overloaded || [], result?.active_model || 'expert',
+        );
       } catch (e: unknown) {
         console.error('Unsimulated pin simulation failed:', e);
         const err = e as { response?: { data?: { detail?: string } } };
         setError(err?.response?.data?.detail || 'Simulation failed');
       }
     },
-    [selectedContingency, result?.lines_overloaded, diagrams, voltageLevels.length, wrappedManualActionAdded]
+    [selectedContingency, result?.lines_overloaded, result?.active_model, diagrams, voltageLevels.length, wrappedManualActionAdded]
   );
 
   // Re-simulation of an already-present action (edit Target MW / tap on a

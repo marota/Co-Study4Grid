@@ -93,6 +93,24 @@ export interface ActionDetail {
     load_shedding_details?: LoadSheddingDetail[];
     curtailment_details?: CurtailmentDetail[];
     pst_details?: PstDetail[];
+    /**
+     * Provenance of the action card — distinct from `is_manual`, which
+     * is an overloaded UI-state flag (it's also stamped `true` when the
+     * operator stars a recommender suggestion). `origin` records where
+     * the action *came from* and never changes after creation:
+     *   - `"user"`      — the operator simulated it themselves (manual
+     *                     search dropdown, "Make a first guess").
+     *   - `<model id>`  — produced / scored by a recommender model
+     *                     (e.g. `"expert"`, `"random_overflow"`); this
+     *                     is the `active_model` echoed by the step-2
+     *                     `result` event, and also covers an
+     *                     unsimulated pin the operator materialised
+     *                     (it was scored by that model).
+     * Optional for backward compat: legacy sessions that predate the
+     * field get an `origin` derived from their saved status flags on
+     * reload (see `useSession.handleRestoreSession`).
+     */
+    origin?: string;
 }
 
 export interface CombinedAction {
@@ -344,6 +362,13 @@ export interface SavedActionEntry {
     load_shedding_details?: LoadSheddingDetail[];
     curtailment_details?: CurtailmentDetail[];
     pst_details?: PstDetail[];
+    /**
+     * Provenance of the action — `"user"` or a recommender model id.
+     * Mirrors `ActionDetail.origin`. Optional: legacy session dumps
+     * that predate the field get an `origin` derived from the saved
+     * status flags + `analysis.active_model` on reload.
+     */
+    origin?: string;
     status: SavedActionStatus;
 }
 

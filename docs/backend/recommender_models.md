@@ -297,6 +297,33 @@ loaded study never reuses the previous study's graph.
   slot is gated on `prioritizedEntries.length === 0`, so it reappears
   the moment the Suggested feed empties out.
 
+### `ActionCard` — origin / "Source" row
+
+`frontend/src/components/ActionCard.tsx`:
+
+Every action carries an `origin` field (`ActionDetail.origin`)
+recording its provenance — set once at creation, never changed by
+starring or re-simulating:
+
+- `"user"` — the operator simulated it themselves (manual search
+  dropdown / "Make a first guess"). Set by
+  `useActions.handleManualActionAdded` (default).
+- `<model id>` — produced by a recommender. Set by the step-2 result
+  loop in `useAnalysis` from the `active_model` echoed on the stream's
+  `result` event. The unsimulated-pin path
+  (`App.handleSimulateUnsimulatedAction`) also stamps the model id,
+  not `"user"`, because that pin was *scored* by the model — the
+  operator only triggered its materialisation.
+
+`origin` is distinct from the `is_manual` flag, which is overloaded
+UI state (also `true` when the operator merely *stars* a recommender
+suggestion). The unfolded action card renders an `origin`-derived
+"Source" row — `ActionCard` resolves a model id to its label via
+`availableModels`, falling back to the raw id. The field is persisted
+in `session.json` (`SavedActionEntry.origin`) and restored verbatim;
+legacy dumps get a derived `origin` on reload. See
+[`docs/features/save-results.md`](../features/save-results.md).
+
 ### `SettingsModal` — Recommender tab
 
 `frontend/src/components/modals/SettingsModal.tsx`:

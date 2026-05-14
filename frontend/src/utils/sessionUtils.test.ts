@@ -284,6 +284,32 @@ describe('buildSessionResult — structure', () => {
     });
 });
 
+describe('buildSessionResult — action origin', () => {
+    it('serializes the action origin verbatim ("user")', () => {
+        const out = buildSessionResult({
+            ...baseInput,
+            result: makeResult({ actions: { manual_1: makeAction('M', { origin: 'user' }) } }),
+        });
+        expect(out.analysis!.actions.manual_1.origin).toBe('user');
+    });
+
+    it('serializes a recommender model origin verbatim', () => {
+        const out = buildSessionResult({
+            ...baseInput,
+            result: makeResult({ actions: { reco_1: makeAction('R', { origin: 'random_overflow' }) } }),
+        });
+        expect(out.analysis!.actions.reco_1.origin).toBe('random_overflow');
+    });
+
+    it('leaves origin undefined when the action has none (legacy / un-tracked)', () => {
+        const out = buildSessionResult({
+            ...baseInput,
+            result: makeResult({ actions: { act1: makeAction('A') } }),
+        });
+        expect(out.analysis!.actions.act1.origin).toBeUndefined();
+    });
+});
+
 describe('buildSessionResult — action status tags', () => {
     it('is_selected is true when action is in selectedActionIds', () => {
         const out = buildSessionResult({

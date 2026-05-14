@@ -778,6 +778,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     onResimulate={handleResimulate}
                     onResimulateTap={handleResimulateTap}
                     displayName={displayName}
+                    availableModels={availableModels}
                 />
             );
         });

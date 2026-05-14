@@ -874,4 +874,113 @@ describe('useSession — handleRestoreSession', () => {
         // But the combined_actions dictionary still carries it.
         expect(restored!.combined_actions).toHaveProperty('act_a+act_b');
     });
+
+    // -----------------------------------------------------------------
+    // Recommender model + action origin restore fidelity
+    // -----------------------------------------------------------------
+
+    it('restores result.active_model + compute_overflow_graph so the model reminder survives a reload', async () => {
+        // Regression: active_model was persisted under
+        // analysis.active_model but never re-attached to the live
+        // `result`, so the "Suggestions produced by <model>" reminder
+        // below the Suggested Actions tab header vanished on reload.
+        mockLoadSession.mockResolvedValue(makeSession({
+            analysis: {
+                message: 'ok',
+                dc_fallback: false,
+                action_scores: {},
+                combined_actions: {},
+                active_model: 'random_overflow',
+                compute_overflow_graph: true,
+                actions: {},
+            },
+        }));
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+        await act(async () => {
+            await result.current.handleRestoreSession('model_session', ctx);
+        });
+
+        const restored = captureRestoredResult(ctx.setResult as ReturnType<typeof vi.fn>);
+        expect(restored).not.toBeNull();
+        expect(restored!.active_model).toBe('random_overflow');
+        expect(restored!.compute_overflow_graph).toBe(true);
+    });
+
+    it('restores a saved action origin verbatim', async () => {
+        mockLoadSession.mockResolvedValue(makeSession({
+            analysis: {
+                message: 'ok',
+                dc_fallback: false,
+                action_scores: {},
+                combined_actions: {},
+                active_model: 'random_overflow',
+                actions: {
+                    reco_1: {
+                        description_unitaire: 'Reco', rho_before: [1.1], rho_after: [0.9],
+                        max_rho: 0.9, max_rho_line: 'LINE_OL1', is_rho_reduction: true,
+                        origin: 'random_overflow',
+                        status: { is_selected: false, is_suggested: true, is_rejected: false, is_manually_simulated: false },
+                    },
+                    manual_1: {
+                        description_unitaire: 'Manual', rho_before: [1.2], rho_after: [0.85],
+                        max_rho: 0.85, max_rho_line: 'LINE_OL1', is_rho_reduction: true,
+                        origin: 'user',
+                        status: { is_selected: true, is_suggested: false, is_rejected: false, is_manually_simulated: true },
+                    },
+                },
+            },
+        }));
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+        await act(async () => {
+            await result.current.handleRestoreSession('origin_session', ctx);
+        });
+
+        const restored = captureRestoredResult(ctx.setResult as ReturnType<typeof vi.fn>);
+        expect(restored!.actions['reco_1'].origin).toBe('random_overflow');
+        expect(restored!.actions['manual_1'].origin).toBe('user');
+    });
+
+    it('derives origin for legacy sessions that predate the field (from status flags + active_model)', async () => {
+        // Legacy session dumps have no `origin` on action entries. The
+        // restore path derives one: manually-simulated → "user",
+        // suggested → analysis.active_model, otherwise undefined.
+        mockLoadSession.mockResolvedValue(makeSession({
+            analysis: {
+                message: 'ok',
+                dc_fallback: false,
+                action_scores: {},
+                combined_actions: {},
+                active_model: 'expert',
+                actions: {
+                    suggested_legacy: {
+                        description_unitaire: 'Suggested', rho_before: [1.1], rho_after: [0.9],
+                        max_rho: 0.9, max_rho_line: 'LINE_OL1', is_rho_reduction: true,
+                        // no `origin` — legacy shape
+                        status: { is_selected: false, is_suggested: true, is_rejected: false, is_manually_simulated: false },
+                    },
+                    manual_legacy: {
+                        description_unitaire: 'Manual', rho_before: [1.2], rho_after: [0.85],
+                        max_rho: 0.85, max_rho_line: 'LINE_OL1', is_rho_reduction: true,
+                        status: { is_selected: true, is_suggested: false, is_rejected: false, is_manually_simulated: true },
+                    },
+                },
+            },
+        }));
+        const ctx = makeCtx();
+
+        const { result } = renderHook(() => useSession());
+        await act(async () => {
+            await result.current.handleRestoreSession('legacy_origin_session', ctx);
+        });
+
+        const restored = captureRestoredResult(ctx.setResult as ReturnType<typeof vi.fn>);
+        // suggested → derived from analysis.active_model
+        expect(restored!.actions['suggested_legacy'].origin).toBe('expert');
+        // manually-simulated → "user"
+        expect(restored!.actions['manual_legacy'].origin).toBe('user');
+    });
 });

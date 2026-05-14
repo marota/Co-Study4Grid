@@ -150,6 +150,10 @@ export function buildSessionResult(input: SessionInput): SessionResult {
                         load_shedding_details: detail.load_shedding_details,
                         curtailment_details: detail.curtailment_details,
                         pst_details: detail.pst_details,
+                        // Provenance: "user" or a recommender model id.
+                        // Restored verbatim on reload (with a derived
+                        // fallback for legacy dumps that lack the field).
+                        origin: detail.origin,
                         status: {
                             is_selected: selectedActionIds.has(id),
                             is_suggested: suggestedByRecommenderIds.has(id),

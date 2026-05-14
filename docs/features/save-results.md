@@ -182,6 +182,7 @@ Some pieces of in-memory state are deliberately ephemeral and will reset on relo
         "pst_details": [
           { "pst_name": "PST_A", "tap_position": 5, "low_tap": -16, "high_tap": 16 }
         ],
+        "origin": "expert",
         "status": {
           "is_selected":          true,
           "is_suggested":         true,
@@ -295,6 +296,7 @@ Each action entry mirrors the `ActionDetail` type plus a `status` object:
 | `load_shedding_details` | Per-load MW values for the load-shedding editor card. Array of `{ load_name, voltage_level_id, shedded_mw }` (PR #73). |
 | `curtailment_details` | Per-generator MW values for the renewable-curtailment editor card. Array of `{ gen_name, voltage_level_id, curtailed_mw }` (PR #73). |
 | `pst_details` | PST editor state: array of `{ pst_name, tap_position, low_tap, high_tap }`. `low_tap` / `high_tap` may be `null` if the network manager did not expose bounds (PR #78). |
+| `origin` | *(optional)* Provenance of the action card — `"user"` (the operator simulated it themselves via the manual search / "Make a first guess") or a recommender model id (`"expert"`, `"random_overflow"`, … — the `active_model` that produced / scored it; this also covers an unsimulated pin the operator materialised). Distinct from the `is_manually_simulated` status flag, which also flips `true` when the operator merely *stars* a recommender suggestion. Surfaced as the "Source" row in the unfolded action card. Legacy dumps that predate the field get an `origin` **derived on reload** from the status flags + `analysis.active_model` (`is_manually_simulated` → `"user"`, else `is_suggested` → `active_model`). |
 
 > **Why the enrichment fields matter on reload:** the PST / load-shedding / curtailment editor cards read directly from `pst_details` / `load_shedding_details` / `curtailment_details` to populate their inputs, and the Remedial Action tab uses `lines_overloaded_after` to clone the post-action overload halos. Before PR #83, these four fields were written to `session.json` but silently dropped on reload, which left the editor cards empty and wiped the overload halos until the user re-ran analysis. They are now restored in full by `handleRestoreSession`.
 
@@ -306,6 +308,8 @@ Each action entry mirrors the `ActionDetail` type plus a `status` object:
 | `is_selected` | The user starred / favorited this action |
 | `is_rejected` | The user explicitly rejected this action |
 | `is_manually_simulated` | The user added this action via the manual search / simulation flow |
+
+> **`origin` vs. `is_manually_simulated`:** the status flag is an *interaction* record — it flips `true` both when the operator manually simulates an action AND (historically) when they star a recommender suggestion. `origin` is the *provenance* — set once at creation, never changed by starring / re-simulating. A starred recommender suggestion has `is_manually_simulated`-adjacent state but keeps `origin: "<model>"`.
 
 ### `combined_actions` (Computed Pairs)
 
@@ -428,7 +432,8 @@ chain, step-by-step plug-in guide, troubleshooting):
    - **Updates `committedNetworkPathRef.current`** to the restored `network_path`
    - Fetches branches, voltage levels, nominal voltages **and the base diagram** in parallel
    - **Calls `api.restoreAnalysisContext(...)`** to re-push `lines_we_care_about` + `computed_pairs` into the backend service (wrapped in try/catch — failures log a warning but let the reload complete)
-   - Rebuilds each `ActionDetail` from its `SavedActionEntry`, **including** `lines_overloaded_after`, `load_shedding_details`, `curtailment_details` and `pst_details`. Estimation-only combined entries (`id.includes('+') && is_estimated && !is_manually_simulated`) are filtered out of the top-level actions map but kept under `combined_actions`.
+   - Rebuilds each `ActionDetail` from its `SavedActionEntry`, **including** `lines_overloaded_after`, `load_shedding_details`, `curtailment_details`, `pst_details` and `origin`. Estimation-only combined entries (`id.includes('+') && is_estimated && !is_manually_simulated`) are filtered out of the top-level actions map but kept under `combined_actions`.
+   - **Re-attaches `analysis.active_model` + `analysis.compute_overflow_graph` onto the live `result`** so the "Suggestions produced by &lt;model&gt;" reminder below the Suggested Actions tab header survives the reload — previously both were saved but never restored onto `result`, so the reminder vanished. For legacy dumps whose action entries predate the `origin` field, an `origin` is derived here from the status flags + `active_model` (`is_manually_simulated` → `"user"`, else `is_suggested` → `active_model`).
    - Partitions action status flags into `selectedActionIds` / `rejectedActionIds` / `manuallyAddedIds` / `suggestedByRecommenderIds`
    - **Sets `restoringSessionRef.current = true` BEFORE `setSelectedBranch(...)`** so the N-1 fetch effect in `App.tsx` can tell "session restore" from "user changed contingency", bypass its `hasAnalysisState()` short-circuit, skip `clearContingencyState()` (which would wipe the just-restored state), and avoid forcing an active-tab switch. The ref is reset to `false` the moment the effect consumes it.
    - No action card is active — diagrams are fetched on-demand when clicked
@@ -465,6 +470,7 @@ as a frozen snapshot — do NOT edit further).
   to `session.configuration.model` / `session.configuration.compute_overflow_graph`
   (conditional — omitted when undefined for legacy callers).
 - All four status tags independently computed
+- **Action origin:** `detail.origin` (`"user"` / a recommender model id) is serialised verbatim; left `undefined` for legacy / un-tracked actions
 - **Combined actions:** serialised with estimation and simulation data
 - **Combined actions:** `is_simulated` flag based on presence in `result.actions`
 - **Combined actions:** empty object when no combined actions exist
@@ -486,6 +492,8 @@ A `makeCtx()` / `makeSession()` fixture pair makes each test self-contained:
 - Empty `outputFolderPath` short-circuits the call: no API requests, no setters, ref untouched
 - Backend errors surface via `ctx.setError`; the ref is left empty on failure
 - **Enrichment field round-trip:** a `captureRestoredResult()` helper replays the functional `setResult` updater against a `null` previous state and asserts `load_shedding_details`, `curtailment_details`, `pst_details` and `lines_overloaded_after` all land on the restored `ActionDetail`
+- **Recommender model restore:** `analysis.active_model` + `analysis.compute_overflow_graph` are re-attached onto the live `result` (regression guard for the vanished "Suggestions produced by &lt;model&gt;" reminder)
+- **Action origin restore:** a saved `origin` is restored verbatim; legacy entries that predate the field get an `origin` derived from the status flags + `analysis.active_model` (`is_manually_simulated` → `"user"`, else `is_suggested` → `active_model`)
 - Action status flags partition correctly into the four `Set<string>` state updates
 - Legacy action entries that omit enrichment fields don't crash — values come through as `undefined`
 - Estimation-only combined entries are filtered out of top-level `actions` but survive under `combined_actions`
