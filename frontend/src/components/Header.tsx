@@ -63,7 +63,13 @@ const Header: React.FC<HeaderProps> = ({
 
       <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: space.half }}>
         <label style={{ fontSize: '0.7rem', opacity: 0.8, whiteSpace: 'nowrap' }}>Network Path</label>
-        {notices && <NoticesPanel notices={notices} />}
+        {/* Right-aligned so the pill sits over the file-opener button,
+            tucked just before the Load Study action. */}
+        {notices && (
+          <div style={{ alignSelf: 'flex-end' }}>
+            <NoticesPanel notices={notices} />
+          </div>
+        )}
         <div style={{ display: 'flex', gap: space[1] }}>
           <input
             data-testid="header-network-path-input"

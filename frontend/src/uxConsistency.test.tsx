@@ -327,10 +327,11 @@ describe('UX consistency — Recommendation #4 (tier the warning system)', () =>
         expect(pill).toHaveTextContent('2');
     });
 
-    it('Notices pill renders inside the network-path block, above the file opener', () => {
+    it('Notices pill renders right-aligned in the network-path block, above the file opener', () => {
         // The single notices entry point lives in the header, in the
-        // network-path column just above the path input + file-opener
-        // row. Regression guard against it drifting back out.
+        // network-path column, right-aligned so it sits over the
+        // file-opener button just before Load Study. Regression guard
+        // against it drifting back out or back to the left.
         const notices: Notice[] = [
             { id: 'a', title: 'Monitoring', body: 'body', severity: 'warning' },
         ];
@@ -342,6 +343,9 @@ describe('UX consistency — Recommendation #4 (tier the warning system)', () =>
         expect(block).toContainElement(pill);
         // The pill sits above the input + file-opener row in DOM order.
         expect(pill.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        // ...and is right-aligned within the column.
+        const noticesPanel = screen.getByTestId('notices-panel');
+        expect(noticesPanel.parentElement!.style.alignSelf).toBe('flex-end');
     });
 
     it('Header omits the NoticesPanel entirely when no notices are active', () => {
