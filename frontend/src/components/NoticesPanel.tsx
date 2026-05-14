@@ -149,7 +149,7 @@ export default function NoticesPanel({ notices }: NoticesPanelProps) {
           lineHeight: 1.4,
         }}
       >
-        <span aria-hidden="true">⚠️</span>
+        <span aria-hidden="true">🔔</span>
         Notices
         <span
           style={{

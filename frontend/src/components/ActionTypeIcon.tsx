@@ -13,10 +13,17 @@ import type { ActionTypeKind } from '../utils/actionTypes';
 // "uncoloured pictogram" family, in contrast with the colour-coded
 // severity ring.
 const GLYPHS: Record<ActionTypeKind, React.ReactNode> = {
-    // Line with an OPEN switch — the blade swung clear of the right
-    // contact. The lifted diagonal is the open-vs-closed tell, shared
-    // with the open-coupling glyph below.
-    disco: (
+    // Line disconnection — a vertical conductor trace, dashed to
+    // signal the line is cut. The vertical orientation keeps line
+    // actions distinct from the horizontal coupler-switch glyphs.
+    disco: <path d="M8 2 V14" strokeDasharray="2.8 2.4" />,
+    // Line reconnection — the same vertical conductor trace, solid:
+    // the line is restored.
+    reco: <path d="M8 2 V14" />,
+    // Open coupling — a switch with the blade swung clear of the
+    // right contact: the two busbar nodes of the voltage level stay
+    // split.
+    open: (
         <>
             <circle cx="2" cy="8" r="1.15" fill="currentColor" stroke="none" />
             <path d="M2 8 H5.6" />
@@ -25,34 +32,13 @@ const GLYPHS: Record<ActionTypeKind, React.ReactNode> = {
             <circle cx="14" cy="8" r="1.15" fill="currentColor" stroke="none" />
         </>
     ),
-    // Line with a CLOSED switch — the blade seated flat: one
-    // continuous conductor between the two terminals.
-    reco: (
+    // Close coupling — the switch blade seated flat, merging the two
+    // busbar nodes of the voltage level into one.
+    close: (
         <>
             <circle cx="2" cy="8" r="1.15" fill="currentColor" stroke="none" />
             <path d="M2 8 H14" />
             <circle cx="14" cy="8" r="1.15" fill="currentColor" stroke="none" />
-        </>
-    ),
-    // Twin busbars (a voltage level's two nodes) with an OPEN coupler:
-    // the blade swung clear of the bottom busbar. Same lifted-blade
-    // tell as the open line switch, framed by busbars instead of
-    // terminals so couplings stay distinct from disco / reco.
-    open: (
-        <>
-            <path d="M2.5 3.5 H13.5" />
-            <path d="M2.5 12.5 H13.5" />
-            <path d="M8 3.5 V5.8" />
-            <path d="M8 5.8 L11.8 9.9" />
-        </>
-    ),
-    // Twin busbars with a CLOSED coupler — a straight vertical link
-    // merging the two nodes of the voltage level.
-    close: (
-        <>
-            <path d="M2.5 3.5 H13.5" />
-            <path d="M2.5 12.5 H13.5" />
-            <path d="M8 3.5 V12.5" />
         </>
     ),
     // Down arrow pressed onto a load bar.

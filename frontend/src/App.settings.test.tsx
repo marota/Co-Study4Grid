@@ -539,7 +539,11 @@ describe('Settings Modal Enhancements', () => {
       const parent = l.parentElement;
       return parent && parent.style.flex && parent.style.flex.startsWith('1 1 200px');
     });
-    const bannerBtn = headerBannerLabel?.parentElement?.querySelector('button');
+    // The network-path block can also host the Notices pill (itself a
+    // button), so target the file-opener button by its glyph.
+    const bannerBtn = Array.from(
+      headerBannerLabel?.parentElement?.querySelectorAll('button') ?? [],
+    ).find(b => b.textContent === '📄');
     expect(bannerBtn?.textContent).toBe('📄');
 
     const bannerInput = headerBannerLabel?.parentElement?.querySelector('input');

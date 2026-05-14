@@ -327,20 +327,21 @@ describe('UX consistency — Recommendation #4 (tier the warning system)', () =>
         expect(pill).toHaveTextContent('2');
     });
 
-    it('Notices pill renders under the Co-Study4Grid app title in the Header', () => {
-        // Space-saving relocation: the single warning entry point now
-        // lives in the header, tucked directly beneath the app title,
-        // instead of inside the sidebar strip. Regression guard that
-        // the pill stays a sibling of the title within one column.
+    it('Notices pill renders inside the network-path block, above the file opener', () => {
+        // The single notices entry point lives in the header, in the
+        // network-path column just above the path input + file-opener
+        // row. Regression guard against it drifting back out.
         const notices: Notice[] = [
             { id: 'a', title: 'Monitoring', body: 'body', severity: 'warning' },
         ];
         render(<Header {...headerProps} notices={notices} />);
-        const title = screen.getByText('⚡ Co-Study4Grid');
         const pill = screen.getByTestId('notices-pill');
-        const wrapper = title.parentElement!;
-        expect(wrapper).toContainElement(pill);
-        expect(wrapper.style.flexDirection).toBe('column');
+        const input = screen.getByTestId('header-network-path-input');
+        // Pill and the network-path input share the same column block.
+        const block = input.closest('div')!.parentElement!;
+        expect(block).toContainElement(pill);
+        // The pill sits above the input + file-opener row in DOM order.
+        expect(pill.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it('Header omits the NoticesPanel entirely when no notices are active', () => {

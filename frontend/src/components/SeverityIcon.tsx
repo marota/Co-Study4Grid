@@ -26,11 +26,14 @@ export const SeverityIcon: React.FC<{ kind: SeverityKind; size?: number }> = ({ 
         );
     }
     if (kind === 'lowMargin') {
+        // A circle with an exclamation — deliberately NOT a warning
+        // triangle, so it doesn't read as the ⚠️ used for overloads.
+        // Shares the circle frame with the solves / unsolved glyphs.
         return (
             <svg {...common}>
-                <path d="M8 1.6 L15 13.5 L1 13.5 Z" fill="currentColor" fillOpacity="0.18" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-                <path d="M8 6 L8 9.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                <circle cx="8" cy="11.5" r="0.9" fill="currentColor" />
+                <circle cx="8" cy="8" r="7" fill="currentColor" fillOpacity="0.18" />
+                <path d="M8 4 L8 9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <circle cx="8" cy="11.6" r="0.95" fill="currentColor" />
             </svg>
         );
     }
