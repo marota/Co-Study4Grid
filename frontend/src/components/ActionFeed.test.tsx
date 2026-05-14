@@ -2975,4 +2975,55 @@ describe('ActionFeed', () => {
             expect(screen.getByRole('button', { name: /Analyze & Suggest/ })).toBeInTheDocument();
         });
     });
+
+    describe('action-type overview filter', () => {
+        const DEFAULT_FILTERS = {
+            categories: { green: true, orange: true, red: true, grey: true },
+            threshold: 1.5,
+            showUnsimulated: false,
+            actionType: 'all' as const,
+            showCombinedOnly: false,
+        };
+        // A reco action whose id starts with `reco_` but whose
+        // description carries no `fermeture` marker — exactly the
+        // shape that used to vanish under the RECO filter because
+        // `classifyActionType` never inspects the id for disco / reco.
+        const recoDetail: ActionDetail = {
+            description_unitaire: 'Reconnect GEN.PY762',
+            rho_before: [1.05],
+            rho_after: [0.93],
+            max_rho: 0.93,
+            max_rho_line: 'LINE_1',
+            is_rho_reduction: true,
+            action_topology: emptyTopo,
+        };
+
+        it('keeps reco cards visible under the RECO filter using the recommender score type', () => {
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    actions={{ 'reco_GEN.PY762': recoDetail }}
+                    actionScores={{ line_reconnection: { scores: { 'reco_GEN.PY762': 0.04 } } }}
+                    overviewFilters={{ ...DEFAULT_FILTERS, actionType: 'reco' }}
+                    onOverviewFiltersChange={vi.fn()}
+                />,
+            );
+            expect(screen.getByTestId('action-card-reco_GEN.PY762')).toBeInTheDocument();
+            expect(screen.queryByTestId('overview-filter-hint')).not.toBeInTheDocument();
+        });
+
+        it('hides reco cards when a non-matching type filter (DISCO) is active', () => {
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    actions={{ 'reco_GEN.PY762': recoDetail }}
+                    actionScores={{ line_reconnection: { scores: { 'reco_GEN.PY762': 0.04 } } }}
+                    overviewFilters={{ ...DEFAULT_FILTERS, actionType: 'disco' }}
+                    onOverviewFiltersChange={vi.fn()}
+                />,
+            );
+            expect(screen.queryByTestId('action-card-reco_GEN.PY762')).not.toBeInTheDocument();
+            expect(screen.getByTestId('overview-filter-hint')).toBeInTheDocument();
+        });
+    });
 });

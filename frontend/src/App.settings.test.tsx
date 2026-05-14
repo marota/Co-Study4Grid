@@ -532,22 +532,15 @@ describe('Settings Modal Enhancements', () => {
 
   it('displays file icon for network path in main banner', async () => {
     render(<App />);
-    // In main banner (header)
-    const labels = screen.getAllByText(/Network Path/i);
-    // Find the one in the header
-    const headerBannerLabel = labels.find(l => {
-      const parent = l.parentElement;
-      return parent && parent.style.flex && parent.style.flex.startsWith('1 1 200px');
-    });
-    // The network-path block can also host the Notices pill (itself a
-    // button), so target the file-opener button by its glyph.
-    const bannerBtn = Array.from(
-      headerBannerLabel?.parentElement?.querySelectorAll('button') ?? [],
-    ).find(b => b.textContent === '📄');
-    expect(bannerBtn?.textContent).toBe('📄');
-
-    const bannerInput = headerBannerLabel?.parentElement?.querySelector('input');
+    // Anchor on the header's network-path input (unique test id) — the
+    // file-opener button shares its row. Robust to the label / Notices
+    // pill layout around it.
+    const bannerInput = screen.getByTestId('header-network-path-input');
     expect(bannerInput).toHaveAttribute('placeholder', 'load your grid xiidm file path');
+    const inputRow = bannerInput.closest('div')!;
+    const bannerBtn = Array.from(inputRow.querySelectorAll('button'))
+      .find(b => b.textContent === '📄');
+    expect(bannerBtn?.textContent).toBe('📄');
   });
 
   describe('Processing State UI', () => {

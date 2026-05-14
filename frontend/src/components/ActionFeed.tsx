@@ -520,6 +520,26 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         }
     };
 
+    // actionId → recommender score-type bucket (`line_reconnection`,
+    // `pst_tap_change`, …). The action-type filter feeds this `type`
+    // into `classifyActionType` — the SAME signal the Combine-modal
+    // Explore-Pairs filter uses (`ExplorePairsTab` passes `item.type`).
+    // Without it, `classifyActionType` can't tell reco from disco for
+    // ids like ``reco_GEN.PY762`` (its disco/reco heuristics look at
+    // the score type + description, never the id), so the whole
+    // reco / disco bucket would be filtered out of the feed.
+    const scoreTypeByActionId = useMemo(() => {
+        const m = new Map<string, string>();
+        if (!actionScores) return m;
+        for (const [type, data] of Object.entries(actionScores)) {
+            const scores = data?.scores || {};
+            for (const actionId of Object.keys(scores)) {
+                if (!m.has(actionId)) m.set(actionId, type);
+            }
+        }
+        return m;
+    }, [actionScores]);
+
     // Sort actions by max_rho ascending (matching standalone)
     // Filter out combined actions that are only estimations (they will have '+' in ID but no rho_after yet)
     const sortedActionEntries = useMemo(() => {
@@ -555,11 +575,11 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         const [id1, id2] = id.split('+');
                         const d1 = actions[id1];
                         const d2 = actions[id2];
-                        const ok = (d1 && matchesActionTypeFilter(typeFilter, id1, d1.description_unitaire, null))
-                            || (d2 && matchesActionTypeFilter(typeFilter, id2, d2.description_unitaire, null));
+                        const ok = (d1 && matchesActionTypeFilter(typeFilter, id1, d1.description_unitaire, scoreTypeByActionId.get(id1) ?? null))
+                            || (d2 && matchesActionTypeFilter(typeFilter, id2, d2.description_unitaire, scoreTypeByActionId.get(id2) ?? null));
                         if (!ok) return false;
                     } else if (!matchesActionTypeFilter(
-                        typeFilter, id, details.description_unitaire, null,
+                        typeFilter, id, details.description_unitaire, scoreTypeByActionId.get(id) ?? null,
                     )) {
                         return false;
                     }
@@ -577,7 +597,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 if (aFault !== bFault) return aFault ? 1 : -1;
                 return (a.max_rho ?? 999) - (b.max_rho ?? 999);
             });
-    }, [actions, overviewFilters, monitoringFactor]);
+    }, [actions, overviewFilters, monitoringFactor, scoreTypeByActionId]);
 
     const analysisActionIds = useMemo(() => {
         const ids = new Set<string>();
@@ -628,16 +648,16 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     const [id1, id2] = id.split('+');
                     const d1 = actions[id1];
                     const d2 = actions[id2];
-                    passesType = !!((d1 && matchesActionTypeFilter(typeFilter, id1, d1.description_unitaire, null))
-                        || (d2 && matchesActionTypeFilter(typeFilter, id2, d2.description_unitaire, null)));
+                    passesType = !!((d1 && matchesActionTypeFilter(typeFilter, id1, d1.description_unitaire, scoreTypeByActionId.get(id1) ?? null))
+                        || (d2 && matchesActionTypeFilter(typeFilter, id2, d2.description_unitaire, scoreTypeByActionId.get(id2) ?? null)));
                 } else {
-                    passesType = matchesActionTypeFilter(typeFilter, id, details.description_unitaire, null);
+                    passesType = matchesActionTypeFilter(typeFilter, id, details.description_unitaire, scoreTypeByActionId.get(id) ?? null);
                 }
             }
             if (!passesCategory || !passesType) hidden += 1;
         }
         return hidden;
-    }, [actions, overviewFilters, monitoringFactor]);
+    }, [actions, overviewFilters, monitoringFactor, scoreTypeByActionId]);
 
     // When an action becomes the currently-viewed one (typically
     // after the user double-clicks a pin in the action overview

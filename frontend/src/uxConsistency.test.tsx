@@ -327,25 +327,21 @@ describe('UX consistency — Recommendation #4 (tier the warning system)', () =>
         expect(pill).toHaveTextContent('2');
     });
 
-    it('Notices pill renders right-aligned in the network-path block, above the file opener', () => {
-        // The single notices entry point lives in the header, in the
-        // network-path column, right-aligned so it sits over the
-        // file-opener button just before Load Study. Regression guard
-        // against it drifting back out or back to the left.
+    it('Notices pill shares the Network Path label row, above the file opener', () => {
+        // The single notices entry point lives in the header, sharing
+        // one row with the "Network Path" label (no wasted standalone
+        // row) and sitting above the input + file-opener row.
         const notices: Notice[] = [
             { id: 'a', title: 'Monitoring', body: 'body', severity: 'warning' },
         ];
         render(<Header {...headerProps} notices={notices} />);
         const pill = screen.getByTestId('notices-pill');
         const input = screen.getByTestId('header-network-path-input');
-        // Pill and the network-path input share the same column block.
-        const block = input.closest('div')!.parentElement!;
-        expect(block).toContainElement(pill);
-        // The pill sits above the input + file-opener row in DOM order.
+        const label = screen.getByText('Network Path');
+        // Pill shares the label's row...
+        expect(label.parentElement).toContainElement(pill);
+        // ...and that row sits above the input + file-opener row.
         expect(pill.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        // ...and is right-aligned within the column.
-        const noticesPanel = screen.getByTestId('notices-panel');
-        expect(noticesPanel.parentElement!.style.alignSelf).toBe('flex-end');
     });
 
     it('Header omits the NoticesPanel entirely when no notices are active', () => {
