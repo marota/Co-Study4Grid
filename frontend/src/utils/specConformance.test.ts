@@ -60,6 +60,8 @@ const SPEC: Record<string, SpecRow> = {
   analysis_step1_started:         { required: new Set(['element']) },
   overload_toggled:               { required: new Set(['overload', 'selected']) },
   additional_line_to_cut_toggled: { required: new Set(['line', 'selected']) },
+  recommender_model_changed:      { required: new Set(['model']), optional: new Set(['source']) },
+  suggested_actions_cleared:      { required: new Set(['n_cleared']) },
   analysis_step2_started:         { required: new Set(['element', 'selected_overloads', 'all_overloads', 'monitor_deselected']), optional: new Set(['additional_lines_to_cut']) },
   prioritized_actions_displayed:  { required: new Set(['n_actions']) },
   // --- Action ---

@@ -409,4 +409,46 @@ describe('ActionCard', () => {
         expect(screen.getByRole('button', { name: 'VL_WIND' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'LINE_R' })).toBeInTheDocument();
     });
+
+    // The unfolded card shows where the action came from — "user"
+    // (manual simulation) or the recommender model that produced it.
+    describe('origin / "Source" row', () => {
+        const models = [
+            { name: 'expert', label: 'Expert system', requires_overflow_graph: true, is_default: true, params: [] },
+            { name: 'random_overflow', label: 'Random (post overflow analysis)', requires_overflow_graph: true, is_default: false, params: [] },
+        ];
+
+        it('shows "Manual simulation (user)" for a user-originated action when viewing', () => {
+            const details = { ...baseDetails, origin: 'user' };
+            render(<ActionCard {...defaultProps} details={details} isViewing availableModels={models} />);
+            expect(screen.getByTestId('action-card-act_1-origin'))
+                .toHaveTextContent('Source: Manual simulation (user)');
+        });
+
+        it('resolves a model id to its label for a recommender-originated action', () => {
+            const details = { ...baseDetails, origin: 'random_overflow' };
+            render(<ActionCard {...defaultProps} details={details} isViewing availableModels={models} />);
+            expect(screen.getByTestId('action-card-act_1-origin'))
+                .toHaveTextContent('Source: Random (post overflow analysis)');
+        });
+
+        it('falls back to the raw origin id when no model matches', () => {
+            const details = { ...baseDetails, origin: 'ml_policy_v9' };
+            render(<ActionCard {...defaultProps} details={details} isViewing availableModels={models} />);
+            expect(screen.getByTestId('action-card-act_1-origin'))
+                .toHaveTextContent('Source: ml_policy_v9');
+        });
+
+        it('does not render the Source row when origin is absent', () => {
+            // baseDetails has no `origin` — legacy / un-tracked actions.
+            render(<ActionCard {...defaultProps} isViewing availableModels={models} />);
+            expect(screen.queryByTestId('action-card-act_1-origin')).not.toBeInTheDocument();
+        });
+
+        it('does not render the Source row on a folded (non-viewing) card', () => {
+            const details = { ...baseDetails, origin: 'user' };
+            render(<ActionCard {...defaultProps} details={details} isViewing={false} availableModels={models} />);
+            expect(screen.queryByTestId('action-card-act_1-origin')).not.toBeInTheDocument();
+        });
+    });
 });

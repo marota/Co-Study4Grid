@@ -3024,6 +3024,120 @@ describe('ActionFeed', () => {
             );
             expect(screen.queryByTestId('action-card-reco_GEN.PY762')).not.toBeInTheDocument();
             expect(screen.getByTestId('overview-filter-hint')).toBeInTheDocument();
+    describe('recommendation-model selector + Clear', () => {
+        // The model dropdown lives above "Analyze & Suggest" (a mirror of
+        // the Settings → Recommender selector) so the operator can swap
+        // model and re-run without opening Settings. After a run, the
+        // model that produced the suggestions is reminded below the
+        // Suggested Actions tab header alongside a danger-coloured Clear
+        // button.
+        const modelProps = {
+            recommenderModel: 'expert',
+            setRecommenderModel: vi.fn(),
+            availableModels: [
+                { name: 'expert', label: 'Expert system', requires_overflow_graph: true, is_default: true, params: [] },
+                { name: 'random_overflow', label: 'Random (post overflow analysis)', requires_overflow_graph: true, is_default: false, params: [] },
+            ],
+        };
+
+        const recAction = {
+            description_unitaire: 'Disco LINE_X',
+            action_topology: emptyTopo,
+            is_manual: false,
+            max_rho: 0.8,
+        } as unknown as ActionDetail;
+
+        beforeEach(() => {
+            interactionLogger.clear();
+        });
+
+        it('renders the recommendation-model dropdown above Analyze & Suggest', () => {
+            render(<ActionFeed {...defaultProps} {...modelProps} canRunAnalysis />);
+            const select = screen.getByLabelText('Model:') as HTMLSelectElement;
+            expect(select).toBeInTheDocument();
+            expect(select.value).toBe('expert');
+            expect(screen.getByRole('option', { name: 'Random (post overflow analysis)' })).toBeInTheDocument();
+        });
+
+        it('changing the model fires setRecommenderModel and logs recommender_model_changed', () => {
+            const setRecommenderModel = vi.fn();
+            render(
+                <ActionFeed {...defaultProps} {...modelProps} setRecommenderModel={setRecommenderModel} canRunAnalysis />,
+            );
+            fireEvent.change(screen.getByLabelText('Model:'), { target: { value: 'random_overflow' } });
+            expect(setRecommenderModel).toHaveBeenCalledWith('random_overflow');
+            const evt = interactionLogger.getLog().find(e => e.type === 'recommender_model_changed');
+            expect(evt).toBeTruthy();
+            expect(evt!.details).toEqual({ model: 'random_overflow', source: 'action_feed' });
+        });
+
+        it('omits the model dropdown when setRecommenderModel is not wired', () => {
+            // Backwards-compat: ActionFeed must render without the model
+            // selector when the parent doesn't pass the recommender props.
+            render(<ActionFeed {...defaultProps} canRunAnalysis />);
+            expect(screen.queryByLabelText('Model:')).not.toBeInTheDocument();
+        });
+
+        it('shows the "Suggestions produced by <model>" reminder with the active model label', () => {
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    actions={{ rec_1: recAction }}
+                    activeModelLabel="Expert system"
+                    onClearSuggested={vi.fn()}
+                />,
+            );
+            expect(screen.getByTestId('active-model-reminder')).toHaveTextContent(
+                'Suggestions produced by Expert system',
+            );
+        });
+
+        it('hides the active-model reminder when there are no suggested entries', () => {
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    actions={{}}
+                    activeModelLabel="Expert system"
+                    onClearSuggested={vi.fn()}
+                />,
+            );
+            expect(screen.queryByTestId('active-model-reminder')).not.toBeInTheDocument();
+        });
+
+        it('Clear button calls onClearSuggested', () => {
+            const onClearSuggested = vi.fn();
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    actions={{ rec_1: recAction }}
+                    activeModelLabel="Expert system"
+                    onClearSuggested={onClearSuggested}
+                />,
+            );
+            fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+            expect(onClearSuggested).toHaveBeenCalledTimes(1);
+        });
+
+        it('hides the Analyze & Suggest slot while suggested entries are displayed', () => {
+            render(<ActionFeed {...defaultProps} actions={{ rec_1: recAction }} canRunAnalysis />);
+            expect(screen.queryByRole('button', { name: /Analyze & Suggest/ })).not.toBeInTheDocument();
+        });
+
+        it('reshows the Analyze & Suggest slot when only rejected actions remain (post-Clear)', () => {
+            // After Clear, the operator's kept rejected action stays in
+            // result.actions with is_manual=false. The analysis-trigger
+            // slot must still reappear because the Suggested feed
+            // (prioritizedEntries) is empty — gating on prioritizedEntries
+            // rather than "any non-manual action" is what fixes this.
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    actions={{ rej_1: recAction }}
+                    rejectedActionIds={new Set(['rej_1'])}
+                    canRunAnalysis
+                />,
+            );
+            expect(screen.getByRole('button', { name: /Analyze & Suggest/ })).toBeInTheDocument();
         });
     });
 });

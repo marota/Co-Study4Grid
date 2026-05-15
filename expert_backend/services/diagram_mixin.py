@@ -54,6 +54,20 @@ from expert_backend.services.sanitize import sanitize_for_json
 logger = logging.getLogger(__name__)
 
 
+class ActionResultUnavailableError(ValueError):
+    """The action is not in the backend's ``_last_result``.
+
+    Subclasses ``ValueError`` so existing ``except ValueError`` /
+    ``except Exception`` boundaries keep returning HTTP 400 unchanged.
+    The dedicated type lets the API layer recognise an *expected*
+    post-reload condition — the frontend silently falls back to
+    ``/api/simulate-and-variant-diagram`` — and log it quietly instead
+    of dumping a full ERROR-level traceback for what is normal
+    behaviour after a session reload (or for any manually-added action,
+    which is never in ``_last_result`` either).
+    """
+
+
 class DiagramMixin:
     """Mixin providing diagram generation and flow analysis methods."""
 
@@ -583,12 +597,27 @@ class DiagramMixin:
 
         t_start = time.time()
 
+        # When the action isn't in the backend's last result — after a
+        # session reload, or for any manually-added action — there is no
+        # cached observation to diff. Soft-fail with `patchable: false`
+        # (the contract the frontend already handles) instead of raising
+        # a 400: the frontend falls through to the full NAD and then to
+        # `/api/simulate-and-variant-diagram`. Soft-failing keeps this
+        # expected path off the backend error log entirely.
         if not self._last_result or not self._last_result.get("prioritized_actions"):
-            raise ValueError("No analysis result available. Run analysis first.")
+            return sanitize_for_json({
+                "patchable": False,
+                "reason": "no-analysis-result",
+                "action_id": action_id,
+            })
 
         actions = self._last_result["prioritized_actions"]
         if action_id not in actions:
-            raise ValueError(f"Action '{action_id}' not found in last analysis result.")
+            return sanitize_for_json({
+                "patchable": False,
+                "reason": "action-not-in-last-result",
+                "action_id": action_id,
+            })
 
         obs = actions[action_id]["observation"]
         variant_id = obs._variant_id
@@ -1010,12 +1039,21 @@ class DiagramMixin:
     # ------------------------------------------------------------------
 
     def _require_action(self, action_id: str) -> dict:
-        """Return the prioritized actions dict, or raise if the action is missing."""
+        """Return the prioritized actions dict, or raise if the action is missing.
+
+        Raises :class:`ActionResultUnavailableError` (a ``ValueError``
+        subclass) so the API layer can tell this *expected* post-reload
+        condition from a genuine fault — see the class docstring.
+        """
         if not self._last_result or not self._last_result.get("prioritized_actions"):
-            raise ValueError("No analysis result available. Run analysis first.")
+            raise ActionResultUnavailableError(
+                "No analysis result available. Run analysis first."
+            )
         actions = self._last_result["prioritized_actions"]
         if action_id not in actions:
-            raise ValueError(f"Action '{action_id}' not found in last analysis result.")
+            raise ActionResultUnavailableError(
+                f"Action '{action_id}' not found in last analysis result."
+            )
         return actions
 
     def _lf_status_for_variant(self, network, variant_id: str, disconnected_elements):

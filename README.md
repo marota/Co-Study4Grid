@@ -5,8 +5,11 @@
 > Formerly known as **ExpertAssist**. Rebranded to Co-Study4Grid in release 0.4 (PR #65).
 
 The recommender is **pluggable**: pick the expert rule-based system, a random
-baseline, or any third-party model from the **Settings → Recommender** tab.
-See [Plug Your Own Recommendation Model](#plug-your-own-recommendation-model)
+baseline, or any third-party model — from the **Settings → Recommender** tab
+or the model dropdown right above the **Analyze & Suggest** button. Swapping
+the model takes effect on the next run with no study reload, and a **Clear**
+button lets the operator wipe un-triaged suggestions and re-run with a
+different model. See [Plug Your Own Recommendation Model](#plug-your-own-recommendation-model)
 to extend it.
 
 ![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)
@@ -19,9 +22,16 @@ to extend it.
 ### Contingency analysis & remediation
 - **Two-step N-1 workflow**: detect overloads first (`run-analysis-step1`), let the operator pick which ones to resolve, then stream suggestions (`run-analysis-step2`). The legacy one-shot `run-analysis` endpoint is still exposed for backward compatibility.
 - **Pluggable recommendation models**: select Expert / Random / RandomOverflow
-  from the Settings dropdown, or plug in a third-party model. The pipeline
-  dispatches via the `RecommenderModel` contract; the UI hides parameters the
-  active model doesn't consume. See
+  from the Settings dropdown **or** the model selector above the Analyze &
+  Suggest button, or plug in a third-party model. A model swap is pushed to
+  the backend through the lightweight `POST /api/recommender-model` endpoint
+  (no study reload), and the overflow-graph build is cached by an input
+  signature so re-running with a different model re-executes only the
+  discovery step. After a run, the model that produced the suggestions is
+  reminded below the Suggested Actions tab header with a confirmation-gated
+  **Clear** button to wipe un-triaged suggestions before re-running. The
+  pipeline dispatches via the `RecommenderModel` contract; the UI hides
+  parameters the active model doesn't consume. See
   [Plug Your Own Recommendation Model](#plug-your-own-recommendation-model).
 - **AC/DC fallback**: analysis runs on the AC load flow and transparently falls back to DC when AC fails to converge.
 - **Prioritized action feed** with search, filter, star / reject, and per-action metadata — severity, MW deltas, rho after action, impacted overloaded lines.
@@ -72,6 +82,141 @@ Co-Study4Grid is built around the operator's ability to triage hundreds of remed
 - **React ErrorBoundary** wrapping the app root (PR #82) to contain crashes.
 - **Vitest + React Testing Library** unit tests co-located as `*.test.tsx` — ~1000 specs.
 - **Auto-generated single-file UI** (`frontend/dist-standalone/standalone.html` via `npm run build:standalone`, PR #101) mirroring every feature of the React app, for zero-install demos. The legacy hand-maintained `standalone_interface.html` has been decommissioned.
+
+---
+
+## European-Wide Studies in Practice
+
+Co-Study4Grid is grid-agnostic: any pypowsybl-readable `.xiidm` network
+with a `grid_layout.json` companion drops in. The three studies below
+were captured on the same dataset — the
+`pypsa_eur_eur220_225_380_400` environment, a full pan-European 220 /
+225 / 380 / 400 kV network derived from the PyPSA-EUR pipeline (see
+[`scripts/pypsa_eur/`](scripts/pypsa_eur/)). Each contingency lights
+up a different region — the French / Spanish Pyrenean border, Spain's
+inland 400 kV backbone, and Italy's Campania 220 kV ring — and each
+exercises a different facet of the workflow. They are reproducible
+end-to-end: load the `pypsa_eur_eur220_225_380_400` study, set the
+contingency to the value below, click **Analyze & Suggest**.
+
+### What the interface shows
+
+Across every study, the same panels are at work:
+
+- **Top bar** — network path input, **Load Study** / **Save Results** /
+  **Reload Session** controls; the **Notices** pill in the top-left
+  surfaces tier-ranked issues (info / warning / critical) tied to the
+  current study.
+- **Sidebar** —
+  - **Contingency selector** and a sticky summary strip listing the
+    applied disconnections, the detected N-1 overloads (clickable to
+    zoom on the offending line) and the active monitoring ratio.
+  - The **Analyze & Suggest** trigger, with an *Additional lines to
+    prevent flow increase* picker right above it and a **Model**
+    dropdown (Expert / Random / RandomOverflow / any plug-in model).
+  - The **Suggested Actions** feed — colour-coded severity badges
+    (Solves overload / Low margin / Still overloaded / Divergent or
+    islanded), per-action max-loading %, target substation chip, and a
+    star/reject pair on each card. Below the tab header, the model
+    that produced the suggestions is reminded — *"Suggestions produced
+    by &lt;model&gt;"* — alongside a confirmation-gated **Clear**
+    button that wipes the un-triaged suggestions (keeping starred /
+    rejected / manually-added decisions) so the operator can re-run
+    with a different recommender.
+- **Visualization panel** — four synchronized tabs (*Network N*,
+  *Contingency N-1*, *Remedial Action*, *Overflow Analysis*) rendered
+  as pypowsybl NADs with flow-delta overlays, halos on impacted
+  assets, and an **Inspect** field at the bottom for direct
+  asset-focus + halo.
+- **Overflow Analysis tab** — the interactive HTML viewer with a
+  layer-toggle sidebar (Constrained path, Red-loop, Overloads, Low
+  margin, Hubs, Consumption nodes, flow polarities), a *Hierarchical*
+  ↔ *Geo* layout switch and a *Pins* overlay that mirrors the action
+  pins of the Action Overview onto the overflow graph.
+
+### Pyrenean border (France / Spain) — `LANNEL61PRAGN`
+
+![France / Spain border study](docs/images/readme/study-pyrenees-france-spain.png)
+
+A 63 kV interconnect on the French side trips and re-routes flow
+toward the Spanish side, triggering a single overload on
+`MARSIL61PRAGN` at 106.1 %. The recommender returns four
+disconnection candidates centred on the Spanish substations
+(Sabiñánigo, Hernani, Itxaso) — every card carries the green *Solves
+overload* badge. The right pane illustrates the **interactive
+overflow analysis** running in *Hierarchical* mode: the layer panel
+exposes the Constrained-path, Red-loop, Overloads, Low-margin, Hubs
+and Consumption-node layers; the Flow Redispatch values give the
+positive / negative dispatch count on the constrained path; the stats
+strip at the bottom reports 93 nodes / 110 edges for the dispatch
+graph. The two views stay in lock-step: a click on a pin on either
+side opens the same `ActionCardPopover`.
+
+### Spain (400 kV) — `virtual_way_170479579_0-400 — virtual_way_170479590_0-400`
+
+![Spain N-K 400 kV study near Hinojosa](docs/images/readme/study-spain-hinojosa.png)
+
+This is an **N-K** (multi-element) study: two parallel 400 kV
+branches are disconnected simultaneously around *Subestación de
+Hinojosa*. The contingency strip shows both disconnections as
+chips; the single remaining N-1 overload reaches 102.2 % on the same
+corridor. Eighteen disconnection / coupler-opening candidates come
+back from the Expert model — all green — illustrating how dense the
+remediation space gets when the operator hunts for relief paths on a
+400 kV backbone. The auto-zoom places the highlighted contingency
+(orange dashed line) and the impacted assets at the centre of the
+NAD, and the sticky N-1 overload chip lets the operator jump back to
+the offending corridor with one click.
+
+### Italy (220 kV Campania) — `Santa Sofia — Montecorvino`
+
+![Italian Campania study around Brusciano-Nola](docs/images/readme/study-italy-brusciano-nola.png)
+
+A single 220 kV line trips between *Santa Sofia* and *Montecorvino*,
+overloading the Brusciano-Nola corridor at 106.1 %. The 18 suggested
+actions span every action class the platform handles — *Load
+shedding* on Frattamaggiore and Acerra-Maddaloni loads, *Coupler
+opening* on Avezza 220 kV (note the French description rendered
+verbatim from the action dictionary: *"Ouverture du couplage
+'VL_way_132701980-220_COUPL' dans le poste 'Avezza 220kV'"*),
+*Disconnection* on the Montecorvino–Laino axis — and the severity
+badges blend the three colour codes side by side: green *Solves
+overload*, yellow *Solved – low margin*, red *Still overloaded*. The
+overlapping red / green / yellow pins on the NAD reflect the
+operator's triage in progress: starred, rejected and unsimulated
+actions render with distinct glyphs that survive zoom, pan, and the
+*Filter* chips.
+
+### Reproducing the three studies
+
+```bash
+# Backend
+python -m expert_backend.main
+
+# Frontend
+cd frontend && npm run dev
+```
+
+1. **Settings → Paths**: point *Network Path* to
+   `data/pypsa_eur_eur220_225_380_400/network.xiidm` (and the matching
+   `grid_layout.json` / action-dictionary file).
+2. Click **Load Study**.
+3. Type one of the contingency identifiers from the table below into
+   the **Select Contingency** field — autocompletion will match.
+
+| Region                        | Contingency identifier                                              |
+|-------------------------------|---------------------------------------------------------------------|
+| France / Spain (Pyrenees)     | `LANNEL61PRAGN`                                                     |
+| Italy (Campania, 220 kV)      | `Santa Sofia — Montecorvino`                                        |
+| Spain (Hinojosa, 400 kV, N-K) | `virtual_way_170479579_0-400 — virtual_way_170479590_0-400`         |
+
+4. Press **Analyze & Suggest**, optionally change the recommender via
+   the model dropdown right above the button.
+
+The same gesture grammar applies in every region: the platform makes
+no assumption on TSO, voltage level, action vocabulary, or the
+language of the action descriptions — every panel and every shortcut
+adapts to whatever the loaded dataset declares.
 
 ---
 
@@ -147,12 +292,27 @@ Three models ship out of the box; you can add your own with a few lines of code.
 | `random`          | Random                             | No                      | Sanity-check baseline. Samples uniformly from the action dictionary, augmented with synthetic reconnection / load-shedding / curtailment actions. |
 | `random_overflow` | Random (post overflow analysis)    | Yes                     | "Is the overflow analysis useful?" baseline. Samples uniformly inside the expert-reduced action space (rule filter + overflow paths + network existence). |
 
-The model is selected from the **Settings → Recommender** tab via a dropdown
-populated dynamically by `GET /api/models`. The parameter inputs below the
-dropdown follow the model's `params_spec()`: each recommender declares which
-knobs the operator can tune, and the UI hides the rest. The `Compute Overflow
-Graph (step 1)` toggle is locked-on for models with
-`requires_overflow_graph=true` and editable for the others (opt-in).
+The model is selected from a dropdown populated dynamically by
+`GET /api/models` — available **both** in the **Settings → Recommender** tab
+and as a compact selector directly above the **Analyze & Suggest** button so
+the operator can swap model and re-run without opening Settings. Changing
+either dropdown pushes the choice to the running backend through
+`POST /api/recommender-model` (a lightweight swap — no network reload, no
+action-dictionary rebuild), so the next analysis run uses it. The parameter
+inputs below the Settings dropdown follow the model's `params_spec()`: each
+recommender declares which knobs the operator can tune, and the UI hides the
+rest. The `Compute Overflow Graph (step 1)` toggle is locked-on for models
+with `requires_overflow_graph=true` and editable for the others (opt-in).
+
+After a run, the model that produced the suggestions is reminded below the
+Suggested Actions tab header — *"Suggestions produced by &lt;model&gt;"* —
+alongside a confirmation-gated **Clear** button. Clear wipes only the
+recommender suggestions the operator has not triaged (un-starred, un-rejected,
+not manually added); starred / rejected / manually-added actions are kept. The
+overflow-graph build is cached by an input signature
+`(contingency, selected_overloads, all_overloads, monitor_deselected,
+additional_lines_to_cut)`, so re-running with only the model changed reuses
+the cached graph and re-executes just the discovery step.
 
 ### Three-layer filter chain for sampling models
 
@@ -256,7 +416,8 @@ hook. The decorator pattern works either way.
 The frontend picks up your model automatically:
 
 - `GET /api/models` lists it,
-- the **Settings → Recommender** dropdown shows it,
+- both the **Settings → Recommender** dropdown and the model selector above
+  the **Analyze & Suggest** button show it,
 - the parameter inputs render dynamically from `params_spec()`,
 - the `Compute Overflow Graph` toggle is locked-on or editable based on
   `requires_overflow_graph`,
@@ -382,13 +543,15 @@ Open the Vite dev-server URL shown in the terminal (typically `http://localhost:
 1. Open **Settings → Paths** and set the network directory (containing `.xiidm` files), the action definition JSON, and optionally an output folder for saved sessions.
 2. Open **Settings → Recommender** and pick which recommendation model to run
    (Expert by default). The parameter inputs below the dropdown render
-   dynamically from the active model's `params_spec()`.
+   dynamically from the active model's `params_spec()`. The model can also be
+   swapped later from the selector above the Analyze & Suggest button.
 3. Click **Load Study** to load the network.
 4. Pick a disconnectable element (line or transformer) from the searchable dropdown — the N-1 diagram is fetched with overloads highlighted automatically.
 5. Click **Analyze & Suggest** (two-step flow): select which overloads to resolve, then watch the action feed stream in.
 6. Inspect prioritized actions, simulate manual ones, or open the **Combine** modal to explore action pairs.
-7. Detach any visualization tab (`⧉`) onto a second screen for dual-monitor studies.
-8. Hit **Save Results** to export the full session (including the active recommender model under `analysis.active_model`); **Reload Session** restores it exactly, without re-simulating anything.
+7. To try a different recommender, hit **Clear** under the Suggested Actions tab header (keeps your starred / rejected / manually-added actions), pick a model in the dropdown above Analyze & Suggest, and re-run.
+8. Detach any visualization tab (`⧉`) onto a second screen for dual-monitor studies.
+9. Hit **Save Results** to export the full session (including the active recommender model under `analysis.active_model`); **Reload Session** restores it exactly, without re-simulating anything.
 
 ---
 
@@ -403,6 +566,7 @@ Open the Vite dev-server URL shown in the terminal (typically `http://localhost:
 | `POST` | `/api/config-file-path` | Set a custom user config file path |
 | `POST` | `/api/config` | Load network + set all recommender parameters (incl. `model` and `compute_overflow_graph`) |
 | `GET`  | `/api/models` | List registered recommendation models with their `params_spec()` and capability flags |
+| `POST` | `/api/recommender-model` | Lightweight swap of the active recommender model (no network reload) — fired by the model dropdowns in Settings and above Analyze & Suggest |
 | `GET`  | `/api/pick-path` | Open the native OS file / directory picker |
 | `POST` | `/api/save-session` | Save a session folder (JSON snapshot + PDF + interaction log; includes `analysis.active_model`) |
 | `GET`  | `/api/list-sessions` | List saved session folders |

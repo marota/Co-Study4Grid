@@ -81,6 +81,28 @@ describe('api client', () => {
         });
     });
 
+    describe('setRecommenderModel', () => {
+        it('POSTs the model + compute_overflow_graph to /api/recommender-model', async () => {
+            // Lightweight model swap — does NOT reload the network. Used
+            // by useSettings whenever the operator changes the model in
+            // the Settings modal OR the dropdown above Analyze & Suggest.
+            mockedAxios.post.mockResolvedValue({
+                data: { status: 'success', active_model: 'random_overflow', compute_overflow_graph: true },
+            });
+
+            const result = await api.setRecommenderModel('random_overflow', true);
+            expect(mockedAxios.post).toHaveBeenCalledWith(
+                'http://127.0.0.1:8000/api/recommender-model',
+                { model: 'random_overflow', compute_overflow_graph: true },
+            );
+            expect(result).toEqual({
+                status: 'success',
+                active_model: 'random_overflow',
+                compute_overflow_graph: true,
+            });
+        });
+    });
+
     describe('getNetworkDiagram', () => {
         it('parses the text/plain header+SVG response', async () => {
             // Server now returns:  {json header}\n<svg>...</svg>

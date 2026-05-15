@@ -7,6 +7,7 @@
 
 import React from 'react';
 import type { ActionDetail, NodeMeta, EdgeMeta } from '../types';
+import type { ModelDescriptor } from '../api';
 import { getActionTargetVoltageLevels, getActionTargetLines, isCouplingAction } from '../utils/svgUtils';
 import { colors } from '../styles/tokens';
 import { SeverityIcon, type SeverityKind } from './SeverityIcon';
@@ -36,6 +37,12 @@ interface ActionCardProps {
     onResimulateTap: (actionId: string, newTap: number) => void;
     /** Resolve an element ID to its human-readable display name. Falls back to the ID. */
     displayName?: (id: string) => string;
+    /**
+     * Registered recommender models — used to resolve `details.origin`
+     * (a model id) to a human-readable label in the unfolded card's
+     * "Source" row. Absent / no-match falls back to the raw id.
+     */
+    availableModels?: ModelDescriptor[];
 }
 
 const clickableLinkStyle: React.CSSProperties = {
@@ -73,8 +80,18 @@ const ActionCard: React.FC<ActionCardProps> = ({
     onResimulate,
     onResimulateTap,
     displayName = (id: string) => id,
+    availableModels,
 }) => {
     const maxRhoPct = details.max_rho != null ? (details.max_rho * 100).toFixed(1) : null;
+
+    // Provenance label for the unfolded card's "Source" row. `origin`
+    // is either the literal `"user"` (manual simulation) or a
+    // recommender model id — resolved here to the model's label.
+    const originLabel = details.origin == null
+        ? null
+        : details.origin === 'user'
+            ? 'Manual simulation (user)'
+            : (availableModels?.find(m => m.name === details.origin)?.label ?? details.origin);
     const severity = details.max_rho != null
         ? (details.max_rho > monitoringFactor ? 'red' as const : details.max_rho > (monitoringFactor - 0.05) ? 'orange' as const : 'green' as const)
         : (details.is_rho_reduction ? 'green' as const : 'red' as const);
@@ -239,7 +256,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                 padding: '10px',
                 position: 'relative',
             }} onClick={() => onActionSelect(id)}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
                 <h4 style={{
                     margin: 0,
                     fontSize: '12px',
@@ -248,6 +265,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
                     minWidth: 0,
                     overflowWrap: 'anywhere',
                     fontWeight: 700,
+                    lineHeight: 1.35,
                 }}>
                     #{index + 1} {'—'} {id}
                 </h4>
@@ -278,9 +296,14 @@ const ActionCard: React.FC<ActionCardProps> = ({
 
             {/* Compact at-rest body: max loading + target badges. The
                 rail (⭐ / ❌) sits to the right and fades in on
-                hover or when this card is being viewed. */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '8px', marginTop: '6px' }}>
-                <div style={{ flex: 1, fontSize: '12px', minWidth: 0 }}>
+                hover or when this card is being viewed. The row wraps
+                so multi-VL badge stacks flow to a second line when
+                the title is long or the badges don't fit alongside
+                the loading metric — without that, ``flexShrink:0`` on
+                the badges + rail forces the loading text to collapse
+                into a one-word-per-line vertical strip. */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', rowGap: '6px', gap: '8px', marginTop: '6px' }}>
+                <div style={{ flex: '1 1 160px', fontSize: '12px', minWidth: 'min-content' }}>
                     {maxRhoPct != null ? (
                         <div>
                             Max loading: <strong style={{ color: sc.border }}>{maxRhoPct}%</strong>
@@ -340,6 +363,15 @@ const ActionCard: React.FC<ActionCardProps> = ({
                     onMouseDown={(e) => e.stopPropagation()}
                 >
                     <p style={{ fontSize: '12px', margin: 0, color: colors.textPrimary }}>{details.description_unitaire}</p>
+
+                    {originLabel && (
+                        <div
+                            data-testid={`action-card-${id}-origin`}
+                            style={{ fontSize: '11px', marginTop: '4px', color: colors.textTertiary }}
+                        >
+                            Source: <strong style={{ color: colors.textSecondary }}>{originLabel}</strong>
+                        </div>
+                    )}
 
                     {details.load_shedding_details && details.load_shedding_details.length > 0 && (
                         <div style={{ ...editorRowStyle, background: colors.warningSoft, color: colors.warningText, border: `1px solid ${colors.warningBorder}` }}>

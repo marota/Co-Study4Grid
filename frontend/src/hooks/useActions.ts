@@ -27,6 +27,14 @@ export interface ActionsState {
     linesOverloaded: string[],
     setResult: Dispatch<SetStateAction<AnalysisResult | null>>,
     onSelectAction: (actionId: string) => void,
+    /**
+     * Provenance stamped on the new action card. Defaults to `"user"`
+     * (manual search dropdown / "Make a first guess"). The
+     * unsimulated-pin path passes the recommender model id instead,
+     * because that pin was scored by the model — the operator only
+     * triggered its materialisation.
+     */
+    origin?: string,
   ) => void;
   handleActionResimulated: (
     actionId: string,
@@ -93,6 +101,7 @@ export function useActions(): ActionsState {
     _linesOverloaded: string[],
     setResult: React.Dispatch<React.SetStateAction<AnalysisResult | null>>,
     onSelectAction: (actionId: string) => void,
+    origin: string = 'user',
   ) => {
     interactionLogger.record('manual_action_simulated', { action_id: actionId });
     setResult(prev => {
@@ -113,11 +122,16 @@ export function useActions(): ActionsState {
       // back to ``n1Diagram.lines_overloaded`` — the authoritative
       // pypowsybl-style identifier list — for the card display.
       // Step1 / session reload set it on their own setResult paths.
+      //
+      // ``origin`` is preserved if the action already exists with one
+      // (e.g. re-adding a recommender suggestion the operator pulled
+      // into the feed) — the first provenance wins.
+      const existing = base.actions[actionId];
       return {
         ...base,
         actions: {
           ...base.actions,
-          [actionId]: { ...detail, is_manual: true },
+          [actionId]: { ...detail, is_manual: true, origin: existing?.origin ?? origin },
         },
       };
     });
@@ -160,9 +174,15 @@ export function useActions(): ActionsState {
         ...prev,
         actions: {
           ...prev.actions,
-          // Preserve the is_manual flag from the existing entry so a
-          // recommender-suggested action stays recommender-suggested.
-          [actionId]: { ...detail, is_manual: existing?.is_manual ?? false },
+          // Preserve the is_manual flag AND the origin from the
+          // existing entry — re-simulation changes the metrics, never
+          // the provenance: a recommender-suggested action stays
+          // recommender-suggested, a user action stays a user action.
+          [actionId]: {
+            ...detail,
+            is_manual: existing?.is_manual ?? false,
+            origin: existing?.origin ?? detail.origin ?? 'user',
+          },
         },
       };
     });

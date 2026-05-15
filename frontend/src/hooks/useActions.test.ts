@@ -357,4 +357,108 @@ describe('useActions — interaction logging', () => {
             expect(captured!.actions.existing.rho_after).toEqual([0.9]);
         });
     });
+
+    // `origin` records action provenance — distinct from `is_manual`,
+    // which is an overloaded UI-state flag (also stamped true when the
+    // operator stars a recommender suggestion). `origin` is set once at
+    // creation and never changes.
+    describe('action origin provenance', () => {
+        const detail: ActionDetail = {
+            description_unitaire: 'test',
+            rho_before: [1.1],
+            rho_after: [0.9],
+            max_rho: 0.9,
+            max_rho_line: 'LINE_X',
+            is_rho_reduction: true,
+        };
+
+        const captureSetResult = (initial: AnalysisResult | null) => {
+            let captured: AnalysisResult | null = null;
+            const setResult = (updater: unknown) => {
+                if (typeof updater === 'function') {
+                    captured = (updater as (p: AnalysisResult | null) => AnalysisResult | null)(initial);
+                }
+            };
+            return { setResult: setResult as React.Dispatch<React.SetStateAction<AnalysisResult | null>>, get: () => captured };
+        };
+
+        it('handleManualActionAdded stamps origin="user" by default', () => {
+            const { result } = renderHook(() => useActions());
+            const { setResult, get } = captureSetResult(null);
+
+            act(() => {
+                result.current.handleManualActionAdded('manual_x', detail, [], setResult, vi.fn());
+            });
+
+            expect(get()!.actions.manual_x.origin).toBe('user');
+        });
+
+        it('handleManualActionAdded accepts a custom origin (unsimulated-pin path passes the model)', () => {
+            const { result } = renderHook(() => useActions());
+            const { setResult, get } = captureSetResult(null);
+
+            act(() => {
+                result.current.handleManualActionAdded('pin_x', detail, [], setResult, vi.fn(), 'random_overflow');
+            });
+
+            expect(get()!.actions.pin_x.origin).toBe('random_overflow');
+        });
+
+        it('handleManualActionAdded keeps a pre-existing origin (first provenance wins)', () => {
+            const { result } = renderHook(() => useActions());
+            const { setResult, get } = captureSetResult({
+                pdf_path: null, pdf_url: null,
+                actions: {
+                    act_1: { ...detail, origin: 'expert', is_manual: false },
+                },
+                lines_overloaded: [], message: '', dc_fallback: false,
+            });
+
+            act(() => {
+                // Even though the default origin is "user", the existing
+                // recommender origin must survive.
+                result.current.handleManualActionAdded('act_1', detail, [], setResult, vi.fn());
+            });
+
+            expect(get()!.actions.act_1.origin).toBe('expert');
+        });
+
+        it('handleActionResimulated preserves the existing origin', () => {
+            const { result } = renderHook(() => useActions());
+            const { setResult, get } = captureSetResult({
+                pdf_path: null, pdf_url: null,
+                actions: {
+                    act_1: { ...detail, origin: 'random_overflow', is_manual: false },
+                },
+                lines_overloaded: [], message: '', dc_fallback: false,
+            });
+
+            act(() => {
+                result.current.handleActionResimulated('act_1', detail, [], setResult, vi.fn());
+            });
+
+            // Re-simulation changes metrics, never provenance.
+            expect(get()!.actions.act_1.origin).toBe('random_overflow');
+        });
+
+        it('handleActionFavorite does NOT change the origin of a recommender suggestion', () => {
+            const { result } = renderHook(() => useActions());
+            const { setResult, get } = captureSetResult({
+                pdf_path: null, pdf_url: null,
+                actions: {
+                    act_1: { ...detail, origin: 'expert', is_manual: false },
+                },
+                lines_overloaded: [], message: '', dc_fallback: false,
+            });
+
+            act(() => {
+                result.current.handleActionFavorite('act_1', setResult);
+            });
+
+            // Starring stamps is_manual=true but the action still
+            // *originated* from the model.
+            expect(get()!.actions.act_1.is_manual).toBe(true);
+            expect(get()!.actions.act_1.origin).toBe('expert');
+        });
+    });
 });

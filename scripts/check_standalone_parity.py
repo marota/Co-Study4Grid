@@ -146,6 +146,8 @@ SPEC_DETAILS: dict[str, dict] = {
         "additional_lines_to_cut",
     }),
     "additional_line_to_cut_toggled": _spec_row({"line", "selected"}),
+    "recommender_model_changed": _spec_row({"model"}, optional={"source"}),
+    "suggested_actions_cleared": _spec_row({"n_cleared"}),
     "analysis_step2_completed": _spec_row({
         "n_actions", "action_ids", "dc_fallback", "message", "pdf_url",
     }),
