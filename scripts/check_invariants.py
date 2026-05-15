@@ -364,16 +364,17 @@ INVARIANTS: list[Invariant] = [
     Invariant(
         name="notices_panel_in_sidebar",
         description=(
-            "Recommendation #4 (tier the warning system): the "
-            "sidebar must surface a single `<NoticesPanel>` pill "
-            "as the entry point for persistent warnings instead of "
-            "stacking up to five concurrent yellow banners. The "
-            "pill lives inside SidebarSummary so it shares one "
-            "horizontal band with the contingency / N-1 strip; "
-            "AppSidebar forwards the notices array down."
+            "Recommendation #4 (tier the warning system): the app "
+            "must surface a single `<NoticesPanel>` pill as the "
+            "entry point for persistent warnings instead of stacking "
+            "up to five concurrent yellow banners. The pill lives "
+            "in the Header — tucked under the app title alongside "
+            "the network-path block — so it stays visible across "
+            "every sidebar / panel state without crowding the sticky "
+            "contingency strip."
         ),
         react={
-            "file_hint": "frontend/src/components/SidebarSummary.tsx",
+            "file_hint": "frontend/src/components/Header.tsx",
             "pattern": r"<NoticesPanel\s",
         },
         standalone={"file_hint": "standalone_interface.html"},

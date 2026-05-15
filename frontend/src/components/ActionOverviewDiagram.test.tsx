@@ -220,12 +220,24 @@ describe('ActionOverviewDiagram', () => {
         expect(parts[3]).toBeCloseTo(550, 0);
     });
 
-    it('renders severity legend (Solves overload / Low margin / Still overloaded / Divergent)', () => {
-        const { getByText } = render(<ActionOverviewDiagram {...defaultProps()} />);
-        expect(getByText('Solves overload')).toBeInTheDocument();
-        expect(getByText('Low margin')).toBeInTheDocument();
-        expect(getByText('Still overloaded')).toBeInTheDocument();
-        expect(getByText('Divergent / islanded')).toBeInTheDocument();
+    it('no longer renders the severity / action-type filter controls (driven by the sidebar rings)', () => {
+        const { queryByTestId } = render(<ActionOverviewDiagram {...defaultProps()} />);
+        // Severity (action-card colour) toggles + bulk buttons removed —
+        // they are redundant with the sidebar's ActionFilterRings.
+        for (const c of ['green', 'orange', 'red', 'grey']) {
+            expect(queryByTestId(`filter-category-${c}`)).not.toBeInTheDocument();
+        }
+        expect(queryByTestId('filter-select-all')).not.toBeInTheDocument();
+        expect(queryByTestId('filter-select-none')).not.toBeInTheDocument();
+        // Action-type chip row removed.
+        expect(queryByTestId('overview-action-type-filter')).not.toBeInTheDocument();
+        // Threshold moved to the sidebar's ActionFilterRings (compact
+        // single-row layout). The non-redundant remaining filters stay
+        // in the overview header.
+        expect(queryByTestId('filter-threshold')).not.toBeInTheDocument();
+        expect(queryByTestId('filter-threshold-input')).not.toBeInTheDocument();
+        expect(queryByTestId('filter-show-unsimulated')).toBeInTheDocument();
+        expect(queryByTestId('filter-combined-only')).toBeInTheDocument();
     });
 
     it('shows the pin count in the header', () => {
@@ -902,117 +914,25 @@ describe('ActionOverviewDiagram', () => {
     describe('filters', () => {
         const allCategories = { green: true, orange: true, red: true, grey: true };
 
-        it('renders category toggle chips + threshold slider + unsimulated checkbox', () => {
-            const { getByTestId } = render(
-                <ActionOverviewDiagram
-                    {...defaultProps()}
-                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
-                />,
-            );
-            expect(getByTestId('filter-category-green')).toBeInTheDocument();
-            expect(getByTestId('filter-category-orange')).toBeInTheDocument();
-            expect(getByTestId('filter-category-red')).toBeInTheDocument();
-            expect(getByTestId('filter-category-grey')).toBeInTheDocument();
-            expect(getByTestId('filter-select-all')).toBeInTheDocument();
-            expect(getByTestId('filter-select-none')).toBeInTheDocument();
-            expect(getByTestId('filter-threshold')).toBeInTheDocument();
-            expect(getByTestId('filter-show-unsimulated')).toBeInTheDocument();
-        });
-
-        it('clicking a category chip flips the matching category and fires onFiltersChange', () => {
-            const onFiltersChange = vi.fn();
-            const { getByTestId } = render(
-                <ActionOverviewDiagram
-                    {...defaultProps()}
-                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
-                    onFiltersChange={onFiltersChange}
-                />,
-            );
-            fireEvent.click(getByTestId('filter-category-red'));
-            expect(onFiltersChange).toHaveBeenCalledTimes(1);
-            const next = onFiltersChange.mock.calls[0][0];
-            expect(next.categories.red).toBe(false);
-            expect(next.categories.green).toBe(true);
-        });
-
-        it('Select All / None bulk-sets every category', () => {
-            const onFiltersChange = vi.fn();
-            const { getByTestId } = render(
-                <ActionOverviewDiagram
-                    {...defaultProps()}
-                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
-                    onFiltersChange={onFiltersChange}
-                />,
-            );
-            fireEvent.click(getByTestId('filter-select-none'));
-            const [firstCall] = onFiltersChange.mock.calls;
-            expect(firstCall[0].categories).toEqual({ green: false, orange: false, red: false, grey: false });
-            fireEvent.click(getByTestId('filter-select-all'));
-            const secondCall = onFiltersChange.mock.calls[1];
-            expect(secondCall[0].categories).toEqual({ green: true, orange: true, red: true, grey: true });
-        });
-
-        it('threshold numeric input update fires onFiltersChange with the new threshold', () => {
-            // The threshold widget is a compact integer-% number
-            // input (0–300 %); the form's source-of-truth value is a
-            // fraction (1.0 = 100 %). Typing "100" in the input must
-            // push { threshold: 1.0 } through onFiltersChange.
-            const onFiltersChange = vi.fn();
-            const { getByTestId } = render(
-                <ActionOverviewDiagram
-                    {...defaultProps()}
-                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
-                    onFiltersChange={onFiltersChange}
-                />,
-            );
-            const input = getByTestId('filter-threshold-input') as HTMLInputElement;
-            fireEvent.change(input, { target: { value: '100' } });
-            expect(onFiltersChange).toHaveBeenCalledTimes(1);
-            expect(onFiltersChange.mock.calls[0][0].threshold).toBeCloseTo(1.0);
-        });
-
-        it('threshold input is a compact integer-% number widget rendering the current fraction as a %', () => {
-            // Regression: the widget replaced the old range slider.
-            // It must be `type="number"`, must bound to 0–300 % with
-            // step=1, and must surface the fractional threshold
-            // multiplied by 100 as its value.
+        it('drops the threshold + category toggles + bulk buttons (severity / threshold rings now live in the sidebar)', () => {
             const { getByTestId, queryByTestId } = render(
                 <ActionOverviewDiagram
                     {...defaultProps()}
                     filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
                 />,
             );
-            const input = getByTestId('filter-threshold-input') as HTMLInputElement;
-            expect(input.type).toBe('number');
-            expect(input.min).toBe('0');
-            expect(input.max).toBe('300');
-            expect(input.step).toBe('1');
-            expect(input.value).toBe('150');
-            // The old slider must NOT be present anymore.
-            expect(queryByTestId('filter-threshold')?.querySelector('input[type="range"]')).toBeFalsy();
+            expect(queryByTestId('filter-category-green')).not.toBeInTheDocument();
+            expect(queryByTestId('filter-category-grey')).not.toBeInTheDocument();
+            expect(queryByTestId('filter-select-all')).not.toBeInTheDocument();
+            expect(queryByTestId('filter-select-none')).not.toBeInTheDocument();
+            // Threshold moved into ActionFilterRings — the overview
+            // header keeps only the non-redundant controls.
+            expect(queryByTestId('filter-threshold')).not.toBeInTheDocument();
+            expect(queryByTestId('filter-threshold-input')).not.toBeInTheDocument();
+            expect(getByTestId('filter-show-unsimulated')).toBeInTheDocument();
         });
 
-        it('threshold input clamps values outside 0–300 %', () => {
-            const onFiltersChange = vi.fn();
-            const { getByTestId } = render(
-                <ActionOverviewDiagram
-                    {...defaultProps()}
-                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
-                    onFiltersChange={onFiltersChange}
-                />,
-            );
-            const input = getByTestId('filter-threshold-input') as HTMLInputElement;
-            fireEvent.change(input, { target: { value: '999' } });
-            expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ threshold: 3.0 }));
-            fireEvent.change(input, { target: { value: '-50' } });
-            expect(onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ threshold: 0 }));
-        });
-
-        it('header lays out filters on a single horizontal row (nowrap)', () => {
-            // Regression: the compacted banner must not wrap onto a
-            // second line. We check the computed flex-wrap value of
-            // the header container plus the presence of every filter
-            // control as a direct child of that row.
+        it('header lays out the remaining filters on a single horizontal row (nowrap)', () => {
             const { getByTestId } = render(
                 <ActionOverviewDiagram
                     {...defaultProps()}
@@ -1021,12 +941,10 @@ describe('ActionOverviewDiagram', () => {
             );
             const header = getByTestId('action-overview-header');
             expect(header.style.flexWrap).toBe('nowrap');
-            // The severity toggles, threshold, unsimulated checkbox,
-            // and action-type chips all sit as children/descendants of
-            // the single row — no nested wrapping <div> is introduced.
-            expect(header.querySelector('[data-testid="filter-category-green"]')).toBeTruthy();
-            expect(header.querySelector('[data-testid="filter-threshold-input"]')).toBeTruthy();
+            // Remaining filters (unsimulated, combined-only) sit as
+            // direct descendants of the single row.
             expect(header.querySelector('[data-testid="filter-show-unsimulated"]')).toBeTruthy();
+            expect(header.querySelector('[data-testid="filter-combined-only"]')).toBeTruthy();
         });
 
         it('disabling the red category hides red-severity pins from the overview', () => {
@@ -1329,18 +1247,6 @@ describe('ActionOverviewDiagram', () => {
             return { ...defaultProps(), actions };
         };
 
-        it('renders the action-type chip row above the SVG body', () => {
-            const { getByTestId } = render(
-                <ActionOverviewDiagram
-                    {...propsWithMixedTypes()}
-                    filters={{ categories: allCategories, threshold: 2.0, showUnsimulated: false, actionType: 'all' }}
-                />,
-            );
-            expect(getByTestId('overview-action-type-filter')).toBeInTheDocument();
-            expect(getByTestId('overview-action-type-filter-disco')).toBeInTheDocument();
-            expect(getByTestId('overview-action-type-filter-pst')).toBeInTheDocument();
-        });
-
         it('hides pins whose classified type does not match the active chip', () => {
             // DISCO-only filter → disco_LINE_A stays, coupling_VL_FAR drops.
             const { container } = render(
@@ -1371,20 +1277,6 @@ describe('ActionOverviewDiagram', () => {
                 />,
             );
             expect(container.querySelectorAll('.nad-action-overview-pin:not(.nad-action-overview-pin-unsimulated)').length).toBe(2);
-        });
-
-        it('clicking a chip fires onFiltersChange with the new actionType', () => {
-            const onFiltersChange = vi.fn();
-            const { getByTestId } = render(
-                <ActionOverviewDiagram
-                    {...propsWithMixedTypes()}
-                    filters={{ categories: allCategories, threshold: 2.0, showUnsimulated: false, actionType: 'all' }}
-                    onFiltersChange={onFiltersChange}
-                />,
-            );
-            fireEvent.click(getByTestId('overview-action-type-filter-disco'));
-            expect(onFiltersChange).toHaveBeenCalledTimes(1);
-            expect(onFiltersChange.mock.calls[0][0].actionType).toBe('disco');
         });
 
         it('filters un-simulated pins by matching the score-info type', () => {

@@ -52,6 +52,10 @@ interface UseOverflowIframeArgs {
     onOverflowPinDoubleClick?: (actionId: string, substation: string) => void;
     onSimulateUnsimulatedAction?: (actionId: string) => void;
     onOverviewFiltersChange?: (filters: ActionOverviewFilters) => void;
+    /** The iframe sidebar hosts the pins on/off toggle; the parent
+     *  remains the source of truth for `overflowPinsEnabled` so it
+     *  echoes the new state back via `cs4g:pins`. */
+    onOverflowPinsToggle?: (enabled: boolean) => void;
     onVlOpen?: (vlId: string) => void;
     /** When the overflow tab is detached into a secondary popup, the
      *  iframe's `window.parent.postMessage(...)` calls land on the
@@ -91,6 +95,7 @@ export function useOverflowIframe(args: UseOverflowIframeArgs): OverflowIframeSt
         onOverflowPinDoubleClick,
         onSimulateUnsimulatedAction,
         onOverviewFiltersChange,
+        onOverflowPinsToggle,
         onVlOpen,
         detachedWindow,
     } = args;
@@ -205,6 +210,16 @@ export function useOverflowIframe(args: UseOverflowIframeArgs): OverflowIframeSt
                         visible: msg.visible,
                     });
                     break;
+                case 'cs4g:overflow-pins-toggled':
+                    // The pins on/off toggle now lives inside the
+                    // iframe's filter panel. Forward the new state so
+                    // the parent's `overflowPinsEnabled` flips and the
+                    // standard `cs4g:pins` echo brings the iframe UI
+                    // back in sync (the parent remains the source of
+                    // truth, single round-trip per toggle).
+                    if (onOverflowPinsToggle) onOverflowPinsToggle(!!msg.enabled);
+                    interactionLogger.record('overflow_pins_toggled', { enabled: !!msg.enabled });
+                    break;
                 case 'cs4g:overflow-node-double-clicked':
                     // The overflow graph node double-click opens the
                     // SLD overlay for that voltage level (or
@@ -235,7 +250,8 @@ export function useOverflowIframe(args: UseOverflowIframeArgs): OverflowIframeSt
             }
         };
     }, [onVlOpen, onOverflowPinPreview, onOverflowPinDoubleClick,
-        onOverviewFiltersChange, onSimulateUnsimulatedAction, detachedWindow]);
+        onOverviewFiltersChange, onOverflowPinsToggle,
+        onSimulateUnsimulatedAction, detachedWindow]);
 
     // Outside-click + Escape dismissal for the overflow pin popover —
     // mirrors `ActionOverviewDiagram`. Clicks INSIDE the iframe (the

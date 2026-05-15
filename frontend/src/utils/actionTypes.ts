@@ -17,7 +17,7 @@
  * all three stay in lock-step when a new bucket is added.
  */
 
-import type { ActionOverviewFilters, ActionTypeFilterToken } from '../types';
+import type { ActionOverviewFilters, ActionSeverityCategory, ActionTypeFilterToken } from '../types';
 
 /** Canonical chip tokens rendered in the filter row (in display order). */
 export const ACTION_TYPE_FILTER_TOKENS: readonly ActionTypeFilterToken[] = [
@@ -45,6 +45,24 @@ export const DEFAULT_ACTION_OVERVIEW_FILTERS: ActionOverviewFilters = {
 };
 
 export type { ActionTypeFilterToken };
+
+/** Action-type buckets that own a pictogram (everything except `all`). */
+export type ActionTypeKind = Exclude<ActionTypeFilterToken, 'all'>;
+
+/**
+ * Human-readable wording for each action-type bucket. Used as the
+ * hover tooltip on the uncoloured action-type pictograms (the
+ * pictogram itself carries no text — see `ActionTypeIcon`).
+ */
+export const ACTION_TYPE_LABELS: Record<ActionTypeKind, string> = {
+    disco: 'Line disconnection',
+    reco: 'Line reconnection',
+    open: 'Open coupling',
+    close: 'Close coupling',
+    ls: 'Load shedding',
+    rc: 'Renewable curtailment',
+    pst: 'Phase shifter tap',
+};
 
 /**
  * Classify an action into one of the filter-token buckets, given
@@ -96,7 +114,15 @@ export const classifyActionType = (
         || aid.includes('node_splitting')
         || desc.includes('coupl')
         || desc.includes('busbar')
-        || /du poste\s+['"]/.test(desc);
+        // Quoted-substation phrasing covers BOTH the recommender-generated
+        // "Ouverture du poste 'X'" template AND the operator-style
+        // "Ouverture OC '<dj>' dans le poste 'X'" phrasing used by TRO-
+        // coupler actions (PR #_; the missing OPEN pin at C.REGP6
+        // surfaced because the prior regex matched only "du poste"). The
+        // "dans le poste UNQUOTED" line-opening case (e.g. "DJ_OC dans
+        // le poste POSTE") still does NOT match because no quote follows
+        // — preserves the earlier regression fix.
+        || /(?:du|dans le)\s+poste\s+['"]/.test(desc);
 
     const opensViaSignal = t.includes('open_coupling')
         || aid.includes('open_coupling')
@@ -111,11 +137,20 @@ export const classifyActionType = (
 
     const isOpenCoupling = isCouplingSignal && opensViaSignal;
     const isCloseCoupling = isCouplingSignal && closesViaSignal;
+    // Id-prefix checks: ``disco_<line>`` and ``reco_<line>`` come
+    // straight out of the recommender's action-id template. They land
+    // here even when the score type isn't passed (e.g. the OVERVIEW pin
+    // filter, where description alone used to miss them) — so the feed
+    // and the overview agree on the bucket from the id alone.
     const isDisco = !isCouplingSignal && (
-        t.includes('disco') || t.includes('open_line') || t.includes('open_load') || desc.includes('ouverture')
+        aid.startsWith('disco_')
+        || t.includes('disco') || t.includes('open_line') || t.includes('open_load')
+        || desc.includes('ouverture')
     );
     const isReco = !isCouplingSignal && (
-        t.includes('reco') || t.includes('close_line') || t.includes('close_load') || desc.includes('fermeture')
+        aid.startsWith('reco_')
+        || t.includes('reco') || t.includes('close_line') || t.includes('close_load')
+        || desc.includes('fermeture')
     );
     // PST / LS / RC classifiers defer to the coupling checks above so
     // a string like "PST" appearing inside a coupling description
@@ -150,4 +185,96 @@ export const matchesActionTypeFilter = (
 ): boolean => {
     if (filter === 'all') return true;
     return classifyActionType(actionId, description, scoreType) === filter;
+};
+
+// ---------------------------------------------------------------------
+// Severity (action-card colour) classification + the shared row filter
+// ---------------------------------------------------------------------
+
+/**
+ * Severity bucket from a max-loading value. Mirrors the green / orange
+ * / red thresholds used across the UI (> mf → red, > mf - 0.05 →
+ * orange, otherwise → green). Returns `null` when there is no value to
+ * classify — callers decide whether a null-severity row passes.
+ */
+export const severityFromMaxRho = (
+    maxRho: number | null | undefined,
+    monitoringFactor: number,
+): ActionSeverityCategory | null => {
+    if (maxRho == null) return null;
+    if (maxRho > monitoringFactor) return 'red';
+    if (maxRho > monitoringFactor - 0.05) return 'orange';
+    return 'green';
+};
+
+/**
+ * Resolve a row's severity bucket from its SIMULATED max-loading when
+ * available, falling back to the ESTIMATED value. Fault rows
+ * (divergent / islanded) are always 'grey'. Returns `null` when no
+ * value of any kind is available.
+ */
+export const resolveRowSeverity = (
+    row: { simulatedMaxRho?: number | null; estimatedMaxRho?: number | null; isFault?: boolean },
+    monitoringFactor: number,
+): ActionSeverityCategory | null => {
+    if (row.isFault) return 'grey';
+    if (row.simulatedMaxRho != null) return severityFromMaxRho(row.simulatedMaxRho, monitoringFactor);
+    if (row.estimatedMaxRho != null) return severityFromMaxRho(row.estimatedMaxRho, monitoringFactor);
+    return null;
+};
+
+/**
+ * True iff a row with the given severity bucket passes the active
+ * category (action-card colour) filter. When every category is
+ * enabled the filter is inactive and everything passes — including
+ * `null`-severity rows. Once any category is disabled the filter is
+ * active and `null`-severity rows (no simulated / estimated value)
+ * are hidden.
+ */
+export const rowPassesSeverityFilter = (
+    severity: ActionSeverityCategory | null,
+    categories: Record<ActionSeverityCategory, boolean>,
+): boolean => {
+    const allOn = categories.green && categories.orange && categories.red && categories.grey;
+    if (allOn) return true;
+    if (severity == null) return false;
+    return categories[severity];
+};
+
+/** Row shape consumed by `rowPassesActionFilters`. */
+export interface FilterableActionRow {
+    actionId: string;
+    description?: string | null;
+    scoreType?: string | null;
+    simulatedMaxRho?: number | null;
+    estimatedMaxRho?: number | null;
+    isFault?: boolean;
+}
+
+/**
+ * Combined predicate for the shared `ActionFilterRings`: a row passes
+ * when its action-type bucket matches the type ring AND its severity
+ * bucket passes the colour ring AND its loading sits at or below the
+ * Max-loading threshold. Used by the Combine-Actions modal and the
+ * manual-selection table so both surfaces filter identically.
+ *
+ * The threshold compares the SIMULATED max-ρ when available, else the
+ * ESTIMATED max-ρ — same precedence the severity bucket uses. Rows with
+ * neither value bypass the threshold (consistent with
+ * `actionPassesOverviewFilter`'s "null max_rho → keep" rule for
+ * divergent / islanded actions).
+ */
+export const rowPassesActionFilters = (
+    filters: ActionOverviewFilters,
+    row: FilterableActionRow,
+    monitoringFactor: number,
+): boolean => {
+    if (!matchesActionTypeFilter(filters.actionType, row.actionId, row.description ?? null, row.scoreType ?? null)) {
+        return false;
+    }
+    const severity = resolveRowSeverity(row, monitoringFactor);
+    if (!rowPassesSeverityFilter(severity, filters.categories)) return false;
+    const referenceRho = row.simulatedMaxRho ?? row.estimatedMaxRho ?? null;
+    if (referenceRho != null && referenceRho > filters.threshold) return false;
+    return true;
 };

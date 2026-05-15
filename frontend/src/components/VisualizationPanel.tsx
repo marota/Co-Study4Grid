@@ -19,7 +19,6 @@ import type { DetachedTabsMap } from '../hooks/useDetachedTabs';
 import type { PZInstance } from '../hooks/useTiedTabsSync';
 import { useOverflowIframe } from '../hooks/useOverflowIframe';
 import { colors } from '../styles/tokens';
-import { interactionLogger } from '../utils/interactionLogger';
 import {
     computePopoverStyle,
     POPOVER_WIDTH,
@@ -189,8 +188,6 @@ interface VisualizationPanelProps {
     overflowPins?: ReadonlyArray<import('../utils/svg/overflowPinPayload').OverflowPin>;
     /** Toggle state — controlled by App.tsx so it survives tab swaps. */
     overflowPinsEnabled?: boolean;
-    /** Whether the toggle is allowed to be enabled at all (Step 2 done). */
-    overflowPinsAvailable?: boolean;
     /** Setter for `overflowPinsEnabled` — wired to interactionLogger. */
     onOverflowPinsToggle?: (enabled: boolean) => void;
 }
@@ -265,7 +262,6 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
     onToggleVoltageLevelNames,
     overflowPins,
     overflowPinsEnabled = false,
-    overflowPinsAvailable = false,
     onOverflowPinsToggle,
 }) => {
     // No-op fallbacks so conditional branches don't need to guard.
@@ -314,6 +310,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
         onOverflowPinDoubleClick,
         onSimulateUnsimulatedAction,
         onOverviewFiltersChange,
+        onOverflowPinsToggle,
         onVlOpen,
         detachedWindow: detachedTabs['overflow']?.window ?? null,
     });
@@ -926,46 +923,15 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({
                                             Geo
                                         </button>
                                     </div>
-                                    {/* Pin overlay toggle. Only enabled once
-                                        the action analysis is complete (the
-                                        gate is owned by App.tsx through
-                                        `overflowPinsAvailable`). */}
-                                    {onOverflowPinsToggle && (() => {
-                                        const pinsDisabled = !overflowPinsAvailable;
-                                        const tip = pinsDisabled
-                                            ? 'Run "Analyze & Suggest" to compute action pins'
-                                            : (overflowPinsEnabled
-                                                ? 'Hide action pins on the overflow graph'
-                                                : 'Show action pins on the overflow graph');
-                                        return (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    const next = !overflowPinsEnabled;
-                                                    onOverflowPinsToggle(next);
-                                                    interactionLogger.record('overflow_pins_toggled', { enabled: next });
-                                                }}
-                                                disabled={pinsDisabled}
-                                                aria-pressed={!!overflowPinsEnabled}
-                                                title={tip}
-                                                data-testid="toggle-overflow-pins"
-                                                style={{
-                                                    background: overflowPinsEnabled ? colors.brandSoft : colors.surface,
-                                                    color: overflowPinsEnabled ? colors.brand : colors.textSecondary,
-                                                    border: `1px solid ${overflowPinsEnabled ? colors.brand : colors.border}`,
-                                                    borderRadius: '4px',
-                                                    padding: '4px 8px',
-                                                    cursor: pinsDisabled ? 'not-allowed' : 'pointer',
-                                                    fontSize: '12px',
-                                                    fontWeight: 600,
-                                                    boxShadow: '0 2px 5px rgba(0,0,0,0.15)',
-                                                    opacity: pinsDisabled ? 0.55 : 1,
-                                                }}
-                                            >
-                                                {'\u{1F4CC} Pins'}
-                                            </button>
-                                        );
-                                    })()}
+                                    {/* The pins on/off toggle moved INTO the
+                                        iframe's filter panel header — see
+                                        ``overflow_overlay.py``'s ``cs4g-filters``
+                                        section. The iframe posts
+                                        ``cs4g:overflow-pins-toggled`` and the
+                                        parent (App.tsx) flips
+                                        ``overflowPinsEnabled`` via the
+                                        ``onOverflowPinsToggle`` hook prop —
+                                        no React-side button needed here. */}
                                 </div>
                             );
                         })()}

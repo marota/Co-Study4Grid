@@ -10,6 +10,7 @@ import type { ActionDetail, NodeMeta, EdgeMeta } from '../types';
 import type { ModelDescriptor } from '../api';
 import { getActionTargetVoltageLevels, getActionTargetLines, isCouplingAction } from '../utils/svgUtils';
 import { colors } from '../styles/tokens';
+import { SeverityIcon, type SeverityKind } from './SeverityIcon';
 
 interface ActionCardProps {
     id: string;
@@ -53,36 +54,6 @@ const clickableLinkStyle: React.CSSProperties = {
     color: colors.brand,
     fontWeight: 600,
     textDecoration: 'underline dotted',
-};
-
-type SeverityKind = 'solves' | 'lowMargin' | 'unsolved' | 'divergent' | 'islanded';
-
-const SeverityIcon: React.FC<{ kind: SeverityKind }> = ({ kind }) => {
-    const common = { width: 11, height: 11, viewBox: '0 0 16 16', 'aria-hidden': true } as const;
-    if (kind === 'solves') {
-        return (
-            <svg {...common}>
-                <circle cx="8" cy="8" r="7" fill="currentColor" fillOpacity="0.18" />
-                <path d="M4.5 8.2 L7 10.5 L11.5 5.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-        );
-    }
-    if (kind === 'lowMargin') {
-        return (
-            <svg {...common}>
-                <path d="M8 1.6 L15 13.5 L1 13.5 Z" fill="currentColor" fillOpacity="0.18" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-                <path d="M8 6 L8 9.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                <circle cx="8" cy="11.5" r="0.9" fill="currentColor" />
-            </svg>
-        );
-    }
-    // unsolved / divergent / islanded → X-circle
-    return (
-        <svg {...common}>
-            <circle cx="8" cy="8" r="7" fill="currentColor" fillOpacity="0.18" />
-            <path d="M5 5 L11 11 M11 5 L5 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-    );
 };
 
 const ActionCard: React.FC<ActionCardProps> = ({
@@ -298,23 +269,28 @@ const ActionCard: React.FC<ActionCardProps> = ({
                 }}>
                     #{index + 1} {'—'} {id}
                 </h4>
+                {/* Icon-only severity pictogram — the label text was
+                    redundant with the colour and ate horizontal space the
+                    action-id title needs. The full wording is reachable on
+                    hover (native title tooltip) and to assistive tech. */}
                 <span
                     data-testid={`action-card-${id}-severity`}
+                    title={sc.label}
+                    aria-label={sc.label}
+                    role="img"
                     style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '4px',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        padding: '2px 8px',
-                        borderRadius: '12px',
+                        justifyContent: 'center',
+                        padding: '3px',
+                        borderRadius: '50%',
                         background: sc.badgeBg,
                         color: sc.badgeText,
                         flexShrink: 0,
+                        lineHeight: 0,
                     }}
                 >
                     <SeverityIcon kind={sc.kind} />
-                    {sc.label}
                 </span>
             </div>
 
@@ -387,15 +363,6 @@ const ActionCard: React.FC<ActionCardProps> = ({
                     onMouseDown={(e) => e.stopPropagation()}
                 >
                     <p style={{ fontSize: '12px', margin: 0, color: colors.textPrimary }}>{details.description_unitaire}</p>
-
-                    {originLabel && (
-                        <div
-                            data-testid={`action-card-${id}-origin`}
-                            style={{ fontSize: '11px', marginTop: '4px', color: colors.textTertiary }}
-                        >
-                            Source: <strong style={{ color: colors.textSecondary }}>{originLabel}</strong>
-                        </div>
-                    )}
 
                     {details.load_shedding_details && details.load_shedding_details.length > 0 && (
                         <div style={{ ...editorRowStyle, background: colors.warningSoft, color: colors.warningText, border: `1px solid ${colors.warningBorder}` }}>
@@ -500,6 +467,19 @@ const ActionCard: React.FC<ActionCardProps> = ({
                     <div style={{ fontSize: '12px', background: colors.brandSoft, padding: '5px', marginTop: '8px', borderRadius: '4px' }}>
                         Overload loading after: {renderRho(details.rho_after, id, 'action')}
                     </div>
+
+                    {/* Source / provenance sits at the very bottom of
+                        the unfolded card — it's a low-information
+                        attribution row that shouldn't compete with the
+                        operational fields above. */}
+                    {originLabel && (
+                        <div
+                            data-testid={`action-card-${id}-origin`}
+                            style={{ fontSize: '11px', marginTop: '8px', color: colors.textTertiary }}
+                        >
+                            Source: <strong style={{ color: colors.textSecondary }}>{originLabel}</strong>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

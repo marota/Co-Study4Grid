@@ -101,7 +101,7 @@ async function renderAndLoadStudy() {
   render(<App />);
   await userEvent.click(screen.getByText('🔄 Load Study'));
   await waitFor(() => {
-    expect(screen.getByText('🎯 Select Contingency')).toBeInTheDocument();
+    expect(screen.getByText('⚡ Select Contingency')).toBeInTheDocument();
   }, { timeout: 5000 });
 }
 

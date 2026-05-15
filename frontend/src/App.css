@@ -523,6 +523,17 @@ circle.nad-highlight {
     direction: rtl;
 }
 
+/* Suppress the Chrome / Safari spinner arrows on the compact
+ * Max-loading threshold input inside the ActionFilterRings — the bar
+ * needs to fit on a single row so the extra arrow column is dropped.
+ * Firefox is covered by the inline ``MozAppearance: textfield`` style.
+ */
+input[data-testid="sidebar-filter-threshold-input"]::-webkit-inner-spin-button,
+input[data-testid="sidebar-filter-threshold-input"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
 .voltage-slider-container input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none;
     height: 18px;

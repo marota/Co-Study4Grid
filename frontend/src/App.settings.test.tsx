@@ -153,7 +153,7 @@ async function renderAndLoadStudy() {
 
   // Wait for branches to be loaded (which means handleLoadConfig is done)
   await waitFor(() => {
-    expect(screen.getByText('🎯 Select Contingency')).toBeInTheDocument();
+    expect(screen.getByText('⚡ Select Contingency')).toBeInTheDocument();
   }, { timeout: 5000 });
 }
 
@@ -532,18 +532,15 @@ describe('Settings Modal Enhancements', () => {
 
   it('displays file icon for network path in main banner', async () => {
     render(<App />);
-    // In main banner (header)
-    const labels = screen.getAllByText(/Network Path/i);
-    // Find the one in the header
-    const headerBannerLabel = labels.find(l => {
-      const parent = l.parentElement;
-      return parent && parent.style.flex && parent.style.flex.startsWith('1 1 200px');
-    });
-    const bannerBtn = headerBannerLabel?.parentElement?.querySelector('button');
-    expect(bannerBtn?.textContent).toBe('📄');
-
-    const bannerInput = headerBannerLabel?.parentElement?.querySelector('input');
+    // Anchor on the header's network-path input (unique test id) — the
+    // file-opener button shares its row. Robust to the label / Notices
+    // pill layout around it.
+    const bannerInput = screen.getByTestId('header-network-path-input');
     expect(bannerInput).toHaveAttribute('placeholder', 'load your grid xiidm file path');
+    const inputRow = bannerInput.closest('div')!;
+    const bannerBtn = Array.from(inputRow.querySelectorAll('button'))
+      .find(b => b.textContent === '📄');
+    expect(bannerBtn?.textContent).toBe('📄');
   });
 
   describe('Processing State UI', () => {
@@ -553,7 +550,7 @@ describe('Settings Modal Enhancements', () => {
       const loadBtn = screen.getByText('🔄 Load Study');
       await userEvent.click(loadBtn);
       await waitFor(() => {
-        expect(screen.getByText('🎯 Select Contingency')).toBeInTheDocument();
+        expect(screen.getByText('⚡ Select Contingency')).toBeInTheDocument();
       });
 
       // Pick a branch from the multi-select then click Trigger.

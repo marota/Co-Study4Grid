@@ -1268,9 +1268,13 @@ function App() {
   const sidebarNotices = useMemo(() => {
     const list: Notice[] = [];
 
-    // Action-dictionary info — shown until the operator simulates
-    // anything OR dismisses it.
-    if (showActionDictNotice && actionDictFileName && actionDictStats && Object.keys(result?.actions || {}).length === 0) {
+    // Action-dictionary info — shown until the operator dismisses
+    // it manually. The previous "auto-clear once an action has been
+    // simulated" rule was removed: notices live in the discrete
+    // sidebar pill that no longer overloads the main window
+    // visually, so the operator should decide when each notice has
+    // been read — not the lifecycle of the analysis.
+    if (showActionDictNotice && actionDictFileName && actionDictStats) {
       list.push({
         id: 'action-dict',
         severity: 'info',
@@ -1313,10 +1317,13 @@ function App() {
       });
     }
 
-    // Recommender thresholds — only relevant before an analysis has
-    // actually run, since once we have results the operator can read
-    // the values back from the actions themselves.
-    if (showRecommenderNotice && !pendingAnalysisResult && !result) {
+    // Recommender thresholds — shown until the operator dismisses
+    // it manually. The previous "auto-hide once analysis kicks off"
+    // rule was removed for consistency with the action-dict notice:
+    // the sidebar pill is opt-in and doesn't compete for attention
+    // with the main window, so the operator owns the dismiss
+    // gesture.
+    if (showRecommenderNotice) {
       list.push({
         id: 'recommender-thresholds',
         severity: 'info',
@@ -1412,6 +1419,7 @@ function App() {
         onSaveResults={wrappedSaveResults}
         onOpenReloadModal={wrappedOpenReloadModal}
         onOpenSettings={handleOpenSettings}
+        notices={sidebarNotices}
       />
 
       {/* Settings Modal */}
@@ -1442,7 +1450,9 @@ function App() {
           displayName={displayName}
           onContingencyZoom={handleZoomOnActiveTab}
           onOverloadClick={wrappedAssetClick as (actionId: string, assetName: string, tab: 'n' | 'contingency') => void}
-          notices={sidebarNotices}
+          overviewFilters={overviewFilters}
+          onOverviewFiltersChange={setOverviewFilters}
+          hasActions={Object.keys(result?.actions || {}).length > 0}
         >
           <div style={{ flexShrink: 0 }}>
             <OverloadPanel
@@ -1593,7 +1603,6 @@ function App() {
             onToggleVoltageLevelNames={handleToggleVoltageLevelNames}
             overflowPins={allOverflowPins}
             overflowPinsEnabled={overflowPinsEnabled}
-            overflowPinsAvailable={overflowPinsAvailable}
             onOverflowPinsToggle={setOverflowPinsEnabled}
           />
         </div>

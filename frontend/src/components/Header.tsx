@@ -7,6 +7,7 @@
 
 import type { AnalysisResult } from '../types';
 import { colors, radius, space } from '../styles/tokens';
+import NoticesPanel, { type Notice } from './NoticesPanel';
 
 type SettingsTab = 'paths' | 'recommender' | 'configurations';
 
@@ -30,6 +31,9 @@ interface HeaderProps {
   onSaveResults: () => void;
   onOpenReloadModal: () => void;
   onOpenSettings: (tab: SettingsTab) => void;
+  /** Background notices — surfaced as a NoticesPanel pill tucked
+   *  directly under the app title. Self-hides when the list is empty. */
+  notices?: Notice[];
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -45,6 +49,7 @@ const Header: React.FC<HeaderProps> = ({
   onSaveResults,
   onOpenReloadModal,
   onOpenSettings,
+  notices,
 }) => {
   const saveDisabled = !result && selectedContingency.length === 0;
 
@@ -57,7 +62,13 @@ const Header: React.FC<HeaderProps> = ({
       <h2 style={{ margin: 0, fontSize: '1.1rem', whiteSpace: 'nowrap' }}>⚡ Co-Study4Grid</h2>
 
       <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: space.half }}>
-        <label style={{ fontSize: '0.7rem', opacity: 0.8, whiteSpace: 'nowrap' }}>Network Path</label>
+        {/* Label and the Notices pill share one row — the pill is
+            pushed to the right, just above the file-opener button,
+            so the label line isn't a wasted standalone row. */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space[2] }}>
+          <label style={{ fontSize: '0.7rem', opacity: 0.8, whiteSpace: 'nowrap' }}>Network Path</label>
+          {notices && <NoticesPanel notices={notices} />}
+        </div>
         <div style={{ display: 'flex', gap: space[1] }}>
           <input
             data-testid="header-network-path-input"

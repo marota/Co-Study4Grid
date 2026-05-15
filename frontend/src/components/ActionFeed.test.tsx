@@ -427,8 +427,10 @@ describe('ActionFeed', () => {
 
         const card = screen.getByTestId(`action-card-${actionId}`);
 
-        // 1. Check Divergent Badge (danger token)
-        const badge = screen.getByText('divergent');
+        // 1. Check Divergent Badge (danger token) — the severity badge is
+        // an icon-only pictogram, its wording lives in the `title` tooltip.
+        const badge = screen.getByTestId(`action-card-${actionId}-severity`);
+        expect(badge).toHaveAttribute('title', 'divergent');
         expect(badge.style.background).toContain('var(--color-danger)');
 
         // 2. Check Warning Box (warning tokens)
@@ -499,7 +501,7 @@ describe('ActionFeed', () => {
 
         render(<ActionFeed {...defaultProps} />);
         fireEvent.click(screen.getByText('+ Manual Selection'));
-        const pstChip = await screen.findByTestId('search-dropdown-filter-pst');
+        const pstChip = await screen.findByTestId('sidebar-filter-type-pst');
         fireEvent.click(pstChip);
 
         // PST action visible, reco action hidden
@@ -529,7 +531,7 @@ describe('ActionFeed', () => {
         fireEvent.click(screen.getByText('+ Manual Selection'));
 
         // Set filter to RECO
-        const recoChip = await screen.findByTestId('search-dropdown-filter-reco');
+        const recoChip = await screen.findByTestId('sidebar-filter-type-reco');
         fireEvent.click(recoChip);
 
         // Type "pst" in search
@@ -555,7 +557,7 @@ describe('ActionFeed', () => {
 
         render(<ActionFeed {...defaultProps} />);
         fireEvent.click(screen.getByText('+ Manual Selection'));
-        const pstChip = await screen.findByTestId('search-dropdown-filter-pst');
+        const pstChip = await screen.findByTestId('sidebar-filter-type-pst');
         fireEvent.click(pstChip);
 
         expect(await screen.findByText('pst_1')).toBeInTheDocument();
@@ -571,7 +573,7 @@ describe('ActionFeed', () => {
 
         render(<ActionFeed {...defaultProps} />);
         fireEvent.click(screen.getByText('+ Manual Selection'));
-        const lsChip = await screen.findByTestId('search-dropdown-filter-ls');
+        const lsChip = await screen.findByTestId('sidebar-filter-type-ls');
         fireEvent.click(lsChip);
 
         expect(await screen.findByText('load_shedding_LOAD1')).toBeInTheDocument();
@@ -694,6 +696,36 @@ describe('ActionFeed', () => {
             expect(screen.getByText('reco_B')).toBeInTheDocument();
         });
 
+        it('keeps the wide overlay layout when a chip filter empties the scored list', async () => {
+            // Pre-fix the modal layout was driven by the *post-filter*
+            // scoredActionsList length: switching to a chip with no
+            // matching scored action collapsed the wide overlay back to
+            // the small button-anchored dropdown, which read as the
+            // modal closing mid-interaction. Once analysis has produced
+            // any scored action the wide layout must stick across chip
+            // toggles — empty chips just surface the existing
+            // "no relevant action detected" warning + raw-action list.
+            const props = buildScoredProps();
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            expect(screen.getByTestId('manual-selection-wide')).toBeInTheDocument();
+
+            await waitFor(() => {
+                expect(screen.queryByText('Loading actions...')).not.toBeInTheDocument();
+            });
+
+            // Pick a chip filter that yields zero scored rows
+            // (line_reconnection is the only scored type in
+            // ``buildScoredProps``; the PST chip filters everything out).
+            const pstChip = await screen.findByTestId('sidebar-filter-type-pst');
+            fireEvent.click(pstChip);
+
+            // The wide overlay must remain mounted; the narrow
+            // dropdown must NOT take its place.
+            expect(screen.getByTestId('manual-selection-wide')).toBeInTheDocument();
+            expect(screen.queryByTestId('manual-selection-dropdown')).not.toBeInTheDocument();
+        });
+
         it('still closes the narrow no-score dropdown after a manual ID is simulated', async () => {
             // No actionScores → narrow layout, traditional one-shot
             // flow. Closing on success is the expected UX.
@@ -729,7 +761,7 @@ describe('ActionFeed', () => {
 
         render(<ActionFeed {...defaultProps} />);
         fireEvent.click(screen.getByText('+ Manual Selection'));
-        const pstChip = await screen.findByTestId('search-dropdown-filter-pst');
+        const pstChip = await screen.findByTestId('sidebar-filter-type-pst');
         fireEvent.click(pstChip);
 
         await waitFor(() => {
@@ -934,8 +966,9 @@ describe('ActionFeed', () => {
         );
 
         // 1. MF = 0.95 -> 0.93 is between (0.95-0.05) and 0.95 -> Orange
+        // The severity badge is icon-only; its wording is in the tooltip.
         const { rerender } = renderWithMF(0.95);
-        expect(screen.getByText('Solved \u2014 low margin')).toBeInTheDocument();
+        expect(screen.getByTitle('Solved \u2014 low margin')).toBeInTheDocument();
 
         // 2. MF = 0.90 -> 0.93 is above 0.90 -> Red
         rerender(
@@ -946,7 +979,7 @@ describe('ActionFeed', () => {
                 monitoringFactor={0.90}
             />
         );
-        expect(screen.getByText('Still overloaded')).toBeInTheDocument();
+        expect(screen.getByTitle('Still overloaded')).toBeInTheDocument();
 
         // 3. MF = 1.00 -> 0.93 is below (1.00-0.05) -> Green
         rerender(
@@ -957,7 +990,7 @@ describe('ActionFeed', () => {
                 monitoringFactor={1.00}
             />
         );
-        expect(screen.getByText('Solves overload')).toBeInTheDocument();
+        expect(screen.getByTitle('Solves overload')).toBeInTheDocument();
     });
 
     it('displays load shedding description with MW, load name, and clickable voltage level', () => {
@@ -2873,30 +2906,30 @@ describe('ActionFeed', () => {
         });
     });
 
-    describe('action-type filter — dropdown chips (local state, independent of overview)', () => {
-        it('dropdown chip click does NOT call onOverviewFiltersChange', async () => {
+    describe('action-type filter — manual-selection ring (local state, independent of overview)', () => {
+        it('manual-selection ring toggle does NOT call onOverviewFiltersChange', async () => {
             const onOverviewFiltersChange = vi.fn();
             vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
             render(<ActionFeed
                 {...defaultProps}
-                overviewFilters={{ categories: { green: true, orange: true, red: true, grey: true }, threshold: 1.5, showUnsimulated: false, actionType: 'all' }}
+                overviewFilters={{ categories: { green: true, orange: true, red: true, grey: true }, threshold: 1.5, showUnsimulated: false, actionType: 'all', showCombinedOnly: false }}
                 onOverviewFiltersChange={onOverviewFiltersChange}
             />);
             fireEvent.click(screen.getByText('+ Manual Selection'));
-            const discoChip = await screen.findByTestId('search-dropdown-filter-disco');
+            const discoChip = await screen.findByTestId('sidebar-filter-type-disco');
             fireEvent.click(discoChip);
-            // Local state update — does NOT bubble up to the overview filter
+            // Local dropdown state — does NOT bubble up to the overview filter.
             expect(onOverviewFiltersChange).not.toHaveBeenCalled();
         });
 
-        it('marks the active chip with aria-pressed="true" after clicking LS in the search dropdown', async () => {
+        it('marks the active action-type toggle with aria-pressed="true" after clicking LS', async () => {
             vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
             render(<ActionFeed {...defaultProps} />);
             fireEvent.click(screen.getByText('+ Manual Selection'));
-            const lsChip = await screen.findByTestId('search-dropdown-filter-ls');
+            const lsChip = await screen.findByTestId('sidebar-filter-type-ls');
             fireEvent.click(lsChip);
             expect(lsChip.getAttribute('aria-pressed')).toBe('true');
-            expect(screen.getByTestId('search-dropdown-filter-all').getAttribute('aria-pressed')).toBe('false');
+            expect(screen.getByTestId('sidebar-filter-type-disco').getAttribute('aria-pressed')).toBe('false');
         });
 
         it('filters the Scored Actions table after clicking DISCO chip', async () => {
@@ -2907,7 +2940,7 @@ describe('ActionFeed', () => {
             vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
             render(<ActionFeed {...defaultProps} actionScores={actionScores} />);
             fireEvent.click(screen.getByText('+ Manual Selection'));
-            const discoChip = await screen.findByTestId('search-dropdown-filter-disco');
+            const discoChip = await screen.findByTestId('sidebar-filter-type-disco');
             fireEvent.click(discoChip);
             expect(await screen.findByText('disco_LINE_A')).toBeInTheDocument();
             expect(screen.queryByText('reco_LINE_B')).not.toBeInTheDocument();
@@ -2917,7 +2950,7 @@ describe('ActionFeed', () => {
             vi.mocked(api.getAvailableActions).mockResolvedValueOnce([]);
             render(<ActionFeed {...defaultProps} />);
             fireEvent.click(screen.getByText('+ Manual Selection'));
-            const discoChip = await screen.findByTestId('search-dropdown-filter-disco');
+            const discoChip = await screen.findByTestId('sidebar-filter-type-disco');
             expect(() => fireEvent.click(discoChip)).not.toThrow();
         });
     });
@@ -2970,6 +3003,57 @@ describe('ActionFeed', () => {
             render(<ActionFeed {...defaultProps} canRunAnalysis />);
             expect(screen.queryByTestId('additional-lines-picker')).not.toBeInTheDocument();
             expect(screen.getByRole('button', { name: /Analyze & Suggest/ })).toBeInTheDocument();
+        });
+    });
+
+    describe('action-type overview filter', () => {
+        const DEFAULT_FILTERS = {
+            categories: { green: true, orange: true, red: true, grey: true },
+            threshold: 1.5,
+            showUnsimulated: false,
+            actionType: 'all' as const,
+            showCombinedOnly: false,
+        };
+        // A reco action whose id starts with `reco_` but whose
+        // description carries no `fermeture` marker — exactly the
+        // shape that used to vanish under the RECO filter because
+        // `classifyActionType` never inspects the id for disco / reco.
+        const recoDetail: ActionDetail = {
+            description_unitaire: 'Reconnect GEN.PY762',
+            rho_before: [1.05],
+            rho_after: [0.93],
+            max_rho: 0.93,
+            max_rho_line: 'LINE_1',
+            is_rho_reduction: true,
+            action_topology: emptyTopo,
+        };
+
+        it('keeps reco cards visible under the RECO filter using the recommender score type', () => {
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    actions={{ 'reco_GEN.PY762': recoDetail }}
+                    actionScores={{ line_reconnection: { scores: { 'reco_GEN.PY762': 0.04 } } }}
+                    overviewFilters={{ ...DEFAULT_FILTERS, actionType: 'reco' }}
+                    onOverviewFiltersChange={vi.fn()}
+                />,
+            );
+            expect(screen.getByTestId('action-card-reco_GEN.PY762')).toBeInTheDocument();
+            expect(screen.queryByTestId('overview-filter-hint')).not.toBeInTheDocument();
+        });
+
+        it('hides reco cards when a non-matching type filter (DISCO) is active', () => {
+            render(
+                <ActionFeed
+                    {...defaultProps}
+                    actions={{ 'reco_GEN.PY762': recoDetail }}
+                    actionScores={{ line_reconnection: { scores: { 'reco_GEN.PY762': 0.04 } } }}
+                    overviewFilters={{ ...DEFAULT_FILTERS, actionType: 'disco' }}
+                    onOverviewFiltersChange={vi.fn()}
+                />,
+            );
+            expect(screen.queryByTestId('action-card-reco_GEN.PY762')).not.toBeInTheDocument();
+            expect(screen.getByTestId('overview-filter-hint')).toBeInTheDocument();
         });
     });
 

@@ -6,8 +6,8 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
 import React, { type RefObject } from 'react';
-import type { ActionDetail, ActionTypeFilterToken, AvailableAction } from '../types';
-import ActionTypeFilterChips from './ActionTypeFilterChips';
+import type { ActionDetail, ActionOverviewFilters, AvailableAction } from '../types';
+import ActionFilterRings from './ActionFilterRings';
 import { colors } from '../styles/tokens';
 
 export interface ScoredActionItem {
@@ -22,8 +22,10 @@ interface ActionSearchDropdownProps {
     searchInputRef: RefObject<HTMLInputElement | null>;
     searchQuery: string;
     onSearchQueryChange: (query: string) => void;
-    actionTypeFilter: ActionTypeFilterToken;
-    onActionTypeFilterChange: (token: ActionTypeFilterToken) => void;
+    /** Shared severity + action-type filter for the manual-selection
+     *  dropdown — rendered as an ActionFilterRings instance. */
+    filters: ActionOverviewFilters;
+    onFiltersChange: (next: ActionOverviewFilters) => void;
     error: string | null;
     loadingActions: boolean;
     scoredActionsList: ScoredActionItem[];
@@ -68,8 +70,8 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
     searchInputRef,
     searchQuery,
     onSearchQueryChange,
-    actionTypeFilter,
-    onActionTypeFilterChange,
+    filters,
+    onFiltersChange,
     error,
     loadingActions,
     scoredActionsList,
@@ -94,10 +96,17 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
 }) => {
     const dropdownStyle: React.CSSProperties = wide
         ? {
+            // Anchor the top to a fixed viewport offset (instead of
+            // centering on 50% with translateY(-50%)) so the title +
+            // search input + filter row stay at the same screen
+            // height as the body grows or shrinks with the chip
+            // filter — the previous translate-centered layout made
+            // the whole modal hop vertically every time the score
+            // table count changed.
             position: 'fixed',
-            top: '50%',
+            top: '7.5vh',
             left: '50%',
-            transform: 'translate(-50%, -50%)',
+            transform: 'translateX(-50%)',
             width: '80vw',
             maxWidth: '80vw',
             maxHeight: '85vh',
@@ -185,12 +194,8 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                     }}
                 />
             </div>
-            <div style={{ padding: '4px 8px', borderTop: `1px solid ${colors.borderSubtle}` }}>
-                <ActionTypeFilterChips
-                    testIdPrefix="search-dropdown-filter"
-                    value={actionTypeFilter}
-                    onChange={onActionTypeFilterChange}
-                />
+            <div style={{ padding: '6px 8px', borderTop: `1px solid ${colors.borderSubtle}` }}>
+                <ActionFilterRings filters={filters} onFiltersChange={onFiltersChange} />
             </div>
             {error && (
                 <div style={{
@@ -239,7 +244,7 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
                             the analysis recommends actions of this type. */}
                         {!searchQuery
                             && scoredActionsList.length === 0
-                            && actionTypeFilter !== 'all'
+                            && filters.actionType !== 'all'
                             && !!actionScores
                             && Object.values(actionScores).some(d =>
                                 d && typeof d === 'object'

@@ -75,6 +75,24 @@ describe('CombinedActionsModal', () => {
         expect(screen.getByText('75.0%')).toBeInTheDocument();
     });
 
+    it('hides Computed Pairs rows whose max-ρ exceeds the Max-loading threshold', async () => {
+        // The Max-loading spinner in the shared ActionFilterRings
+        // must filter the Computed Pairs table the same way it
+        // filters the unitary score tables. The fixture's only pair
+        // is "estimated-only" (no ``simulated_max_rho``), so the
+        // threshold falls back to ``estimated_max_rho = 0.75`` (the
+        // 75.0 % the table renders by default). Setting the
+        // threshold to 70 % (0.70) must hide it; bumping it back to
+        // 100 % must restore the row.
+        render(<CombinedActionsModal {...defaultProps} />);
+        expect(screen.getByText('75.0%')).toBeInTheDocument();
+        const input = screen.getByTestId('sidebar-filter-threshold-input') as HTMLInputElement;
+        fireEvent.change(input, { target: { value: '70' } });
+        expect(screen.queryByText('75.0%')).not.toBeInTheDocument();
+        fireEvent.change(input, { target: { value: '100' } });
+        expect(screen.getByText('75.0%')).toBeInTheDocument();
+    });
+
     it('filters actions by category including LS in explore tab', async () => {
         const resultWithTypes: AnalysisResult = {
             ...mockAnalysisResult,
@@ -94,13 +112,14 @@ describe('CombinedActionsModal', () => {
         render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithTypes as AnalysisResult} />);
         fireEvent.click(getExploreTab());
 
-        // Filter for disconnections — chip click updates local state inside ExplorePairsTab
-        fireEvent.click(screen.getByRole('button', { name: 'DISCO' }));
+        // Filter for disconnections via the shared action-type ring in
+        // the modal header (drives BOTH tabs).
+        fireEvent.click(screen.getByTestId('sidebar-filter-type-disco'));
         expect(screen.getByText('disco1')).toBeInTheDocument();
         expect(screen.queryByText('reco1')).not.toBeInTheDocument();
 
-        // Filter for load shedding
-        fireEvent.click(screen.getByRole('button', { name: 'LS' }));
+        // Filter for load shedding.
+        fireEvent.click(screen.getByTestId('sidebar-filter-type-ls'));
         expect(screen.getByText('ls1')).toBeInTheDocument();
         expect(screen.queryByText('disco1')).not.toBeInTheDocument();
     });
@@ -124,14 +143,30 @@ describe('CombinedActionsModal', () => {
         expect(screen.getByText('reco1')).toBeInTheDocument();
     });
 
-    it('chip row is present in explore tab and clicking changes the filter', () => {
+    it('renders the shared filter rings in the modal header for the explore tab', () => {
         render(<CombinedActionsModal {...defaultProps} />);
         fireEvent.click(getExploreTab());
-        const discoChip = screen.getByTestId('explore-pairs-filter-disco');
-        expect(discoChip).toBeInTheDocument();
-        // Clicking should not throw and should update internal state
-        expect(() => fireEvent.click(discoChip)).not.toThrow();
-        expect(discoChip.getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByTestId('sidebar-action-filters')).toBeInTheDocument();
+        const discoToggle = screen.getByTestId('sidebar-filter-type-disco');
+        expect(discoToggle).toBeInTheDocument();
+        // Clicking should not throw and should update the shared filter.
+        expect(() => fireEvent.click(discoToggle)).not.toThrow();
+        expect(discoToggle.getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('the severity ring in the modal header filters Explore-Pairs rows by outcome', () => {
+        // act1 / act2 / act3 all simulate to max_rho < 0.95 → green
+        // severity. Double-clicking the red toggle "solos" it, leaving
+        // only red-severity rows — so all three green rows drop out.
+        render(<CombinedActionsModal {...defaultProps} />);
+        fireEvent.click(getExploreTab());
+        expect(screen.getByText('act1')).toBeInTheDocument();
+        const redToggle = screen.getByTestId('sidebar-filter-category-red');
+        fireEvent.click(redToggle);
+        fireEvent.click(redToggle);
+        expect(screen.queryByText('act1')).not.toBeInTheDocument();
+        expect(screen.queryByText('act2')).not.toBeInTheDocument();
+        expect(screen.getByText(/No scored actions available/)).toBeInTheDocument();
     });
 
     it('groups actions by type in explore tab table including LS', async () => {
@@ -149,8 +184,9 @@ describe('CombinedActionsModal', () => {
         render(<CombinedActionsModal {...defaultProps} analysisResult={resultWithLS as AnalysisResult} />);
         fireEvent.click(getExploreTab());
 
+        // The explore-tab table groups rows under per-type headers.
         expect(screen.getAllByText('DISCO').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('LS').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('LOAD SHEDDING').length).toBeGreaterThan(0);
         expect(screen.getByText('ls_test')).toBeInTheDocument();
     });
 
@@ -406,6 +442,22 @@ describe('CombinedActionsModal', () => {
             render(<CombinedActionsModal {...defaultProps} />);
             const card = screen.getByTestId('combine-modal-card');
             expect(card.style.overflow).toBe('hidden');
+        });
+
+        it('anchors the card to a fixed viewport top so the title/filter header does not hop as the body height changes', () => {
+            // Switching between Computed Pairs / Explore Pairs or
+            // toggling a chip filter changes the body height. With
+            // ``alignItems: center`` the card re-centers vertically on
+            // every height change, making the title + filter header
+            // jump up and down. Anchoring to the top (``flex-start`` +
+            // ``marginTop: 7.5vh``) keeps the header at the same screen
+            // height regardless of the body row count.
+            render(<CombinedActionsModal {...defaultProps} />);
+            const backdrop = screen.getByTestId('combine-modal-card').parentElement!;
+            expect(backdrop.style.alignItems).toBe('flex-start');
+            const card = screen.getByTestId('combine-modal-card');
+            expect(card.style.marginTop).toBe('7.5vh');
+            expect(card.style.maxHeight).toBe('85vh');
         });
     });
 

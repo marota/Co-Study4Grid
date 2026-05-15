@@ -5,10 +5,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study.
 
-import React, { useState } from 'react';
-import type { CombinedAction, AnalysisResult, ActionTypeFilterToken } from '../types';
-import ActionTypeFilterChips from './ActionTypeFilterChips';
-import { matchesActionTypeFilter } from '../utils/actionTypes';
+import React from 'react';
+import type { CombinedAction, AnalysisResult } from '../types';
 import { colors } from '../styles/tokens';
 
 interface SimulationFeedback {
@@ -66,8 +64,6 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
     onSimulateSingle,
     displayName = (id: string) => id,
 }) => {
-    const [actionTypeFilter, setActionTypeFilter] = useState<ActionTypeFilterToken>('all');
-
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
             {/* Selection Chips Header */}
@@ -94,22 +90,11 @@ const ExplorePairsTab: React.FC<ExplorePairsTabProps> = ({
                 </div>
             </div>
 
-            {/* Filter Buttons — reuses the shared chip row so
-                styling stays in sync with the action-overview filter. */}
-            <div style={{ marginBottom: '12px' }}>
-                <ActionTypeFilterChips
-                    testIdPrefix="explore-pairs-filter"
-                    value={actionTypeFilter}
-                    onChange={setActionTypeFilter}
-                />
-            </div>
-
-            {/* Grouped Table */}
+            {/* Grouped Table — the row set is already filtered by the
+                shared ActionFilterRings in the modal header. */}
             <div style={{ flex: 1, maxHeight: '350px', overflowY: 'auto', border: `1px solid ${colors.borderSubtle}`, borderRadius: '4px', marginBottom: '15px' }}>
                 {(() => {
-                    const filteredList = scoredActionsList.filter(item =>
-                        matchesActionTypeFilter(actionTypeFilter, item.actionId, null, item.type),
-                    );
+                    const filteredList = scoredActionsList;
 
                     const types = Array.from(new Set(filteredList.map(item => item.type)));
 

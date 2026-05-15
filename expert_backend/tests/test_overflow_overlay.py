@@ -119,17 +119,20 @@ class TestInjectOverlay:
         )
 
     def test_action_filters_section_is_injected(self) -> None:
-        """The overlay must inject an ``Action pins filters`` section
-        that mirrors the chip-row filters of the React Action Overview
-        tab so the iframe's sidebar offers the same UX. It is hidden
-        by default (only visible when pins are toggled on) and emits
-        ``cs4g:overflow-filter-changed`` when the operator interacts
-        with it."""
+        """The overlay must inject an ``Action pins filters`` section.
+        The section is ALWAYS visible — it carries the canonical pins
+        on/off toggle in its header, so it must be reachable before
+        any pin has been requested. The severity (action-card colour)
+        and action-type filters were removed — they are driven solely
+        by the sidebar's ActionFilterRings — so this panel keeps only
+        the threshold / show-unsimulated / combined-only controls."""
         out = inject_overlay(_BASE_HTML)
         # CSS hook + JS builder.
         assert "#cs4g-filters" in out
-        assert "#cs4g-filters.visible" in out
         assert "function buildFiltersPanel(" in out
+        # The legacy ``.visible`` show/hide gate is gone — the panel
+        # is always visible now that the pins toggle lives inside it.
+        assert "#cs4g-filters.visible" not in out
         # Wire-format: outbound message type for filter changes.
         assert "cs4g:overflow-filter-changed" in out
         # Wire-format: inbound message type from the parent.
@@ -140,14 +143,64 @@ class TestInjectOverlay:
         # pins, mirroring the Action Overview's pin counter.
         assert "data-counter-value" in out
         assert "function updatePinCounter(" in out
-        # The section labels must match the Action Overview chip text
-        # so operators recognise them across surfaces.
-        assert "Solves overload" in out
-        assert "Low margin" in out
-        assert "Still overloaded" in out
-        assert "Divergent / islanded" in out
+        # The retained controls.
         assert "Show unsimulated" in out
-        assert "Max loading" in out
+        # The removed severity / action-type / threshold controls
+        # must be gone. The Max-loading threshold lives in the
+        # parent React app's ActionFilterRings strip; the iframe
+        # still receives the value via ``cs4g:filters`` but no
+        # longer renders an input for it.
+        assert "Max loading" not in out
+        assert 'data-filter="threshold"' not in out
+        assert "data-category=" not in out
+        assert "data-action-type=" not in out
+        assert 'data-action="select-all"' not in out
+
+    def test_pins_toggle_lives_inside_filter_panel_header(self) -> None:
+        """The pins on/off toggle was moved out of the React
+        VisualizationPanel header into the iframe's filter-panel
+        header so the operator can flip pins from the same widget
+        that hosts the threshold / show-unsimulated / combined-only
+        controls. The toggle posts ``cs4g:overflow-pins-toggled`` so
+        the parent flips its own ``overflowPinsEnabled`` state."""
+        out = inject_overlay(_BASE_HTML)
+        # The toggle DOM element is built into the filters header.
+        assert "data-pins-toggle" in out
+        assert "pins-toggle" in out
+        # Outbound message — parent flips overflowPinsEnabled.
+        assert "cs4g:overflow-pins-toggled" in out
+        # The parent React app remains the source of truth — toggle
+        # posts up the change, doesn't mutate local state directly.
+        assert "enabled: !!ev.target.checked" in out
+
+    def test_filter_rows_disabled_when_pins_toggle_off(self) -> None:
+        """When pins are off the remaining filter inputs render
+        disabled so they can't be edited until the operator turns
+        the overlay on. The ``data-pins-enabled`` attribute on the
+        panel drives the CSS dim/disable rule; the JS sets the
+        ``disabled`` attribute on each surviving input
+        (show-unsimulated + combined-only — the Max-loading
+        threshold widget moved to the React-side ActionFilterRings)."""
+        out = inject_overlay(_BASE_HTML)
+        # CSS hook for dim/disable when pins are off.
+        assert '#cs4g-filters[data-pins-enabled="false"]' in out
+        # JS reflects the pins state on the panel attribute + on the
+        # disabled attr of each surviving filter input.
+        assert "data-pins-enabled" in out
+        # The threshold input no longer renders inside the iframe —
+        # any leftover ``thr.disabled`` line would be dead code.
+        assert "thr.disabled" not in out
+        assert "showU.disabled = !lastVisible" in out
+        assert "combinedOnly.disabled = !lastVisible" in out
+
+    def test_pin_counter_shows_displayable_count_when_pins_off(self) -> None:
+        """The counter must remain informative when pins are off — it
+        shows the count of pins that WOULD render if the operator
+        flipped the toggle on, so the operator can decide whether
+        enabling pins is worth the visual cost."""
+        out = inject_overlay(_BASE_HTML)
+        # Counter falls back to lastPins.length when not visible.
+        assert "lastVisible ? count : (Array.isArray(lastPins) ? lastPins.length : 0)" in out
 
     def test_action_filters_section_is_appended_below_existing_sections(self) -> None:
         """The pins filter panel is appended at the END of the
@@ -158,46 +211,21 @@ class TestInjectOverlay:
         # And no longer inserted before the layers <h2>.
         assert "sidebar.insertBefore(panel, layersHeader)" not in out
 
-    def test_filter_panel_carries_all_four_severity_chips(self) -> None:
-        """Severity category chips: green / orange / red / grey.
-        Each must be wired with ``data-category="<key>"`` so
-        ``renderFilterState`` can flip ``aria-pressed`` on the right
-        element after a parent ``cs4g:filters`` broadcast."""
+    def test_filter_panel_does_not_render_a_threshold_input(self) -> None:
+        """The Max-loading threshold control moved into the parent
+        React app's ActionFilterRings strip — the iframe filter panel
+        no longer renders a ``<input data-filter="threshold">``. The
+        threshold value still travels through ``cs4g:filters`` (the
+        iframe applies it for pin filtering) but the operator-facing
+        widget lives elsewhere."""
         out = inject_overlay(_BASE_HTML)
-        # The category chips are produced by the catSpecs loop
-        # in buildFiltersPanel.
-        for spec_key in ('green', 'orange', 'red', 'grey'):
-            assert (
-                f"key: '{spec_key}'," in out
-            ), f"category chip spec for {spec_key} missing"
-        # And renderFilterState reads them back through data-category.
-        assert "querySelectorAll('[data-category]')" in out
-
-    def test_filter_panel_carries_all_eight_action_type_tokens(self) -> None:
-        """The action-type chip row mirrors ``ACTION_TYPE_FILTER_TOKENS``
-        in ``actionTypes.ts`` (single-select 'all' / 'disco' / 'reco' /
-        'ls' / 'rc' / 'open' / 'close' / 'pst')."""
-        out = inject_overlay(_BASE_HTML)
-        for tok in ("'all'", "'disco'", "'reco'", "'ls'",
-                    "'rc'", "'open'", "'close'", "'pst'"):
-            assert tok in out, f"action-type token {tok} missing"
-        # Single-select wire-format: actionType is a STRING (not an
-        # object).
-        assert "actionType: tok" in out
-
-    def test_filter_panel_threshold_input_is_a_percent_spinner(self) -> None:
-        """The threshold control is a 0–300% integer spinner; the
-        wire format stores ``threshold`` as a 0-3 fraction (clamped /
-        100). Symmetric with ``ActionOverviewDiagram``'s control."""
-        out = inject_overlay(_BASE_HTML)
-        # 0–300% bounds.
-        assert 'min="0"' in out
-        assert 'max="300"' in out
-        # Clamping on input.
-        assert "Math.max(0, Math.min(300, raw))" in out
-        # Conversion to fraction on the way out, multiply on the way in.
-        assert "clamped / 100" in out
-        assert "filterState.threshold * 100" in out
+        assert 'data-filter="threshold"' not in out
+        # Operator-facing label is gone.
+        assert "Max loading" not in out
+        # The wire-format roundtrip ``filterState.threshold`` is
+        # still parsed from the inbound ``cs4g:filters`` payload —
+        # but no clamping / outbound math runs from the iframe side.
+        assert "msg.filters.threshold" in out
 
     def test_filter_panel_show_unsimulated_checkbox(self) -> None:
         """The Show-unsimulated checkbox carries ``showUnsimulated``
@@ -238,21 +266,6 @@ class TestInjectOverlay:
         assert "data-counter-value>0</span>" in out
         # The drawn counter is updated AFTER the pin loop.
         assert "updatePinCounter(drawn)" in out
-
-    def test_select_all_select_none_are_wired(self) -> None:
-        """The ``All`` / ``None`` pills bulk-flip every category at
-        once — same UX as the Action Overview's filter row."""
-        out = inject_overlay(_BASE_HTML)
-        assert 'data-action="select-all"' in out
-        assert 'data-action="select-none"' in out
-        # Body of select-all sets every category True.
-        assert (
-            "categories: { green: true, orange: true, red: true, grey: true }"
-        ) in out
-        # Body of select-none sets every category False.
-        assert (
-            "categories: { green: false, orange: false, red: false, grey: false }"
-        ) in out
 
     def test_filter_state_default_matches_action_overview(self) -> None:
         """The iframe's local default ``filterState`` matches
@@ -370,22 +383,6 @@ class TestInjectOverlay:
         assert "data-combined-constituent" not in out
         # The unitary render loop defers dimming to renderFilterState.
         assert "renderFilterState" in out
-
-    def test_filter_chips_drop_blue_solid_fill_for_dim_unselected_style(self) -> None:
-        """The iframe sidebar filter chips mirror the
-        ``CategoryToggle`` component in the React Action Overview:
-        no blue solid fill on the *selected* chip, dim the
-        *unselected* ones (lower opacity + muted background) and
-        tint the active chip's border to its swatch colour."""
-        out = inject_overlay(_BASE_HTML)
-        # Legacy blue-fill rule must be gone.
-        assert "background: #1d4ed8; color: #fff" not in out
-        # New rule: dim unselected, swatch-coloured border on
-        # active per-category chips.
-        assert "opacity: 0.65" in out
-        assert ".chip[data-category=\"green\"][aria-pressed=\"true\"]" in out
-        assert ".chip[data-category=\"red\"][aria-pressed=\"true\"]" in out
-        assert ".chip[aria-pressed=\"false\"] .swatch" in out
 
     def test_pins_fan_out_when_colocated(self) -> None:
         """Two pins resolving to the same anchor must be spread on a

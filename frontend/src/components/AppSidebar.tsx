@@ -7,8 +7,8 @@
 
 import React, { useMemo } from 'react';
 import Select, { type MultiValue } from 'react-select';
+import type { ActionOverviewFilters } from '../types';
 import SidebarSummary from './SidebarSummary';
-import { type Notice } from './NoticesPanel';
 import { colors, radius, space } from '../styles/tokens';
 
 interface ContingencyOption {
@@ -33,10 +33,13 @@ interface AppSidebarProps {
   displayName: (id: string) => string;
   onContingencyZoom: (assetName: string) => void;
   onOverloadClick: (actionId: string, assetName: string, tab: 'n' | 'contingency') => void;
-  /** Background notices surfaced in the tiered warning system (the
-   *  tier-warning-system PR — `docs/proposals/ui-design-critique.md` recommendation #4).
-   *  When the array is empty the pill self-hides. */
-  notices?: Notice[];
+  /** Shared severity + action-type filters; forwarded to
+   *  SidebarSummary so the persistent strip can host the filter
+   *  rings alongside the contingency / overload lines. */
+  overviewFilters?: ActionOverviewFilters;
+  onOverviewFiltersChange?: (next: ActionOverviewFilters) => void;
+  /** Whether the action feed has any card to filter right now. */
+  hasActions?: boolean;
   children: React.ReactNode;
 }
 
@@ -73,7 +76,9 @@ export default function AppSidebar({
   displayName,
   onContingencyZoom,
   onOverloadClick,
-  notices,
+  overviewFilters,
+  onOverviewFiltersChange,
+  hasActions,
   children,
 }: AppSidebarProps) {
   // Pending differs from applied → user has unconfirmed edits to the
@@ -112,13 +117,15 @@ export default function AppSidebar({
         displayName={displayName}
         onContingencyZoom={onContingencyZoom}
         onOverloadClick={onOverloadClick}
-        notices={notices}
+        overviewFilters={overviewFilters}
+        onOverviewFiltersChange={onOverviewFiltersChange}
+        hasActions={hasActions}
       />
       <div style={{ flex: 1, overflowY: 'auto', padding: space[4], minHeight: 0, display: 'flex', flexDirection: 'column', gap: space[4] }}>
         {branches.length > 0 && (
           <div style={{ flexShrink: 0, padding: `${space[3]} ${space[4]}`, background: colors.surface, borderRadius: radius.lg, border: `1px solid ${colors.border}`, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space[2], marginBottom: '5px' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>🎯 Select Contingency</label>
+              <label style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>⚡ Select Contingency</label>
               <button
                 type="button"
                 onClick={onContingencyApply}

@@ -6,9 +6,9 @@
 // This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface to help solve contigencies for a grid state under study. 
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { ActionDetail, ActionTypeFilterToken, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, DiagramData, ActionOverviewFilters } from '../types';
+import type { ActionDetail, NodeMeta, EdgeMeta, AvailableAction, AnalysisResult, CombinedAction, DiagramData, ActionOverviewFilters } from '../types';
 import { actionPassesOverviewFilter } from '../utils/svgUtils';
-import { classifyActionType, matchesActionTypeFilter } from '../utils/actionTypes';
+import { DEFAULT_ACTION_OVERVIEW_FILTERS, matchesActionTypeFilter, rowPassesActionFilters } from '../utils/actionTypes';
 import { api } from '../api';
 import type { ModelDescriptor } from '../api';
 import { interactionLogger } from '../utils/interactionLogger';
@@ -273,40 +273,59 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         setTimeout(() => searchInputRef.current?.focus(), 50);
     };
 
-    // Local filter for the manual-selection dropdown and scored table.
-    // Independent from overviewFilters.actionType which drives the
-    // overview diagram and the action cards list.
-    const [dropdownTypeFilter, setDropdownTypeFilter] = useState<ActionTypeFilterToken>('all');
+    // Shared severity + action-type filter for the manual-selection
+    // dropdown — its own `ActionFilterRings` instance, independent of
+    // the sidebar's global overviewFilters and the Combine modal's.
+    const [dropdownFilters, setDropdownFilters] = useState<ActionOverviewFilters>(DEFAULT_ACTION_OVERVIEW_FILTERS);
 
     const filteredActions = useMemo(() => {
         const q = searchQuery.toLowerCase();
         const alreadyShown = new Set(Object.keys(actions));
+        // Catalogue search rows have no simulated / estimated value, so
+        // only the action-type ring applies here — the severity ring
+        // would otherwise empty the raw-ID search entirely.
         return availableActions
             .filter(a => !alreadyShown.has(a.id))
-            .filter(a => {
-                if (dropdownTypeFilter === 'all') return true;
-                return matchesActionTypeFilter(dropdownTypeFilter, a.id, a.description || null, a.type || null);
-            })
+            .filter(a => matchesActionTypeFilter(dropdownFilters.actionType, a.id, a.description || null, a.type || null))
             .filter(a => a.id.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q))
             .slice(0, 20);
-    }, [searchQuery, availableActions, actions, dropdownTypeFilter]);
+    }, [searchQuery, availableActions, actions, dropdownFilters.actionType]);
 
-    // Format scored actions
+    // Whether the analysis has produced ANY scored action — independent
+    // of the current chip-filter selection. Drives the wide-modal
+    // layout so the operator stays in the centered overlay even when a
+    // type filter narrows ``scoredActionsList`` down to zero rows; the
+    // alternative (toggling between the wide modal and the small
+    // button-anchored dropdown on every chip click) reads as the modal
+    // "closing" mid-interaction.
+    const hasAnyScoredAction = useMemo(() => {
+        if (!actionScores) return false;
+        return Object.values(actionScores).some(d =>
+            d && typeof d === 'object'
+            && Object.keys((d as { scores?: Record<string, number> }).scores ?? {}).length > 0
+        );
+    }, [actionScores]);
+
+    // Format scored actions — filtered by the shared rings (type +
+    // severity). Severity uses the simulated max-loading once the
+    // action has been computed; scored-but-untested rows have no
+    // value and drop out as soon as a severity bucket is deselected.
     const scoredActionsList = useMemo(() => {
         if (!actionScores) return [];
         const list: { type: string; actionId: string; score: number; mwStart: number | null }[] = [];
         for (const [type, data] of Object.entries(actionScores)) {
             const scores = data?.scores || {};
             for (const [actionId, score] of Object.entries(scores)) {
-                if (dropdownTypeFilter !== 'all') {
-                    const actionDetail = actions[actionId];
-                    const bucket = classifyActionType(
-                        actionId,
-                        actionDetail?.description_unitaire || null,
-                        type,
-                    );
-                    if (bucket === 'unknown' || bucket !== dropdownTypeFilter) continue;
-                }
+                const detail = actions[actionId];
+                const passes = rowPassesActionFilters(dropdownFilters, {
+                    actionId,
+                    description: detail?.description_unitaire ?? null,
+                    scoreType: type,
+                    simulatedMaxRho: detail?.max_rho ?? null,
+                    estimatedMaxRho: detail?.estimated_max_rho ?? null,
+                    isFault: !!(detail?.is_islanded || detail?.non_convergence),
+                }, monitoringFactor);
+                if (!passes) continue;
                 const mwStartMap = (data as { mw_start?: Record<string, number | null> })?.mw_start;
                 const mwStart = mwStartMap?.[actionId] ?? null;
                 list.push({ type, actionId, score: Number(score), mwStart: mwStart != null ? Number(mwStart) : null });
@@ -320,7 +339,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             }
             return b.score - a.score;
         });
-    }, [actionScores, dropdownTypeFilter, actions]);
+    }, [actionScores, dropdownFilters, actions, monitoringFactor]);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -395,8 +414,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             // operator wanted to compare. The narrow no-score search
             // dropdown still auto-dismisses since that mode is
             // typically a one-shot "type an ID, hit enter" flow.
-            const wide = scoredActionsList.length > 0;
-            if (!wide) {
+            if (!hasAnyScoredAction) {
                 setSearchOpen(false);
                 setSearchQuery('');
             }
@@ -549,6 +567,26 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
         }
     };
 
+    // actionId → recommender score-type bucket (`line_reconnection`,
+    // `pst_tap_change`, …). The action-type filter feeds this `type`
+    // into `classifyActionType` — the SAME signal the Combine-modal
+    // Explore-Pairs filter uses (`ExplorePairsTab` passes `item.type`).
+    // Without it, `classifyActionType` can't tell reco from disco for
+    // ids like ``reco_GEN.PY762`` (its disco/reco heuristics look at
+    // the score type + description, never the id), so the whole
+    // reco / disco bucket would be filtered out of the feed.
+    const scoreTypeByActionId = useMemo(() => {
+        const m = new Map<string, string>();
+        if (!actionScores) return m;
+        for (const [type, data] of Object.entries(actionScores)) {
+            const scores = data?.scores || {};
+            for (const actionId of Object.keys(scores)) {
+                if (!m.has(actionId)) m.set(actionId, type);
+            }
+        }
+        return m;
+    }, [actionScores]);
+
     // Sort actions by max_rho ascending (matching standalone)
     // Filter out combined actions that are only estimations (they will have '+' in ID but no rho_after yet)
     const sortedActionEntries = useMemo(() => {
@@ -584,11 +622,11 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         const [id1, id2] = id.split('+');
                         const d1 = actions[id1];
                         const d2 = actions[id2];
-                        const ok = (d1 && matchesActionTypeFilter(typeFilter, id1, d1.description_unitaire, null))
-                            || (d2 && matchesActionTypeFilter(typeFilter, id2, d2.description_unitaire, null));
+                        const ok = (d1 && matchesActionTypeFilter(typeFilter, id1, d1.description_unitaire, scoreTypeByActionId.get(id1) ?? null))
+                            || (d2 && matchesActionTypeFilter(typeFilter, id2, d2.description_unitaire, scoreTypeByActionId.get(id2) ?? null));
                         if (!ok) return false;
                     } else if (!matchesActionTypeFilter(
-                        typeFilter, id, details.description_unitaire, null,
+                        typeFilter, id, details.description_unitaire, scoreTypeByActionId.get(id) ?? null,
                     )) {
                         return false;
                     }
@@ -606,7 +644,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                 if (aFault !== bFault) return aFault ? 1 : -1;
                 return (a.max_rho ?? 999) - (b.max_rho ?? 999);
             });
-    }, [actions, overviewFilters, monitoringFactor]);
+    }, [actions, overviewFilters, monitoringFactor, scoreTypeByActionId]);
 
     const analysisActionIds = useMemo(() => {
         const ids = new Set<string>();
@@ -657,16 +695,16 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                     const [id1, id2] = id.split('+');
                     const d1 = actions[id1];
                     const d2 = actions[id2];
-                    passesType = !!((d1 && matchesActionTypeFilter(typeFilter, id1, d1.description_unitaire, null))
-                        || (d2 && matchesActionTypeFilter(typeFilter, id2, d2.description_unitaire, null)));
+                    passesType = !!((d1 && matchesActionTypeFilter(typeFilter, id1, d1.description_unitaire, scoreTypeByActionId.get(id1) ?? null))
+                        || (d2 && matchesActionTypeFilter(typeFilter, id2, d2.description_unitaire, scoreTypeByActionId.get(id2) ?? null)));
                 } else {
-                    passesType = matchesActionTypeFilter(typeFilter, id, details.description_unitaire, null);
+                    passesType = matchesActionTypeFilter(typeFilter, id, details.description_unitaire, scoreTypeByActionId.get(id) ?? null);
                 }
             }
             if (!passesCategory || !passesType) hidden += 1;
         }
         return hidden;
-    }, [actions, overviewFilters, monitoringFactor]);
+    }, [actions, overviewFilters, monitoringFactor, scoreTypeByActionId]);
 
     // When an action becomes the currently-viewed one (typically
     // after the user double-clicks a pin in the action overview
@@ -832,8 +870,8 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         searchInputRef={searchInputRef}
                         searchQuery={searchQuery}
                         onSearchQueryChange={setSearchQuery}
-                        actionTypeFilter={dropdownTypeFilter}
-                        onActionTypeFilterChange={setDropdownTypeFilter}
+                        filters={dropdownFilters}
+                        onFiltersChange={setDropdownFilters}
                         error={error}
                         loadingActions={loadingActions}
                         scoredActionsList={scoredActionsList}
@@ -854,7 +892,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         onClose={() => { setSearchOpen(false); setSearchQuery(''); }}
                         onShowTooltip={showTooltip}
                         onHideTooltip={hideTooltip}
-                        wide={scoredActionsList.length > 0}
+                        wide={hasAnyScoredAction}
                     />
                 )}
             </div>
