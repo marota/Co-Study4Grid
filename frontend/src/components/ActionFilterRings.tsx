@@ -158,8 +158,26 @@ const ActionFilterRings: React.FC<ActionFilterRingsProps> = ({ filters, onFilter
             data-testid="sidebar-action-filters"
             style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: space[1] }}
         >
-            <span style={{ color: colors.textSecondary, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                Actions:
+            {/* Pin glyph + dash separator — replaces the textual
+                "Actions:" label so the whole filter bar fits a
+                single sidebar row. The "Actions filters" wording
+                moved into the title tooltip so the meaning is still
+                one hover away. */}
+            <span
+                title="Actions filters"
+                aria-label="Actions filters"
+                style={{
+                    color: colors.textSecondary,
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    flexShrink: 0,
+                }}
+            >
+                <span aria-hidden>{'📍'}</span>
+                <span aria-hidden style={{ color: colors.textTertiary }}>–</span>
             </span>
             <div role="group" aria-label="Filter actions by outcome" style={{ display: 'flex', gap: space.half }}>
                 {SEVERITY_RING.map(({ cat, kind, label }) => {
@@ -213,25 +231,27 @@ const ActionFilterRings: React.FC<ActionFilterRingsProps> = ({ filters, onFilter
             </div>
             <span aria-hidden style={{ width: 1, height: 16, background: colors.border, flexShrink: 0 }} />
             {/* Max-loading threshold — compact spinner so the whole
-                filter bar stays on one row. The label is replaced by a
-                small loading-bolt glyph + a "%" suffix, the input
-                width is narrowed to two digits and the native spinner
-                arrows are hidden by ``appearance: none`` (Chrome /
-                Safari) + ``MozAppearance: textfield`` so the field
-                doesn't reserve room for an extra arrow column. */}
+                filter bar stays on one sidebar row. No leading
+                glyph (the lightning ⚡ now belongs to Contingency);
+                the input is narrowed to exactly fit three digits
+                (real-world max loading sits ≤ 200 %, never 1000 %)
+                and native spinner arrows are hidden via inline
+                ``appearance: textfield`` + the
+                ``::-webkit-inner-spin-button`` CSS rule in
+                ``App.css`` so the column doesn't reserve space for
+                arrows. */}
             <label
                 data-testid="sidebar-filter-threshold"
                 title="Hide actions whose max loading rate (%) exceeds this threshold"
                 style={{
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: 2,
+                    gap: 1,
                     flexShrink: 0,
                     fontSize: 12,
                     color: colors.textSecondary,
                 }}
             >
-                <span aria-hidden style={{ fontSize: 12, lineHeight: 1 }}>{'⚡'}</span>
                 <input
                     data-testid="sidebar-filter-threshold-input"
                     type="number"
@@ -245,8 +265,8 @@ const ActionFilterRings: React.FC<ActionFilterRingsProps> = ({ filters, onFilter
                         setThreshold(raw);
                     }}
                     style={{
-                        width: 38,
-                        padding: '1px 3px',
+                        width: 26,
+                        padding: '1px 2px',
                         fontSize: 11,
                         fontVariantNumeric: 'tabular-nums',
                         border: `1px solid ${colors.border}`,

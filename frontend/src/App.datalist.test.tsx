@@ -50,7 +50,7 @@ describe('Datalist performance clamping', () => {
     await act(async () => { await userEvent.click(loadBtn); });
 
     await waitFor(() => {
-      expect(screen.getByText('🎯 Select Contingency')).toBeInTheDocument();
+      expect(screen.getByText('⚡ Select Contingency')).toBeInTheDocument();
     }, { timeout: 5000 });
 
     const combobox = screen.getByRole('combobox');

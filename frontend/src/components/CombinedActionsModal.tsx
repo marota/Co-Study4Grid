@@ -210,12 +210,20 @@ const CombinedActionsModal: React.FC<Props> = ({
                 || matchesActionTypeFilter(filters.actionType, p.action2, null, scoreTypeByActionId.get(p.action2) ?? null);
             if (!typeOk) return false;
             const simData = p.simData as (ActionDetail | SimulationFeedback) | null;
+            const simulatedMaxRho = p.isSimulated ? p.simulated_max_rho : null;
+            const estimatedMaxRho = p.estimated_max_rho ?? null;
             const severity = resolveRowSeverity({
-                simulatedMaxRho: p.isSimulated ? p.simulated_max_rho : null,
-                estimatedMaxRho: p.estimated_max_rho ?? null,
+                simulatedMaxRho,
+                estimatedMaxRho,
                 isFault: !!(simData?.is_islanded || simData?.non_convergence) || p.is_suspect,
             }, monitoringFactor);
-            return rowPassesSeverityFilter(severity, filters.categories);
+            if (!rowPassesSeverityFilter(severity, filters.categories)) return false;
+            // Max-loading threshold — same precedence as ``rowPassesActionFilters``
+            // (simulated first, estimated fallback), so the slider applies
+            // consistently to unitary cards and combined pairs.
+            const referenceRho = simulatedMaxRho ?? estimatedMaxRho;
+            if (referenceRho != null && referenceRho > filters.threshold) return false;
+            return true;
         });
     }, [computedPairsList, filters, scoreTypeByActionId, monitoringFactor]);
 

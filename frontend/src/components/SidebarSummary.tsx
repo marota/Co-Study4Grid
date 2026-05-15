@@ -75,7 +75,7 @@ export default function SidebarSummary({
       {hasContingency && (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: space[1], flexWrap: 'wrap' }}>
           <span style={{ color: colors.textSecondary, fontWeight: 600, whiteSpace: 'nowrap' }}>
-            🎯 Contingency{selectedContingency.length > 1 ? ` (N-${selectedContingency.length})` : ''}:
+            ⚡ Contingency{selectedContingency.length > 1 ? ` (N-${selectedContingency.length})` : ''}:
           </span>
           {selectedContingency.map((id, i) => (
             <React.Fragment key={id}>

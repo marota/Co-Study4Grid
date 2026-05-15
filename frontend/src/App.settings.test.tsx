@@ -153,7 +153,7 @@ async function renderAndLoadStudy() {
 
   // Wait for branches to be loaded (which means handleLoadConfig is done)
   await waitFor(() => {
-    expect(screen.getByText('🎯 Select Contingency')).toBeInTheDocument();
+    expect(screen.getByText('⚡ Select Contingency')).toBeInTheDocument();
   }, { timeout: 5000 });
 }
 
@@ -550,7 +550,7 @@ describe('Settings Modal Enhancements', () => {
       const loadBtn = screen.getByText('🔄 Load Study');
       await userEvent.click(loadBtn);
       await waitFor(() => {
-        expect(screen.getByText('🎯 Select Contingency')).toBeInTheDocument();
+        expect(screen.getByText('⚡ Select Contingency')).toBeInTheDocument();
       });
 
       // Pick a branch from the multi-select then click Trigger.

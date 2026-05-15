@@ -140,7 +140,7 @@ async function renderAndLoadStudy() {
 
   // Wait for branches to be loaded (which means handleLoadConfig is done)
   await waitFor(() => {
-    expect(screen.getByText('🎯 Select Contingency')).toBeInTheDocument();
+    expect(screen.getByText('⚡ Select Contingency')).toBeInTheDocument();
   }, { timeout: 5000 });
 }
 

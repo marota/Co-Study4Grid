@@ -254,8 +254,15 @@ export interface FilterableActionRow {
 /**
  * Combined predicate for the shared `ActionFilterRings`: a row passes
  * when its action-type bucket matches the type ring AND its severity
- * bucket passes the colour ring. Used by the Combine-Actions modal and
- * the manual-selection table so both surfaces filter identically.
+ * bucket passes the colour ring AND its loading sits at or below the
+ * Max-loading threshold. Used by the Combine-Actions modal and the
+ * manual-selection table so both surfaces filter identically.
+ *
+ * The threshold compares the SIMULATED max-ρ when available, else the
+ * ESTIMATED max-ρ — same precedence the severity bucket uses. Rows with
+ * neither value bypass the threshold (consistent with
+ * `actionPassesOverviewFilter`'s "null max_rho → keep" rule for
+ * divergent / islanded actions).
  */
 export const rowPassesActionFilters = (
     filters: ActionOverviewFilters,
@@ -266,5 +273,8 @@ export const rowPassesActionFilters = (
         return false;
     }
     const severity = resolveRowSeverity(row, monitoringFactor);
-    return rowPassesSeverityFilter(severity, filters.categories);
+    if (!rowPassesSeverityFilter(severity, filters.categories)) return false;
+    const referenceRho = row.simulatedMaxRho ?? row.estimatedMaxRho ?? null;
+    if (referenceRho != null && referenceRho > filters.threshold) return false;
+    return true;
 };

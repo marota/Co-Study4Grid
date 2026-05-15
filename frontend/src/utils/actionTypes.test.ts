@@ -332,4 +332,35 @@ describe('rowPassesActionFilters', () => {
             actionId: 'reco_X', scoreType: 'line_reconnection',
         }, 0.95)).toBe(true);
     });
+
+    it('hides rows whose simulated max-ρ exceeds the threshold (Max-loading filter)', () => {
+        // The Manual Selection / Combine Actions score tables route
+        // their filtering through ``rowPassesActionFilters``; without
+        // applying the threshold the Max-loading spinner in the
+        // sidebar rings would silently no-op there.
+        const filters: ActionOverviewFilters = { ...base, threshold: 0.9 };
+        expect(rowPassesActionFilters(filters, {
+            actionId: 'reco_X', scoreType: 'line_reconnection', simulatedMaxRho: 0.95,
+        }, 0.95)).toBe(false);
+        expect(rowPassesActionFilters(filters, {
+            actionId: 'reco_X', scoreType: 'line_reconnection', simulatedMaxRho: 0.85,
+        }, 0.95)).toBe(true);
+    });
+
+    it('falls back to the estimated max-ρ for the threshold check when simulated is missing', () => {
+        const filters: ActionOverviewFilters = { ...base, threshold: 0.9 };
+        expect(rowPassesActionFilters(filters, {
+            actionId: 'reco_X', scoreType: 'line_reconnection', estimatedMaxRho: 0.95,
+        }, 0.95)).toBe(false);
+        expect(rowPassesActionFilters(filters, {
+            actionId: 'reco_X', scoreType: 'line_reconnection', estimatedMaxRho: 0.85,
+        }, 0.95)).toBe(true);
+    });
+
+    it('keeps a value-less row regardless of threshold (consistent with grey bucket / null max-ρ rule)', () => {
+        const filters: ActionOverviewFilters = { ...base, threshold: 0.5 };
+        expect(rowPassesActionFilters(filters, {
+            actionId: 'reco_X', scoreType: 'line_reconnection',
+        }, 0.95)).toBe(true);
+    });
 });

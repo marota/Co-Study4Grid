@@ -125,7 +125,7 @@ export default function AppSidebar({
         {branches.length > 0 && (
           <div style={{ flexShrink: 0, padding: `${space[3]} ${space[4]}`, background: colors.surface, borderRadius: radius.lg, border: `1px solid ${colors.border}`, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space[2], marginBottom: '5px' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>🎯 Select Contingency</label>
+              <label style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>⚡ Select Contingency</label>
               <button
                 type="button"
                 onClick={onContingencyApply}
