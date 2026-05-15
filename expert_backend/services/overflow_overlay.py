@@ -109,7 +109,6 @@ def _build_overlay_block() -> str:
     margin: 14px 0 0; padding: 8px 0 0;
     border-top: 1px solid var(--border, #d1d5db);
   }}
-  #cs4g-filters[data-pins-enabled="false"] .row.threshold,
   #cs4g-filters[data-pins-enabled="false"] .row.toggles {{
     opacity: 0.45; pointer-events: none;
   }}
@@ -134,11 +133,6 @@ def _build_overlay_block() -> str:
   #cs4g-filters .row {{
     display: flex; align-items: center; gap: 6px;
     margin-bottom: 4px; font-size: 12px; flex-wrap: wrap;
-  }}
-  #cs4g-filters .threshold input {{
-    width: 48px; padding: 1px 4px; font-size: 11px;
-    border: 1px solid #ccc; border-radius: 3px;
-    text-align: right; font-variant-numeric: tabular-nums;
   }}
   #cs4g-filters label.toggle {{
     display: inline-flex; align-items: center; gap: 4px;
@@ -202,11 +196,6 @@ def _build_overlay_block() -> str:
       +     '<span data-counter-value>0</span>'
       +   '</span>'
       + '</div>'
-      + '<div class="row threshold">'
-      +   '<span style="color:#6b7280">Max loading</span>'
-      +   '<input type="number" min="0" max="300" step="1" data-filter="threshold" />'
-      +   '<span style="color:#6b7280">%</span>'
-      + '</div>'
       + '<div class="row toggles">'
       +   '<label class="toggle">'
       +     '<input type="checkbox" data-filter="show-unsimulated" />'
@@ -235,15 +224,11 @@ def _build_overlay_block() -> str:
         enabled: !!ev.target.checked,
       }}, '*');
     }});
-    // Threshold spinner.
-    const thr = panel.querySelector('input[data-filter="threshold"]');
-    thr.addEventListener('change', function(ev) {{
-      const raw = parseInt(ev.target.value, 10);
-      if (!Number.isFinite(raw)) return;
-      const clamped = Math.max(0, Math.min(300, raw));
-      filterState = {{ ...filterState, threshold: clamped / 100 }};
-      renderFilterState(); postFilters();
-    }});
+    // The Max-loading threshold control moved into the parent React
+    // app's ActionFilterRings strip — the iframe still receives the
+    // threshold value through the ``cs4g:filters`` envelope (and
+    // applies it for pin filtering) but no longer renders a control
+    // for it inside the sidebar.
     // Show-unsimulated checkbox.
     const showU = panel.querySelector('input[data-filter="show-unsimulated"]');
     showU.addEventListener('change', function(ev) {{
@@ -272,11 +257,6 @@ def _build_overlay_block() -> str:
     const pinsToggle = panel.querySelector('input[data-pins-toggle]');
     if (pinsToggle) pinsToggle.checked = !!lastVisible;
     panel.setAttribute('data-pins-enabled', lastVisible ? 'true' : 'false');
-    const thr = panel.querySelector('input[data-filter="threshold"]');
-    if (thr) {{
-      thr.value = String(Math.round(filterState.threshold * 100));
-      thr.disabled = !lastVisible;
-    }}
     const showU = panel.querySelector('input[data-filter="show-unsimulated"]');
     if (showU) {{
       showU.checked = !!filterState.showUnsimulated;

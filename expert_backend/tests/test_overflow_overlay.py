@@ -145,8 +145,13 @@ class TestInjectOverlay:
         assert "function updatePinCounter(" in out
         # The retained controls.
         assert "Show unsimulated" in out
-        assert "Max loading" in out
-        # The removed severity / action-type controls must be gone.
+        # The removed severity / action-type / threshold controls
+        # must be gone. The Max-loading threshold lives in the
+        # parent React app's ActionFilterRings strip; the iframe
+        # still receives the value via ``cs4g:filters`` but no
+        # longer renders an input for it.
+        assert "Max loading" not in out
+        assert 'data-filter="threshold"' not in out
         assert "data-category=" not in out
         assert "data-action-type=" not in out
         assert 'data-action="select-all"' not in out
@@ -203,19 +208,21 @@ class TestInjectOverlay:
         # And no longer inserted before the layers <h2>.
         assert "sidebar.insertBefore(panel, layersHeader)" not in out
 
-    def test_filter_panel_threshold_input_is_a_percent_spinner(self) -> None:
-        """The threshold control is a 0–300% integer spinner; the
-        wire format stores ``threshold`` as a 0-3 fraction (clamped /
-        100). Symmetric with ``ActionOverviewDiagram``'s control."""
+    def test_filter_panel_does_not_render_a_threshold_input(self) -> None:
+        """The Max-loading threshold control moved into the parent
+        React app's ActionFilterRings strip — the iframe filter panel
+        no longer renders a ``<input data-filter="threshold">``. The
+        threshold value still travels through ``cs4g:filters`` (the
+        iframe applies it for pin filtering) but the operator-facing
+        widget lives elsewhere."""
         out = inject_overlay(_BASE_HTML)
-        # 0–300% bounds.
-        assert 'min="0"' in out
-        assert 'max="300"' in out
-        # Clamping on input.
-        assert "Math.max(0, Math.min(300, raw))" in out
-        # Conversion to fraction on the way out, multiply on the way in.
-        assert "clamped / 100" in out
-        assert "filterState.threshold * 100" in out
+        assert 'data-filter="threshold"' not in out
+        # Operator-facing label is gone.
+        assert "Max loading" not in out
+        # The wire-format roundtrip ``filterState.threshold`` is
+        # still parsed from the inbound ``cs4g:filters`` payload —
+        # but no clamping / outbound math runs from the iframe side.
+        assert "msg.filters.threshold" in out
 
     def test_filter_panel_show_unsimulated_checkbox(self) -> None:
         """The Show-unsimulated checkbox carries ``showUnsimulated``

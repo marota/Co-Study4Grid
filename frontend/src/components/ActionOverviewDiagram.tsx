@@ -786,13 +786,9 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
         onFiltersChange?.(next);
     }, [onFiltersChange]);
 
-    const setThreshold = useCallback((threshold: number) => {
-        interactionLogger.record('overview_filter_changed', {
-            kind: 'threshold',
-            threshold,
-        });
-        pushFilters({ ...activeFilters, threshold });
-    }, [activeFilters, pushFilters]);
+    // ``setThreshold`` moved to ActionFilterRings — the sidebar
+    // strip now owns the Max-loading control so the overview header
+    // stays single-row (avoids two-line wrap on narrow viewports).
 
     const toggleUnsimulated = useCallback(() => {
         const next = !activeFilters.showUnsimulated;
@@ -876,37 +872,10 @@ const ActionOverviewDiagram: React.FC<ActionOverviewDiagramProps> = ({
                         </span>
                     </span>
                 )}
-                <label
-                    data-testid="filter-threshold"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
-                    title="Hide actions whose max loading rate (%) exceeds this threshold"
-                >
-                    <span style={{ color: colors.textSecondary }}>Max loading</span>
-                    <input
-                        data-testid="filter-threshold-input"
-                        type="number"
-                        min={0}
-                        max={300}
-                        step={1}
-                        value={Math.round(activeFilters.threshold * 100)}
-                        onChange={e => {
-                            const raw = parseInt(e.target.value, 10);
-                            if (!Number.isFinite(raw)) return;
-                            const clamped = Math.max(0, Math.min(300, raw));
-                            setThreshold(clamped / 100);
-                        }}
-                        style={{
-                            width: 52,
-                            padding: '2px 4px',
-                            fontSize: 12,
-                            fontVariantNumeric: 'tabular-nums',
-                            border: `1px solid ${colors.border}`,
-                            borderRadius: 4,
-                            textAlign: 'right',
-                        }}
-                    />
-                    <span style={{ color: colors.textSecondary }}>%</span>
-                </label>
+                {/* Max-loading threshold now lives in the sidebar
+                    ``ActionFilterRings`` strip alongside the severity
+                    + action-type rings, so the overview header no
+                    longer renders its own copy. */}
                 <label
                     data-testid="filter-show-unsimulated"
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', flexShrink: 0 }}

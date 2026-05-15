@@ -132,6 +132,42 @@ describe('ActionFilterRings', () => {
             .toHaveAttribute('title', 'Show only: Line disconnection');
     });
 
+    it('hosts a compact Max-loading threshold spinner alongside the rings', () => {
+        // Moved out of the ActionOverviewDiagram header into the
+        // sidebar rings so the overview banner stays single-row; the
+        // operator can adjust the threshold from the same control
+        // surface that drives severity + action-type filtering.
+        render(<ActionFilterRings filters={baseFilters} onFiltersChange={vi.fn()} />);
+        const input = screen.getByTestId('sidebar-filter-threshold-input') as HTMLInputElement;
+        expect(input.type).toBe('number');
+        expect(input.min).toBe('0');
+        expect(input.max).toBe('300');
+        expect(input.step).toBe('1');
+        // DEFAULT threshold = 1.5 → 150 %.
+        expect(input.value).toBe('150');
+    });
+
+    it('threshold input update fires onFiltersChange with the new fractional threshold', () => {
+        // The widget reads / writes a 0–300 % integer; the wire format
+        // is the fraction (1.0 = 100 %).
+        const onFiltersChange = vi.fn();
+        render(<ActionFilterRings filters={baseFilters} onFiltersChange={onFiltersChange} />);
+        const input = screen.getByTestId('sidebar-filter-threshold-input') as HTMLInputElement;
+        fireEvent.change(input, { target: { value: '100' } });
+        expect(onFiltersChange).toHaveBeenCalledTimes(1);
+        expect(onFiltersChange.mock.calls[0][0].threshold).toBeCloseTo(1.0);
+    });
+
+    it('threshold input clamps values outside 0–300 %', () => {
+        const onFiltersChange = vi.fn();
+        render(<ActionFilterRings filters={baseFilters} onFiltersChange={onFiltersChange} />);
+        const input = screen.getByTestId('sidebar-filter-threshold-input') as HTMLInputElement;
+        fireEvent.change(input, { target: { value: '999' } });
+        expect(onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ threshold: 3.0 }));
+        fireEvent.change(input, { target: { value: '-50' } });
+        expect(onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ threshold: 0 }));
+    });
+
     it('emits no raw hex literals in inline styles', () => {
         const { container } = render(<ActionFilterRings filters={baseFilters} onFiltersChange={vi.fn()} />);
         const hexInStyle = /#[0-9a-fA-F]{3,8}\b/;

@@ -231,8 +231,11 @@ describe('ActionOverviewDiagram', () => {
         expect(queryByTestId('filter-select-none')).not.toBeInTheDocument();
         // Action-type chip row removed.
         expect(queryByTestId('overview-action-type-filter')).not.toBeInTheDocument();
-        // The non-redundant filters stay.
-        expect(queryByTestId('filter-threshold')).toBeInTheDocument();
+        // Threshold moved to the sidebar's ActionFilterRings (compact
+        // single-row layout). The non-redundant remaining filters stay
+        // in the overview header.
+        expect(queryByTestId('filter-threshold')).not.toBeInTheDocument();
+        expect(queryByTestId('filter-threshold-input')).not.toBeInTheDocument();
         expect(queryByTestId('filter-show-unsimulated')).toBeInTheDocument();
         expect(queryByTestId('filter-combined-only')).toBeInTheDocument();
     });
@@ -911,7 +914,7 @@ describe('ActionOverviewDiagram', () => {
     describe('filters', () => {
         const allCategories = { green: true, orange: true, red: true, grey: true };
 
-        it('keeps the threshold / show-unsimulated controls but drops the category toggles + bulk buttons', () => {
+        it('drops the threshold + category toggles + bulk buttons (severity / threshold rings now live in the sidebar)', () => {
             const { getByTestId, queryByTestId } = render(
                 <ActionOverviewDiagram
                     {...defaultProps()}
@@ -922,71 +925,14 @@ describe('ActionOverviewDiagram', () => {
             expect(queryByTestId('filter-category-grey')).not.toBeInTheDocument();
             expect(queryByTestId('filter-select-all')).not.toBeInTheDocument();
             expect(queryByTestId('filter-select-none')).not.toBeInTheDocument();
-            expect(getByTestId('filter-threshold')).toBeInTheDocument();
+            // Threshold moved into ActionFilterRings — the overview
+            // header keeps only the non-redundant controls.
+            expect(queryByTestId('filter-threshold')).not.toBeInTheDocument();
+            expect(queryByTestId('filter-threshold-input')).not.toBeInTheDocument();
             expect(getByTestId('filter-show-unsimulated')).toBeInTheDocument();
         });
 
-        it('threshold numeric input update fires onFiltersChange with the new threshold', () => {
-            // The threshold widget is a compact integer-% number
-            // input (0–300 %); the form's source-of-truth value is a
-            // fraction (1.0 = 100 %). Typing "100" in the input must
-            // push { threshold: 1.0 } through onFiltersChange.
-            const onFiltersChange = vi.fn();
-            const { getByTestId } = render(
-                <ActionOverviewDiagram
-                    {...defaultProps()}
-                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
-                    onFiltersChange={onFiltersChange}
-                />,
-            );
-            const input = getByTestId('filter-threshold-input') as HTMLInputElement;
-            fireEvent.change(input, { target: { value: '100' } });
-            expect(onFiltersChange).toHaveBeenCalledTimes(1);
-            expect(onFiltersChange.mock.calls[0][0].threshold).toBeCloseTo(1.0);
-        });
-
-        it('threshold input is a compact integer-% number widget rendering the current fraction as a %', () => {
-            // Regression: the widget replaced the old range slider.
-            // It must be `type="number"`, must bound to 0–300 % with
-            // step=1, and must surface the fractional threshold
-            // multiplied by 100 as its value.
-            const { getByTestId, queryByTestId } = render(
-                <ActionOverviewDiagram
-                    {...defaultProps()}
-                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
-                />,
-            );
-            const input = getByTestId('filter-threshold-input') as HTMLInputElement;
-            expect(input.type).toBe('number');
-            expect(input.min).toBe('0');
-            expect(input.max).toBe('300');
-            expect(input.step).toBe('1');
-            expect(input.value).toBe('150');
-            // The old slider must NOT be present anymore.
-            expect(queryByTestId('filter-threshold')?.querySelector('input[type="range"]')).toBeFalsy();
-        });
-
-        it('threshold input clamps values outside 0–300 %', () => {
-            const onFiltersChange = vi.fn();
-            const { getByTestId } = render(
-                <ActionOverviewDiagram
-                    {...defaultProps()}
-                    filters={{ categories: allCategories, threshold: 1.5, showUnsimulated: false }}
-                    onFiltersChange={onFiltersChange}
-                />,
-            );
-            const input = getByTestId('filter-threshold-input') as HTMLInputElement;
-            fireEvent.change(input, { target: { value: '999' } });
-            expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ threshold: 3.0 }));
-            fireEvent.change(input, { target: { value: '-50' } });
-            expect(onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ threshold: 0 }));
-        });
-
-        it('header lays out filters on a single horizontal row (nowrap)', () => {
-            // Regression: the compacted banner must not wrap onto a
-            // second line. We check the computed flex-wrap value of
-            // the header container plus the presence of every filter
-            // control as a direct child of that row.
+        it('header lays out the remaining filters on a single horizontal row (nowrap)', () => {
             const { getByTestId } = render(
                 <ActionOverviewDiagram
                     {...defaultProps()}
@@ -995,9 +941,8 @@ describe('ActionOverviewDiagram', () => {
             );
             const header = getByTestId('action-overview-header');
             expect(header.style.flexWrap).toBe('nowrap');
-            // The remaining filters (threshold, unsimulated, combined-only)
-            // all sit as children/descendants of the single row.
-            expect(header.querySelector('[data-testid="filter-threshold-input"]')).toBeTruthy();
+            // Remaining filters (unsimulated, combined-only) sit as
+            // direct descendants of the single row.
             expect(header.querySelector('[data-testid="filter-show-unsimulated"]')).toBeTruthy();
             expect(header.querySelector('[data-testid="filter-combined-only"]')).toBeTruthy();
         });

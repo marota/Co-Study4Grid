@@ -146,6 +146,13 @@ const ActionFilterRings: React.FC<ActionFilterRingsProps> = ({ filters, onFilter
         onFiltersChange({ ...filters, actionType: next });
     }, [filters, onFiltersChange]);
 
+    const setThreshold = useCallback((thresholdPct: number) => {
+        const clamped = Math.max(0, Math.min(300, thresholdPct));
+        const next = clamped / 100;
+        interactionLogger.record('overview_filter_changed', { kind: 'threshold', threshold: next });
+        onFiltersChange({ ...filters, threshold: next });
+    }, [filters, onFiltersChange]);
+
     return (
         <div
             data-testid="sidebar-action-filters"
@@ -204,6 +211,54 @@ const ActionFilterRings: React.FC<ActionFilterRingsProps> = ({ filters, onFilter
                     );
                 })}
             </div>
+            <span aria-hidden style={{ width: 1, height: 16, background: colors.border, flexShrink: 0 }} />
+            {/* Max-loading threshold — compact spinner so the whole
+                filter bar stays on one row. The label is replaced by a
+                small loading-bolt glyph + a "%" suffix, the input
+                width is narrowed to two digits and the native spinner
+                arrows are hidden by ``appearance: none`` (Chrome /
+                Safari) + ``MozAppearance: textfield`` so the field
+                doesn't reserve room for an extra arrow column. */}
+            <label
+                data-testid="sidebar-filter-threshold"
+                title="Hide actions whose max loading rate (%) exceeds this threshold"
+                style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    flexShrink: 0,
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                }}
+            >
+                <span aria-hidden style={{ fontSize: 12, lineHeight: 1 }}>{'⚡'}</span>
+                <input
+                    data-testid="sidebar-filter-threshold-input"
+                    type="number"
+                    min={0}
+                    max={300}
+                    step={1}
+                    value={Math.round(filters.threshold * 100)}
+                    onChange={(e) => {
+                        const raw = parseInt(e.target.value, 10);
+                        if (!Number.isFinite(raw)) return;
+                        setThreshold(raw);
+                    }}
+                    style={{
+                        width: 38,
+                        padding: '1px 3px',
+                        fontSize: 11,
+                        fontVariantNumeric: 'tabular-nums',
+                        border: `1px solid ${colors.border}`,
+                        borderRadius: 3,
+                        textAlign: 'right',
+                        appearance: 'textfield',
+                        WebkitAppearance: 'textfield',
+                        MozAppearance: 'textfield',
+                    }}
+                />
+                <span aria-hidden>%</span>
+            </label>
         </div>
     );
 };
