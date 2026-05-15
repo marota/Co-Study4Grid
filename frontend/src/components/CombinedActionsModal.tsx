@@ -433,8 +433,14 @@ const CombinedActionsModal: React.FC<Props> = ({
             top: 0, left: 0, right: 0, bottom: 0,
             backgroundColor: 'rgba(0,0,0,0.5)',
             zIndex: 10000,
+            // Anchor the modal card to a fixed viewport offset
+            // (``alignItems: flex-start`` + a top margin set on the
+            // card) instead of centering it vertically — otherwise the
+            // title + filter header hops up and down every time the
+            // Computed / Explore Pairs body changes height (chip
+            // filter, tab switch, action-type drilldown).
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             justifyContent: 'center'
         }}>
             <div
@@ -448,7 +454,8 @@ const CombinedActionsModal: React.FC<Props> = ({
                     // scrollbar on the modal itself.
                     width: '95vw',
                     maxWidth: '95vw',
-                    maxHeight: '90vh',
+                    marginTop: '7.5vh',
+                    maxHeight: '85vh',
                     display: 'flex',
                     flexDirection: 'column',
                     boxShadow: '0 10px 25px rgba(0,0,0,0.25)',

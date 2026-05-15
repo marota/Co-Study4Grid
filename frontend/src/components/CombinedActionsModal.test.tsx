@@ -425,6 +425,22 @@ describe('CombinedActionsModal', () => {
             const card = screen.getByTestId('combine-modal-card');
             expect(card.style.overflow).toBe('hidden');
         });
+
+        it('anchors the card to a fixed viewport top so the title/filter header does not hop as the body height changes', () => {
+            // Switching between Computed Pairs / Explore Pairs or
+            // toggling a chip filter changes the body height. With
+            // ``alignItems: center`` the card re-centers vertically on
+            // every height change, making the title + filter header
+            // jump up and down. Anchoring to the top (``flex-start`` +
+            // ``marginTop: 7.5vh``) keeps the header at the same screen
+            // height regardless of the body row count.
+            render(<CombinedActionsModal {...defaultProps} />);
+            const backdrop = screen.getByTestId('combine-modal-card').parentElement!;
+            expect(backdrop.style.alignItems).toBe('flex-start');
+            const card = screen.getByTestId('combine-modal-card');
+            expect(card.style.marginTop).toBe('7.5vh');
+            expect(card.style.maxHeight).toBe('85vh');
+        });
     });
 
     // Bugs 6 & 7: simulations triggered from the modal must
