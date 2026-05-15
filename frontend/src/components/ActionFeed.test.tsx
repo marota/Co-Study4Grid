@@ -3024,6 +3024,9 @@ describe('ActionFeed', () => {
             );
             expect(screen.queryByTestId('action-card-reco_GEN.PY762')).not.toBeInTheDocument();
             expect(screen.getByTestId('overview-filter-hint')).toBeInTheDocument();
+        });
+    });
+
     describe('recommendation-model selector + Clear', () => {
         // The model dropdown lives above "Analyze & Suggest" (a mirror of
         // the Settings → Recommender selector) so the operator can swap
