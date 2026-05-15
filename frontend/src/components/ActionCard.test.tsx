@@ -244,6 +244,27 @@ describe('ActionCard', () => {
         expect(screen.queryByText(/loading before/i)).not.toBeInTheDocument();
     });
 
+    it('renders the Source / provenance row BELOW the "Overload loading after" line in the unfolded card', () => {
+        // Operator-requested layout: Source is a low-information
+        // attribution row, so it sits at the very bottom of the
+        // unfolded disclosure — below the operational fields
+        // (description, per-line editors, "Overload loading after").
+        // Pre-change the row sat just under the description, which
+        // pushed it above the more relevant operational data.
+        const details: ActionDetail = {
+            ...baseDetails,
+            origin: 'user',
+        };
+        render(<ActionCard {...defaultProps} details={details} isViewing={true} />);
+        const disclosure = screen.getByTestId('action-card-act_1-disclosure');
+        const html = disclosure.innerHTML;
+        const overloadIdx = html.indexOf('Overload loading after');
+        const sourceIdx = html.indexOf('Source:');
+        expect(overloadIdx).toBeGreaterThanOrEqual(0);
+        expect(sourceIdx).toBeGreaterThanOrEqual(0);
+        expect(sourceIdx).toBeGreaterThan(overloadIdx);
+    });
+
     it('renders load shedding details with MW input and re-simulate button when viewing', () => {
         const details: ActionDetail = {
             ...baseDetails,

@@ -364,15 +364,6 @@ const ActionCard: React.FC<ActionCardProps> = ({
                 >
                     <p style={{ fontSize: '12px', margin: 0, color: colors.textPrimary }}>{details.description_unitaire}</p>
 
-                    {originLabel && (
-                        <div
-                            data-testid={`action-card-${id}-origin`}
-                            style={{ fontSize: '11px', marginTop: '4px', color: colors.textTertiary }}
-                        >
-                            Source: <strong style={{ color: colors.textSecondary }}>{originLabel}</strong>
-                        </div>
-                    )}
-
                     {details.load_shedding_details && details.load_shedding_details.length > 0 && (
                         <div style={{ ...editorRowStyle, background: colors.warningSoft, color: colors.warningText, border: `1px solid ${colors.warningBorder}` }}>
                             {details.load_shedding_details.map((ls, i) => (
@@ -476,6 +467,19 @@ const ActionCard: React.FC<ActionCardProps> = ({
                     <div style={{ fontSize: '12px', background: colors.brandSoft, padding: '5px', marginTop: '8px', borderRadius: '4px' }}>
                         Overload loading after: {renderRho(details.rho_after, id, 'action')}
                     </div>
+
+                    {/* Source / provenance sits at the very bottom of
+                        the unfolded card — it's a low-information
+                        attribution row that shouldn't compete with the
+                        operational fields above. */}
+                    {originLabel && (
+                        <div
+                            data-testid={`action-card-${id}-origin`}
+                            style={{ fontSize: '11px', marginTop: '8px', color: colors.textTertiary }}
+                        >
+                            Source: <strong style={{ color: colors.textSecondary }}>{originLabel}</strong>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
