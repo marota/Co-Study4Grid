@@ -170,6 +170,21 @@ describe('ActionSearchDropdown', () => {
             expect(screen.getByTestId('manual-selection-backdrop')).toBeInTheDocument();
         });
 
+        it('anchors the wide overlay to a fixed viewport top (no vertical re-centering as content grows)', () => {
+            // Operators picking a chip that filters the score table down
+            // to zero rows (or back up) used to see the modal hop
+            // vertically: ``top: 50% / translate(-50%, -50%)`` re-centers
+            // on the body's new height. The fix anchors the top of the
+            // modal to a fixed viewport offset so the title + filter
+            // header stay at the same screen height regardless of the
+            // table's row count.
+            render(<ActionSearchDropdown {...defaultProps} wide />);
+            const styleAttr = screen.getByTestId('manual-selection-wide').getAttribute('style') || '';
+            expect(styleAttr).toContain('top: 7.5vh');
+            expect(styleAttr).toContain('translateX(-50%)');
+            expect(styleAttr).not.toContain('translate(-50%, -50%)');
+        });
+
         it('still renders the score table inside the wide overlay', () => {
             const scoredActionsList = [
                 { type: 'line_reconnection', actionId: 'act_wide_1', score: 7.25, mwStart: null },

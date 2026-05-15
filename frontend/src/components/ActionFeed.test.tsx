@@ -696,6 +696,36 @@ describe('ActionFeed', () => {
             expect(screen.getByText('reco_B')).toBeInTheDocument();
         });
 
+        it('keeps the wide overlay layout when a chip filter empties the scored list', async () => {
+            // Pre-fix the modal layout was driven by the *post-filter*
+            // scoredActionsList length: switching to a chip with no
+            // matching scored action collapsed the wide overlay back to
+            // the small button-anchored dropdown, which read as the
+            // modal closing mid-interaction. Once analysis has produced
+            // any scored action the wide layout must stick across chip
+            // toggles — empty chips just surface the existing
+            // "no relevant action detected" warning + raw-action list.
+            const props = buildScoredProps();
+            render(<ActionFeed {...props} />);
+            fireEvent.click(screen.getByText('+ Manual Selection'));
+            expect(screen.getByTestId('manual-selection-wide')).toBeInTheDocument();
+
+            await waitFor(() => {
+                expect(screen.queryByText('Loading actions...')).not.toBeInTheDocument();
+            });
+
+            // Pick a chip filter that yields zero scored rows
+            // (line_reconnection is the only scored type in
+            // ``buildScoredProps``; the PST chip filters everything out).
+            const pstChip = await screen.findByTestId('sidebar-filter-type-pst');
+            fireEvent.click(pstChip);
+
+            // The wide overlay must remain mounted; the narrow
+            // dropdown must NOT take its place.
+            expect(screen.getByTestId('manual-selection-wide')).toBeInTheDocument();
+            expect(screen.queryByTestId('manual-selection-dropdown')).not.toBeInTheDocument();
+        });
+
         it('still closes the narrow no-score dropdown after a manual ID is simulated', async () => {
             // No actionScores → narrow layout, traditional one-shot
             // flow. Closing on success is the expected UX.

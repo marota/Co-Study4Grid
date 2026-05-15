@@ -96,10 +96,17 @@ const ActionSearchDropdown: React.FC<ActionSearchDropdownProps> = ({
 }) => {
     const dropdownStyle: React.CSSProperties = wide
         ? {
+            // Anchor the top to a fixed viewport offset (instead of
+            // centering on 50% with translateY(-50%)) so the title +
+            // search input + filter row stay at the same screen
+            // height as the body grows or shrinks with the chip
+            // filter — the previous translate-centered layout made
+            // the whole modal hop vertically every time the score
+            // table count changed.
             position: 'fixed',
-            top: '50%',
+            top: '7.5vh',
             left: '50%',
-            transform: 'translate(-50%, -50%)',
+            transform: 'translateX(-50%)',
             width: '80vw',
             maxWidth: '80vw',
             maxHeight: '85vh',

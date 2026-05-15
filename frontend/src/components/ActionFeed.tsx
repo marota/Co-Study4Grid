@@ -291,6 +291,21 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             .slice(0, 20);
     }, [searchQuery, availableActions, actions, dropdownFilters.actionType]);
 
+    // Whether the analysis has produced ANY scored action — independent
+    // of the current chip-filter selection. Drives the wide-modal
+    // layout so the operator stays in the centered overlay even when a
+    // type filter narrows ``scoredActionsList`` down to zero rows; the
+    // alternative (toggling between the wide modal and the small
+    // button-anchored dropdown on every chip click) reads as the modal
+    // "closing" mid-interaction.
+    const hasAnyScoredAction = useMemo(() => {
+        if (!actionScores) return false;
+        return Object.values(actionScores).some(d =>
+            d && typeof d === 'object'
+            && Object.keys((d as { scores?: Record<string, number> }).scores ?? {}).length > 0
+        );
+    }, [actionScores]);
+
     // Format scored actions — filtered by the shared rings (type +
     // severity). Severity uses the simulated max-loading once the
     // action has been computed; scored-but-untested rows have no
@@ -399,8 +414,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
             // operator wanted to compare. The narrow no-score search
             // dropdown still auto-dismisses since that mode is
             // typically a one-shot "type an ID, hit enter" flow.
-            const wide = scoredActionsList.length > 0;
-            if (!wide) {
+            if (!hasAnyScoredAction) {
                 setSearchOpen(false);
                 setSearchQuery('');
             }
@@ -878,7 +892,7 @@ const ActionFeed: React.FC<ActionFeedProps> = ({
                         onClose={() => { setSearchOpen(false); setSearchQuery(''); }}
                         onShowTooltip={showTooltip}
                         onHideTooltip={hideTooltip}
-                        wide={scoredActionsList.length > 0}
+                        wide={hasAnyScoredAction}
                     />
                 )}
             </div>
