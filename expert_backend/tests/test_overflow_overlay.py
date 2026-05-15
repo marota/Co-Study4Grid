@@ -120,17 +120,19 @@ class TestInjectOverlay:
 
     def test_action_filters_section_is_injected(self) -> None:
         """The overlay must inject an ``Action pins filters`` section.
-        It is hidden by default (only visible when pins are toggled
-        on) and emits ``cs4g:overflow-filter-changed`` when the
-        operator interacts with it. The severity (action-card colour)
+        The section is ALWAYS visible — it carries the canonical pins
+        on/off toggle in its header, so it must be reachable before
+        any pin has been requested. The severity (action-card colour)
         and action-type filters were removed — they are driven solely
         by the sidebar's ActionFilterRings — so this panel keeps only
         the threshold / show-unsimulated / combined-only controls."""
         out = inject_overlay(_BASE_HTML)
         # CSS hook + JS builder.
         assert "#cs4g-filters" in out
-        assert "#cs4g-filters.visible" in out
         assert "function buildFiltersPanel(" in out
+        # The legacy ``.visible`` show/hide gate is gone — the panel
+        # is always visible now that the pins toggle lives inside it.
+        assert "#cs4g-filters.visible" not in out
         # Wire-format: outbound message type for filter changes.
         assert "cs4g:overflow-filter-changed" in out
         # Wire-format: inbound message type from the parent.
@@ -148,6 +150,49 @@ class TestInjectOverlay:
         assert "data-category=" not in out
         assert "data-action-type=" not in out
         assert 'data-action="select-all"' not in out
+
+    def test_pins_toggle_lives_inside_filter_panel_header(self) -> None:
+        """The pins on/off toggle was moved out of the React
+        VisualizationPanel header into the iframe's filter-panel
+        header so the operator can flip pins from the same widget
+        that hosts the threshold / show-unsimulated / combined-only
+        controls. The toggle posts ``cs4g:overflow-pins-toggled`` so
+        the parent flips its own ``overflowPinsEnabled`` state."""
+        out = inject_overlay(_BASE_HTML)
+        # The toggle DOM element is built into the filters header.
+        assert "data-pins-toggle" in out
+        assert "pins-toggle" in out
+        # Outbound message — parent flips overflowPinsEnabled.
+        assert "cs4g:overflow-pins-toggled" in out
+        # The parent React app remains the source of truth — toggle
+        # posts up the change, doesn't mutate local state directly.
+        assert "enabled: !!ev.target.checked" in out
+
+    def test_filter_rows_disabled_when_pins_toggle_off(self) -> None:
+        """When pins are off the threshold / show-unsimulated /
+        combined-only inputs render disabled so they can't be edited
+        until the operator turns the overlay on. The
+        ``data-pins-enabled`` attribute on the panel drives the CSS
+        dim/disable rule; the JS sets the ``disabled`` attribute on
+        each input."""
+        out = inject_overlay(_BASE_HTML)
+        # CSS hook for dim/disable when pins are off.
+        assert '#cs4g-filters[data-pins-enabled="false"]' in out
+        # JS reflects the pins state on the panel attribute + on the
+        # disabled attr of each filter input.
+        assert "data-pins-enabled" in out
+        assert "thr.disabled = !lastVisible" in out
+        assert "showU.disabled = !lastVisible" in out
+        assert "combinedOnly.disabled = !lastVisible" in out
+
+    def test_pin_counter_shows_displayable_count_when_pins_off(self) -> None:
+        """The counter must remain informative when pins are off — it
+        shows the count of pins that WOULD render if the operator
+        flipped the toggle on, so the operator can decide whether
+        enabling pins is worth the visual cost."""
+        out = inject_overlay(_BASE_HTML)
+        # Counter falls back to lastPins.length when not visible.
+        assert "lastVisible ? count : (Array.isArray(lastPins) ? lastPins.length : 0)" in out
 
     def test_action_filters_section_is_appended_below_existing_sections(self) -> None:
         """The pins filter panel is appended at the END of the

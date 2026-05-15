@@ -100,16 +100,25 @@ def _build_overlay_block() -> str:
   .cs4g-pin {{ pointer-events: auto; cursor: pointer; }}
 
   /* ``ACTION PINS FILTERS`` section appended at the BOTTOM of the
-     iframe's sidebar when the pin overlay is visible. The severity
-     (action-card colour) and action-type filters were removed — they
-     are now driven solely by the sidebar's ActionFilterRings in the
-     React app. This panel keeps only the threshold / show-unsimulated
-     / combined-only controls plus the live pin counter. */
+     iframe's sidebar. The section is ALWAYS visible (it carries the
+     pins on/off toggle, so it must be reachable before any pin has
+     been requested); the section's header hosts the toggle + the live
+     count of currently-displayed (or displayable) pins. When the
+     toggle is off, the underlying filter inputs render disabled. */
   #cs4g-filters {{
-    display: none; margin: 14px 0 0; padding: 8px 0 0;
+    margin: 14px 0 0; padding: 8px 0 0;
     border-top: 1px solid var(--border, #d1d5db);
   }}
-  #cs4g-filters.visible {{ display: block; }}
+  #cs4g-filters[data-pins-enabled="false"] .row.threshold,
+  #cs4g-filters[data-pins-enabled="false"] .row.toggles {{
+    opacity: 0.45; pointer-events: none;
+  }}
+  #cs4g-filters .pins-toggle {{
+    display: inline-flex; align-items: center; gap: 4px;
+    cursor: pointer; user-select: none;
+    color: var(--muted, #6b7280); margin-right: auto;
+  }}
+  #cs4g-filters .pins-toggle input {{ cursor: pointer; }}
   #cs4g-filters .filters-header {{
     display: flex; align-items: center; gap: 6px;
     font-size: 12px; text-transform: uppercase;
@@ -183,9 +192,12 @@ def _build_overlay_block() -> str:
     panel.id = 'cs4g-filters';
     panel.innerHTML =
       '<div class="filters-header">'
-      +   '<span aria-hidden>\U0001F4CC</span>'
-      +   '<span>Action pins filters</span>'
-      +   '<span class="filters-counter" data-counter title="Pins currently rendered on the overflow graph">'
+      +   '<label class="pins-toggle" title="Show / hide action pins on the overflow graph">'
+      +     '<input type="checkbox" data-pins-toggle />'
+      +     '<span aria-hidden>\U0001F4CC</span>'
+      +     '<span>Action pins filters</span>'
+      +   '</label>'
+      +   '<span class="filters-counter" data-counter title="Pins currently rendered (or, when the toggle is off, the count of pins that would be displayed).">'
       +     '<span aria-hidden>\U0001F4CC</span>'
       +     '<span data-counter-value>0</span>'
       +   '</span>'
@@ -195,7 +207,7 @@ def _build_overlay_block() -> str:
       +   '<input type="number" min="0" max="300" step="1" data-filter="threshold" />'
       +   '<span style="color:#6b7280">%</span>'
       + '</div>'
-      + '<div class="row">'
+      + '<div class="row toggles">'
       +   '<label class="toggle">'
       +     '<input type="checkbox" data-filter="show-unsimulated" />'
       +     '<span style="color:#6b7280">Show unsimulated</span>'
@@ -210,6 +222,19 @@ def _build_overlay_block() -> str:
     // graph-layer toggles, rather than competing for top-of-list
     // attention before the operator has even enabled pins.
     sidebar.appendChild(panel);
+    // Pins on/off toggle — the canonical control for showing the pin
+    // overlay. The parent React app remains the source of truth for
+    // overflowPinsEnabled: the toggle posts an outbound message so the
+    // parent flips its own state, and the inbound ``cs4g:pins`` echo
+    // brings the UI back in sync (single round-trip, no local
+    // divergence).
+    const pinsToggle = panel.querySelector('input[data-pins-toggle]');
+    pinsToggle.addEventListener('change', function(ev) {{
+      window.parent.postMessage({{
+        type: 'cs4g:overflow-pins-toggled',
+        enabled: !!ev.target.checked,
+      }}, '*');
+    }});
     // Threshold spinner.
     const thr = panel.querySelector('input[data-filter="threshold"]');
     thr.addEventListener('change', function(ev) {{
@@ -241,19 +266,39 @@ def _build_overlay_block() -> str:
   function renderFilterState() {{
     const panel = document.getElementById('cs4g-filters');
     if (!panel) return;
+    // Reflect the pins on/off state on the toggle + on the panel
+    // attribute that drives the disabled styling of the underlying
+    // filter rows (see ``[data-pins-enabled="false"]`` CSS rules).
+    const pinsToggle = panel.querySelector('input[data-pins-toggle]');
+    if (pinsToggle) pinsToggle.checked = !!lastVisible;
+    panel.setAttribute('data-pins-enabled', lastVisible ? 'true' : 'false');
     const thr = panel.querySelector('input[data-filter="threshold"]');
-    if (thr) thr.value = String(Math.round(filterState.threshold * 100));
+    if (thr) {{
+      thr.value = String(Math.round(filterState.threshold * 100));
+      thr.disabled = !lastVisible;
+    }}
     const showU = panel.querySelector('input[data-filter="show-unsimulated"]');
-    if (showU) showU.checked = !!filterState.showUnsimulated;
+    if (showU) {{
+      showU.checked = !!filterState.showUnsimulated;
+      showU.disabled = !lastVisible;
+    }}
     const combinedOnly = panel.querySelector('input[data-filter="combined-only"]');
-    if (combinedOnly) combinedOnly.checked = !!filterState.showCombinedOnly;
+    if (combinedOnly) {{
+      combinedOnly.checked = !!filterState.showCombinedOnly;
+      combinedOnly.disabled = !lastVisible;
+    }}
   }}
 
   function updatePinCounter(count) {{
     const panel = document.getElementById('cs4g-filters');
     if (!panel) return;
+    // When pins are off the counter advertises the displayable count
+    // (i.e. how many pins WOULD render if the toggle were on), so the
+    // operator sees at a glance whether enabling the overlay is worth
+    // it. When on, the counter reflects the actually-drawn count.
+    const shown = lastVisible ? count : (Array.isArray(lastPins) ? lastPins.length : 0);
     const v = panel.querySelector('[data-counter-value]');
-    if (v) v.textContent = String(count);
+    if (v) v.textContent = String(shown);
   }}
 
   function getSvg() {{
@@ -765,12 +810,11 @@ def _build_overlay_block() -> str:
     updatePinCounter(drawn);
   }}
 
-  function syncFilterPanelVisibility() {{
-    const panel = buildFiltersPanel();
-    if (!panel) return;
-    if (lastVisible) panel.classList.add('visible');
-    else panel.classList.remove('visible');
-  }}
+  // The pins-filter panel is ALWAYS visible (the on/off toggle now
+  // lives inside it), so syncFilterPanelVisibility was retired. Calls
+  // that previously toggled the ``.visible`` class are replaced by a
+  // single buildFiltersPanel() call that guarantees the section is
+  // mounted before any state-sync runs.
 
   window.addEventListener('message', function(ev) {{
     const msg = ev && ev.data;
@@ -800,13 +844,19 @@ def _build_overlay_block() -> str:
     if (msg.type !== 'cs4g:pins') return;
     lastVisible = !!msg.visible;
     if (Array.isArray(msg.pins)) lastPins = msg.pins;
-    syncFilterPanelVisibility();
+    buildFiltersPanel();
+    renderFilterState();
     render();
   }});
 
   // Notify the parent that the overlay is wired up so it can post
   // pins immediately rather than waiting for a poll.
   window.addEventListener('load', function() {{
+    // The pins-filter panel hosts the on/off toggle and is always
+    // visible — mount it on first paint so the operator finds the
+    // control before any pin payload arrives.
+    buildFiltersPanel();
+    renderFilterState();
     window.parent.postMessage({{ type: 'cs4g:overlay-ready' }}, '*');
   }});
 }})();

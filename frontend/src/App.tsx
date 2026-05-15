@@ -1596,7 +1596,6 @@ function App() {
             onToggleVoltageLevelNames={handleToggleVoltageLevelNames}
             overflowPins={allOverflowPins}
             overflowPinsEnabled={overflowPinsEnabled}
-            overflowPinsAvailable={overflowPinsAvailable}
             onOverflowPinsToggle={setOverflowPinsEnabled}
           />
         </div>

@@ -617,6 +617,10 @@ export type IframeToParentMessage =
     | {
         type: 'cs4g:overflow-node-double-clicked';
         name: string;
+    }
+    | {
+        type: 'cs4g:overflow-pins-toggled';
+        enabled: boolean;
     };
 
 export type IframeToParentMessageType = IframeToParentMessage['type'];
