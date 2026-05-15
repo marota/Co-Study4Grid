@@ -102,7 +102,7 @@ type InteractionType =
   | 'overview_unsimulated_pin_simulated' // User double-clicked an unsimulated pin to kick off its manual simulation
   // === Overflow Analysis Tab ===
   | 'overflow_layout_mode_toggled' // User flipped the Hierarchical / Geo layout switch
-  | 'overflow_pins_toggled'        // User flipped the 📌 Pins toolbar button
+  | 'overflow_pins_toggled'        // User flipped the 📌 Pins toggle (now hosted inside the iframe's Action-pins-filters header — the standalone toolbar button was retired)
   | 'overflow_pin_clicked'         // Single-click on an action pin inside the overflow iframe
   | 'overflow_pin_double_clicked'  // Double-click on an action pin → SLD drill-down on the action sub-tab
   | 'overflow_layer_toggled'       // Layer-toggle gesture inside the overflow iframe sidebar
@@ -226,7 +226,7 @@ The Overflow Analysis iframe forwards user gestures to the parent React app via 
 | Event | Details | Replay Action |
 |-------|---------|---------------|
 | `overflow_layout_mode_toggled` | `{ to: 'hierarchical' \| 'geo' }` on start; the corresponding `_completed` event carries `{ to, cached: boolean }` (or `{ to, error: string }` on failure). Wait-point: the iframe URL refreshes once the backend regenerates / serves the requested layout. | Click the Hierarchical / Geo layout switch on the Overflow Analysis tab. |
-| `overflow_pins_toggled` | `{ enabled: boolean }` — new state of the toolbar `📌 Pins` button. Disabled until step-2 has streamed actions; default OFF. When `enabled === true`, the parent posts the `cs4g:pins` payload to the iframe and the action pin layer becomes visible. | Click the `📌 Pins` toolbar toggle on the Overflow Analysis tab. |
+| `overflow_pins_toggled` | `{ enabled: boolean }` — new state of the canonical pins toggle. The toggle lives in the **iframe's Action-pins-filters header** (the standalone `📌 Pins` toolbar button was retired); the iframe posts `cs4g:overflow-pins-toggled` to the parent, which flips `overflowPinsEnabled` and re-broadcasts the `cs4g:pins` payload. When `enabled === true` the action pin layer becomes visible AND the threshold / show-unsim / combined-only inputs lose their disabled styling. Disabled until step-2 has streamed actions; default OFF. | Click the pins on/off checkbox inside the iframe's "Action pins filters" header on the Overflow Analysis tab. |
 | `overflow_pin_clicked` | `{ actionId: string }` — single click on an action pin inside the iframe. The Action Feed scrolls to the matching card AND a floating `ActionCardPopover` opens anchored on the pin. Does NOT switch the active main tab. | Click a pin once on the Overflow Analysis tab. |
 | `overflow_pin_double_clicked` | `{ actionId: string, substation: string }` — double-click on an action pin. Closes any open popover and opens the SLD overlay scoped to that substation with `forceTab='action'`. Logged ONLY when `result.actions[actionId]` exists — stale double-clicks (action evicted by re-analysis) are silently dropped. | Double-click an action pin. |
 | `overflow_layer_toggled` | `{ key: string, label: string, visible: boolean }` — `key` is the canonical layer key (e.g. `"semantic:is_hub"`, `"color:coral"`); `label` is the human-readable sidebar label; `visible` is the new checkbox state (dim-instead-of-hide membership recomputed from this). | Tick / untick a layer checkbox in the iframe sidebar. |

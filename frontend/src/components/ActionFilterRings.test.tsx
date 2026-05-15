@@ -38,6 +38,39 @@ describe('ActionFilterRings', () => {
         }
     });
 
+    it('replaces the textual "Actions:" label with a 📍 + dash glyph (keeps the wording in the title tooltip)', () => {
+        // Removing the leading word frees ~60px on the sidebar row so
+        // the severity ring + action-type ring + threshold spinner
+        // fit a single line. The wording moves into the hover tooltip
+        // so the meaning stays reachable without occupying space.
+        const { container } = render(<ActionFilterRings filters={baseFilters} onFiltersChange={vi.fn()} />);
+        const root = screen.getByTestId('sidebar-action-filters');
+        expect(root.textContent).not.toContain('Actions:');
+        // Pin glyph + em-dash separator present.
+        expect(root.textContent).toContain('📍');
+        expect(root.textContent).toContain('–');
+        // Wording is reachable on hover via the title tooltip.
+        expect(container.querySelector('[title="Actions filters"]')).not.toBeNull();
+    });
+
+    it('renders the Max-loading threshold spinner at a 3-digit-tight width (compact single-row layout)', () => {
+        // Operator-reported regression: the rings bar wrapped onto a
+        // second line when the threshold input was 38 px wide.
+        // Three real-world digits (max-loading ≤ 200 %, never 1000 %)
+        // fit comfortably in 26 px with native spinner arrows
+        // suppressed by inline ``appearance: textfield`` + the
+        // ``::-webkit-inner-spin-button`` CSS rule.
+        render(<ActionFilterRings filters={baseFilters} onFiltersChange={vi.fn()} />);
+        const input = screen.getByTestId('sidebar-filter-threshold-input') as HTMLInputElement;
+        expect(input.style.width).toBe('26px');
+        expect(input.style.appearance).toBe('textfield');
+        // The leading ⚡ glyph was removed (it now belongs to
+        // Contingency); the input sits directly inside the label so
+        // the bar fits the sidebar.
+        const label = screen.getByTestId('sidebar-filter-threshold');
+        expect(label.textContent).not.toContain('⚡');
+    });
+
     it('shows every severity toggle as pressed when all categories are enabled', () => {
         render(<ActionFilterRings filters={baseFilters} onFiltersChange={vi.fn()} />);
         for (const cat of ['green', 'orange', 'red', 'grey']) {

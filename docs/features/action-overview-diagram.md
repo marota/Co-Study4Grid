@@ -6,7 +6,7 @@ The Remedial Action tab now hosts an **action-overview diagram** when no action 
 
 Pins visually reflect the operator's triage decisions: **selected** (starred) actions are highlighted with a gold star above the pin, while **rejected** actions are dimmed with a red cross. **Simulated combined actions** (two unitary actions applied together) appear as a dedicated pin at the midpoint of a curved dashed connection linking the two constituent pins.
 
-A consolidated **single-row header** above the diagram exposes a compact pin counter plus every filter control inline: severity category toggles (Solves overload / Low margin / Still overloaded / Divergent-or-islanded), a `All` / `None` bulk-toggle pair, a **max-loading threshold slider**, a **Show unsimulated** checkbox, a **Combined only** checkbox (PIN-SCOPED — restricts the overview to combined-action pins + their two constituents dimmed for context), and a single-select **action-type chip row** (`ALL / DISCO / RECO / LS / RC / OPEN / CLOSE / PST`). All six controls feed a single `ActionOverviewFilters` state owned by `App.tsx` and are shared with the sidebar `ActionFeed`, so a card hidden in the feed is also hidden on the overview and vice-versa — except `showCombinedOnly`, which is intentionally pin-only and never hides feed cards. See [Filtering](#filtering) below.
+A compact **single-row header** above the diagram now exposes just the pin counter, the **Show unsimulated** checkbox, and the **Combined only** checkbox (PIN-SCOPED — restricts the overview to combined-action pins + their two constituents dimmed for context). The severity / action-type filters and the **Max-loading threshold** numeric input live in the shared sidebar `<ActionFilterRings>` strip (📍 – ring | ring | threshold), which the overview, the Action Feed, the Manual Selection modal, the Combine Actions modal and the Overflow Analysis iframe all read from. The wholesale relocation freed the overview banner from filter clutter and keeps every surface in lock-step on a single `ActionOverviewFilters` state owned by `App.tsx` — except `showCombinedOnly`, which is intentionally pin-only and never hides feed cards. See [Filtering](#filtering) below.
 
 When **Show unsimulated** is enabled, scored-but-not-yet-simulated actions (those present in `result.action_scores` but absent from the simulated `actions` dict) are rendered as dimmed, dashed **un-simulated pins**. Hovering one reveals a score-metadata tooltip (type, score, rank-in-type, MW/tap start); double-clicking it kicks off the same manual-simulation code path the Manual Selection dropdown uses. See [Un-simulated action pin](#un-simulated-action-pin) below.
 
@@ -17,8 +17,9 @@ When any action card IS selected (either via the sidebar feed or by double-click
 │  Tab bar                                                                   │
 │  [Network (N)]  [Contingency (N-1)]  [Remedial action: overview]  [Overflow] │
 ├────────────────────────────────────────────────────────────────────────────┤
-│ 📍 7 (+3)  ● Solves ● Low margin ● Still ● Div  [All][None]               │
-│   Max loading ▬▬●▬▬ 150%  ☑ Show unsimulated  │  ALL DISCO RECO LS RC ... │
+│  Sidebar: ⚡ Contingency | ⚠ Overloads | 📍 – ◉◉◉◉ | ▭▭▭▭▭▭▭ | 150 %     │
+├────────────────────────────────────────────────────────────────────────────┤
+│ 📍 7 (+3)   ☑ Show unsimulated   ☐ Combined only                          │
 ├────────────────────────────────────────────────────────────────────────────┤
 │                                                                            │
 │   Background: N-1 NAD (dimmed)                                             │
@@ -245,9 +246,11 @@ Four toggles map 1:1 to the teardrop colour buckets:
 
 Disabling a chip hides every pin in that bucket AND every sidebar card in that bucket. `All` and `None` bulk-apply to all four.
 
-### Threshold slider
+### Threshold spinner
 
-Range `0.5` → `3.0` step `0.05`, displayed as a percentage. Any action whose `max_rho` is strictly greater than the threshold is hidden. Actions with `max_rho == null` (divergent / islanded — all in the grey bucket) **bypass** the threshold so non-numeric outcomes remain visible whenever the grey category is enabled.
+A compact integer-percent number input (0–300 % step 1, stored as the fraction `1.0 = 100 %`) sits at the right end of the shared `<ActionFilterRings>` strip. The native spinner arrows are suppressed via inline `appearance: textfield` + a `::-webkit-inner-spin-button` rule in `App.css` so the column stays exactly three digits wide (real-world max-loading sits well under 200 %, never 1000 %); the leading ⚡ glyph that lived next to it was removed when ⚡ was promoted to the Contingency pictogram.
+
+Any action whose **simulated** `max_rho` (or, when missing, the **estimated** `max_rho` reported by the recommender) is strictly greater than the threshold is hidden. The fallback precedence mirrors the severity bucket — both filters classify off the same value — so a row hides under the same conditions in the overview pins, the Action Feed cards, the Manual Selection score table and the Combine Actions Computed Pairs table (every surface routes through `rowPassesActionFilters` in `utils/actionTypes.ts`, or the equivalent inline check in `CombinedActionsModal.filteredComputedPairsList`). Actions with `max_rho == null` AND `estimated_max_rho == null` (divergent / islanded — all in the grey bucket) **bypass** the threshold so non-numeric outcomes remain visible whenever the grey category is enabled.
 
 ### Action-type chip row
 

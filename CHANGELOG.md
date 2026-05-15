@@ -7,8 +7,87 @@ and the project (informally) follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- _Other work in progress — new entries land here before the next
-  tagged release._
+### UI consolidation — sidebar Action Filter rings
+
+- **Severity + action-type filters → shared `<ActionFilterRings>`
+  strip** in the sidebar (replaces the inline category toggles +
+  `All` / `None` bulk pills + action-type chip row that used to
+  stack on the Action Overview header and inside each modal). The
+  rings carry colour-coded severity pictograms (one per outcome
+  bucket: solves overload / low margin / still overloaded /
+  divergent or islanded) with single-click toggle + double-click
+  solo, and uncoloured action-type pictograms (disco / reco /
+  open / close / ls / rc / pst) with single-select toggle-off.
+  Same rings host the **Max-loading threshold** spinner (compact
+  3-digit-tight input, no leading glyph — ⚡ is now the Contingency
+  pictogram). The Manual Selection modal, the Combine Actions
+  modal, the Action Overview banner and the Overflow Analysis
+  iframe all consume the same `ActionOverviewFilters` state so a
+  card hidden in one place is hidden everywhere.
+- **Bug fix — threshold filter wiring**. The Max-loading spinner
+  was a silent no-op inside the Manual Selection score table and
+  the Combine Actions Computed Pairs table because
+  `rowPassesActionFilters` only checked the type ring and the
+  severity bucket. Added the threshold predicate (simulated
+  max-ρ → estimated fallback, matching the severity bucket's
+  precedence) so the slider applies consistently across every
+  surface that consumes the rings.
+- **Notices relocation → discrete sidebar pill (`<NoticesPanel>`)**.
+  The previous stack of up to five concurrent yellow banners
+  overlaying the main window was replaced by a single dismissable
+  pill in the sidebar header (`⚠ Notices N`) that opens an inline
+  panel listing every active notice (action-dictionary info,
+  monitoring coverage, recommender thresholds, additional lines
+  to cut). The auto-dismiss-on-analysis-lifecycle rules
+  (action-dict cleared on first simulated action, recommender-
+  thresholds cleared on Step-2 pending) were dropped — operators
+  now own the dismiss gesture via the × button on each card. The
+  per-study re-arm (load-study / apply-settings) is preserved.
+- **Pictogram refresh**. Lightning ⚡ now stands for **Contingency**
+  across the sidebar (status line + "Select Contingency" picker
+  card title); the pin 📍 + em-dash separator replaces the textual
+  "Actions:" label in the rings strip (the wording lives in the
+  hover tooltip on the pin). The Notices warning glyph changed
+  from ⚠ → 🔔 to avoid clashing with the overload-pin ⚠ used on
+  the Action Overview NAD; the low-margin severity uses a
+  circle-exclamation pictogram (replaces the warning-triangle
+  that clashed with overloads ⚠).
+- **Overflow Analysis iframe pin toggle relocated**. The standalone
+  `📍 Pins` toolbar button in `<VisualizationPanel>` was retired;
+  the canonical pins on/off toggle now lives inside the iframe's
+  **Action pins filters** header (always visible, dims the inputs
+  when off). Wire format: new `cs4g:overflow-pins-toggled` envelope
+  posts the new state up to the parent, which flips
+  `overflowPinsEnabled` and re-broadcasts via `cs4g:pins`. The
+  iframe's severity / action-type / Max-loading threshold widgets
+  were removed — they live in the shared rings strip and travel to
+  the iframe through the existing `cs4g:filters` envelope for
+  pin-layer filtering only.
+- **Modal layout — fixed-top anchoring**. The Manual Selection
+  and Combine Actions modals anchor their card to a fixed
+  viewport offset (`alignItems: flex-start; marginTop: 7.5vh;
+  maxHeight: 85vh`) instead of centering on 50 %. Switching
+  between Computed Pairs ↔ Explore Pairs or toggling a chip filter
+  no longer makes the title + filter header hop up and down as
+  the body grows / shrinks.
+- **Manual Selection — wide layout stickiness**. The Manual
+  Selection overlay used to collapse from the wide centered modal
+  back to the button-anchored dropdown when a chip filter
+  produced zero scored rows, which read as the modal closing
+  mid-interaction. The wide layout now sticks for as long as the
+  analysis has produced **any** scored action (a chip that filters
+  the table to zero rows just surfaces the existing "no relevant
+  action detected" warning + raw catalogue list).
+- **Action classification fixes**. Extended the `classifyActionType`
+  coupling regex from `/du poste\s+['"]/` to
+  `/(?:du|dans le)\s+poste\s+['"]/` so TRO-coupler actions phrased
+  `Ouverture OC '…' dans le poste '…'` are bucketed as
+  open-coupling instead of disco. Added `aid.startsWith('reco_')`
+  / `aid.startsWith('disco_')` short-circuits so the Action
+  Overview pins always classify identically to the Action Feed
+  cards (the previous mismatch caused reconnection / disconnection
+  pins to disappear when the corresponding chip filter was
+  active).
 
 ---
 

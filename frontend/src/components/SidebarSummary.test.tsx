@@ -43,6 +43,21 @@ describe('SidebarSummary', () => {
         expect(onContingencyZoom).toHaveBeenCalledWith('LINE_A');
     });
 
+    it('uses the ⚡ lightning pictogram for the Contingency label (replaces the old 🎯)', () => {
+        // Visual contract: the Contingency-as-fault metaphor is
+        // pinned on the ⚡ glyph across the sidebar (status line +
+        // picker card title). The legacy 🎯 must not regress here.
+        render(
+            <SidebarSummary
+                {...baseProps}
+                selectedContingency={['LINE_A']}
+            />,
+        );
+        const strip = screen.getByTestId('sticky-feed-summary');
+        expect(strip.textContent).toContain('⚡ Contingency');
+        expect(strip.textContent).not.toContain('🎯');
+    });
+
     it('renders the overloads row with per-line jump buttons', () => {
         const onOverloadClick = vi.fn();
         render(

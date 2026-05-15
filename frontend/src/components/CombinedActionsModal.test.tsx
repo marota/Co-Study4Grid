@@ -75,6 +75,24 @@ describe('CombinedActionsModal', () => {
         expect(screen.getByText('75.0%')).toBeInTheDocument();
     });
 
+    it('hides Computed Pairs rows whose max-ρ exceeds the Max-loading threshold', async () => {
+        // The Max-loading spinner in the shared ActionFilterRings
+        // must filter the Computed Pairs table the same way it
+        // filters the unitary score tables. The fixture's only pair
+        // is "estimated-only" (no ``simulated_max_rho``), so the
+        // threshold falls back to ``estimated_max_rho = 0.75`` (the
+        // 75.0 % the table renders by default). Setting the
+        // threshold to 70 % (0.70) must hide it; bumping it back to
+        // 100 % must restore the row.
+        render(<CombinedActionsModal {...defaultProps} />);
+        expect(screen.getByText('75.0%')).toBeInTheDocument();
+        const input = screen.getByTestId('sidebar-filter-threshold-input') as HTMLInputElement;
+        fireEvent.change(input, { target: { value: '70' } });
+        expect(screen.queryByText('75.0%')).not.toBeInTheDocument();
+        fireEvent.change(input, { target: { value: '100' } });
+        expect(screen.getByText('75.0%')).toBeInTheDocument();
+    });
+
     it('filters actions by category including LS in explore tab', async () => {
         const resultWithTypes: AnalysisResult = {
             ...mockAnalysisResult,

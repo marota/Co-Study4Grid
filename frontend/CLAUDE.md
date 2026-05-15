@@ -55,9 +55,27 @@ frontend/
     │   ├── Header.tsx, ActionFeed.tsx, OverloadPanel.tsx,
     │   ├── VisualizationPanel.tsx, ActionCard.tsx, ActionCardPopover.tsx,
     │   ├── ActionOverviewDiagram.tsx, ActionSearchDropdown.tsx,
-    │   ├── ActionTypeFilterChips.tsx   # Shared chip row driving Manual
-    │   │                               # Selection, Explore Pairs, Overview,
-    │   │                               # and the Action Feed (PR #109)
+    │   ├── ActionFilterRings.tsx       # Shared sidebar strip: severity ring
+    │   │                               # (4 colour-coded pictogram toggles
+    │   │                               # with single-click toggle + double-
+    │   │                               # click solo), action-type ring (7
+    │   │                               # uncoloured pictogram toggles with
+    │   │                               # single-select toggle-off), AND the
+    │   │                               # compact Max-loading threshold
+    │   │                               # spinner. Drives the shared
+    │   │                               # ActionOverviewFilters object the
+    │   │                               # Action Feed, Action Overview NAD,
+    │   │                               # Manual Selection modal, Combine
+    │   │                               # Actions modal and the Overflow
+    │   │                               # Analysis iframe all read from.
+    │   ├── ActionTypeFilterChips.tsx   # Legacy chip row — kept for the
+    │   │                               # Explore Pairs surface (PR #109)
+    │   ├── NoticesPanel.tsx,           # Sidebar-header pill that opens an
+    │   │                               # inline panel listing every active
+    │   │                               # notice (action-dict, monitoring
+    │   │                               # coverage, recommender thresholds).
+    │   │                               # Manual dismiss only — no auto-
+    │   │                               # hide on analysis lifecycle.
     │   ├── CombinedActionsModal.tsx, ComputedPairsTable.tsx,
     │   ├── DetachableTabHost.tsx, ErrorBoundary.tsx, ExplorePairsTab.tsx,
     │   ├── MemoizedSvgContainer.tsx, SldOverlay.tsx,

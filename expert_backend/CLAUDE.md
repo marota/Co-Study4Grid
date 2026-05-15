@@ -51,9 +51,14 @@ expert_backend/
 │   │                              # viewer. `inject_overlay(html)` grafts the
 │   │                              # cs4g `<style>` + `<script>` block (and
 │   │                              # pinGlyph.js) before `</body>` of the
-│   │                              # upstream alphaDeesp viewer so the served
-│   │                              # iframe carries the same pin layer / chip
-│   │                              # filters / SLD double-click bridge as the
+│   │                              # upstream alphaDeesp viewer. The injected
+│   │                              # "Action pins filters" sidebar section
+│   │                              # is always visible and hosts the canonical
+│   │                              # pins on/off toggle + Show-unsimulated /
+│   │                              # Combined-only checkboxes only; severity
+│   │                              # / action-type / Max-loading widgets were
+│   │                              # moved to the React-side ActionFilterRings
+│   │                              # strip and travel via `cs4g:filters`.
 │   │                              # React Action Overview tab.
 │   └── sanitize.py                # NumPy → native-Python recursive coercion
 │                                  # (`sanitize_for_json`)

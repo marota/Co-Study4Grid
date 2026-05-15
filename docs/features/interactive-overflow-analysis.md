@@ -672,26 +672,42 @@ combined-action triage). Only the two pin layers are gated.
 
 The overlay injects an **Action pins filters** section appended at
 the BOTTOM of the upstream sidebar (separated from the layer
-toggles by a top border). The section is hidden by default and
-becomes visible only when the parent posts `visible: true`
-together with the pin payload.
+toggles by a top border). The section is **always visible** — its
+header hosts the canonical pins on/off toggle (📌 + checkbox), so
+the operator needs to reach it before any pin has been requested.
+When the toggle is off the section dims itself
+(`data-pins-enabled="false"` drives the CSS opacity + the
+`disabled` attribute on each remaining input).
 
-The panel mirrors every Action Overview filter chip:
-- `Solves overload` / `Low margin` / `Still overloaded` /
-  `Divergent / islanded` category chips with colour swatches.
-- `All` / `None` bulk-select pills.
-- `Max loading %` numeric input (0–300, stored × 100 internally).
+The panel keeps only the pin-scoped controls that don't live in the
+parent React app's `<ActionFilterRings>` strip:
+- The **pins on/off toggle** (📌 + checkbox in the panel header).
+  Posts `cs4g:overflow-pins-toggled { enabled }`; the parent flips
+  `overflowPinsEnabled` and re-broadcasts via the existing
+  `cs4g:pins` envelope so the iframe UI re-syncs.
 - `Show unsimulated` checkbox.
 - `Combined only` checkbox — restricts the graph to combined-action
   pins plus their two constituents (dimmed for context). Wired both
   ways through the `cs4g:filters` envelope: clicking it posts
   `{ ..., showCombinedOnly: true }` to the parent, and a parent-side
   toggle (Action Overview NAD) re-syncs the iframe checkbox.
-- `ALL DISCO RECO LS RC OPEN CLOSE PST` action-type chip row
-  (single-select).
-- A `📌 N` pin counter in the section header showing the number of
-  pins currently *rendered* (post-anchor-resolution count, mirroring
-  `overview-pin-counter`).
+- A `📌 N` pin counter in the section header. When pins are on
+  the counter shows the number of pins currently *rendered*
+  (post-anchor-resolution); when pins are off it falls back to the
+  displayable count (`lastPins.length`) so the operator sees at a
+  glance whether enabling the overlay is worth the visual cost.
+
+The severity (action-card colour) category chips, the bulk-select
+pills, the `ALL DISCO RECO LS RC OPEN CLOSE PST` action-type chip
+row and the **Max-loading threshold** input were removed from the
+iframe — they live in the parent React app's `<ActionFilterRings>`
+sidebar strip, which is the canonical edit surface for the whole
+UI (Action Feed, Action Overview, Manual Selection, Combine
+Actions, Overflow Analysis pins all consume the same
+`ActionOverviewFilters` object). The iframe still receives the
+threshold + category + action-type filters through the
+`cs4g:filters` envelope and applies them to the pin payload, but
+no longer renders widgets for them inside its own sidebar.
 
 **Chip visual** — mirrors the React `CategoryToggle` component
 (`frontend/src/components/ActionOverviewDiagram.tsx:1265`): no
@@ -708,11 +724,14 @@ read identically.
 
 | Direction | Wire format | Purpose |
 |---|---|---|
-| Parent → iframe | `{ type: 'cs4g:filters', filters: ActionOverviewFilters }` | Re-emit on every change to `overviewFilters` so the iframe panel reflects external changes (e.g. operator changed a chip on the Action Overview). |
-| Iframe → parent | `{ type: 'cs4g:overflow-filter-changed', filters: ActionOverviewFilters }` | Operator changed a chip in the iframe sidebar; parent calls `onOverviewFiltersChange(msg.filters)` so the Action Feed and the Action Overview NAD pins follow suit. |
+| Parent → iframe | `{ type: 'cs4g:filters', filters: ActionOverviewFilters }` | Re-emit on every change to `overviewFilters` so the iframe pin pipeline applies the latest threshold / categories / action-type. The iframe stores the value in its local `filterState` but no longer renders a control for it. |
+| Parent → iframe | `{ type: 'cs4g:pins', pins, visible }` | Pushes the pin payload + the on/off state. The iframe re-renders the pins layer and re-syncs the in-header pins toggle. |
+| Iframe → parent | `{ type: 'cs4g:overflow-filter-changed', filters: ActionOverviewFilters }` | Operator flipped a remaining iframe control (Show unsimulated / Combined only); parent calls `onOverviewFiltersChange(msg.filters)` so the rings + feed + Action Overview pins follow suit. |
+| Iframe → parent | `{ type: 'cs4g:overflow-pins-toggled', enabled }` | Operator flipped the canonical pins on/off toggle inside the iframe filter panel; parent flips `overflowPinsEnabled` and re-broadcasts `cs4g:pins`. |
 
 Both ends are eventually consistent — the parent is the single
-source of truth; the iframe just renders chips and posts changes.
+source of truth; the iframe just renders the remaining chips +
+on/off toggle and posts changes.
 
 ---
 
