@@ -114,7 +114,15 @@ export const classifyActionType = (
         || aid.includes('node_splitting')
         || desc.includes('coupl')
         || desc.includes('busbar')
-        || /du poste\s+['"]/.test(desc);
+        // Quoted-substation phrasing covers BOTH the recommender-generated
+        // "Ouverture du poste 'X'" template AND the operator-style
+        // "Ouverture OC '<dj>' dans le poste 'X'" phrasing used by TRO-
+        // coupler actions (PR #_; the missing OPEN pin at C.REGP6
+        // surfaced because the prior regex matched only "du poste"). The
+        // "dans le poste UNQUOTED" line-opening case (e.g. "DJ_OC dans
+        // le poste POSTE") still does NOT match because no quote follows
+        // — preserves the earlier regression fix.
+        || /(?:du|dans le)\s+poste\s+['"]/.test(desc);
 
     const opensViaSignal = t.includes('open_coupling')
         || aid.includes('open_coupling')
@@ -129,11 +137,20 @@ export const classifyActionType = (
 
     const isOpenCoupling = isCouplingSignal && opensViaSignal;
     const isCloseCoupling = isCouplingSignal && closesViaSignal;
+    // Id-prefix checks: ``disco_<line>`` and ``reco_<line>`` come
+    // straight out of the recommender's action-id template. They land
+    // here even when the score type isn't passed (e.g. the OVERVIEW pin
+    // filter, where description alone used to miss them) — so the feed
+    // and the overview agree on the bucket from the id alone.
     const isDisco = !isCouplingSignal && (
-        t.includes('disco') || t.includes('open_line') || t.includes('open_load') || desc.includes('ouverture')
+        aid.startsWith('disco_')
+        || t.includes('disco') || t.includes('open_line') || t.includes('open_load')
+        || desc.includes('ouverture')
     );
     const isReco = !isCouplingSignal && (
-        t.includes('reco') || t.includes('close_line') || t.includes('close_load') || desc.includes('fermeture')
+        aid.startsWith('reco_')
+        || t.includes('reco') || t.includes('close_line') || t.includes('close_load')
+        || desc.includes('fermeture')
     );
     // PST / LS / RC classifiers defer to the coupling checks above so
     // a string like "PST" appearing inside a coupling description

@@ -47,6 +47,43 @@ describe('classifyActionType', () => {
         expect(classifyActionType('some_id', "Fermeture du poste 'VL_FAR'", null)).toBe('close');
     });
 
+    it('classifies "Ouverture OC ... dans le poste \'X\'" (TRO-coupler) as OPEN coupling', () => {
+        // Operator-style description used for TRO-coupler open actions —
+        // the coupling phrasing is "dans le poste 'X'" rather than the
+        // recommender's "du poste 'X'". Both must read as coupling so
+        // the overview pin and the feed card share the same bucket
+        // (the un-quoted "dans le poste POSTE" line-opening case stays
+        // in the disco bucket — see the regex comment for why).
+        expect(classifyActionType(
+            '466f2c03-90ce-401e-a458-fa177ad45abc_C.REGP6',
+            "Ouverture OC 'C.REG6TRO.1AB DJ_OC' dans le poste 'C.REGP6'",
+            null,
+        )).toBe('open');
+    });
+
+    it('keeps "DJ_OC dans le poste UNQUOTED" classified as DISCO (no quote → not coupling)', () => {
+        // Regression guard: the substation-name-without-quotes phrasing
+        // is the line-opening case the previous regex was tuned around.
+        // With the extended (du|dans le) regex still requiring a
+        // following quote/apostrophe, the line action keeps its bucket.
+        expect(classifyActionType(
+            'some_id',
+            'DJ_OC dans le poste POSTE — Ouverture de la ligne X',
+            null,
+        )).toBe('disco');
+    });
+
+    it('classifies a "reco_X" action by id alone (no scoreType, no desc marker)', () => {
+        // Overview pin filter only has id + description in scope; this
+        // case used to vanish from the overview because reco_X actions
+        // often have no "fermeture" word in the description.
+        expect(classifyActionType('reco_GEN.PY762', 'Reconnect GEN.PY762', null)).toBe('reco');
+    });
+
+    it('classifies a "disco_X" action by id alone (no scoreType, no desc marker)', () => {
+        expect(classifyActionType('disco_LINE_A', 'Open line LINE_A', null)).toBe('disco');
+    });
+
     it('classifies "Ouverture de la ligne X" as DISCO', () => {
         expect(classifyActionType('some_id', "Ouverture de la ligne 'LINE_A'", null)).toBe('disco');
     });
