@@ -174,19 +174,22 @@ class TestInjectOverlay:
         assert "enabled: !!ev.target.checked" in out
 
     def test_filter_rows_disabled_when_pins_toggle_off(self) -> None:
-        """When pins are off the threshold / show-unsimulated /
-        combined-only inputs render disabled so they can't be edited
-        until the operator turns the overlay on. The
-        ``data-pins-enabled`` attribute on the panel drives the CSS
-        dim/disable rule; the JS sets the ``disabled`` attribute on
-        each input."""
+        """When pins are off the remaining filter inputs render
+        disabled so they can't be edited until the operator turns
+        the overlay on. The ``data-pins-enabled`` attribute on the
+        panel drives the CSS dim/disable rule; the JS sets the
+        ``disabled`` attribute on each surviving input
+        (show-unsimulated + combined-only — the Max-loading
+        threshold widget moved to the React-side ActionFilterRings)."""
         out = inject_overlay(_BASE_HTML)
         # CSS hook for dim/disable when pins are off.
         assert '#cs4g-filters[data-pins-enabled="false"]' in out
         # JS reflects the pins state on the panel attribute + on the
-        # disabled attr of each filter input.
+        # disabled attr of each surviving filter input.
         assert "data-pins-enabled" in out
-        assert "thr.disabled = !lastVisible" in out
+        # The threshold input no longer renders inside the iframe —
+        # any leftover ``thr.disabled`` line would be dead code.
+        assert "thr.disabled" not in out
         assert "showU.disabled = !lastVisible" in out
         assert "combinedOnly.disabled = !lastVisible" in out
 
