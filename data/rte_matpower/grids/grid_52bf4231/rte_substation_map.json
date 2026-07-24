@@ -1,0 +1,2078 @@
+{
+ "13": {
+  "substation": "TAVEL",
+  "confidence": "strict"
+ },
+ "35": {
+  "substation": "ALBER",
+  "confidence": "loose"
+ },
+ "36": {
+  "substation": "VAUJA",
+  "confidence": "loose"
+ },
+ "115": {
+  "substation": "TAVEL",
+  "confidence": "strict"
+ },
+ "116": {
+  "substation": "TAVEL",
+  "confidence": "strict"
+ },
+ "141": {
+  "substation": "ARGIA",
+  "confidence": "strict"
+ },
+ "147": {
+  "substation": "ARGOE",
+  "confidence": "strict"
+ },
+ "208": {
+  "substation": "GRAV5",
+  "confidence": "strict"
+ },
+ "267": {
+  "substation": "AVELI",
+  "confidence": "strict"
+ },
+ "279": {
+  "substation": "AVOI5",
+  "confidence": "loose"
+ },
+ "326": {
+  "substation": "ISSEL",
+  "confidence": "loose"
+ },
+ "352": {
+  "substation": "BARNA",
+  "confidence": "strict"
+ },
+ "353": {
+  "substation": "BARNA",
+  "confidence": "strict"
+ },
+ "370": {
+  "substation": "VAUJA",
+  "confidence": "loose"
+ },
+ "371": {
+  "substation": "ALBER",
+  "confidence": "loose"
+ },
+ "383": {
+  "substation": "BAYET",
+  "confidence": "strict"
+ },
+ "452": {
+  "substation": "BEZAU",
+  "confidence": "loose"
+ },
+ "462": {
+  "substation": "BIANC",
+  "confidence": "strict"
+ },
+ "475": {
+  "substation": "GRAV5",
+  "confidence": "strict"
+ },
+ "476": {
+  "substation": "GRAV5",
+  "confidence": "strict"
+ },
+ "497": {
+  "substation": "BRAUD",
+  "confidence": "loose"
+ },
+ "498": {
+  "substation": "BRAUD",
+  "confidence": "loose"
+ },
+ "499": {
+  "substation": "BRAUD",
+  "confidence": "loose"
+ },
+ "500": {
+  "substation": "BRAUD",
+  "confidence": "loose"
+ },
+ "504": {
+  "substation": "BEZAU",
+  "confidence": "loose"
+ },
+ "515": {
+  "substation": "N.SE1",
+  "confidence": "loose"
+ },
+ "525": {
+  "substation": "BOISS",
+  "confidence": "strict"
+ },
+ "583": {
+  "substation": "PRION",
+  "confidence": "loose"
+ },
+ "596": {
+  "substation": "BRAUD",
+  "confidence": "loose"
+ },
+ "619": {
+  "substation": "BREUI",
+  "confidence": "strict"
+ },
+ "665": {
+  "substation": "BOISS",
+  "confidence": "strict"
+ },
+ "666": {
+  "substation": "BOISS",
+  "confidence": "strict"
+ },
+ "667": {
+  "substation": "BOISS",
+  "confidence": "strict"
+ },
+ "668": {
+  "substation": "BOISS",
+  "confidence": "strict"
+ },
+ "686": {
+  "substation": "GAUGL",
+  "confidence": "loose"
+ },
+ "688": {
+  "substation": "GAUGL",
+  "confidence": "loose"
+ },
+ "756": {
+  "substation": "B.CAR",
+  "confidence": "strict"
+ },
+ "792": {
+  "substation": "B.MON",
+  "confidence": "loose"
+ },
+ "801": {
+  "substation": "CERN ",
+  "confidence": "loose"
+ },
+ "829": {
+  "substation": "CALA5",
+  "confidence": "strict"
+ },
+ "852": {
+  "substation": "CANTE",
+  "confidence": "strict"
+ },
+ "855": {
+  "substation": "CAPEL",
+  "confidence": "strict"
+ },
+ "897": {
+  "substation": "CATG3",
+  "confidence": "loose"
+ },
+ "898": {
+  "substation": "CATG3",
+  "confidence": "loose"
+ },
+ "899": {
+  "substation": "CATG3",
+  "confidence": "loose"
+ },
+ "900": {
+  "substation": "CATG3",
+  "confidence": "loose"
+ },
+ "920": {
+  "substation": "CAZAR",
+  "confidence": "strict"
+ },
+ "928": {
+  "substation": "CBRY ",
+  "confidence": "loose"
+ },
+ "942": {
+  "substation": "CERGY",
+  "confidence": "strict"
+ },
+ "943": {
+  "substation": "CERGY",
+  "confidence": "strict"
+ },
+ "947": {
+  "substation": "CERN ",
+  "confidence": "loose"
+ },
+ "962": {
+  "substation": "BOISS",
+  "confidence": "strict"
+ },
+ "970": {
+  "substation": "CHAIN",
+  "confidence": "loose"
+ },
+ "971": {
+  "substation": "CHAIN",
+  "confidence": "loose"
+ },
+ "983": {
+  "substation": "CHAN5",
+  "confidence": "strict"
+ },
+ "1006": {
+  "substation": "CHARP",
+  "confidence": "strict"
+ },
+ "1043": {
+  "substation": "RENAR",
+  "confidence": "loose"
+ },
+ "1044": {
+  "substation": "CHESN",
+  "confidence": "loose"
+ },
+ "1045": {
+  "substation": "RENAR",
+  "confidence": "loose"
+ },
+ "1047": {
+  "substation": "RENAR",
+  "confidence": "loose"
+ },
+ "1053": {
+  "substation": "CHEVA",
+  "confidence": "strict"
+ },
+ "1057": {
+  "substation": "CHEY6",
+  "confidence": "loose"
+ },
+ "1060": {
+  "substation": "AVOI5",
+  "confidence": "loose"
+ },
+ "1063": {
+  "substation": "AVOI5",
+  "confidence": "loose"
+ },
+ "1064": {
+  "substation": "AVOI5",
+  "confidence": "loose"
+ },
+ "1069": {
+  "substation": "CHOO1",
+  "confidence": "strict"
+ },
+ "1070": {
+  "substation": "CHOO1",
+  "confidence": "strict"
+ },
+ "1081": {
+  "substation": "CIROL",
+  "confidence": "strict"
+ },
+ "1084": {
+  "substation": "CIVAU",
+  "confidence": "strict"
+ },
+ "1085": {
+  "substation": "CIVAU",
+  "confidence": "strict"
+ },
+ "1114": {
+  "substation": "COCHE",
+  "confidence": "strict"
+ },
+ "1202": {
+  "substation": "CORNI",
+  "confidence": "loose"
+ },
+ "1223": {
+  "substation": "COULA",
+  "confidence": "loose"
+ },
+ "1247": {
+  "substation": "CPNIE",
+  "confidence": "loose"
+ },
+ "1271": {
+  "substation": "CRENE",
+  "confidence": "strict"
+ },
+ "1280": {
+  "substation": "BOISS",
+  "confidence": "strict"
+ },
+ "1281": {
+  "substation": "BOISS",
+  "confidence": "strict"
+ },
+ "1302": {
+  "substation": "COULA",
+  "confidence": "loose"
+ },
+ "1303": {
+  "substation": "COULA",
+  "confidence": "loose"
+ },
+ "1304": {
+  "substation": "COULA",
+  "confidence": "loose"
+ },
+ "1305": {
+  "substation": "COULA",
+  "confidence": "loose"
+ },
+ "1339": {
+  "substation": "CLERA",
+  "confidence": "strict"
+ },
+ "1468": {
+  "substation": "DAMBR",
+  "confidence": "strict"
+ },
+ "1501": {
+  "substation": "P.AND",
+  "confidence": "loose"
+ },
+ "1524": {
+  "substation": "AVOI5",
+  "confidence": "loose"
+ },
+ "1542": {
+  "substation": "DOMLO",
+  "confidence": "strict"
+ },
+ "1548": {
+  "substation": "CANTE",
+  "confidence": "strict"
+ },
+ "1584": {
+  "substation": "TABAR",
+  "confidence": "loose"
+ },
+ "1585": {
+  "substation": "TABAR",
+  "confidence": "loose"
+ },
+ "1586": {
+  "substation": "TABAR",
+  "confidence": "loose"
+ },
+ "1587": {
+  "substation": "TABAR",
+  "confidence": "loose"
+ },
+ "1592": {
+  "substation": "ECHAL",
+  "confidence": "strict"
+ },
+ "1608": {
+  "substation": "EGUZO",
+  "confidence": "strict"
+ },
+ "1702": {
+  "substation": "SSAVO",
+  "confidence": "loose"
+ },
+ "1703": {
+  "substation": "SSAVO",
+  "confidence": "loose"
+ },
+ "1750": {
+  "substation": "MUHLB",
+  "confidence": "loose"
+ },
+ "1751": {
+  "substation": "MUHLB",
+  "confidence": "loose"
+ },
+ "1774": {
+  "substation": "FLAMA",
+  "confidence": "loose"
+ },
+ "1775": {
+  "substation": "FLAMA",
+  "confidence": "loose"
+ },
+ "1776": {
+  "substation": "FLAMA",
+  "confidence": "loose"
+ },
+ "1777": {
+  "substation": "FLAMA",
+  "confidence": "loose"
+ },
+ "1835": {
+  "substation": "FRASN",
+  "confidence": "strict"
+ },
+ "1937": {
+  "substation": "GATI5",
+  "confidence": "strict"
+ },
+ "1942": {
+  "substation": "GAUDI",
+  "confidence": "strict"
+ },
+ "1944": {
+  "substation": "GAUGL",
+  "confidence": "loose"
+ },
+ "1952": {
+  "substation": "CHEVA",
+  "confidence": "strict"
+ },
+ "1969": {
+  "substation": "GEN.P",
+  "confidence": "strict"
+ },
+ "2023": {
+  "substation": "CANTE",
+  "confidence": "strict"
+ },
+ "2024": {
+  "substation": "CANTE",
+  "confidence": "strict"
+ },
+ "2063": {
+  "substation": "GRANZ",
+  "confidence": "strict"
+ },
+ "2068": {
+  "substation": "GRAV5",
+  "confidence": "strict"
+ },
+ "2069": {
+  "substation": "GRAV5",
+  "confidence": "strict"
+ },
+ "2070": {
+  "substation": "GRAV5",
+  "confidence": "strict"
+ },
+ "2071": {
+  "substation": "GRAV5",
+  "confidence": "strict"
+ },
+ "2072": {
+  "substation": "GRAV5",
+  "confidence": "strict"
+ },
+ "2073": {
+  "substation": "GRAV5",
+  "confidence": "strict"
+ },
+ "2080": {
+  "substation": "GREPI",
+  "confidence": "strict"
+ },
+ "2081": {
+  "substation": "GREPI",
+  "confidence": "strict"
+ },
+ "2097": {
+  "substation": "GROSN",
+  "confidence": "strict"
+ },
+ "2158": {
+  "substation": "CHEY6",
+  "confidence": "loose"
+ },
+ "2206": {
+  "substation": "HAVR5",
+  "confidence": "strict"
+ },
+ "2209": {
+  "substation": "HAVR5",
+  "confidence": "strict"
+ },
+ "2233": {
+  "substation": "HERS5",
+  "confidence": "strict"
+ },
+ "2254": {
+  "substation": "HOUDR",
+  "confidence": "loose"
+ },
+ "2298": {
+  "substation": "ISSEL",
+  "confidence": "strict"
+ },
+ "2345": {
+  "substation": "TAVEL",
+  "confidence": "strict"
+ },
+ "2359": {
+  "substation": "JUMEA",
+  "confidence": "strict"
+ },
+ "2360": {
+  "substation": "JUMEA",
+  "confidence": "strict"
+ },
+ "2469": {
+  "substation": "CHAN5",
+  "confidence": "strict"
+ },
+ "2478": {
+  "substation": "LATEN",
+  "confidence": "strict"
+ },
+ "2481": {
+  "substation": "LAUNA",
+  "confidence": "strict"
+ },
+ "2529": {
+  "substation": "LESQU",
+  "confidence": "strict"
+ },
+ "2579": {
+  "substation": "LOGEL",
+  "confidence": "strict"
+ },
+ "2601": {
+  "substation": "LONNY",
+  "confidence": "strict"
+ },
+ "2617": {
+  "substation": "LOUIS",
+  "confidence": "strict"
+ },
+ "2618": {
+  "substation": "LOUIS",
+  "confidence": "strict"
+ },
+ "2725": {
+  "substation": "MAMBE",
+  "confidence": "strict"
+ },
+ "2731": {
+  "substation": "GRAV5",
+  "confidence": "strict"
+ },
+ "2773": {
+  "substation": "MARL6",
+  "confidence": "strict"
+ },
+ "2781": {
+  "substation": "MARMA",
+  "confidence": "strict"
+ },
+ "2792": {
+  "substation": "MARSI",
+  "confidence": "strict"
+ },
+ "2797": {
+  "substation": "MARTY",
+  "confidence": "strict"
+ },
+ "2798": {
+  "substation": "MARTY",
+  "confidence": "strict"
+ },
+ "2810": {
+  "substation": "MASTA",
+  "confidence": "loose"
+ },
+ "2845": {
+  "substation": "LONNY",
+  "confidence": "strict"
+ },
+ "2862": {
+  "substation": "FLAMA",
+  "confidence": "loose"
+ },
+ "2908": {
+  "substation": "MEZE5",
+  "confidence": "strict"
+ },
+ "2933": {
+  "substation": "BOISS",
+  "confidence": "strict"
+ },
+ "2963": {
+  "substation": "MOLIE",
+  "confidence": "strict"
+ },
+ "2986": {
+  "substation": "MORBR",
+  "confidence": "loose"
+ },
+ "2987": {
+  "substation": "MORBR",
+  "confidence": "loose"
+ },
+ "3028": {
+  "substation": "MOULA",
+  "confidence": "strict"
+ },
+ "3051": {
+  "substation": "CLERA",
+  "confidence": "strict"
+ },
+ "3075": {
+  "substation": "BROMM",
+  "confidence": "loose"
+ },
+ "3076": {
+  "substation": "BROMM",
+  "confidence": "loose"
+ },
+ "3077": {
+  "substation": "BROMM",
+  "confidence": "loose"
+ },
+ "3121": {
+  "substation": "MUHLB",
+  "confidence": "loose"
+ },
+ "3153": {
+  "substation": "M.LAN",
+  "confidence": "strict"
+ },
+ "3171": {
+  "substation": "M.SEI",
+  "confidence": "strict"
+ },
+ "3172": {
+  "substation": "M.SEI",
+  "confidence": "loose"
+ },
+ "3198": {
+  "substation": "NEOUL",
+  "confidence": "strict"
+ },
+ "3248": {
+  "substation": "HOUDR",
+  "confidence": "loose"
+ },
+ "3254": {
+  "substation": "N.SE1",
+  "confidence": "loose"
+ },
+ "3255": {
+  "substation": "N.SE1",
+  "confidence": "loose"
+ },
+ "3335": {
+  "substation": "PALUE",
+  "confidence": "loose"
+ },
+ "3336": {
+  "substation": "PALUE",
+  "confidence": "loose"
+ },
+ "3337": {
+  "substation": "PALUE",
+  "confidence": "loose"
+ },
+ "3338": {
+  "substation": "PALUE",
+  "confidence": "loose"
+ },
+ "3386": {
+  "substation": "CBRY ",
+  "confidence": "loose"
+ },
+ "3390": {
+  "substation": "PENL5",
+  "confidence": "loose"
+ },
+ "3391": {
+  "substation": "PENL5",
+  "confidence": "loose"
+ },
+ "3392": {
+  "substation": "PENL5",
+  "confidence": "loose"
+ },
+ "3434": {
+  "substation": "PICOC",
+  "confidence": "strict"
+ },
+ "3451": {
+  "substation": "PLAUD",
+  "confidence": "strict"
+ },
+ "3494": {
+  "substation": "MEZE5",
+  "confidence": "strict"
+ },
+ "3495": {
+  "substation": "MEZE5",
+  "confidence": "strict"
+ },
+ "3496": {
+  "substation": "MEZE5",
+  "confidence": "strict"
+ },
+ "3497": {
+  "substation": "MEZE5",
+  "confidence": "strict"
+ },
+ "3534": {
+  "substation": "PREGU",
+  "confidence": "strict"
+ },
+ "3535": {
+  "substation": "PREGU",
+  "confidence": "strict"
+ },
+ "3548": {
+  "substation": "PRION",
+  "confidence": "loose"
+ },
+ "3599": {
+  "substation": "P.AND",
+  "confidence": "loose"
+ },
+ "3600": {
+  "substation": "P.AND",
+  "confidence": "loose"
+ },
+ "3625": {
+  "substation": "ECHAL",
+  "confidence": "strict"
+ },
+ "3636": {
+  "substation": "P.GAS",
+  "confidence": "loose"
+ },
+ "3637": {
+  "substation": "MORBR",
+  "confidence": "loose"
+ },
+ "3645": {
+  "substation": "P.HA5",
+  "confidence": "strict"
+ },
+ "3725": {
+  "substation": "QUINT",
+  "confidence": "strict"
+ },
+ "3772": {
+  "substation": "REALT",
+  "confidence": "loose"
+ },
+ "3794": {
+  "substation": "P.GAS",
+  "confidence": "loose"
+ },
+ "3804": {
+  "substation": "CHESN",
+  "confidence": "loose"
+ },
+ "3825": {
+  "substation": "LONNY",
+  "confidence": "strict"
+ },
+ "3826": {
+  "substation": "LONNY",
+  "confidence": "strict"
+ },
+ "3827": {
+  "substation": "LONNY",
+  "confidence": "strict"
+ },
+ "3828": {
+  "substation": "LONNY",
+  "confidence": "strict"
+ },
+ "3831": {
+  "substation": "REVIG",
+  "confidence": "strict"
+ },
+ "3928": {
+  "substation": "ROUGE",
+  "confidence": "strict"
+ },
+ "3960": {
+  "substation": "BROMM",
+  "confidence": "loose"
+ },
+ "3965": {
+  "substation": "RULHA",
+  "confidence": "strict"
+ },
+ "4050": {
+  "substation": "SAUCA",
+  "confidence": "strict"
+ },
+ "4072": {
+  "substation": "MORBR",
+  "confidence": "loose"
+ },
+ "4091": {
+  "substation": "SCHEE",
+  "confidence": "strict"
+ },
+ "4132": {
+  "substation": "SEREI",
+  "confidence": "strict"
+ },
+ "4148": {
+  "substation": "SEUIL",
+  "confidence": "strict"
+ },
+ "4160": {
+  "substation": "SIERE",
+  "confidence": "strict"
+ },
+ "4161": {
+  "substation": "SIERE",
+  "confidence": "strict"
+ },
+ "4213": {
+  "substation": "ECHAL",
+  "confidence": "strict"
+ },
+ "4214": {
+  "substation": "ECHAL",
+  "confidence": "strict"
+ },
+ "4245": {
+  "substation": "SSAVO",
+  "confidence": "loose"
+ },
+ "4310": {
+  "substation": "CHAIN",
+  "confidence": "loose"
+ },
+ "4311": {
+  "substation": "CHAIN",
+  "confidence": "loose"
+ },
+ "4317": {
+  "substation": "SSELO",
+  "confidence": "strict"
+ },
+ "4488": {
+  "substation": "BOISS",
+  "confidence": "strict"
+ },
+ "4489": {
+  "substation": "BOISS",
+  "confidence": "strict"
+ },
+ "4528": {
+  "substation": "P.AND",
+  "confidence": "loose"
+ },
+ "4555": {
+  "substation": "TABAR",
+  "confidence": "loose"
+ },
+ "4571": {
+  "substation": "TAMAR",
+  "confidence": "loose"
+ },
+ "4593": {
+  "substation": "TERR6",
+  "confidence": "strict"
+ },
+ "4597": {
+  "substation": "TAVEL",
+  "confidence": "strict"
+ },
+ "4616": {
+  "substation": "TERR6",
+  "confidence": "strict"
+ },
+ "4617": {
+  "substation": "TERR6",
+  "confidence": "strict"
+ },
+ "4622": {
+  "substation": "P.GAS",
+  "confidence": "loose"
+ },
+ "4623": {
+  "substation": "P.GAS",
+  "confidence": "loose"
+ },
+ "4660": {
+  "substation": "TILL5",
+  "confidence": "strict"
+ },
+ "4661": {
+  "substation": "TILL5",
+  "confidence": "strict"
+ },
+ "4670": {
+  "substation": "FLAMA",
+  "confidence": "loose"
+ },
+ "4685": {
+  "substation": "TOURB",
+  "confidence": "strict"
+ },
+ "4700": {
+  "substation": "TRANS",
+  "confidence": "strict"
+ },
+ "4736": {
+  "substation": "TRI.P",
+  "confidence": "strict"
+ },
+ "4797": {
+  "substation": "CIVAU",
+  "confidence": "strict"
+ },
+ "4851": {
+  "substation": "VAUJA",
+  "confidence": "strict"
+ },
+ "4855": {
+  "substation": "BARNA",
+  "confidence": "strict"
+ },
+ "4885": {
+  "substation": "VERFE",
+  "confidence": "strict"
+ },
+ "4886": {
+  "substation": "CHAIN",
+  "confidence": "loose"
+ },
+ "4911": {
+  "substation": "VESLE",
+  "confidence": "strict"
+ },
+ "4929": {
+  "substation": "VIELM",
+  "confidence": "strict"
+ },
+ "4934": {
+  "substation": "CATG3",
+  "confidence": "loose"
+ },
+ "4935": {
+  "substation": "CATG3",
+  "confidence": "loose"
+ },
+ "4944": {
+  "substation": "VINCE",
+  "confidence": "strict"
+ },
+ "4973": {
+  "substation": "P.AND",
+  "confidence": "loose"
+ },
+ "4975": {
+  "substation": "VLECH",
+  "confidence": "strict"
+ },
+ "4986": {
+  "substation": "CIROL",
+  "confidence": "strict"
+ },
+ "4995": {
+  "substation": "VLERB",
+  "confidence": "loose"
+ },
+ "4996": {
+  "substation": "VLERB",
+  "confidence": "loose"
+ },
+ "5007": {
+  "substation": "MORBR",
+  "confidence": "loose"
+ },
+ "5093": {
+  "substation": "GRAV5",
+  "confidence": "strict"
+ },
+ "5094": {
+  "substation": "GRAV5",
+  "confidence": "strict"
+ },
+ "5101": {
+  "substation": "AVELI",
+  "confidence": "strict"
+ },
+ "5116": {
+  "substation": "MEZE5",
+  "confidence": "strict"
+ },
+ "5274": {
+  "substation": "RENAR",
+  "confidence": "loose"
+ },
+ "5675": {
+  "substation": "P.AND",
+  "confidence": "loose"
+ },
+ "5753": {
+  "substation": "SEUIL",
+  "confidence": "strict"
+ },
+ "5853": {
+  "substation": "PRION",
+  "confidence": "loose"
+ },
+ "5886": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "5887": {
+  "substation": "GRAV5",
+  "confidence": "loose"
+ },
+ "5890": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "5892": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "5893": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "5895": {
+  "substation": "MAMBE",
+  "confidence": "loose"
+ },
+ "5896": {
+  "substation": "NEOUL",
+  "confidence": "loose"
+ },
+ "5897": {
+  "substation": "GRAV5",
+  "confidence": "loose"
+ },
+ "5898": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "5899": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "5900": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "5901": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "5902": {
+  "substation": "GRAV5",
+  "confidence": "loose"
+ },
+ "5903": {
+  "substation": "B.CAR",
+  "confidence": "loose"
+ },
+ "5904": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "5905": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "5906": {
+  "substation": "HAVR5",
+  "confidence": "strict"
+ },
+ "5907": {
+  "substation": "P.ORG",
+  "confidence": "loose"
+ },
+ "5908": {
+  "substation": "LARCA",
+  "confidence": "loose"
+ },
+ "5909": {
+  "substation": "GRANZ",
+  "confidence": "loose"
+ },
+ "5910": {
+  "substation": "MAMBE",
+  "confidence": "loose"
+ },
+ "5912": {
+  "substation": "BREUI",
+  "confidence": "loose"
+ },
+ "5913": {
+  "substation": "MARTY",
+  "confidence": "loose"
+ },
+ "5914": {
+  "substation": "HOUDR",
+  "confidence": "strict"
+ },
+ "5915": {
+  "substation": "HAVR5",
+  "confidence": "loose"
+ },
+ "5917": {
+  "substation": "M.LAN",
+  "confidence": "loose"
+ },
+ "5918": {
+  "substation": "ARGIA",
+  "confidence": "strict"
+ },
+ "5919": {
+  "substation": "B.CAR",
+  "confidence": "strict"
+ },
+ "5920": {
+  "substation": "TOURB",
+  "confidence": "strict"
+ },
+ "5922": {
+  "substation": "CANTE",
+  "confidence": "loose"
+ },
+ "5923": {
+  "substation": "HAVR5",
+  "confidence": "strict"
+ },
+ "5925": {
+  "substation": "HOUDR",
+  "confidence": "loose"
+ },
+ "5927": {
+  "substation": "BIANC",
+  "confidence": "strict"
+ },
+ "5928": {
+  "substation": "SAUCA",
+  "confidence": "loose"
+ },
+ "5929": {
+  "substation": "ROUGE",
+  "confidence": "loose"
+ },
+ "5930": {
+  "substation": "VLARO",
+  "confidence": "loose"
+ },
+ "5932": {
+  "substation": "B.CAR",
+  "confidence": "loose"
+ },
+ "5933": {
+  "substation": "SAUCA",
+  "confidence": "loose"
+ },
+ "5934": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "5935": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "5936": {
+  "substation": "P.ORG",
+  "confidence": "loose"
+ },
+ "5937": {
+  "substation": "CLERA",
+  "confidence": "strict"
+ },
+ "5938": {
+  "substation": "VERFE",
+  "confidence": "loose"
+ },
+ "5939": {
+  "substation": "GRAV5",
+  "confidence": "loose"
+ },
+ "5940": {
+  "substation": "MARTY",
+  "confidence": "loose"
+ },
+ "5941": {
+  "substation": "MARL6",
+  "confidence": "loose"
+ },
+ "5942": {
+  "substation": "GRAV5",
+  "confidence": "loose"
+ },
+ "5943": {
+  "substation": "M.LAN",
+  "confidence": "loose"
+ },
+ "5944": {
+  "substation": "HAVR5",
+  "confidence": "strict"
+ },
+ "5945": {
+  "substation": "ARGIA",
+  "confidence": "strict"
+ },
+ "5946": {
+  "substation": "B.CAR",
+  "confidence": "strict"
+ },
+ "5947": {
+  "substation": "PENLY",
+  "confidence": "loose"
+ },
+ "5948": {
+  "substation": "CANTE",
+  "confidence": "loose"
+ },
+ "5950": {
+  "substation": "BIANC",
+  "confidence": "strict"
+ },
+ "5951": {
+  "substation": "CAZAR",
+  "confidence": "loose"
+ },
+ "5952": {
+  "substation": "ROUGE",
+  "confidence": "loose"
+ },
+ "5953": {
+  "substation": "PENLY",
+  "confidence": "loose"
+ },
+ "5954": {
+  "substation": "VLARO",
+  "confidence": "loose"
+ },
+ "5955": {
+  "substation": "GRAV5",
+  "confidence": "loose"
+ },
+ "5957": {
+  "substation": "CPNIE",
+  "confidence": "loose"
+ },
+ "5958": {
+  "substation": "ATTAQ",
+  "confidence": "loose"
+ },
+ "5959": {
+  "substation": "ARGOE",
+  "confidence": "loose"
+ },
+ "5960": {
+  "substation": "ROUGE",
+  "confidence": "loose"
+ },
+ "5962": {
+  "substation": "GRAV5",
+  "confidence": "loose"
+ },
+ "5964": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "5965": {
+  "substation": "HAVR5",
+  "confidence": "strict"
+ },
+ "5966": {
+  "substation": "VAUPA",
+  "confidence": "loose"
+ },
+ "5967": {
+  "substation": "AVELI",
+  "confidence": "loose"
+ },
+ "5969": {
+  "substation": "BIANC",
+  "confidence": "loose"
+ },
+ "5970": {
+  "substation": "FLAMA",
+  "confidence": "loose"
+ },
+ "5971": {
+  "substation": "ROUGE",
+  "confidence": "loose"
+ },
+ "5972": {
+  "substation": "TOURB",
+  "confidence": "loose"
+ },
+ "5973": {
+  "substation": "P.HA5",
+  "confidence": "loose"
+ },
+ "5975": {
+  "substation": "HAVR5",
+  "confidence": "loose"
+ },
+ "5976": {
+  "substation": "VAUPA",
+  "confidence": "loose"
+ },
+ "5977": {
+  "substation": "AVELI",
+  "confidence": "loose"
+ },
+ "5978": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "5979": {
+  "substation": "FLAMA",
+  "confidence": "loose"
+ },
+ "5980": {
+  "substation": "ROUGE",
+  "confidence": "loose"
+ },
+ "5981": {
+  "substation": "VAUPA",
+  "confidence": "loose"
+ },
+ "5982": {
+  "substation": "HAVR5",
+  "confidence": "loose"
+ },
+ "5983": {
+  "substation": "GROSN",
+  "confidence": "strict"
+ },
+ "5984": {
+  "substation": "P.HA5",
+  "confidence": "loose"
+ },
+ "5985": {
+  "substation": "BREUI",
+  "confidence": "loose"
+ },
+ "5986": {
+  "substation": "ROUGE",
+  "confidence": "loose"
+ },
+ "5987": {
+  "substation": "GRAV5",
+  "confidence": "loose"
+ },
+ "5988": {
+  "substation": "CAPEL",
+  "confidence": "loose"
+ },
+ "5989": {
+  "substation": "CAZAR",
+  "confidence": "loose"
+ },
+ "5990": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "5993": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "5994": {
+  "substation": "SIERE",
+  "confidence": "loose"
+ },
+ "5997": {
+  "substation": "N.MAI",
+  "confidence": "strict"
+ },
+ "5998": {
+  "substation": "GRAV5",
+  "confidence": "loose"
+ },
+ "6000": {
+  "substation": "CAZAR",
+  "confidence": "loose"
+ },
+ "6001": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6003": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6005": {
+  "substation": "MAMBE",
+  "confidence": "loose"
+ },
+ "6008": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6009": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6012": {
+  "substation": "CAZAR",
+  "confidence": "strict"
+ },
+ "6013": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6016": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6018": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6019": {
+  "substation": "FESS5",
+  "confidence": "loose"
+ },
+ "6021": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6022": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6023": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6024": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "6025": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6027": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6028": {
+  "substation": "SCHEE",
+  "confidence": "strict"
+ },
+ "6029": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6032": {
+  "substation": "NEOUL",
+  "confidence": "loose"
+ },
+ "6034": {
+  "substation": "MAMBE",
+  "confidence": "loose"
+ },
+ "6037": {
+  "substation": "NEOUL",
+  "confidence": "loose"
+ },
+ "6038": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6040": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6041": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6043": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6045": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6047": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6049": {
+  "substation": "BIANC",
+  "confidence": "loose"
+ },
+ "6050": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6051": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6054": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6055": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6057": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6058": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6059": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6060": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "6061": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6062": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "6063": {
+  "substation": "GRAV5",
+  "confidence": "loose"
+ },
+ "6066": {
+  "substation": "SIERE",
+  "confidence": "loose"
+ },
+ "6067": {
+  "substation": "MARL6",
+  "confidence": "loose"
+ },
+ "6069": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6072": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6073": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6074": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6076": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6078": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6080": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6081": {
+  "substation": "B.CAR",
+  "confidence": "loose"
+ },
+ "6084": {
+  "substation": "MARSI",
+  "confidence": "strict"
+ },
+ "6085": {
+  "substation": "CAZAR",
+  "confidence": "loose"
+ },
+ "6086": {
+  "substation": "SIERE",
+  "confidence": "loose"
+ },
+ "6087": {
+  "substation": "BIANC",
+  "confidence": "loose"
+ },
+ "6089": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6094": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6095": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6096": {
+  "substation": "B.CAR",
+  "confidence": "loose"
+ },
+ "6097": {
+  "substation": "MOULA",
+  "confidence": "strict"
+ },
+ "6100": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6101": {
+  "substation": "B.CAR",
+  "confidence": "loose"
+ },
+ "6102": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6105": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6110": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6111": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6113": {
+  "substation": "ARGIA",
+  "confidence": "loose"
+ },
+ "6114": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6115": {
+  "substation": "MARL6",
+  "confidence": "loose"
+ },
+ "6117": {
+  "substation": "CAZAR",
+  "confidence": "loose"
+ },
+ "6119": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6120": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6121": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6122": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6125": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6126": {
+  "substation": "SIERE",
+  "confidence": "loose"
+ },
+ "6131": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6132": {
+  "substation": "SIERE",
+  "confidence": "loose"
+ },
+ "6133": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6134": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6135": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6137": {
+  "substation": "NEOUL",
+  "confidence": "loose"
+ },
+ "6139": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "6140": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "6141": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6142": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6143": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6144": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6145": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6146": {
+  "substation": "NEOUL",
+  "confidence": "loose"
+ },
+ "6147": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6148": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6149": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "6150": {
+  "substation": "VLARO",
+  "confidence": "loose"
+ },
+ "6151": {
+  "substation": "LOGEL",
+  "confidence": "loose"
+ },
+ "6153": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6154": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6155": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "6156": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6157": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6161": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6165": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6167": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6168": {
+  "substation": "MARL6",
+  "confidence": "strict"
+ },
+ "6169": {
+  "substation": "MAMBE",
+  "confidence": "loose"
+ },
+ "6170": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6173": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6175": {
+  "substation": "MARL6",
+  "confidence": "loose"
+ },
+ "6176": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6177": {
+  "substation": "VLARO",
+  "confidence": "loose"
+ },
+ "6178": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6181": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6182": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6183": {
+  "substation": "B.CAR",
+  "confidence": "loose"
+ },
+ "6185": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6187": {
+  "substation": "NEOUL",
+  "confidence": "loose"
+ },
+ "6188": {
+  "substation": "NEOUL",
+  "confidence": "loose"
+ },
+ "6189": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6191": {
+  "substation": "B.CAR",
+  "confidence": "loose"
+ },
+ "6192": {
+  "substation": "MARL6",
+  "confidence": "loose"
+ },
+ "6193": {
+  "substation": "BIANC",
+  "confidence": "loose"
+ },
+ "6197": {
+  "substation": "B.CAR",
+  "confidence": "loose"
+ },
+ "6198": {
+  "substation": "B.CAR",
+  "confidence": "loose"
+ },
+ "6200": {
+  "substation": "B.CAR",
+  "confidence": "loose"
+ },
+ "6201": {
+  "substation": "GRAV5",
+  "confidence": "loose"
+ },
+ "6203": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6205": {
+  "substation": "NEOUL",
+  "confidence": "loose"
+ },
+ "6206": {
+  "substation": "MARSI",
+  "confidence": "strict"
+ },
+ "6207": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6211": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6213": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6215": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6217": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6218": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6219": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6220": {
+  "substation": "BIANC",
+  "confidence": "loose"
+ },
+ "6224": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6225": {
+  "substation": "B.CAR",
+  "confidence": "loose"
+ },
+ "6227": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6231": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6232": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6233": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6235": {
+  "substation": "PRION",
+  "confidence": "loose"
+ },
+ "6236": {
+  "substation": "NEOUL",
+  "confidence": "loose"
+ },
+ "6238": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6239": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6240": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "6242": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6243": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6245": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6246": {
+  "substation": "MOULA",
+  "confidence": "strict"
+ },
+ "6247": {
+  "substation": "NEOUL",
+  "confidence": "loose"
+ },
+ "6248": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6249": {
+  "substation": "TRANS",
+  "confidence": "loose"
+ },
+ "6251": {
+  "substation": "E.HU7",
+  "confidence": "loose"
+ },
+ "6253": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6254": {
+  "substation": "MARL6",
+  "confidence": "loose"
+ },
+ "6255": {
+  "substation": "SIERE",
+  "confidence": "loose"
+ },
+ "6257": {
+  "substation": "VLARO",
+  "confidence": "loose"
+ },
+ "6258": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "6259": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "6261": {
+  "substation": "CERN ",
+  "confidence": "loose"
+ },
+ "6264": {
+  "substation": "CAZAR",
+  "confidence": "loose"
+ },
+ "6266": {
+  "substation": "BIANC",
+  "confidence": "loose"
+ },
+ "6267": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6268": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6270": {
+  "substation": "BIANC",
+  "confidence": "loose"
+ },
+ "6271": {
+  "substation": "MARL6",
+  "confidence": "loose"
+ },
+ "6276": {
+  "substation": "MARSI",
+  "confidence": "loose"
+ },
+ "6278": {
+  "substation": "BIANC",
+  "confidence": "loose"
+ },
+ "6281": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ },
+ "6282": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "6283": {
+  "substation": "CATG2",
+  "confidence": "loose"
+ },
+ "6285": {
+  "substation": "SCHEE",
+  "confidence": "loose"
+ }
+}

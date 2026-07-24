@@ -48,4 +48,7 @@ env/
 config_*.json
 .idea/
 *DS_Store
+# Decoded Game Mode networks: build artifacts of the committed *.gz.b64
+# (scripts/game_mode/decode_tht_grids.py), never committed themselves.
 data/rte7000_tht/grids/*/network.xiidm
+data/rte_matpower/grids/*/network.xiidm

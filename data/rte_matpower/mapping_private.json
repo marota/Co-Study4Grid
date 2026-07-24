@@ -1,0 +1,26 @@
+{
+  "grid_6be3a179": {
+    "case_label": "case6515rte",
+    "case_date": "2013-01-18T19:00",
+    "period_title": "January \u2014 Friday evening",
+    "network_path": "data/rte_matpower/grids/grid_6be3a179/network.xiidm"
+  },
+  "grid_52bf4231": {
+    "case_label": "case6468rte",
+    "case_date": "2013-01-14T06:30",
+    "period_title": "January \u2014 Monday morning",
+    "network_path": "data/rte_matpower/grids/grid_52bf4231/network.xiidm"
+  },
+  "grid_ca0a1d68": {
+    "case_label": "case6470rte",
+    "case_date": "2013-01-18T00:30",
+    "period_title": "January \u2014 Friday night",
+    "network_path": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm"
+  },
+  "grid_b1e24f79": {
+    "case_label": "case6495rte",
+    "case_date": "2013-01-15T19:00",
+    "period_title": "January \u2014 Tuesday evening",
+    "network_path": "data/rte_matpower/grids/grid_b1e24f79/network.xiidm"
+  }
+}

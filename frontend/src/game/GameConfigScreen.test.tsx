@@ -185,3 +185,45 @@ describe('GameConfigScreen — France THT mode', () => {
     expect(screen.getByTestId('game-start')).toBeDisabled();
   });
 });
+
+describe('GameConfigScreen — France EHV (Matpower) mode', () => {
+  it('is a third top-level mode, exclusive with demo and France THT', () => {
+    render(<GameConfigScreen onStart={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('game-mode-matpower'));
+    expect(screen.getByTestId('game-matpower-difficulty')).toBeInTheDocument();
+    expect(screen.getByTestId('game-matpower-count')).toBeInTheDocument();
+    expect(screen.getByTestId('game-matpower-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('game-matpower-preview')).toBeInTheDocument();
+    // The other two modes' panels are gone.
+    expect(screen.queryByTestId('game-tht-summary')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('game-studies-summary')).not.toBeInTheDocument();
+    // ...and switching back to France THT restores its own panel.
+    fireEvent.click(screen.getByTestId('game-mode-tht'));
+    expect(screen.getByTestId('game-tht-summary')).toBeInTheDocument();
+    expect(screen.queryByTestId('game-matpower-summary')).not.toBeInTheDocument();
+  });
+
+  it('samples its studies from the Matpower grids, not the THT ones', async () => {
+    const onStart = vi.fn();
+    render(<GameConfigScreen onStart={onStart} />);
+    fireEvent.change(screen.getByTestId('game-player'), { target: { value: 'amarot' } });
+    await waitFor(() => expect(sessionInput().value).toBe('amarot — session 3'));
+    fireEvent.click(screen.getByTestId('game-mode-matpower'));
+    fireEvent.change(screen.getByTestId('game-matpower-count'), { target: { value: '1' } });
+    fireEvent.click(screen.getByTestId('game-start'));
+
+    expect(onStart).toHaveBeenCalledTimes(1);
+    const cfg = onStart.mock.calls[0][0];
+    expect(cfg.studies).toHaveLength(1);
+    for (const s of cfg.studies) {
+      expect(s.networkPath).toContain('data/rte_matpower/grids/');
+      expect(s.contingencyElementId).toBeTruthy();
+    }
+  });
+
+  it('still requires a player name to start', () => {
+    render(<GameConfigScreen onStart={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('game-mode-matpower'));
+    expect(screen.getByTestId('game-start')).toBeDisabled();
+  });
+});

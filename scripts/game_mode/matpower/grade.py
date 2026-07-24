@@ -49,12 +49,19 @@ CONFIG_MINIMA = dict(
 
 
 def configure(grid_dir: Path):
+    # `update_config` auto-generates a disco_ action per line and WRITES THEM
+    # BACK into the action file (recommender_service ~L592). Pointing it at the
+    # committed actions.json would bloat that source ~8x (curated open_coupler
+    # ~450 KB -> ~3.7 MB of derived disco_) and dirty the tree on every grade.
+    # So the backend writes to a throwaway runtime copy instead, seeded from
+    # the curated file; the committed actions.json stays pristine. The runtime
+    # copy lives under data/ (gitignored) and is reused across contingencies.
     actions = grid_dir / "actions.json"
-    if not actions.exists():
-        actions.write_text("{}")  # backend auto-generates disco_* per line
+    runtime = grid_dir / "actions.runtime.json"
+    runtime.write_text(actions.read_text() if actions.exists() else "{}")
     cfg = ConfigRequest(
         network_path=str(grid_dir / "network.xiidm"),
-        action_file_path=str(actions),
+        action_file_path=str(runtime),
         layout_path=str(grid_dir / "grid_layout.json"),
         **CONFIG_MINIMA,
     )
@@ -114,7 +121,12 @@ def grade_contingency(cont: dict) -> dict:
     t_s1 = time.time() - t0
     overloads = step1.get("lines_overloaded", []) or []
     can_proceed = bool(step1.get("can_proceed"))
-    rec.update(n_overloads=len(overloads), can_proceed=can_proceed, t_step1=round(t_s1, 2))
+    # The lines themselves, not just their count: the scenario database shows
+    # the player which lines to bring back under the limit, and it must be the
+    # RECOMMENDER's view (monitoring_factor 0.95, base-relative) rather than
+    # the screening's, since that is what the session will be judged against.
+    rec.update(n_overloads=len(overloads), overloaded_lines=list(overloads),
+               can_proceed=can_proceed, t_step1=round(t_s1, 2))
     if not can_proceed or not overloads:
         rec["difficulty"] = "trivial"
         return rec
@@ -133,38 +145,91 @@ def grade_contingency(cont: dict) -> dict:
     return rec
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("grid")
-    ap.add_argument("--limit", type=int, default=0)
-    ap.add_argument("--time", action="store_true", help="timing dump, don't persist")
-    args = ap.parse_args()
-    grid_dir = DATA / "grids" / args.grid
-    n1 = json.loads((grid_dir / "n1_contingencies.json").read_text())
-    conts = [c for c in n1.get("contingencies", []) if not c.get("antenna")]
-    if args.limit:
-        conts = conts[: args.limit]
-    print(f"[grade] {args.grid}: {len(conts)} non-antenna constraining contingencies")
+def grade_all(conts, grid_dir: Path, done: set, sink=None, reset_each: bool = True):
+    """Grade `conts`, yielding ``(index, contingency_id, record)``.
+
+    ``reset_each`` re-runs :func:`configure` before EVERY contingency, and is
+    the default because it is a correctness requirement, not a tuning knob:
+    ``run_analysis_step2`` mutates the shared network state, and grading in a
+    plain loop poisons every subsequent contingency. Measured on
+    ``grid_6be3a179`` (case6515rte), 12 contingencies both ways: the first
+    three agree, then every remaining case collapses to ``trivial`` with zero
+    overloads — 9/12 verdicts wrong, and wrong in the silent direction (a real
+    ``hard`` scenario is dropped from the database as "nothing to solve").
+
+    Reloading the 20 MB network each time costs ~4x (2.4 s -> 10.6 s per
+    contingency on that grid). That is the price of a correct database.
+    """
     configure(grid_dir)
-    print("[grade] recommender configured OK")
-    graded_path = grid_dir / "graded.jsonl"
-    done = set()
-    if graded_path.exists() and not args.time:
-        for line in graded_path.read_text().splitlines():
-            if line.strip():
-                done.add(json.loads(line)["contingency_id"])
-    t0 = time.time()
     for i, cont in enumerate(conts):
         cid = cont.get("tripped_line") or cont.get("contingency_id")
         if cid in done:
             continue
+        if reset_each and i:
+            configure(grid_dir)
         rec = grade_contingency(cont)
-        if not args.time:
+        if sink is not None:
+            sink(rec)
+        yield i, cid, rec
+
+
+def grids_to_grade(names) -> list[str]:
+    """``all`` expands to every built grid, in a stable order."""
+    if list(names) == ["all"]:
+        return sorted(d.name for d in (DATA / "grids").iterdir() if d.is_dir())
+    return list(names)
+
+
+def grade_grid(grid: str, limit: int = 0, persist: bool = True,
+               reset_each: bool = True) -> int:
+    grid_dir = DATA / "grids" / grid
+    n1 = json.loads((grid_dir / "n1_contingencies.json").read_text())
+    conts = [c for c in n1.get("contingencies", []) if not c.get("antenna")]
+    if limit:
+        conts = conts[:limit]
+    graded_path = grid_dir / "graded.jsonl"
+    done = set()
+    if graded_path.exists() and persist:
+        for line in graded_path.read_text().splitlines():
+            if line.strip():
+                done.add(json.loads(line)["contingency_id"])
+    todo = len(conts) - len(done & {c.get("tripped_line") for c in conts})
+    print(f"[grade] {grid}: {len(conts)} non-antenna constraining "
+          f"contingencies, {todo} à faire ({len(done)} déjà gradées)")
+
+    def sink(rec):
+        if persist:
             with graded_path.open("a") as f:
                 f.write(json.dumps(rec) + "\n")
-        print(f"  [{i+1}/{len(conts)}] {cid}: {rec}")
-    print(f"[grade] {len(conts)} contingencies in {time.time()-t0:.0f}s "
-          f"({(time.time()-t0)/max(1,len(conts)):.1f}s each)")
+
+    t0 = time.time()
+    n = 0
+    for i, cid, rec in grade_all(conts, grid_dir, done, sink, reset_each):
+        n += 1
+        print(f"  [{i+1}/{len(conts)}] {cid}: {rec.get('difficulty')} "
+              f"({rec.get('n_overloads')} surcharges, "
+              f"{rec.get('t_step1', 0) + rec.get('t_step2', 0):.1f}s)")
+    dt = time.time() - t0
+    print(f"[grade] {grid}: {n} gradées en {dt:.0f}s ({dt/max(1, n):.1f}s each)")
+    return n
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("grid", nargs="+",
+                    help="grid id(s), ou 'all' pour tous les grids construits")
+    ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--time", action="store_true", help="timing dump, don't persist")
+    ap.add_argument("--no-reset", action="store_true",
+                    help="NE PAS re-configurer le recommender entre les "
+                         "contingences. Produit des verdicts FAUX (mesuré : "
+                         "9/12 divergents, tout s'effondre en 'trivial') — "
+                         "réservé au chronométrage brut.")
+    args = ap.parse_args()
+    total = 0
+    for grid in grids_to_grade(args.grid):
+        total += grade_grid(grid, args.limit, not args.time, not args.no_reset)
+    print(f"[grade] total {total} contingences gradées")
 
 
 if __name__ == "__main__":

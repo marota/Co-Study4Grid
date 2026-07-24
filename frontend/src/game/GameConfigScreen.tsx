@@ -16,6 +16,8 @@ import {
   RTE7000_TIERS,
   sampleRte7000,
   type Rte7000Difficulty,
+  MATPOWER_TIERS,
+  sampleMatpower,
 } from './presets';
 import type { GameSessionConfig, GameStudy } from './types';
 
@@ -31,9 +33,64 @@ const PREVIEW_SRC: Record<Difficulty, string> = {
   high: '/game/preview-high.svg',
 };
 
-// France THT map (the RTE7000 400/225 kV backbone). All four snapshots share
-// the same topology, so one map represents every difficulty tier.
-const RTE7000_PREVIEW_SRC = '/game/preview-tht.svg';
+// The difficulty-graded scenario families. Both are played the same way — pick
+// a level, pick how many cases, the studies are sampled — so the screen carries
+// ONE set of branches parameterised by family rather than one per family.
+// `key` drives the data-testids (`game-mode-tht`, `game-tht-count`, …), which
+// is why it must stay stable.
+type GradedMode = 'tht' | 'matpower';
+type GameMode = 'demo' | GradedMode;
+
+interface GradedFamily {
+  key: GradedMode;
+  button: string;
+  buttonBlurb: string;
+  short: string;
+  tiers: { id: Rte7000Difficulty; label: string; blurb: string; studies: GameStudy[] }[];
+  sample: (d: Rte7000Difficulty, n: number, seed?: number) => GameStudy[];
+  // Network map shown on the landing page, generated from each grid's
+  // grid_layout.json by scripts/game_mode/gen_network_previews.py and served
+  // from public/ so it ships with the same-origin SPA on the HuggingFace Space.
+  preview: string;
+  previewAlt: string;
+  previewCaption: string;
+  summaryTail: string;
+  configHint: string;
+}
+
+const GRADED: Record<GradedMode, GradedFamily> = {
+  tht: {
+    key: 'tht',
+    button: '🇫🇷 France THT — graded',
+    buttonBlurb: 'Real reconstructed French THT snapshots, graded easy / medium / hard — pick a '
+      + 'level and how many cases to play.',
+    short: 'France THT',
+    tiers: RTE7000_TIERS,
+    sample: sampleRte7000,
+    preview: '/game/preview-tht.svg',
+    previewAlt: 'France THT (RTE7000) network map',
+    previewCaption: 'The France THT network — the 400 kV backbone in red, 225 kV in green.',
+    summaryTail: 'the reconstructed France THT grid snapshots',
+    configHint: 'France THT: choose the difficulty level and number of cases above; '
+      + 'studies are sampled automatically.',
+  },
+  matpower: {
+    key: 'matpower',
+    button: '⚡ France EHV (Matpower) — graded',
+    buttonBlurb: 'The public MATPOWER RTE cases — real 2013 French EHV operating points, rebuilt '
+      + 'with busbars and couplers so topological levers exist. Far more stressed than the THT set.',
+    short: 'France EHV (Matpower)',
+    tiers: MATPOWER_TIERS,
+    sample: sampleMatpower,
+    preview: '/game/preview-matpower.svg',
+    previewAlt: 'France EHV (Matpower) network map',
+    previewCaption: 'The MATPOWER RTE 400 kV backbone, positioned on France by electrical-distance '
+      + 'match against a named THT snapshot.',
+    summaryTail: 'the four MATPOWER RTE operating points',
+    configHint: 'France EHV (Matpower): choose the difficulty level and number of cases above; '
+      + 'studies are sampled automatically.',
+  },
+};
 
 const card: React.CSSProperties = {
   background: colors.surfaceRaised, border: `1px solid ${colors.border}`,
@@ -99,13 +156,16 @@ export default function GameConfigScreen({ onStart }: GameConfigScreenProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [previewError, setPreviewError] = useState(false);
 
-  // Top-level mode: the European demo grid (curated reference studies) vs the
-  // France THT difficulty-graded scenario database (sampled by level).
-  const [mode, setMode] = useState<'demo' | 'tht'>('demo');
+  // Top-level mode: the European demo grid (curated reference studies) vs one
+  // of the difficulty-graded scenario databases (sampled by level).
+  const [mode, setMode] = useState<GameMode>('demo');
   const [thtDifficulty, setThtDifficulty] = useState<Rte7000Difficulty>('easy');
   const [numCases, setNumCases] = useState(5);
-  const thtTier = RTE7000_TIERS.find((t) => t.id === thtDifficulty) ?? RTE7000_TIERS[0];
-  const thtPoolSize = thtTier.studies.length;
+  const graded = mode === 'demo' ? null : GRADED[mode];
+  const gradedTier = graded
+    ? (graded.tiers.find((t) => t.id === thtDifficulty) ?? graded.tiers[0])
+    : null;
+  const thtPoolSize = gradedTier?.studies.length ?? 0;
   const thtCases = Math.min(numCases, thtPoolSize);
 
   const timerSeconds = minutes * 60 + seconds;
@@ -187,7 +247,7 @@ export default function GameConfigScreen({ onStart }: GameConfigScreenProps) {
   };
 
   const needPlayer = player.trim().length === 0;
-  const studiesValid = mode === 'tht'
+  const studiesValid = graded
     ? numCases >= 1 && thtPoolSize > 0
     : studies.length > 0 &&
       studies.every((s) => s.networkPath && s.actionFilePath && s.contingencyElementId);
@@ -201,10 +261,10 @@ export default function GameConfigScreen({ onStart }: GameConfigScreenProps) {
 
   const start = () => {
     if (!canStart) return;
-    // France THT: draw `numCases` scenarios of the chosen level across the
+    // Graded family: draw `numCases` scenarios of the chosen level across the
     // available graded cases (round-robined over the distinct grid snapshots).
-    const finalStudies = mode === 'tht'
-      ? sampleRte7000(thtDifficulty, numCases)
+    const finalStudies = graded
+      ? graded.sample(thtDifficulty, numCases)
       : studies;
     if (finalStudies.length === 0) return;
     onStart({
@@ -257,19 +317,20 @@ export default function GameConfigScreen({ onStart }: GameConfigScreenProps) {
                 The pan-European reference studies (and the French worst-case set).
               </div>
             </button>
-            <button data-testid="game-mode-tht"
-              style={{
-                ...btn(mode === 'tht' ? colors.brand : colors.surfaceMuted,
-                       mode === 'tht' ? colors.textOnBrand : colors.textSecondary),
-                flex: 1, padding: `${space[2]} ${space[3]}`, textAlign: 'left',
-              }}
-              onClick={() => setMode('tht')}>
-              🇫🇷 France THT — graded
-              <div style={{ fontSize: text.xs, fontWeight: 400, marginTop: space.half, opacity: 0.85 }}>
-                Real reconstructed French THT snapshots, graded easy / medium / hard — pick a
-                level and how many cases to play.
-              </div>
-            </button>
+            {Object.values(GRADED).map((fam) => (
+              <button key={fam.key} data-testid={`game-mode-${fam.key}`}
+                style={{
+                  ...btn(mode === fam.key ? colors.brand : colors.surfaceMuted,
+                         mode === fam.key ? colors.textOnBrand : colors.textSecondary),
+                  flex: 1, padding: `${space[2]} ${space[3]}`, textAlign: 'left',
+                }}
+                onClick={() => setMode(fam.key)}>
+                {fam.button}
+                <div style={{ fontSize: text.xs, fontWeight: 400, marginTop: space.half, opacity: 0.85 }}>
+                  {fam.buttonBlurb}
+                </div>
+              </button>
+            ))}
           </div>
         </div>
 
@@ -285,13 +346,13 @@ export default function GameConfigScreen({ onStart }: GameConfigScreenProps) {
             </p>
           </div>
 
-          {mode === 'tht' && (
+          {graded && (
             <div style={{ display: 'flex', gap: space[4], marginTop: space[3], alignItems: 'flex-end', flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 220 }}>
                 <label style={labelStyle}>Difficulty level</label>
-                <select data-testid="game-tht-difficulty" style={inputStyle} value={thtDifficulty}
+                <select data-testid={`game-${graded.key}-difficulty`} style={inputStyle} value={thtDifficulty}
                   onChange={(e) => setThtDifficulty(e.target.value as Rte7000Difficulty)}>
-                  {RTE7000_TIERS.map((t) => (
+                  {graded.tiers.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.id.charAt(0).toUpperCase() + t.id.slice(1)} ({t.studies.length} cases)
                     </option>
@@ -300,7 +361,7 @@ export default function GameConfigScreen({ onStart }: GameConfigScreenProps) {
               </div>
               <div>
                 <label style={labelStyle}>Number of cases</label>
-                <input type="number" data-testid="game-tht-count" min={1} max={thtPoolSize} value={numCases}
+                <input type="number" data-testid={`game-${graded.key}-count`} min={1} max={thtPoolSize} value={numCases}
                   style={{ ...inputStyle, width: 110 }}
                   onChange={(e) => setNumCases(Math.min(thtPoolSize, Math.max(1, Number(e.target.value))))} />
               </div>
@@ -356,35 +417,35 @@ export default function GameConfigScreen({ onStart }: GameConfigScreenProps) {
             alignItems: 'baseline', marginBottom: space[2], gap: space[2],
           }}>
             <h2 style={{ margin: 0, fontSize: text.lg }}>
-              This session — {mode === 'tht'
+              This session — {graded
                 ? `${thtCases} case${thtCases === 1 ? '' : 's'}`
                 : `${studies.length} stud${studies.length === 1 ? 'y' : 'ies'}`}
             </h2>
             <span style={{ fontSize: text.xs, color: colors.textTertiary }}>
-              {mode === 'tht' ? `France THT · ${thtDifficulty}` : tier.label}
+              {graded ? `${graded.short} · ${thtDifficulty}` : tier.label}
             </span>
           </div>
 
-          {mode === 'tht' ? (
+          {graded ? (
             <>
-              <p data-testid="game-tht-summary" style={{ color: colors.textSecondary, fontSize: text.sm }}>
+              <p data-testid={`game-${graded.key}-summary`} style={{ color: colors.textSecondary, fontSize: text.sm }}>
                 {thtCases} <strong>{thtDifficulty}</strong> case{thtCases === 1 ? '' : 's'} will be
                 drawn at random from the {thtPoolSize} available and played in sequence, spread across
-                the reconstructed France THT grid snapshots. Dates are hidden — each is titled by
+                {' '}{graded.summaryTail}. Dates are hidden — each is titled by
                 month, weekday and time-of-day only.
               </p>
               {!previewError && (
-                <figure data-testid="game-tht-preview" style={{ margin: `${space[3]} 0 0` }}>
+                <figure data-testid={`game-${graded.key}-preview`} style={{ margin: `${space[3]} 0 0` }}>
                   <div style={{
                     border: `1px solid ${colors.borderSubtle}`, borderRadius: radius.md,
                     background: colors.surface, padding: space[2], overflow: 'hidden',
                   }}>
-                    <img src={RTE7000_PREVIEW_SRC} alt="France THT (RTE7000) network map"
+                    <img src={graded.preview} alt={graded.previewAlt}
                       loading="lazy" onError={() => setPreviewError(true)}
                       style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 320, objectFit: 'contain' }} />
                   </div>
                   <figcaption style={{ color: colors.textTertiary, fontSize: text.xs, marginTop: space[1] }}>
-                    The France THT network — the 400 kV backbone in red, 225 kV in green.
+                    {graded.previewCaption}
                   </figcaption>
                 </figure>
               )}
@@ -478,9 +539,7 @@ export default function GameConfigScreen({ onStart }: GameConfigScreenProps) {
                 )}
               </div>
               <p style={{ color: colors.textTertiary, fontSize: text.xs, margin: `${space[2]} 0 0` }}>
-                {mode === 'tht'
-                  ? 'France THT: choose the difficulty level and number of cases above; studies are sampled automatically.'
-                  : tier.blurb}
+                {graded ? graded.configHint : tier.blurb}
               </p>
             </div>
 

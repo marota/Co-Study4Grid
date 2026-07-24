@@ -162,3 +162,18 @@ export {
   sampleRte7000,
 } from './rte7000Presets';
 export type { Rte7000Difficulty, Rte7000Tier } from './rte7000Presets';
+
+// --- RTE Matpower France EHV mode -------------------------------------------
+// Difficulty-graded scenarios on the public MATPOWER RTE cases, rebuilt as
+// NODE_BREAKER so topological levers exist (see
+// docs/features/game-mode-matpower.md). Generated from
+// data/rte_matpower/scenarios.json by
+// scripts/game_mode/matpower/gen_matpower_presets.py.
+export {
+  MATPOWER_TIERS,
+  MATPOWER_EASY,
+  MATPOWER_MEDIUM,
+  MATPOWER_HARD,
+  sampleMatpower,
+} from './matpowerPresets';
+export type { MatpowerDifficulty, MatpowerTier } from './matpowerPresets';
