@@ -65,7 +65,7 @@ def _source_bus_index(src):
         df = getattr(src, f"get_{getter}")(all_attributes=True)
         for eid, r in df.iterrows():
             feeder[(str(eid), 0)] = slot(r["voltage_level_id"], r["bus_id"])
-    return {vl: len(bs) for vl, bs in order.items()}, feeder
+    return {vl: len(bs) for vl, bs in order.items()}, feeder, dict(order)
 
 
 def _busbar_counts(vls, deg, bus_sub, rte_struct, coupler_min, n_src):
@@ -99,7 +99,16 @@ def _busbar_counts(vls, deg, bus_sub, rte_struct, coupler_min, n_src):
 
 def rebuild_node_breaker(src, bus_sub: dict | None = None,
                          rte_struct: dict | None = None,
-                         coupler_min: int = COUPLER_MIN_FEEDERS):
+                         coupler_min: int = COUPLER_MIN_FEEDERS,
+                         topo_plans: dict | None = None):
+    """``topo_plans`` (optional): real-RTE detailed-topology plans from
+    ``rte_topology.build_topology_plans`` / ``plans_from_network``, keyed by
+    ``(site, kv)``. A VL is covered when its source buses are EXACTLY the
+    plan's ``buses``; it then gets the real busbar count, the libTOPO-computed
+    feeder->busbar assignment and coupler states, instead of the generic
+    one-busbar-per-source-bus layout. Everything else falls back unchanged —
+    and the MATPOWER electrical nodes are preserved either way (couplers open
+    between node groups), so the load flow is identical by construction."""
     dst = pp.network.create_empty("matpower_nb")
     subs = src.get_substations()
     dst.create_substations(id=subs.index.tolist(),
@@ -113,8 +122,27 @@ def rebuild_node_breaker(src, bus_sub: dict | None = None,
         low_voltage_limit=vls["low_voltage_limit"].tolist(),
     )
     deg = _feeder_degree(src)
-    n_src, feeder_slot = _source_bus_index(src)
+    n_src, feeder_slot, src_order = _source_bus_index(src)
     nbus, n_rte = _busbar_counts(vls, deg, bus_sub, rte_struct, coupler_min, n_src)
+
+    # ---- join the real-topology plans onto this network's VLs -------------
+    def _bus_num(bid):
+        try:
+            return int(str(bid).split("-")[-1].split("_")[0].split("#")[0])
+        except ValueError:
+            return None
+
+    vl_plan: dict = {}
+    if topo_plans:
+        by_buses = {frozenset(p["buses"]): p for p in topo_plans.values()}
+        for vl, bids in src_order.items():
+            nums = frozenset(n for n in (_bus_num(b) for b in bids)
+                             if n is not None)
+            plan = by_buses.get(nums)
+            if plan:
+                vl_plan[vl] = plan
+                nbus[vl] = max(plan["n_busbars"], len(bids))
+
     for vl in vls.index:
         ppn.create_voltage_level_topology(dst, id=vl,
                                           aligned_buses_or_busbar_count=nbus[vl], section_count=1)
@@ -122,19 +150,43 @@ def rebuild_node_breaker(src, bus_sub: dict | None = None,
     def bbs(vl, slot=0):
         return f"{vl}_{min(slot, nbus[vl] - 1) + 1}_1"
 
+    def eq_slot(vl, eid, side):
+        """Feeder slot: the libTOPO real assignment when the VL is planned
+        (paired feeders on their real busbar, other equipment on its source
+        node's first busbar), else the generic source-bus slot."""
+        generic = feeder_slot.get((str(eid), side), 0)
+        plan = vl_plan.get(vl)
+        if plan is None:
+            return generic
+        if str(eid) in plan["slot"]:
+            return plan["slot"][str(eid)]
+        # non-paired equipment: first busbar of its source node's group
+        bids = src_order.get(vl, [])
+        if 0 <= generic < len(bids):
+            mb = _bus_num(bids[generic])
+            gs = plan["group_slot"].get(mb)
+            if gs is not None:
+                return gs
+        return generic
+
     # Chain n-1 couplers. A coupler joining two busbars that carry DISTINCT
     # source buses is left OPEN, so the VL keeps exactly its loaded electrical
     # node count (and the recommender gets a close_coupling lever); the extra
     # busbars added for splittability are joined CLOSED, so opening one is an
-    # open_coupling action.
+    # open_coupling action. Planned VLs open exactly at the libTOPO node-group
+    # boundaries instead.
     to_open = []
     for vl in vls.index:
+        plan = vl_plan.get(vl)
+        boundaries = set(plan["open_after"]) if plan else None
         for i in range(1, nbus[vl]):
             ppn.create_coupling_device(
                 dst, bus_or_busbar_section_id_1=f"{vl}_{i}_1",
                 bus_or_busbar_section_id_2=f"{vl}_{i + 1}_1",
                 switch_prefix_id=f"{vl}_COUPL.{i}")
-            if i < int(n_src.get(vl, 1)):
+            open_this = ((i - 1) in boundaries) if boundaries is not None \
+                else (i < int(n_src.get(vl, 1)))
+            if open_this:
                 to_open.append(f"{vl}_COUPL.{i}_BREAKER")
     pos = collections.Counter()
 
@@ -146,8 +198,8 @@ def rebuild_node_breaker(src, bus_sub: dict | None = None,
     lines = src.get_lines()
     for lid, r in lines.iterrows():
         v1, v2 = r["voltage_level1_id"], r["voltage_level2_id"]
-        s1 = feeder_slot.get((str(lid), 1), 0)
-        s2 = feeder_slot.get((str(lid), 2), 0)
+        s1 = eq_slot(v1, lid, 1)
+        s2 = eq_slot(v2, lid, 2)
         ppn.create_line_bays(
             dst, id=str(lid), r=float(r["r"]), x=float(r["x"]),
             g1=float(r["g1"]), b1=float(r["b1"]), g2=float(r["g2"]), b2=float(r["b2"]),
@@ -159,15 +211,15 @@ def rebuild_node_breaker(src, bus_sub: dict | None = None,
         ppn.create_2_windings_transformer_bays(
             dst, id=str(tid), r=float(r["r"]), x=float(r["x"]), g=float(r["g"]), b=float(r["b"]),
             rated_u1=float(r["rated_u1"]), rated_u2=float(r["rated_u2"]),
-            bus_or_busbar_section_id_1=bbs(v1, feeder_slot.get((str(tid), 1), 0)),
+            bus_or_busbar_section_id_1=bbs(v1, eq_slot(v1, tid, 1)),
             position_order_1=nextpos(v1),
-            bus_or_busbar_section_id_2=bbs(v2, feeder_slot.get((str(tid), 2), 0)),
+            bus_or_busbar_section_id_2=bbs(v2, eq_slot(v2, tid, 2)),
             position_order_2=nextpos(v2))
     loads = src.get_loads(attributes=["voltage_level_id", "p0", "q0"])
     for lid, r in loads.iterrows():
         vl = r["voltage_level_id"]
         ppn.create_load_bay(dst, id=str(lid), p0=float(r["p0"]), q0=float(r["q0"]),
-                            bus_or_busbar_section_id=bbs(vl, feeder_slot.get((str(lid), 0), 0)),
+                            bus_or_busbar_section_id=bbs(vl, eq_slot(vl, lid, 0)),
                             position_order=nextpos(vl))
     gens = src.get_generators(attributes=["voltage_level_id", "max_p", "min_p", "target_p",
                                           "target_q", "target_v", "voltage_regulator_on"])
@@ -178,7 +230,7 @@ def rebuild_node_breaker(src, bus_sub: dict | None = None,
             target_p=float(r["target_p"]), target_q=float(r.get("target_q", 0.0) or 0.0),
             voltage_regulator_on=bool(r["voltage_regulator_on"]),
             target_v=float(r["target_v"]) if r["target_v"] == r["target_v"] else 400.0,
-            bus_or_busbar_section_id=bbs(vl, feeder_slot.get((str(gid), 0), 0)),
+            bus_or_busbar_section_id=bbs(vl, eq_slot(vl, gid, 0)),
             position_order=nextpos(vl))
     # Generator reactive limits (MIN_MAX) — the bay call does not carry them and
     # missing Q limits let generators produce unbounded reactive power, which
@@ -194,7 +246,7 @@ def rebuild_node_breaker(src, bus_sub: dict | None = None,
             "id": str(sid), "name": "", "model_type": "LINEAR",
             "section_count": int(r["section_count"]), "target_v": float("nan"),
             "target_deadband": float("nan"),
-            "bus_or_busbar_section_id": bbs(vl, feeder_slot.get((str(sid), 0), 0)),
+            "bus_or_busbar_section_id": bbs(vl, eq_slot(vl, sid, 0)),
             "position_order": nextpos(vl),
         }]).set_index("id")
         ldf = pd.DataFrame([{

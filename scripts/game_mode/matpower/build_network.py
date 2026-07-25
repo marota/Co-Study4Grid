@@ -116,11 +116,28 @@ def build_case(case_name: str) -> str:
         # switches. Preserves each substation's electrical node count exactly,
         # and copies the real RTE7000 busbar structure where the case's buses
         # were identity-matched to real substations.
-        nb, nbus, n_rte = rebuild_node_breaker(net, bus_sub, geo_mod.reference_vl_structure())
+        # Real detailed-topology plans (libTOPO on the actual RTE voltage
+        # levels) for the identity-mapped multi-node substations; graceful
+        # empty dict when the recommender or the reference is unavailable.
+        try:
+            import rte_topology
+            v7_path = out / "rte_substation_map_v7.json"
+            plan_map = bus_sub
+            if v7_path.exists():
+                plan_map = {int(k): {"substation": v["site"]}
+                            for k, v in json.loads(v7_path.read_text()).items()
+                            if v.get("confidence") == "strict"}
+            topo_plans = rte_topology.plans_from_network(net, plan_map, verbose=True)
+        except Exception as exc:  # noqa: BLE001 — plans are an enhancement
+            print(f"  rte-topology plans indisponibles ({exc}) — fallback générique")
+            topo_plans = {}
+        nb, nbus, n_rte = rebuild_node_breaker(net, bus_sub, geo_mod.reference_vl_structure(),
+                                               topo_plans=topo_plans)
         copy_current_limits(net, nb)
         seed_voltages_from_network(net, nb)
         m2 = run_ac_analysis(nb)
         print(f"  node-breaker: converged={m2.converged} RTE-structured VLs={n_rte} "
+              f"libTOPO-planned={len(topo_plans)} "
               f"buses={len(nb.get_buses())} (src {len(net.get_buses())})")
         net = nb
         (out / "actions.json").write_text(json.dumps(build_action_space(net)))

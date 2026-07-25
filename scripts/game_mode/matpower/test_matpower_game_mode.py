@@ -237,3 +237,41 @@ def test_scenarios_reference_existing_grid_assets():
         assert (grid / "network.xiidm.gz.b64").is_file()
         assert s["networkPath"] == \
             f"data/rte_matpower/grids/{s['gridId']}/network.xiidm"
+
+
+# --------------------------------------------------------------------------- #
+# rte_topology.py — real-structure plans (pure parts)
+# --------------------------------------------------------------------------- #
+rte_topology = _load("rte_topology")
+
+
+def test_pairing_matches_parallel_circuits_by_exact_features():
+    """Two parallel MATPOWER circuits to the same far site must land on the
+    right real circuits — features split them (measured to the 2nd decimal)."""
+    m = [{"id": "LINE-1-2", "far_site": "LONNY",
+          "sig": rte_topology._line_sig(9.29, 0.54, 153e-6)},
+         {"id": "LINE-1-2#0", "far_site": "LONNY",
+          "sig": rte_topology._line_sig(10.12, 0.55, 144e-6)}]
+    r = [{"id": "CHOO2-LONNY", "far_site": "LONNY",
+          "sig": rte_topology._line_sig(9.31, 0.54, 153e-6)},
+         {"id": "CHOO1-LONNY", "far_site": "LONNY",
+          "sig": rte_topology._line_sig(8.25, 0.46, 184e-6)}]
+    pairing = rte_topology.pair_departures(m, r)
+    assert pairing["LINE-1-2"] == "CHOO2-LONNY"      # exact feature match
+    assert pairing["LINE-1-2#0"] == "CHOO1-LONNY"    # one-to-one exclusion
+
+
+def test_pairing_rejects_costly_matches():
+    m = [{"id": "L", "far_site": "AAAAA",
+          "sig": rte_topology._line_sig(500.0, 50.0, 1e-3)}]
+    r = [{"id": "R", "far_site": "AAAAA",
+          "sig": rte_topology._line_sig(0.5, 0.05, 1e-6)}]
+    assert rte_topology.pair_departures(m, r) == {}
+
+
+def test_pairing_needs_the_same_far_site():
+    m = [{"id": "L", "far_site": "AAAAA",
+          "sig": rte_topology._line_sig(10.0, 1.0, 1e-4)}]
+    r = [{"id": "R", "far_site": "BBBBB",
+          "sig": rte_topology._line_sig(10.0, 1.0, 1e-4)}]
+    assert rte_topology.pair_departures(m, r) == {}
