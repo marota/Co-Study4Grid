@@ -122,12 +122,17 @@ def build_case(case_name: str) -> str:
         try:
             import rte_topology
             v7_path = out / "rte_substation_map_v7.json"
-            plan_map = bus_sub
+            plan_map, loose_map = bus_sub, {}
             if v7_path.exists():
+                v7m = json.loads(v7_path.read_text())
                 plan_map = {int(k): {"substation": v["site"]}
-                            for k, v in json.loads(v7_path.read_text()).items()
+                            for k, v in v7m.items()
                             if v.get("confidence") == "strict"}
-            topo_plans = rte_topology.plans_from_network(net, plan_map, verbose=True)
+                loose_map = {int(k): {"substation": v["site"]}
+                             for k, v in v7m.items()
+                             if v.get("confidence") != "strict"}
+            topo_plans = rte_topology.plans_from_network(
+                net, plan_map, loose_sub=loose_map, verbose=True)
         except Exception as exc:  # noqa: BLE001 — plans are an enhancement
             print(f"  rte-topology plans indisponibles ({exc}) — fallback générique")
             topo_plans = {}

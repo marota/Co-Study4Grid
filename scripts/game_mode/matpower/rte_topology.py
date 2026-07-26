@@ -177,9 +177,15 @@ def plan_for_vl(ref_net, ref_vl: str, mat_groups: dict[int, list[str]],
             for f in feeders:
                 node_of[pairing[f]] = f"MAT_{mb}"
         cur = poste.topologie_nodale
-        for nom_cur, nd in cur.noeuds.items():
+        # Unpaired real departures MERGE into the largest MAT group: they are
+        # not recreated in the rebuild, and giving them their own node demands
+        # more busbars than the post owns (measured: every 2-busbar post with
+        # 2 MATPOWER nodes failed verification on the 3-node target).
+        sizes = collections.Counter(node_of.values())
+        biggest = max(sizes, key=sizes.get)
+        for nd in cur.noeuds.values():
             for dep in nd.departs:
-                node_of.setdefault(dep.equipment_id, f"CUR_{nom_cur}")
+                node_of.setdefault(dep.equipment_id, biggest)
         by_node = collections.defaultdict(list)
         for nd in cur.noeuds.values():
             for dep in nd.departs:
@@ -191,17 +197,33 @@ def plan_for_vl(ref_net, ref_vl: str, mat_groups: dict[int, list[str]],
             for dep in deps:
                 cible.noeud_par_depart[dep.equipment_id] = nom
         res = determiner_topo_complete_cible(poste, cible)
-        if not res.is_verified:
-            return None
-        manoeuvres = res.manoeuvres
-        G2 = poste.graph.copy()
-        for m in res.manoeuvres:
-            _set_switch(G2, m.switch_id, m.action == "OPEN")
-        bb_of = {}
-        for eq, cell in cells.items():
-            bb = _wired_busbar(cell, G2)
-            if bb is not None:
-                bb_of[eq] = bb
+        if res.is_verified:
+            manoeuvres = res.manoeuvres
+            G2 = poste.graph.copy()
+            for m in res.manoeuvres:
+                _set_switch(G2, m.switch_id, m.action == "OPEN")
+            bb_of = {}
+            for eq, cell in cells.items():
+                bb = _wired_busbar(cell, G2)
+                if bb is not None:
+                    bb_of[eq] = bb
+        else:
+            # libTOPO cannot verify on this post (complex coupling component
+            # the port truncates, e.g. CPNIE's 4-SJB coupler). DIRECT ASSIGN:
+            # real busbar count kept, each MAT group laid on its own real
+            # busbar (in order), open boundaries between groups. Less "real
+            # current wiring" but still the real structure and the exact
+            # MATPOWER partition.
+            groups = sorted({n for n in node_of.values() if n.startswith("MAT_")})
+            # surplus groups (more nodes than real busbars) get NO direct
+            # busbar here — the post-hoc extra-busbar pass appends one per
+            # uncovered node behind an open boundary.
+            bb_by_group = {g: real_bbs[i]
+                           for i, g in enumerate(groups[:len(real_bbs)])}
+            bb_of = {}
+            for eq, nom in node_of.items():
+                if nom in bb_by_group and eq in cells:
+                    bb_of[eq] = bb_by_group[nom]
 
     # ---- chain layout: node groups contiguous, then empty real busbars ----
     sjb_node: dict[int, str] = {}
@@ -240,8 +262,54 @@ def plan_for_vl(ref_net, ref_vl: str, mat_groups: dict[int, list[str]],
             "manoeuvres": [f"{m.action} {m.switch_id}" for m in manoeuvres]}
 
 
+def _arbitrate_site(cands, ns, kv, eq_of_bus, ref_ix, ref_departs_fn,
+                    ref_adj=None):
+    """Pick the VL's site by deduction-elimination on its own ouvrages.
+
+    Candidates: the given ones (conflicting strict / loose sites) PLUS —
+    graph structure — every reference site adjacent to the strict far-sites
+    of the VL's lines (the VL must be a real neighbour of its neighbours).
+    Each candidate is scored by how many of the VL's lines pair against its
+    real yard (far site + exact X/R/B). Winner needs >= 2 paired lines, or a
+    single NEAR-EXACT one (cost < 0.2), and must strictly beat the runner-up.
+    """
+    mat_lines = [e for n in ns for e in eq_of_bus.get(str(n), ())
+                 if e["kind"] == "line" and e["far_site"]]
+    cands = {c for c in cands if c}
+    if ref_adj:
+        for e in mat_lines:
+            cands |= ref_adj.get(e["far_site"], set())
+    # count-by-type constraint: a VL with k lines can only be a yard with a
+    # comparable line-departure count — the degree penalty ranks candidates
+    # whose real yard size matches the VL's, which breaks ties inside
+    # anchor-free clusters where few lines pair.
+    n_mat = len({e["id"] for e in mat_lines})
+    scores = []
+    for cand in sorted(cands):
+        ref_vl = ref_ix.get((cand, kv))
+        if ref_vl is None:
+            continue
+        deps = [d for d in ref_departs_fn(ref_vl) if d["kind"] == "line"]
+        pairing = pair_departures(mat_lines, deps)
+        best_cost = min((_sig_cost(m["sig"], d["sig"])
+                         for m in mat_lines for d in deps
+                         if pairing.get(m["id"]) == d["id"]), default=9.9)
+        deg_pen = abs(n_mat - len(deps))
+        scores.append((len(pairing), -best_cost, -deg_pen, cand))
+    scores.sort(reverse=True)
+    if not scores:
+        return None
+    n_top, negc, negd, cand = scores[0]
+    if n_top < 2 and not (n_top == 1 and -negc < 0.2):
+        return None
+    if len(scores) > 1 and scores[0][:3] == scores[1][:3]:
+        return None                       # exact tie — leave unresolved
+    return cand
+
+
 # ------------------------------------------------- network-source frontend
-def plans_from_network(src, bus_sub: dict, verbose: bool = False) -> dict:
+def plans_from_network(src, bus_sub: dict, loose_sub: dict | None = None,
+                       verbose: bool = False) -> dict:
     """Real-topology plans for EVERY identity-mapped THT voltage level of the
     imported MATPOWER network — multi-node AND single-node (the game needs the
     real detailed structure everywhere manoeuvre actions may be played).
@@ -288,7 +356,11 @@ def plans_from_network(src, bus_sub: dict, verbose: bool = False) -> dict:
                 num_of_bid.setdefault(str(r["bus1_id"]), f)
                 num_of_bid.setdefault(str(r["bus2_id"]), t)
 
+    overlay: dict = {}      # bus id -> site fixed by an already-planned VL
+
     def site_of_bid(bid):
+        if str(bid) in overlay:
+            return overlay[str(bid)]
         n = num_of_bid.get(str(bid))
         rec = bus_sub.get(n) if n is not None else None
         if rec is None and n is not None:
@@ -297,17 +369,35 @@ def plans_from_network(src, bus_sub: dict, verbose: bool = False) -> dict:
             return None
         return rec["substation"] if isinstance(rec, dict) else rec
 
-    # MATPOWER equipment per pypowsybl bus id: same-kv lines + transformers
+    def loose_site_of_bid(bid):
+        if not loose_sub:
+            return None
+        n = num_of_bid.get(str(bid))
+        rec = loose_sub.get(n) if n is not None else None
+        if rec is None and n is not None:
+            rec = loose_sub.get(str(n))
+        if rec is None:
+            return None
+        return rec["substation"] if isinstance(rec, dict) else rec
+
+    # MATPOWER equipment per pypowsybl bus id: same-kv lines + transformers.
+    # Rebuilt each recursion pass: far sites gain information as neighbouring
+    # VLs get planned (their buses enter the overlay).
     eq_of_bus: dict = collections.defaultdict(list)
-    for lid, r in lines.iterrows():
-        b1, b2 = str(r["bus1_id"]), str(r["bus2_id"])
-        if kv_of_bid.get(b1) != kv_of_bid.get(b2):
-            continue
-        b_tot = abs(r.get("b1", 0.0)) + abs(r.get("b2", 0.0))
-        sig = _line_sig(abs(r["x"]), abs(r["r"]), b_tot)
-        for a, b_ in ((b1, b2), (b2, b1)):
-            eq_of_bus[a].append({"id": str(lid), "kind": "line",
-                                 "far_site": site_of_bid(b_), "sig": sig})
+
+    def rebuild_lines_eq():
+        for lst in eq_of_bus.values():
+            lst[:] = [e for e in lst if e["kind"] != "line"]
+        for lid, r in lines.iterrows():
+            b1, b2 = str(r["bus1_id"]), str(r["bus2_id"])
+            if kv_of_bid.get(b1) != kv_of_bid.get(b2):
+                continue
+            b_tot = abs(r.get("b1", 0.0)) + abs(r.get("b2", 0.0))
+            sig = _line_sig(abs(r["x"]), abs(r["r"]), b_tot)
+            for a, b_ in ((b1, b2), (b2, b1)):
+                eq_of_bus[a].append({"id": str(lid), "kind": "line",
+                                     "far_site": site_of_bid(b_), "sig": sig})
+
     for tid, r in twt.iterrows():
         # intra-VL transformers are SERIES devices (phase-shifter loops, e.g.
         # the Logelbach TD: TWT-6102-6231 + LINE-6231-6102 between two nodes
@@ -337,30 +427,84 @@ def plans_from_network(src, bus_sub: dict, verbose: bool = False) -> dict:
                              "sig": None})
         return deps
 
+    # reference site adjacency (lines), for graph-structure candidates
+    ref_adj: dict = collections.defaultdict(set)
+    for _, r in ref_lines.iterrows():
+        s1, s2 = r["voltage_level1_id"][:5], r["voltage_level2_id"][:5]
+        if s1 != s2:
+            ref_adj[s1].add(s2)
+            ref_adj[s2].add(s1)
+
     plans: dict = {}
     stats = collections.Counter()
-    for vl, ns in sorted(vl_buses.items()):
+    planned_vls: set = set()
+    for _pass in range(3):
+        rebuild_lines_eq()
+        pass_added = 0
+        pass_stats = collections.Counter()
+        for vl, ns in sorted(vl_buses.items()):
+            if vl in planned_vls:
+                continue
+            plan = _try_plan_vl(vl, ns, nomv, site_of_bid, loose_site_of_bid,
+                                _arbitrate_site, ref_ix, ref_departs, ref_adj,
+                                eq_of_bus, ref_net, pass_stats, verbose)
+            if plan is None:
+                continue
+            plans[(plan["site"], plan["kv"], frozenset(plan["buses"]))] = plan
+            planned_vls.add(vl)
+            for b in plan["buses"]:
+                overlay[b] = plan["site"]
+            pass_added += 1
+        stats = pass_stats
+        if verbose:
+            print(f"  [rte-topo] passe {_pass + 1}: +{pass_added} plans "
+                  f"(total {len(plans)})")
+        if pass_added == 0:
+            break
+    if verbose:
+        print(f"  [rte-topo] bilan: {dict(stats)}")
+    return plans
+
+
+def _try_plan_vl(vl, ns, nomv, site_of_bid, loose_site_of_bid, arbitrate,
+                 ref_ix, ref_departs, ref_adj, eq_of_bus, ref_net, stats,
+                 verbose):
         kv = int(round(nomv.get(vl, 0)))
         if kv not in (380, 225):
-            continue
+            return None
         # The VL *is* one physical substation: its site is the strict-mapped
-        # buses' common site. Buses without a strict identity (internal small
-        # nodes the map left loose) still belong to that substation and take
-        # part in pairing; only a CONFLICT of two distinct sites disqualifies.
+        # buses' common site. Conflicting strict sites, or no strict site at
+        # all, are ARBITRATED BY THE VL'S OWN OUVRAGES: every candidate (the
+        # conflicting strict sites, or the buses' loose sites) is scored by
+        # how many of the VL's lines pair — far site + exact X/R/B features —
+        # against the real departures of that candidate's yard; a clear
+        # winner (>=2 paired, strictly ahead) takes the VL. This is
+        # deduction-by-elimination on graph structure, not on the map alone.
         sites = {x for x in (site_of_bid(n) for n in ns) if x}
         if len(sites) != 1:
-            stats["vl_site_mixte_ou_absent"] += 1
-            continue
-        s = next(iter(sites))
+            cands = set(sites)
+            for n in ns:
+                ls = loose_site_of_bid(n)
+                if ls:
+                    cands.add(ls)
+            best = arbitrate(cands, ns, kv, eq_of_bus, ref_ix,
+                             ref_departs, ref_adj=ref_adj)
+            if best is None:
+                stats["vl_site_mixte_ou_absent"] += 1
+                return None
+            stats["site_arbitre"] += 1
+            s = best
+        else:
+            s = next(iter(sites))
         ref_vl = ref_ix.get((s, kv))
         if ref_vl is None:
             stats["vl_sans_yard_ref"] += 1
-            continue
+            return None
         mat_groups = {n: [e["id"] for e in eq_of_bus.get(n, ())] for n in ns}
         mat_groups = {n: ids for n, ids in mat_groups.items() if ids}
         if not mat_groups:
             stats["vl_sans_equipement"] += 1
-            continue
+            return None
         deps = ref_departs(ref_vl)
         # pair the lines by far-site+features, the transformers by exclusivity
         mat_flat = [e for n in ns for e in eq_of_bus.get(n, ())]
@@ -381,14 +525,11 @@ def plans_from_network(src, bus_sub: dict, verbose: bool = False) -> dict:
             plan = None
         if plan is None:
             stats["plan_none"] += 1
-            continue
-        plan["site"], plan["kv"], plan["buses"] = s, kv, sorted(ns)
-        plans[(s, kv, frozenset(ns))] = plan
+            return None
+        plan["site"], plan["kv"], plan["buses"] = s, kv, sorted(str(n) for n in ns)
         stats["multi" if len(ns) > 1 else "mono"] += 1
         if verbose and len(ns) > 1:
             print(f"  [rte-topo] {ref_vl}: {plan['n_busbars']} barres "
                   f"({plan['n_real_busbars']} réelles), "
                   f"{len(plan['slot'])} départs, open@{plan['open_after']}")
-    if verbose:
-        print(f"  [rte-topo] bilan: {dict(stats)}")
-    return plans
+        return plan
