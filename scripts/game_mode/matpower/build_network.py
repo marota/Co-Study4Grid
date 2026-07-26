@@ -1,17 +1,32 @@
 # Copyright (c) 2025-2026, RTE (https://www.rte-france.com)
 # SPDX-License-Identifier: MPL-2.0
-"""Stage 1 of the France RTE Matpower game dataset: build one reconstructed
-operating point per MATPOWER case into an opaque grid folder.
+"""Stage 1 of the France RTE Matpower game dataset: assemble one game grid per
+MATPOWER case from a snapshot **already in detailed topology**.
 
-For each case: convert MATPOWER -> pypowsybl (REAL voltages), add CURRENT
-limits, Q-calibrate + AC-settle to a converged base, geolocate onto a France
-layout, and run the base-relative N-1 screen. Persists, RESUMABLY (each
-artifact is skipped when already present):
+This stage performs NO grid transformation. Every reconstruction step —
+MATPOWER conversion, current limits, Q calibration, AC settling, Rosetta
+re-identification, real RTE substation structure, node/breaker detailed
+topology (libTOPO) — lives in the ``grid_snapshot_reconstruct`` repo, which
+produces per case:
+
+    <detailed>/<caseName>/network_detailed.xiidm    NODE_BREAKER, converged
+    <detailed>/<caseName>/grid_layout.json          voltage level -> [x, y]
+    <detailed>/<caseName>/rte_substation_map.json   bus -> real substation
+    <detailed>/<caseName>/detailed_report.json      invariants + flow fidelity
+
+Produce them with::
+
+    python -m grid_snapshot_reconstruct.matpower_detailed all [--map <v7.json>]
+
+This stage then only does what is specific to the GAME: opaque grid identity
+(the real date stays private), the action space offered to players, and the
+base-relative N-1 screen that feeds scenario building. Persists, RESUMABLY:
 
     data/rte_matpower/grids/<opaqueId>/network.xiidm
     data/rte_matpower/grids/<opaqueId>/grid_layout.json
+    data/rte_matpower/grids/<opaqueId>/actions.json
     data/rte_matpower/grids/<opaqueId>/n1_contingencies.json
-    data/rte_matpower/mapping_private.json         (opaqueId -> real date, private)
+    data/rte_matpower/mapping_private.json     (opaqueId -> real date, private)
 
 Run:  python scripts/game_mode/matpower/build_network.py [caseName|all]
 """
@@ -21,21 +36,18 @@ import datetime
 import hashlib
 import json
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from current_limits import add_current_limits  # noqa: E402
-from node_breaker import (  # noqa: E402
-    rebuild_node_breaker, copy_current_limits, seed_voltages_from_network)
 from actions import build_action_space  # noqa: E402
-import geo as geo_mod  # noqa: E402
 
-RECON_DIR = geo_mod.RECON_DIR
-from grid_snapshot_reconstruct.matpower_parser import parse_case, write_mat  # noqa: E402
-from grid_snapshot_reconstruct.reconstruct import (  # noqa: E402
-    compute_q_calibration, apply_q_calibration, run_ac_analysis)
+RECON_DIR = Path(os.environ.get(
+    "RECON_DIR", "/Users/antoine/Dev/Grid_snapshot_reconstruct"))
+if str(RECON_DIR) not in sys.path:
+    sys.path.insert(0, str(RECON_DIR))
 from grid_snapshot_reconstruct import tht_dataset as T  # noqa: E402
 import pypowsybl as pp  # noqa: E402
 
@@ -43,7 +55,11 @@ REPO = Path(__file__).resolve().parents[3]
 DATA = REPO / "data" / "rte_matpower"
 GRIDS = DATA / "grids"
 
-# Re-identified 2013 timestamps (from grid_snapshot_reconstruct/eval_ac_v7p.py).
+#: Where ``grid_snapshot_reconstruct.matpower_detailed`` wrote its artifacts.
+DETAILED_DIR = Path(os.environ.get(
+    "MATPOWER_DETAILED_DIR", RECON_DIR / "data" / "matpower_detailed"))
+
+#: Re-identified 2013 timestamps (kept here for the private mapping only).
 INSTANTS = {
     "case6468rte": "2013-01-14T06:30",
     "case6470rte": "2013-01-18T00:30",
@@ -51,6 +67,11 @@ INSTANTS = {
     "case6515rte": "2013-01-18T19:00",
 }
 _PERIODS = [(6, "night"), (12, "morning"), (18, "afternoon"), (24, "evening")]
+
+#: Artifacts copied as-is from the detailed snapshot into the grid folder.
+_COPIED = {"network_detailed.xiidm": "network.xiidm",
+           "grid_layout.json": "grid_layout.json",
+           "rte_substation_map.json": "rte_substation_map.json"}
 
 
 def opaque_id(case_name: str) -> str:
@@ -64,20 +85,26 @@ def period_title(iso: str) -> str:
     return f"{dt.strftime('%B')} — {dt.strftime('%A')} {hour_period}"
 
 
-def build_network(case_name: str, real_voltage: bool = True):
-    case = parse_case(str(RECON_DIR / "data" / "matpower" / f"{case_name}.m"))
-    import tempfile
-    d = Path(tempfile.mkdtemp())
-    mp = write_mat(case, d / f"{case_name}.mat")
-    params = {"matpower.import.ignore-base-voltage": "false"} if real_voltage else {}
-    net = pp.network.load(str(mp), parameters=params)
-    n_lim = add_current_limits(net)
-    try:
-        apply_q_calibration(net, compute_q_calibration(case))
-    except Exception as ex:  # noqa: BLE001
-        print(f"  q-calibration skipped: {type(ex).__name__}: {str(ex)[:80]}")
-    metrics = run_ac_analysis(net)
-    return case, net, n_lim, metrics
+def detailed_dir(case_name: str) -> Path:
+    """Directory holding the detailed snapshot of ``case_name``, or exit with
+    the command that produces it."""
+    d = DETAILED_DIR / case_name
+    if (d / "network_detailed.xiidm").exists():
+        return d
+    raise SystemExit(
+        f"Instantané en topologie détaillée absent : {d}\n"
+        f"Produisez-le côté grid_snapshot_reconstruct :\n"
+        f"  python -m grid_snapshot_reconstruct.matpower_detailed "
+        f"{case_name} --out {d}\n"
+        f"(ou pointez MATPOWER_DETAILED_DIR sur le répertoire de sortie)")
+
+
+def load_detailed(case_name: str):
+    """The detailed snapshot as ``(network, report, source_dir)``."""
+    d = detailed_dir(case_name)
+    net = pp.network.load(str(d / "network_detailed.xiidm"))
+    rp = d / "detailed_report.json"
+    return net, (json.loads(rp.read_text()) if rp.exists() else {}), d
 
 
 def build_case(case_name: str) -> str:
@@ -87,79 +114,44 @@ def build_case(case_name: str) -> str:
     net_path = out / "network.xiidm"
     layout_path = out / "grid_layout.json"
     n1_path = out / "n1_contingencies.json"
-    if net_path.exists() and layout_path.exists() and n1_path.exists():
+    actions_path = out / "actions.json"
+    if all(p.exists() for p in (net_path, layout_path, n1_path, actions_path)):
         print(f"[{case_name} -> {gid}] already built; skipping")
         return gid
     t0 = time.time()
-    print(f"[{case_name} -> {gid}] building ...")
-    case, net, n_lim, metrics = build_network(case_name)
-    print(f"  network: converged={metrics.converged} limits={n_lim} in {time.time()-t0:.1f}s")
+    print(f"[{case_name} -> {gid}] assembling ...")
 
-    sub_map_path = out / "rte_substation_map.json"
-    bus_sub = ({int(k): v for k, v in json.loads(sub_map_path.read_text()).items()}
-               if sub_map_path.exists() else {})
-    if not layout_path.exists():
-        ref = geo_mod.build_reference()
-        bus_coord, src, stats, bus_sub = geo_mod.geolocate_case(case, ref)
-        layout = geo_mod.layout_for_network(net, bus_coord)
-        layout_path.write_text(json.dumps(layout))
-        # Identity mapping -> real RTE substations, used to copy the real
-        # busbar/coupler structure in the node-breaker rebuild. Private (it
-        # de-anonymises the case), so it stays out of the player-facing bundle.
-        sub_map_path.write_text(json.dumps(bus_sub, indent=1))
-        print(f"  layout: {len(layout)} VLs positioned  stats={stats}  "
-              f"rte-identified buses={len(bus_sub)}")
+    src_dir = detailed_dir(case_name)
+    for src_name, dst_name in _COPIED.items():
+        src, dst = src_dir / src_name, out / dst_name
+        if src.exists() and not dst.exists():
+            shutil.copyfile(src, dst)
+    rp = src_dir / "detailed_report.json"
+    report = json.loads(rp.read_text()) if rp.exists() else {}
+    det = report.get("detailed", {})
+    print(f"  detailed snapshot: buses={det.get('buses')} "
+          f"switches={det.get('switches')} "
+          f"RTE-structured VLs={det.get('rte_structured_vls')} "
+          f"converged={det.get('converged')} "
+          f"flow-fidelity median={report.get('flow_bench', {}).get('median_MW')} MW")
 
-    if not net_path.exists():
-        # Rebuild NODE_BREAKER so the recommender has topological (coupler /
-        # node-splitting) levers — MATPOWER imports as BUS_BREAKER with no
-        # switches. Preserves each substation's electrical node count exactly,
-        # and copies the real RTE7000 busbar structure where the case's buses
-        # were identity-matched to real substations.
-        # Real detailed-topology plans (libTOPO on the actual RTE voltage
-        # levels) for the identity-mapped multi-node substations; graceful
-        # empty dict when the recommender or the reference is unavailable.
-        try:
-            import rte_topology
-            v7_path = out / "rte_substation_map_v7.json"
-            plan_map, loose_map = bus_sub, {}
-            if v7_path.exists():
-                v7m = json.loads(v7_path.read_text())
-                plan_map = {int(k): {"substation": v["site"]}
-                            for k, v in v7m.items()
-                            if v.get("confidence") == "strict"}
-                loose_map = {int(k): {"substation": v["site"]}
-                             for k, v in v7m.items()
-                             if v.get("confidence") != "strict"}
-            topo_plans = rte_topology.plans_from_network(
-                net, plan_map, loose_sub=loose_map, verbose=True)
-        except Exception as exc:  # noqa: BLE001 — plans are an enhancement
-            print(f"  rte-topology plans indisponibles ({exc}) — fallback générique")
-            topo_plans = {}
-        nb, nbus, n_rte = rebuild_node_breaker(net, bus_sub, geo_mod.reference_vl_structure(),
-                                               topo_plans=topo_plans)
-        copy_current_limits(net, nb)
-        seed_voltages_from_network(net, nb)
-        m2 = run_ac_analysis(nb)
-        print(f"  node-breaker: converged={m2.converged} RTE-structured VLs={n_rte} "
-              f"libTOPO-planned={len(topo_plans)} "
-              f"buses={len(nb.get_buses())} (src {len(net.get_buses())})")
-        net = nb
-        (out / "actions.json").write_text(json.dumps(build_action_space(net)))
-        net.save(str(net_path), format="XIIDM",
-                 parameters={"iidm.export.xml.version": "1.14"})
-        print(f"  saved {net_path.name} + actions.json")
+    net = pp.network.load(str(net_path))
+    if not actions_path.exists():
+        actions_path.write_text(json.dumps(build_action_space(net)))
+        print(f"  actions: {actions_path.name}")
 
     if not n1_path.exists():
         ts = time.time()
         settle = T.settle_state(net, "eps0.01")
         ant = T.antenna_analysis(net)
-        res = T.screen_n1(net, settle.get("stage", "eps0.01"), antennas=ant, chunk_size=250)
+        res = T.screen_n1(net, settle.get("stage", "eps0.01"), antennas=ant,
+                          chunk_size=250)
         n1_path.write_text(json.dumps(res))
         conts = res.get("contingencies", [])
         non_ant = [c for c in conts if not c.get("antenna")]
         print(f"  scan: {len(non_ant)} non-antenna constraining "
-              f"(of {res.get('total_contingencies_tested')} tested) in {time.time()-ts:.0f}s")
+              f"(of {res.get('total_contingencies_tested')} tested) "
+              f"in {time.time()-ts:.0f}s")
 
     _update_mapping(case_name, gid)
     print(f"[{case_name} -> {gid}] done in {time.time()-t0:.0f}s")
