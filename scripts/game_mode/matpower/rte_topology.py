@@ -196,7 +196,18 @@ def plan_for_vl(ref_net, ref_vl: str, mat_groups: dict[int, list[str]],
             cible.noeuds[nom] = ne
             for dep in deps:
                 cible.noeud_par_depart[dep.equipment_id] = nom
-        res = determiner_topo_complete_cible(poste, cible)
+        # Phase A de libTOPO (identification nodale -> détaillée) : seule la
+        # correspondance d'ÉTAT compte pour générer les plans de poste, pas
+        # la licéité de la séquence de manœuvres (phase B/C). Replis pour les
+        # libs antérieures (sans identificateur en mode état, puis historique).
+        try:
+            from expert_op4grid_recommender.manoeuvre.plugins import (
+                LibTopoIdentificateur)
+            ident = LibTopoIdentificateur().identifier(poste, cible)
+            res = ident.sequence
+            res.is_verified = ident.is_realisable
+        except (ImportError, TypeError):
+            res = determiner_topo_complete_cible(poste, cible)
         if res.is_verified:
             manoeuvres = res.manoeuvres
             G2 = poste.graph.copy()
