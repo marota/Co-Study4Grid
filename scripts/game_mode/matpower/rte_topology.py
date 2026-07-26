@@ -110,16 +110,40 @@ def _group_by(rows, key):
 
 
 # ------------------------------------------------------------------ plans
+def _current_busbars(poste, cells):
+    """Each departure's CURRENT busbar in the real snapshot state."""
+    from expert_op4grid_recommender.manoeuvre.algo import _wired_busbar
+    out = {}
+    for eq, cell in cells.items():
+        bb = _wired_busbar(cell, poste.graph)
+        if bb is not None:
+            out[eq] = bb
+    return out
+
+
+def _all_busbars(G):
+    from expert_op4grid_recommender.manoeuvre import graph as mgraph
+    return sorted(mgraph.busbar_nodes(G))
+
+
 def plan_for_vl(ref_net, ref_vl: str, mat_groups: dict[int, list[str]],
-                pairing: dict[str, str]) -> dict | None:
-    """Run libTOPO on the REAL voltage level and derive the rebuild plan.
+                pairing: dict[str, str], all_nodes=None) -> dict | None:
+    """Derive the rebuild plan from the REAL voltage level.
 
-    ``mat_groups``: MATPOWER source bus -> its feeder ids (the electrical
-    nodes to reproduce). ``pairing``: MATPOWER feeder id -> RTE departure id.
+    ``mat_groups``: MATPOWER source bus -> its feeder/transformer ids (the
+    electrical nodes to reproduce — possibly a single one).
+    ``pairing``: MATPOWER equipment id -> RTE departure id.
 
-    Returns ``{"n_busbars", "slot" (mat feeder id -> 0-based busbar index),
-    "open_after" (chain positions whose coupler must be OPEN),
-    "manoeuvres"}`` or None when the target is not realisable/verified.
+    Three regimes:
+    * single MATPOWER node — no libTOPO needed: the CURRENT real wiring is
+      kept as is (every real busbar exposed, all chain couplers closed), which
+      is maximally faithful and still fully manoeuvrable;
+    * several nodes, every node holding >= 1 paired departure — libTOPO
+      (``determiner_topo_complete_cible``) computes the detailed state that
+      realises the partition inside the real structure;
+    * nodes WITHOUT any paired departure — they get an extra busbar appended
+      after the real ones, with an open boundary (hybrid real/generic), so the
+      electrical node count is still exact.
     """
     from expert_op4grid_recommender.manoeuvre import build_vl_graph
     from expert_op4grid_recommender.manoeuvre.topologie import (
@@ -130,181 +154,241 @@ def plan_for_vl(ref_net, ref_vl: str, mat_groups: dict[int, list[str]],
     G = build_vl_graph(ref_net, ref_vl)
     poste = PosteTopologique.from_graph(G, ref_vl)
     cells = {c.equipment_id: c for c in poste.cellules.cellules_depart}
-
-    # --- target: paired departures grouped per MATPOWER node --------------
-    cible = TopologieNodale(voltage_level_id=ref_vl)
-    node_of: dict[str, str] = {}
-    for mb, feeders in sorted(mat_groups.items()):
-        nom = f"MAT_{mb}"
-        for f in feeders:
-            rd = pairing.get(f)
-            if rd in cells:
-                node_of[rd] = nom
-    if len(set(node_of.values())) < len(mat_groups):
-        return None                       # a MATPOWER node got no departure
-    # unpaired real departures keep their current node
-    cur = poste.topologie_nodale
-    for nom_cur, nd in cur.noeuds.items():
-        for dep in nd.departs:
-            node_of.setdefault(dep.equipment_id, f"CUR_{nom_cur}")
-    by_node = collections.defaultdict(list)
-    for nd in cur.noeuds.values():
-        for dep in nd.departs:
-            by_node[node_of[dep.equipment_id]].append(dep)
-    for nom, deps in by_node.items():
-        ne = NoeudElectrique(nom=nom)
-        ne.departs.extend(deps)
-        cible.noeuds[nom] = ne
-        for dep in deps:
-            cible.noeud_par_depart[dep.equipment_id] = nom
-
-    res = determiner_topo_complete_cible(poste, cible)
-    if not res.is_verified:
+    real_bbs = _all_busbars(G)
+    if not real_bbs:
         return None
 
-    # --- replay the manoeuvres, read each departure's final busbar ---------
-    G2 = poste.graph.copy()
-    for m in res.manoeuvres:
-        _set_switch(G2, m.switch_id, m.action == "OPEN")
-    bb_of: dict[str, int] = {}
-    for eq, cell in cells.items():
-        bb = _wired_busbar(cell, G2)
-        if bb is not None:
-            bb_of[eq] = bb
+    paired_groups = {mb: [f for f in fs if pairing.get(f) in cells]
+                     for mb, fs in mat_groups.items()}
+    paired_groups = {mb: fs for mb, fs in paired_groups.items() if fs}
+    if not paired_groups:
+        return None                       # nothing anchors this VL to reality
 
-    # --- order busbars so node groups are contiguous on the chain ----------
+    manoeuvres: list = []
+    if len(paired_groups) <= 1:
+        # ---- single anchored node: keep the real current wiring ----------
+        bb_of = _current_busbars(poste, cells)
+        node_of = {eq: "MAT" for eq in bb_of}
+    else:
+        # ---- multi-node: libTOPO computes the realising detailed state ----
+        cible = TopologieNodale(voltage_level_id=ref_vl)
+        node_of: dict[str, str] = {}
+        for mb, feeders in sorted(paired_groups.items()):
+            for f in feeders:
+                node_of[pairing[f]] = f"MAT_{mb}"
+        cur = poste.topologie_nodale
+        for nom_cur, nd in cur.noeuds.items():
+            for dep in nd.departs:
+                node_of.setdefault(dep.equipment_id, f"CUR_{nom_cur}")
+        by_node = collections.defaultdict(list)
+        for nd in cur.noeuds.values():
+            for dep in nd.departs:
+                by_node[node_of[dep.equipment_id]].append(dep)
+        for nom, deps in by_node.items():
+            ne = NoeudElectrique(nom=nom)
+            ne.departs.extend(deps)
+            cible.noeuds[nom] = ne
+            for dep in deps:
+                cible.noeud_par_depart[dep.equipment_id] = nom
+        res = determiner_topo_complete_cible(poste, cible)
+        if not res.is_verified:
+            return None
+        manoeuvres = res.manoeuvres
+        G2 = poste.graph.copy()
+        for m in res.manoeuvres:
+            _set_switch(G2, m.switch_id, m.action == "OPEN")
+        bb_of = {}
+        for eq, cell in cells.items():
+            bb = _wired_busbar(cell, G2)
+            if bb is not None:
+                bb_of[eq] = bb
+
+    # ---- chain layout: node groups contiguous, then empty real busbars ----
     sjb_node: dict[int, str] = {}
     for eq, bb in bb_of.items():
         sjb_node.setdefault(bb, node_of.get(eq, "?"))
-    order = sorted(sjb_node, key=lambda bb: (sjb_node[bb], bb))
+    used = sorted(sjb_node, key=lambda bb: (sjb_node[bb], bb))
+    empty = [bb for bb in real_bbs if bb not in sjb_node]
+    order = used + empty                  # empties glued to the last group
     slot_of_sjb = {bb: i for i, bb in enumerate(order)}
-    n_busbars = max(len(order), 1)
-    open_after = [i for i in range(len(order) - 1)
-                  if sjb_node[order[i]] != sjb_node[order[i + 1]]]
+    open_after = [i for i in range(len(used) - 1)
+                  if sjb_node[used[i]] != sjb_node[used[i + 1]]]
 
     inv_pair = {v: k for k, v in pairing.items()}
     slot = {inv_pair[eq]: slot_of_sjb[bb]
             for eq, bb in bb_of.items() if eq in inv_pair}
-    # first chain slot of each MATPOWER node group — where the VL's OTHER
-    # equipment of that source bus (loads, generators, transformer ends,
-    # unpaired circuits) lands.
     group_slot: dict[int, int] = {}
-    for mb, feeders in mat_groups.items():
+    for mb, feeders in paired_groups.items():
         slots = [slot[f] for f in feeders if f in slot]
         if slots:
             group_slot[mb] = min(slots)
-    return {"ref_vl": ref_vl, "n_busbars": n_busbars, "slot": slot,
-            "open_after": open_after, "group_slot": group_slot,
-            "manoeuvres": [f"{m.action} {m.switch_id}" for m in res.manoeuvres]}
+    # EVERY source node still without a busbar gets its own EXTRA one behind
+    # an open boundary — nodes with no paired departure, but ALSO "paired"
+    # nodes whose real cell turned out unwired in the libTOPO state (measured
+    # on Creney: the node then had no busbar, no boundary, and two electrical
+    # nodes merged). Includes load/generator-only buses via ``all_nodes``.
+    n_busbars = len(order)
+    for mb in (all_nodes or mat_groups):
+        if mb in group_slot:
+            continue
+        open_after.append(n_busbars - 1)
+        group_slot[mb] = n_busbars
+        n_busbars += 1
+    return {"ref_vl": ref_vl, "n_busbars": max(n_busbars, 1), "slot": slot,
+            "open_after": sorted(set(open_after)), "group_slot": group_slot,
+            "n_real_busbars": len(real_bbs),
+            "manoeuvres": [f"{m.action} {m.switch_id}" for m in manoeuvres]}
 
 
 # ------------------------------------------------- network-source frontend
 def plans_from_network(src, bus_sub: dict, verbose: bool = False) -> dict:
-    """Build plans directly from the imported MATPOWER pypowsybl network, so
-    feeder ids match the rebuild's exactly. ``src`` is the BUS_BREAKER source
-    network, ``bus_sub`` the identity map (MATPOWER bus -> substation)."""
+    """Real-topology plans for EVERY identity-mapped THT voltage level of the
+    imported MATPOWER network — multi-node AND single-node (the game needs the
+    real detailed structure everywhere manoeuvre actions may be played).
+
+    A VL is eligible when every one of its source buses is mapped to the SAME
+    substation and the reference owns that site's yard at the VL's voltage.
+    Plans are keyed by ``(site, kv, frozenset(buses))`` and joined by the
+    rebuild on the exact source-bus set.
+    """
+    ref_net = load_tht_reference()
+    ref_ix = reference_vls(ref_net)
+    ref_lines = ref_net.get_lines()
+    ref_twt = ref_net.get_2_windings_transformers()
+
     vls = src.get_voltage_levels()
     nomv = {v: float(vls.loc[v, "nominal_v"]) for v in vls.index}
     buses = src.get_buses(attributes=["voltage_level_id"])
 
-    def bus_num(bid):
+    # Node identity is the FULL pypowsybl bus id ("VL-x_0", "VL-x_1"): a
+    # multi-node VL's buses share the same MATPOWER number, so keying by
+    # number would merge distinct electrical nodes (measured: 6383 buses
+    # instead of 6468 and a diverging load flow). The MATPOWER number of a
+    # bus is recovered from the LINE-f-t / TWT-f-t equipment ids (side1=f).
+    def eq_nums(eid):
+        parts = str(eid).split("#")[0].split("-")
         try:
-            return int(str(bid).split("-")[-1].split("_")[0].split("#")[0])
-        except ValueError:
-            return None
+            return int(parts[1]), int(parts[2])
+        except (IndexError, ValueError):
+            return None, None
 
-    bus_kv = {}
+    vl_buses: dict = collections.defaultdict(list)
     for bid, r in buses.iterrows():
-        n = bus_num(bid)
-        if n is not None:
-            bus_kv[n] = int(round(nomv.get(r["voltage_level_id"], 0)))
+        vl_buses[r["voltage_level_id"]].append(str(bid))
+    kv_of_bid = {bid: int(round(nomv.get(vl, 0)))
+                 for vl, bs in vl_buses.items() for bid in bs}
+
     lines = src.get_lines(all_attributes=True)
-    case_lines = []
+    twt = src.get_2_windings_transformers(all_attributes=True)
+    num_of_bid: dict = {}
+    for df in (lines, twt):
+        for eid, r in df.iterrows():
+            f, t = eq_nums(eid)
+            if f is not None:
+                num_of_bid.setdefault(str(r["bus1_id"]), f)
+                num_of_bid.setdefault(str(r["bus2_id"]), t)
+
+    def site_of_bid(bid):
+        n = num_of_bid.get(str(bid))
+        rec = bus_sub.get(n) if n is not None else None
+        if rec is None and n is not None:
+            rec = bus_sub.get(str(n))
+        if rec is None:
+            return None
+        return rec["substation"] if isinstance(rec, dict) else rec
+
+    # MATPOWER equipment per pypowsybl bus id: same-kv lines + transformers
+    eq_of_bus: dict = collections.defaultdict(list)
     for lid, r in lines.iterrows():
-        f, t = bus_num(r["bus1_id"]), bus_num(r["bus2_id"])
-        if f is None or t is None:
+        b1, b2 = str(r["bus1_id"]), str(r["bus2_id"])
+        if kv_of_bid.get(b1) != kv_of_bid.get(b2):
             continue
         b_tot = abs(r.get("b1", 0.0)) + abs(r.get("b2", 0.0))
-        case_lines.append({"id": str(lid), "f": f, "t": t,
-                           "x_ohm": abs(r["x"]), "r_ohm": abs(r["r"]),
-                           "b_s": b_tot})
-    return build_topology_plans(case_lines, bus_sub, bus_kv, verbose=verbose)
-
-
-def build_topology_plans(case_lines: list[dict], bus_sub: dict,
-                         bus_kv: dict, verbose: bool = False) -> dict:
-    """Plans for every mapped multi-node THT voltage level of a case.
-
-    ``case_lines``: [{id, f, t, x_ohm, r_ohm, b_s}] MATPOWER same-kv lines.
-    ``bus_sub``: MATPOWER bus -> {"substation": code} identity map.
-    ``bus_kv``: MATPOWER bus -> rounded kv.
-
-    Returns ``{(site, kv): plan}``; each plan carries ``buses`` (the MATPOWER
-    source buses it reproduces) so the caller can join onto its own VL ids
-    (a rebuild VL is covered when its source buses are exactly the plan's).
-    """
-    ref_net = load_tht_reference()
-    ref_ix = reference_vls(ref_net)
-    lines_df = ref_net.get_lines()
-    vls_df = ref_net.get_voltage_levels()
-    nomv = {v: float(vls_df.loc[v, "nominal_v"]) for v in vls_df.index}
-
-    # group MATPOWER buses per (site, kv)
-    site_buses = collections.defaultdict(list)
-    for b, rec in bus_sub.items():
-        s = rec["substation"] if isinstance(rec, dict) else rec
-        kv = bus_kv.get(int(b))
-        if kv in (380, 225):
-            site_buses[(s, kv)].append(int(b))
-
-    plans: dict = {}
-    for (s, kv), buses in sorted(site_buses.items()):
-        if len(buses) < 2:
-            continue                      # single node: generic build is exact
-        ref_vl = ref_ix.get((s, kv))
-        if ref_vl is None:
+        sig = _line_sig(abs(r["x"]), abs(r["r"]), b_tot)
+        for a, b_ in ((b1, b2), (b2, b1)):
+            eq_of_bus[a].append({"id": str(lid), "kind": "line",
+                                 "far_site": site_of_bid(b_), "sig": sig})
+    for tid, r in twt.iterrows():
+        # intra-VL transformers are SERIES devices (phase-shifter loops, e.g.
+        # the Logelbach TD: TWT-6102-6231 + LINE-6231-6102 between two nodes
+        # of one VL) — pairing one to a substation AT cell slots both ends on
+        # the same busbar and kills it. They stay on the generic per-node
+        # layout, which keeps the loop's two nodes apart.
+        if r["voltage_level1_id"] == r["voltage_level2_id"]:
             continue
-        # MATPOWER feeders of those buses at this kv
-        mat_feeders, mat_groups = [], collections.defaultdict(list)
-        for ln in case_lines:
-            for a, b_ in ((ln["f"], ln["t"]), (ln["t"], ln["f"])):
-                if a in buses and bus_kv.get(ln["f"]) == bus_kv.get(ln["t"]) == kv:
-                    far = bus_sub.get(b_) or bus_sub.get(str(b_))
-                    far_s = (far["substation"] if isinstance(far, dict) else far) \
-                        if far else None
-                    if far_s and far_s != s:
-                        mat_feeders.append({"id": ln["id"], "far_site": far_s,
-                                            "sig": _line_sig(ln["x_ohm"],
-                                                             ln["r_ohm"],
-                                                             ln["b_s"])})
-                        mat_groups[a].append(ln["id"])
-        if len(mat_groups) < 2:
-            continue
-        # RTE departures of the reference VL
-        rte_departs = []
-        for lid, r in lines_df.iterrows():
+        for a in (str(r["bus1_id"]), str(r["bus2_id"])):
+            eq_of_bus[a].append({"id": str(tid), "kind": "xfmr",
+                                 "far_site": None, "sig": None})
+
+    # reference departures per ref VL: lines (far site + signature) + 2WT
+    def ref_departs(ref_vl):
+        deps = []
+        for lid, r in ref_lines.iterrows():
             v1, v2 = r["voltage_level1_id"], r["voltage_level2_id"]
             if ref_vl not in (v1, v2):
                 continue
             other = v2 if v1 == ref_vl else v1
             b_tot = abs(r.get("b1", 0.0)) + abs(r.get("b2", 0.0))
-            rte_departs.append({"id": lid, "far_site": other[:5],
-                                "sig": _line_sig(r["x"], r["r"], b_tot)})
-        pairing = pair_departures(mat_feeders, rte_departs)
+            deps.append({"id": lid, "kind": "line", "far_site": other[:5],
+                         "sig": _line_sig(r["x"], r["r"], b_tot)})
+        for tid, r in ref_twt.iterrows():
+            if ref_vl in (r["voltage_level1_id"], r["voltage_level2_id"]):
+                deps.append({"id": tid, "kind": "xfmr", "far_site": None,
+                             "sig": None})
+        return deps
+
+    plans: dict = {}
+    stats = collections.Counter()
+    for vl, ns in sorted(vl_buses.items()):
+        kv = int(round(nomv.get(vl, 0)))
+        if kv not in (380, 225):
+            continue
+        # The VL *is* one physical substation: its site is the strict-mapped
+        # buses' common site. Buses without a strict identity (internal small
+        # nodes the map left loose) still belong to that substation and take
+        # part in pairing; only a CONFLICT of two distinct sites disqualifies.
+        sites = {x for x in (site_of_bid(n) for n in ns) if x}
+        if len(sites) != 1:
+            stats["vl_site_mixte_ou_absent"] += 1
+            continue
+        s = next(iter(sites))
+        ref_vl = ref_ix.get((s, kv))
+        if ref_vl is None:
+            stats["vl_sans_yard_ref"] += 1
+            continue
+        mat_groups = {n: [e["id"] for e in eq_of_bus.get(n, ())] for n in ns}
+        mat_groups = {n: ids for n, ids in mat_groups.items() if ids}
+        if not mat_groups:
+            stats["vl_sans_equipement"] += 1
+            continue
+        deps = ref_departs(ref_vl)
+        # pair the lines by far-site+features, the transformers by exclusivity
+        mat_flat = [e for n in ns for e in eq_of_bus.get(n, ())]
+        pairing = pair_departures(
+            [e for e in mat_flat if e["kind"] == "line" and e["far_site"]],
+            [d for d in deps if d["kind"] == "line"])
+        rte_x = [d["id"] for d in deps if d["kind"] == "xfmr"]
+        mat_x = sorted({e["id"] for e in mat_flat if e["kind"] == "xfmr"})
+        for mid, rid in zip(mat_x, rte_x):
+            pairing[mid] = rid
         try:
-            plan = plan_for_vl(ref_net, ref_vl, mat_groups, pairing)
+            plan = plan_for_vl(ref_net, ref_vl, mat_groups, pairing,
+                               all_nodes=[str(n) for n in ns])
         except Exception as exc:  # noqa: BLE001 — graceful per-VL degradation
             if verbose:
                 print(f"  [rte-topo] {ref_vl}: libTOPO KO ({exc})")
+            stats["libtopo_ko"] += 1
             plan = None
-        if plan:
-            plan["site"] = s
-            plan["kv"] = kv
-            plan["buses"] = sorted(buses)
-            plans[(s, kv)] = plan
-            if verbose:
-                print(f"  [rte-topo] {ref_vl}: plan réel "
-                      f"{plan['n_busbars']} barres, "
-                      f"{len(plan['slot'])} départs affectés, "
-                      f"couplages ouverts après {plan['open_after']}")
+        if plan is None:
+            stats["plan_none"] += 1
+            continue
+        plan["site"], plan["kv"], plan["buses"] = s, kv, sorted(ns)
+        plans[(s, kv, frozenset(ns))] = plan
+        stats["multi" if len(ns) > 1 else "mono"] += 1
+        if verbose and len(ns) > 1:
+            print(f"  [rte-topo] {ref_vl}: {plan['n_busbars']} barres "
+                  f"({plan['n_real_busbars']} réelles), "
+                  f"{len(plan['slot'])} départs, open@{plan['open_after']}")
+    if verbose:
+        print(f"  [rte-topo] bilan: {dict(stats)}")
     return plans

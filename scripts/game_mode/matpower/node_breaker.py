@@ -126,19 +126,11 @@ def rebuild_node_breaker(src, bus_sub: dict | None = None,
     nbus, n_rte = _busbar_counts(vls, deg, bus_sub, rte_struct, coupler_min, n_src)
 
     # ---- join the real-topology plans onto this network's VLs -------------
-    def _bus_num(bid):
-        try:
-            return int(str(bid).split("-")[-1].split("_")[0].split("#")[0])
-        except ValueError:
-            return None
-
     vl_plan: dict = {}
     if topo_plans:
         by_buses = {frozenset(p["buses"]): p for p in topo_plans.values()}
         for vl, bids in src_order.items():
-            nums = frozenset(n for n in (_bus_num(b) for b in bids)
-                             if n is not None)
-            plan = by_buses.get(nums)
+            plan = by_buses.get(frozenset(str(b) for b in bids))
             if plan:
                 vl_plan[vl] = plan
                 nbus[vl] = max(plan["n_busbars"], len(bids))
@@ -163,8 +155,7 @@ def rebuild_node_breaker(src, bus_sub: dict | None = None,
         # non-paired equipment: first busbar of its source node's group
         bids = src_order.get(vl, [])
         if 0 <= generic < len(bids):
-            mb = _bus_num(bids[generic])
-            gs = plan["group_slot"].get(mb)
+            gs = plan["group_slot"].get(str(bids[generic]))
             if gs is not None:
                 return gs
         return generic
