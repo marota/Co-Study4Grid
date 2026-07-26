@@ -461,6 +461,36 @@ def plans_from_network(src, bus_sub: dict, loose_sub: dict | None = None,
                   f"(total {len(plans)})")
         if pass_added == 0:
             break
+
+    # ---- anchor-free clusters: joint constrained backtracking -------------
+    unresolved = [vl for vl, ns in vl_buses.items()
+                  if vl not in planned_vls
+                  and int(round(nomv.get(vl, 0))) in (380, 225)]
+    if unresolved:
+        rebuild_lines_eq()
+        taken = {(p["site"], p["kv"]) for p in plans.values()}
+        assign = _cluster_solve(unresolved, vl_buses, nomv, eq_of_bus,
+                                site_of_bid, ref_ix, ref_departs, ref_adj,
+                                taken, verbose=verbose)
+        if assign:
+            for vl, site in assign.items():
+                for b in vl_buses[vl]:
+                    overlay[str(b)] = site
+            rebuild_lines_eq()
+            added = 0
+            for vl in sorted(assign):
+                plan = _try_plan_vl(vl, vl_buses[vl], nomv, site_of_bid,
+                                    loose_site_of_bid, _arbitrate_site,
+                                    ref_ix, ref_departs, ref_adj, eq_of_bus,
+                                    ref_net, stats, verbose)
+                if plan is not None:
+                    plans[(plan["site"], plan["kv"],
+                           frozenset(plan["buses"]))] = plan
+                    planned_vls.add(vl)
+                    added += 1
+            if verbose:
+                print(f"  [rte-topo] passe cluster: +{added} plans "
+                      f"(total {len(plans)})")
     if verbose:
         print(f"  [rte-topo] bilan: {dict(stats)}")
     return plans
@@ -533,3 +563,108 @@ def _try_plan_vl(vl, ns, nomv, site_of_bid, loose_site_of_bid, arbitrate,
                   f"({plan['n_real_busbars']} réelles), "
                   f"{len(plan['slot'])} départs, open@{plan['open_after']}")
         return plan
+
+
+# ---------------------------------------------------- anchor-free clusters
+def _cluster_solve(unresolved, vl_buses, nomv, eq_of_bus, site_of_bid,
+                   ref_ix, ref_departs_fn, ref_adj, taken_sites,
+                   verbose=False):
+    """Joint resolution of an anchor-free cluster of VLs by constrained
+    backtracking on graph structure.
+
+    Local deduction cannot start inside a cluster whose members only point at
+    each other. Jointly, the constraints are strong: every VL must sit on a
+    site whose real yard exists at its voltage, adjacent (in the reference)
+    to the sites of its already-resolved neighbours AND of its co-cluster
+    neighbours; two VLs cannot share a (site, kv) yard; candidates are scored
+    by ouvrage pairing. Most-constrained-first DFS with pruning.
+
+    Returns {vl: site} for the assignments found (possibly partial: the DFS
+    only fixes VLs whose candidate list is non-empty and consistent).
+    """
+    members = set(unresolved)
+    # neighbour sites (resolved) and cluster edges, per member VL
+    fixed_nbrs: dict = collections.defaultdict(set)
+    cluster_edges: dict = collections.defaultdict(set)
+    bid_vl = {str(b): vl for vl, bs in vl_buses.items() for b in bs}
+    for vl in members:
+        for b in vl_buses[vl]:
+            for e in eq_of_bus.get(str(b), ()):
+                if e["kind"] != "line":
+                    continue
+                if e["far_site"]:
+                    fixed_nbrs[vl].add(e["far_site"])
+    # cluster adjacency via shared line ids
+    line_vls: dict = collections.defaultdict(set)
+    for vl in members:
+        for b in vl_buses[vl]:
+            for e in eq_of_bus.get(str(b), ()):
+                if e["kind"] == "line":
+                    line_vls[e["id"]].add(vl)
+    for _lid, vls_ in line_vls.items():
+        for a in vls_:
+            for b in vls_:
+                if a != b:
+                    cluster_edges[a].add(b)
+
+    # candidates per VL: sites adjacent (ref) to every fixed neighbour site,
+    # owning the right yard, not already taken — scored by ouvrage pairing
+    cand: dict = {}
+    for vl in members:
+        kv = int(round(nomv.get(vl, 0)))
+        pool: set | None = None
+        for s in fixed_nbrs[vl]:
+            near = ref_adj.get(s, set())
+            pool = near if pool is None else (pool & near)
+        if pool is None:
+            continue                      # no fixed neighbour at all
+        pool = {s for s in pool if (s, kv) in ref_ix
+                and (s, kv) not in taken_sites}
+        if not pool:
+            continue
+        mat_lines = [e for b in vl_buses[vl] for e in eq_of_bus.get(str(b), ())
+                     if e["kind"] == "line" and e["far_site"]]
+        scored = []
+        for s in sorted(pool):
+            deps = [d for d in ref_departs_fn(ref_ix[(s, kv)])
+                    if d["kind"] == "line"]
+            scored.append((-len(pair_departures(mat_lines, deps)),
+                           abs(len(mat_lines) - len(deps)), s))
+        scored.sort()
+        cand[vl] = [s for *_x, s in scored[:4]]
+    if not cand:
+        return {}
+
+    order = sorted(cand, key=lambda vl: len(cand[vl]))
+    assign: dict = {}
+
+    def ok(vl, s):
+        kv = int(round(nomv.get(vl, 0)))
+        if any(a_s == s and int(round(nomv.get(a_vl, 0))) == kv
+               for a_vl, a_s in assign.items()):
+            return False                  # yard exclusivity
+        for nb in cluster_edges[vl]:
+            if nb in assign and assign[nb] != s \
+                    and assign[nb] not in ref_adj.get(s, set()):
+                return False              # cluster edges must be real-adjacent
+        return True
+
+    def dfs(i):
+        if i == len(order):
+            return True
+        vl = order[i]
+        for s in cand[vl]:
+            if ok(vl, s):
+                assign[vl] = s
+                if dfs(i + 1):
+                    return True
+                del assign[vl]
+        # leaving this VL unassigned is preferable to failing the cluster —
+        # tried last, so assignment always wins when consistent
+        return dfs(i + 1)
+
+    dfs(0)
+    if verbose and assign:
+        print(f"  [rte-topo] cluster-solve: {len(assign)}/{len(members)} "
+              f"VL affectés {sorted(assign.items())[:6]}")
+    return assign
