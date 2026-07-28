@@ -64,6 +64,60 @@ substation's **real RTE busbar count**, which the rebuild replicates — 430 VLs
 `case6515rte`, giving real 4-, 6- and 9-busbar substations instead of a uniform
 double busbar.
 
+### Checked against the RTE7000 THT reference
+
+The named snapshot the cases were matched against (`grid_5384e039`) is the ground
+truth for both the coordinate frame and the real substation structure, so the two
+datasets are compared directly (`test_repair_layout.py` pins the results):
+
+**Coordinate frame — identical.** Median translation between the frames is
+0.26 km and the median pairwise-distance ratio is 0.9998, so both layouts are the
+same raw Mercator metres with no offset, scale or rotation to reconcile. Extents:
+THT 1 027 k × 1 056 k units, Matpower 955 k × 994 k — the Matpower set is slightly
+smaller because it reaches 61 % of the THT 400 kV postes, not all of them.
+
+**Voltage levels — the reason the map needed a threshold.** THT is EHV-only;
+73 % of the Matpower voltage levels have no counterpart in it at all:
+
+| kV | RTE7000 THT | Matpower |
+|---|---|---|
+| 380 | 302 | 456 |
+| 225 | 1 081 | 1 236 |
+| 150 / 90 / 63 / 45 | 0 | 67 / 1 100 / 3 048 / 64 |
+| ≤ 24 (auxiliary) | 41 | 278 |
+| **total** | **1 424** | **6 249** |
+
+**Identity positions — every anchored one is where its poste is.** All 449
+identities resolvable in the THT layout are 380 kV, every claimed poste really has
+a 380 kV level (0 voltage mismatches), and as reconstructed each sits 1.9 km
+(median, max 5.9 km) from it — the deliberate jitter that stops a substation's
+several voltage levels drawing on top of each other. After the repair the
+**anchored** ones are unchanged to the metre (p50 1.92, max 5.86 km), `strict`
+matches included. The 55 released ones move a median of 50 km (max 241 km) away
+from the poste they name — that is the price of the repair, and it is why only
+`loose`, topology-contradicted matches are eligible.
+
+**Structure — the over-assignment, confirmed against ground truth.** A real THT
+poste has at most 6 voltage levels at 400 kV (mean 1.5). The Matpower mapping
+claims up to **52**:
+
+| poste | Matpower 380 kV VLs | THT 380 kV VLs |
+|---|---|---|
+| SCHEE | 52 | 1 |
+| MARSI | 34 | 1 |
+| GRAV5 | 17 | 1 |
+| E.HU7 | 16 | 1 |
+| CATG2 | 14 | 1 |
+
+No claimed name is bogus — all 122 are genuine THT 400 kV postes — so the fault is
+purely multiplicity: 31 postes over-claim by 3 or more and hold 296 of the 452
+identities. Reassuringly, the release rule below never consults this table and
+still lands on the same places: **37 of the 55 released identities (67 %) sit at
+one of those 31 over-assigned postes.** The other 259 excess identities stay
+anchored — their position agrees with their own neighbourhood, so the drawing is
+consistent even where the name is over-claimed, and there is nothing to gain by
+moving them.
+
 ### Layout repair (`repair_layout.py`)
 
 The propagated positions — everything that is not an identified 380 kV poste —

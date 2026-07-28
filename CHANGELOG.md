@@ -40,6 +40,18 @@ app "the thickness of the lines looks too bold". Three causes, three fixes.
   hairball. `gen_network_previews.py` takes a per-family `min_kv`; the Matpower
   map is now 1 692 nodes / 2 600 lines against France THT's 1 464 / 2 499.
   Caption updated to say what is drawn.
+- **Cross-checked both grids against the RTE7000 THT reference** and pinned the
+  result in `test_repair_layout.py`. The two datasets share one coordinate frame
+  (median translation 0.26 km, pairwise-distance ratio 0.9998 — no offset, scale
+  or rotation), every claimed poste really carries a 380 kV level (0 voltage
+  mismatches over 449 identities), and anchored identities sit 1.9 km from their
+  poste (max 5.9 km) **before and after** the repair — `strict` matches included.
+  The 55 released ones move a median of 50 km (max 241 km), which is the price
+  and why only `loose`, topology-contradicted matches are eligible. The
+  over-assignment is confirmed against ground truth: a real THT poste has at most
+  6 voltage levels at 400 kV (mean 1.5) where the mapping claims up to 52, and
+  31 postes over-claim by ≥ 3. The release rule never consults that table yet
+  lands on the same places — 37 of the 55 released (67 %) sit at one of them.
 - **NAD branch width now follows grid density.** App.css puts every NAD stroke
   in `vector-effect: non-scaling-stroke`, so pypowsybl's `stroke-width: 5` was
   5 *rendered pixels* on every grid however dense — fine on France THT, a

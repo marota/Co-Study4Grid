@@ -22,6 +22,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import math
+import re
+import statistics
 from pathlib import Path
 
 import pytest
@@ -32,6 +35,16 @@ GRIDS = REPO / "data" / "rte_matpower" / "grids"
 
 #: The largest committed case — the fullest picture of the family's topology.
 REFERENCE_GRID = "grid_6be3a179"
+
+#: The named France THT snapshot `geo.py` matched the cases against. It is the
+#: ground truth for both the coordinate frame and the real substation structure.
+THT_GRID = REPO / "data" / "rte7000_tht" / "grids" / "grid_5384e039"
+
+#: Every identity lands within 5.9 km of its claimed poste as reconstructed —
+#: the deliberate jitter that keeps a substation's several voltage levels from
+#: drawing on top of each other. 10 km leaves room for a rebuild without letting
+#: a broken frame or a shifted mapping through.
+MAX_IDENTITY_TO_POSTE_KM = 10.0
 
 #: Ceilings taken from the France THT reference grid (grid_5384e039), whose map
 #: the repair is meant to be comparable with: neighbour offsets there run
@@ -69,6 +82,43 @@ built = pytest.mark.skipif(
 
 def _grid_dirs():
     return sorted(d for d in GRIDS.iterdir() if d.is_dir()) if GRIDS.is_dir() else []
+
+
+def _tht_poste_positions() -> dict:
+    """``{poste id: [(x, y)]}`` for the France THT reference.
+
+    Read from the XIIDM `<substation>` nesting, NOT from the voltage-level id
+    prefix: 157 of the 1 424 THT voltage levels are extra 400 kV nodes named
+    `1<poste>P7` / `2<poste>P7`, whose prefix is not their substation.
+    """
+    xml = R.load_network_xml(THT_GRID)
+    layout = json.loads((THT_GRID / "grid_layout.json").read_text(encoding="utf-8"))
+    out: dict[str, list] = {}
+    current = None
+    for m in re.finditer(r"<(/?)(?:\w+:)?(substation|voltageLevel)\b([^>]*)>", xml):
+        closing, tag, attrs = m.group(1), m.group(2), m.group(3)
+        if tag == "substation":
+            current = None if closing else re.search(r'\bid="([^"]+)"', attrs).group(1)
+            if current:
+                out.setdefault(current, [])
+        elif tag == "voltageLevel" and not closing and current:
+            vl = re.search(r'\bid="([^"]+)"', attrs)
+            if vl and vl.group(1) in layout:
+                out[current].append(tuple(layout[vl.group(1)]))
+    return out
+
+
+def _identity_to_poste_km(layout: dict, substation_map: dict, postes: dict):
+    """``{voltage level: km to the nearest VL of the poste it claims}``."""
+    out = {}
+    for bus, info in substation_map.items():
+        vl = f"VL-{bus}"
+        candidates = postes.get(info["substation"].strip())
+        if vl not in layout or not candidates:
+            continue
+        x, y = layout[vl][0], layout[vl][1]
+        out[vl] = min(math.hypot(x - cx, y - cy) for cx, cy in candidates) * R.KM_PER_UNIT
+    return out
 
 
 # ---------------------------------------------------------------- anchor policy
@@ -210,6 +260,88 @@ def test_the_committed_reference_layout_is_as_neat_as_the_france_tht_map():
     assert share <= MAX_LONG_BRANCH_SHARE, (
         f"{share:.1%} of branches exceed {R.LONG_BRANCH_KM:.0f} km — the raw "
         f"reconstruction shipped 2.9 %, the repair brings it to ~0.9 %")
+
+
+both_built = pytest.mark.skipif(
+    not (GRIDS / REFERENCE_GRID / "grid_layout.json").is_file()
+    or not (THT_GRID / "grid_layout.json").is_file(),
+    reason="the Matpower family or the France THT reference is not built here",
+)
+
+
+@both_built
+def test_matpower_and_france_tht_layouts_share_one_coordinate_frame():
+    """Both datasets must be in the same raw Mercator metres.
+
+    The Matpower positions are only meaningful because they were chained onto
+    named THT postes. A rebuild that shipped a rescaled or shifted frame would
+    still look like a plausible map on its own while putting every substation in
+    the wrong place, so the agreement is worth pinning.
+    """
+    postes = _tht_poste_positions()
+    grid_dir = GRIDS / REFERENCE_GRID
+    layout = json.loads((grid_dir / "grid_layout.json").read_text(encoding="utf-8"))
+    smap = json.loads((grid_dir / "rte_substation_map.json").read_text(encoding="utf-8"))
+    released = set(json.loads(
+        (grid_dir / "layout_repair.json").read_text(encoding="utf-8")
+    )["released_identities"])
+
+    # Pair each anchored identity with the NEAREST voltage level of the poste it
+    # claims (a poste carries up to 7, a few hundred metres apart).
+    anchored = []
+    for vl in _identity_to_poste_km(layout, smap, postes):
+        if vl in released:
+            continue
+        p = (layout[vl][0], layout[vl][1])
+        candidates = postes[smap[vl.split("-", 1)[1]]["substation"].strip()]
+        anchored.append(
+            (p, min(candidates, key=lambda c: math.hypot(p[0] - c[0], p[1] - c[1]))))
+    assert len(anchored) > 300, "too few resolvable identities to conclude anything"
+
+    # No systematic translation between the two frames.
+    shift = math.hypot(statistics.median(p[0] - c[0] for p, c in anchored),
+                       statistics.median(p[1] - c[1] for p, c in anchored)) * R.KM_PER_UNIT
+    assert shift < 5.0, f"frames are offset by {shift:.1f} km"
+
+    # No rescaling: distances between the same two postes must agree in both.
+    ratios = []
+    for (p1, c1), (p2, c2) in zip(anchored[::2], anchored[1::2]):
+        d_tht = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
+        if d_tht < 50_000:  # too close to measure a ratio against
+            continue
+        ratios.append(math.hypot(p1[0] - p2[0], p1[1] - p2[1]) / d_tht)
+    assert ratios
+    assert statistics.median(ratios) == pytest.approx(1.0, abs=0.02)
+
+
+@both_built
+def test_the_repair_never_moves_a_voltage_level_off_its_real_rte_poste():
+    """Anchored identities keep the position their RTE identity claims.
+
+    This is the whole contract of the repair: the map gets tidier, but a poste
+    that upstream identified stays exactly where that identification puts it.
+    """
+    postes = _tht_poste_positions()
+    grid_dir = GRIDS / REFERENCE_GRID
+    layout = json.loads((grid_dir / "grid_layout.json").read_text(encoding="utf-8"))
+    smap = json.loads((grid_dir / "rte_substation_map.json").read_text(encoding="utf-8"))
+    provenance = json.loads((grid_dir / "layout_repair.json").read_text(encoding="utf-8"))
+    released = set(provenance["released_identities"])
+
+    distances = _identity_to_poste_km(layout, smap, postes)
+    kept = {vl: km for vl, km in distances.items() if vl not in released}
+    assert kept, "no anchored identity resolved against the THT reference"
+
+    worst = max(kept.items(), key=lambda kv: kv[1])
+    assert worst[1] <= MAX_IDENTITY_TO_POSTE_KM, (
+        f"{worst[0]} sits {worst[1]:.1f} km from the poste it claims — the repair "
+        f"must not move an anchored identity")
+
+    # Every `strict` match in particular, released or not (none should be).
+    identities = R.identity_ids(smap, layout)
+    for vl, km in distances.items():
+        if identities.get(vl) == "strict":
+            assert km <= MAX_IDENTITY_TO_POSTE_KM, vl
 
 
 @built
