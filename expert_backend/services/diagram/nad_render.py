@@ -46,6 +46,40 @@ def _strip_nan_elements(svg: str) -> str:
         return svg
 
 
+def augment_layout_with_boundary_nodes(df_layout: Any, network: Any) -> Any:
+    """Pin dangling-line boundary nodes at their host voltage level's position.
+
+    ``grid_layout.json`` only positions voltage levels, but the NAD also draws
+    one boundary node per *dangling line* (the France THT snapshots carry 35 —
+    the Spanish/Belgian interconnectors). With GEOGRAPHICAL layout those nodes
+    have no fixed position, get auto-placed far outside the France band, and
+    stretch the viewBox to ~2.2× its height — the "comet tail" of lines running
+    off the map. Giving each one its host VL's coordinate keeps the stub drawn
+    AT the border poste and the viewBox tight to the layout extent.
+
+    Returns a new DataFrame (the cached ``df_layout`` is never mutated); returns
+    ``df_layout`` unchanged when there is nothing to add or the network cannot
+    enumerate dangling lines (e.g. the test-suite mock).
+    """
+    if df_layout is None:
+        return None
+    try:
+        import pandas as pd
+        dangling = network.get_dangling_lines(attributes=["voltage_level_id"])
+        rows = [
+            {"id": dl_id, "x": df_layout.at[vl, "x"], "y": df_layout.at[vl, "y"]}
+            for dl_id, vl in dangling["voltage_level_id"].items()
+            if vl in df_layout.index and dl_id not in df_layout.index
+        ]
+        if not rows:
+            return df_layout
+        logger.info("[RECO] Pinned %d dangling-line boundary nodes to their host VL.", len(rows))
+        return pd.concat([df_layout, pd.DataFrame(rows).set_index("id")])
+    except Exception as e:
+        logger.warning("Warning: could not pin dangling-line boundary nodes: %s", e)
+        return df_layout
+
+
 def generate_diagram(
     network: Any,
     df_layout: Any = None,
@@ -66,7 +100,7 @@ def generate_diagram(
 
     kwargs: dict = {"nad_parameters": nad_parameters}
     if df_layout is not None:
-        kwargs["fixed_positions"] = df_layout
+        kwargs["fixed_positions"] = augment_layout_with_boundary_nodes(df_layout, network)
     if voltage_level_ids is not None:
         kwargs["voltage_level_ids"] = voltage_level_ids
         kwargs["depth"] = depth

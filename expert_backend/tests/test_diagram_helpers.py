@@ -117,6 +117,52 @@ class TestStripNanElements:
 
 
 # ----------------------------------------------------------------------
+# nad_render — dangling-line boundary-node pinning
+# ----------------------------------------------------------------------
+
+class TestAugmentLayoutWithBoundaryNodes:
+    def _layout(self):
+        return pd.DataFrame(
+            [{"id": "VL_A", "x": 10.0, "y": 20.0}, {"id": "VL_B", "x": 30.0, "y": 40.0}]
+        ).set_index("id")
+
+    def _network(self, dangling: dict):
+        net = MagicMock()
+        net.get_dangling_lines.return_value = pd.DataFrame(
+            [{"id": k, "voltage_level_id": v} for k, v in dangling.items()]
+        ).set_index("id")
+        return net
+
+    def test_pins_boundary_nodes_at_their_host_vl(self):
+        df = self._layout()
+        out = nad_render.augment_layout_with_boundary_nodes(
+            df, self._network({"XBORDER_1": "VL_A", "XBORDER_2": "VL_B"}))
+        assert out.at["XBORDER_1", "x"] == 10.0
+        assert out.at["XBORDER_1", "y"] == 20.0
+        assert out.at["XBORDER_2", "x"] == 30.0
+        # The cached input frame is never mutated.
+        assert "XBORDER_1" not in df.index
+
+    def test_skips_unpositioned_hosts_and_explicit_entries(self):
+        df = pd.DataFrame(
+            [{"id": "VL_A", "x": 10.0, "y": 20.0}, {"id": "XPINNED", "x": 1.0, "y": 2.0}]
+        ).set_index("id")
+        out = nad_render.augment_layout_with_boundary_nodes(
+            df, self._network({"XPINNED": "VL_A", "XORPHAN": "VL_UNKNOWN"}))
+        # An explicit layout entry wins; a host absent from the layout adds nothing.
+        assert out is df
+
+    def test_returns_input_when_network_cannot_enumerate(self):
+        df = self._layout()
+        net = MagicMock()
+        net.get_dangling_lines.side_effect = AttributeError("mock")
+        assert nad_render.augment_layout_with_boundary_nodes(df, net) is df
+
+    def test_none_layout_passes_through(self):
+        assert nad_render.augment_layout_with_boundary_nodes(None, MagicMock()) is None
+
+
+# ----------------------------------------------------------------------
 # sld_render
 # ----------------------------------------------------------------------
 

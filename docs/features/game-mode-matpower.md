@@ -87,79 +87,114 @@ smaller because it reaches 61 % of the THT 400 kV postes, not all of them.
 | ≤ 24 (auxiliary) | 41 | 278 |
 | **total** | **1 424** | **6 249** |
 
-**Identity positions — every anchored one is where its poste is.** All 449
-identities resolvable in the THT layout are 380 kV, every claimed poste really has
-a 380 kV level (0 voltage mismatches), and as reconstructed each sits 1.9 km
-(median, max 5.9 km) from it — the deliberate jitter that stops a substation's
-several voltage levels drawing on top of each other. After the repair the
-**anchored** ones are unchanged to the metre (p50 1.92, max 5.86 km), `strict`
-matches included. The 55 released ones move a median of 50 km (max 241 km) away
-from the poste they name — that is the price of the repair, and it is why only
-`loose`, topology-contradicted matches are eligible.
+**Identity positions.** All 449 identities resolvable in the THT layout are
+380 kV, every claimed poste really has a 380 kV level (0 voltage mismatches),
+and as reconstructed each sits 1.9 km (median, max 5.9 km) from it — the
+deliberate jitter that stops a substation's several voltage levels drawing on
+top of each other. The repair keeps every **kept** identity unchanged to the
+metre, `strict` matches included.
 
 **Structure — the over-assignment, confirmed against ground truth.** A real THT
 poste has at most 6 voltage levels at 400 kV (mean 1.5). The Matpower mapping
 claims up to **52**:
 
-| poste | Matpower 380 kV VLs | THT 380 kV VLs |
-|---|---|---|
-| SCHEE | 52 | 1 |
-| MARSI | 34 | 1 |
-| GRAV5 | 17 | 1 |
-| E.HU7 | 16 | 1 |
-| CATG2 | 14 | 1 |
+| poste | Matpower 380 kV VLs | THT 380 kV VLs | region |
+|---|---|---|---|
+| SCHEE | 52 | 1 | Alsace / eastern border |
+| MARSI | 34 | 1 | Béarn / Spain border |
+| GRAV5 | 17 | 1 | Nord coast |
+| E.HU7 | 16 | 1 | German border |
+| CATG2 | 14 | 1 | Moselle |
 
-No claimed name is bogus — all 122 are genuine THT 400 kV postes — so the fault is
-purely multiplicity: 31 postes over-claim by 3 or more and hold 296 of the 452
-identities. Reassuringly, the release rule below never consults this table and
-still lands on the same places: **37 of the 55 released identities (67 %) sit at
-one of those 31 over-assigned postes.** The other 259 excess identities stay
-anchored — their position agrees with their own neighbourhood, so the drawing is
-consistent even where the name is over-claimed, and there is nothing to gain by
-moving them.
+No claimed name is bogus (only `MUHLB`, 3 loose claims, matches no THT poste;
+`'CERN '` / `'CBRY '` carry a trailing space that used to break the lookup) —
+the fault is multiplicity: the percolation uses a few hub names as sinks, 14
+piled postes hold 226 of the 452 identities, and the piles sit exactly in the
+regions the operator flagged. Pile members mutually vouch for each other, which
+is why no per-node geometric rule can see them: *clean support* — support from
+a neighbour whose own poste is not over-claimed — collapses at every pile
+(SCHEE 1/52, MARSI 0/34, TRANS 0/12) while staying high everywhere else.
+
+**Coverage holes are the other half.** 77 of the 201 THT 400 kV postes have no
+identity at all, concentrated in the same regions: the whole Paris inner ring
+(TERRI, SAUS5, PENC5, YVE.O, VLEJU, VLEVA, REMIS, N.SE2, BOCTO, CBRY — zero
+identities), 21 postes of the Nord chain, the Loire nuclear corridor
+(Chinon/Dampierre/Belleville/Saint-Laurent), and Cordemais + Blayais in the
+west. Wherever a strict anchor exists the geometry is right; the artifacts live
+where anchors are missing or piled. Filling these holes needs upstream
+re-percolation — a layout pass cannot invent identities (a conservative 1-hop
+derivation recovers ~2 per grid at leave-one-out precision 0.90, e.g. the
+Cordemais hub).
+
+**The 225 kV layer was stacked, not misplaced.** The propagated 225 kV
+positions are individually plausible (median 2.5 km from a real THT 225 kV
+site) but degenerate: ~750 nodes crowd ~277 real sites while most of the real
+1 081-site web has no node at all — site coverage p50 was 14.4 km, *worse than
+a uniform random scatter* (9.7 km). That is exactly "I don't recognize the
+grid": the real regional webs (Brittany, Pays de la Loire, the south-east) sat
+empty while Normandy held 3.3× its real node count.
 
 ### Layout repair (`repair_layout.py`)
 
-The propagated positions — everything that is not an identified 380 kV poste —
-shipped with a tail of geographically impossible placements, which is what drew
-lines across the whole map. Measured against the France THT snapshot, whose map
-reads as neat, by how far each VL sits from the median of its own electrical
-neighbours:
+Three stages, all against the THT ground truth (`tht_reference.py`):
 
-| | p50 | p90 | p99 | max |
-|---|---|---|---|---|
-| France THT (reference) | 5.4 km | 15.0 km | 30.0 km | 45.1 km |
-| Matpower, as reconstructed | 2.8 km | 22.3 km | 91.5 km | 285.4 km |
-| Matpower, after repair | 2.5 km | **12.2 km** | 37.8 km | 150.5 km |
+1. **Identity vetting** (`identity_vetting.py`). Every claim is scored on the
+   THT *poste graph*: a claim `v → P` is supported by an identified neighbour
+   `u → Q` only when P and Q are electrical neighbours (or close) in THT.
+   Loose claims are released when their poste is absent from THT, their
+   neighbours contradict them, or their poste exceeds its plausibility cap
+   `ceil(1.5·n380) + n_generator_units` (1.5 = the 456/302 node-split ratio;
+   MATPOWER gives each generator unit its own leaf bus, so plant postes like
+   Gravelines legitimately hold more). `strict` claims are **never** released.
+   ~220 of 452 claims are released per grid; released ex-identities keep only
+   a near-zero locality weight, so the graph re-places them.
+2. **225 kV placement.** Voltage levels hanging by a 400/225 transformer off a
+   kept identity are pinned at that poste's real THT 225 kV position (~82 per
+   grid — a transformer lives inside one substation). The remaining free
+   225 kV nodes are de-stacked by a capacity-limited minimum-cost assignment
+   onto the real THT 225 kV sites (one node per site), iterated with the
+   relaxation on a growing radius (35 → 60 → 90 km) so over-dense regions can
+   export their surplus to the real-but-empty sites further out (~1 013 of
+   1 155 assigned).
+3. **Per-class anchored Laplacian relaxation**, solved exactly as one sparse
+   SPD system per axis: kept identities + 225 kV pins fixed; released
+   ex-identities at λ=0.05; snapped 225 kV nodes pulled to their site at λ=4;
+   everything else keeps λ=1 toward the raw reconstruction.
 
-`repair_layout.py` re-places the free voltage levels by an **anchored Laplacian
-relaxation** — minimise total squared branch length plus a locality term that
-keeps each VL near where the reconstruction put it, with the identified postes
-held fixed — solved exactly as one sparse system. On `grid_6be3a179` that takes
-branches longer than 100 km from **265 to 78** and those over 200 km from **53
-to 10**, while the median VL moves only 3.8 km, so the geography survives.
+Shipped results on `grid_6be3a179` (raw → v3; the v1 plain relaxation in
+between is kept for context):
 
-Some anchors are themselves the problem: `SCHEE` claims **52** 380 kV voltage
-levels on that case (`MARSI` 34, `GRAV5` 17), where real French 400 kV postes
-have 4, 6 or 9 nodes — the Rosetta percolation uses a few hub names as a sink,
-and pinning dozens of unrelated buses on one point is what draws 400 km "400 kV
-lines" between two supposedly identified postes. An identity is therefore
-released when it is `loose` **and** contradicted by its own electrical
-neighbourhood by more than 45 km (the THT maximum), re-checked each round
-because moving one poste changes what its neighbours imply. That releases 55 of
-452 on `grid_6be3a179`; every `strict` match keeps its position, and
-`rte_substation_map.json` is not rewritten — only the drawing moves.
+| metric | raw | v1 | v3 |
+|---|---|---|---|
+| branches > 100 km | 265 | 78 | **68** |
+| branches > 200 km | 53 | 10 | **2** |
+| neighbour-offset > 100 km | 51 | 4 | **2** |
+| 225 kV site-coverage p50 | 14.4 km | 13.0 km | **4.4 km** |
+| 225 kV sites covered ≤ 10 km | 40 % | 34 % | **88 %** |
+| 225 kV node → nearest-site p50 | 2.5 km* | 7.0 km | 4.7 km |
 
-The 18–23 branches per case that still exceed 100 km between two anchored postes
-are left alone and reported (`--report-suspect-anchors`): both ends are pinned to
-a position upstream is confident about, so they are a `grid_snapshot_reconstruct`
-matching issue to fix there, not something a layout pass should paper over.
+\* the raw 2.5 km is an artifact of the stacking — many nodes on few correct
+sites. The v1 relaxation traded it for backbone collapse (7.0 km, coverage
+DOWN); v3 restores both directions at once. Neighbour-offset p90 lands at
+~18 km against the THT reference's own 15.0 km — v1's 12.2 km was *smoother
+than reality*, which is precisely the collapse the operator saw.
 
-The repair is anchored on the layout it reads, so re-running it on its own output
-would drift. Each grid therefore carries a `layout_repair.json` provenance record
-and is skipped when its `grid_layout.json` still hashes to it;
-`test_repair_layout.py` fails if that record goes stale and holds the committed
-layouts to the table above.
+The 14–18 branches per case that still exceed 100 km between two kept postes
+are reported (`--report-suspect-anchors`), not hidden: both ends are pinned to
+a position upstream is confident about, so they are `grid_snapshot_reconstruct`
+matching issues. So are the remaining artifacts: the Paris-ring hole, the
+foreign border-equivalent appendices (the 150 kV Pyrenees/Belgium and 45 kV
+Geneva/Jura components, and the German/Swiss cluster at the eastern edge —
+France operates neither 150 kV nor 45 kV transmission), and the ~68 stale
+bus entries in `rte_substation_map.json`. `rte_substation_map.json` is never
+rewritten — only the drawing moves.
+
+The repair is anchored on the layout it reads, so re-running it on its own
+output would drift. Each grid carries a `layout_repair.json` provenance record
+(algorithm, per-class λ, release reasons, derived anchors, pin/snap counts,
+final statistics) and is skipped when its `grid_layout.json` still hashes to
+it; `test_repair_layout.py` fails if that record goes stale and holds the
+committed layouts to the table above.
 
 ## Modules
 
@@ -173,7 +208,9 @@ layouts to the table above.
 | `grade.py` | Stage 2 — difficulty grading (easy / medium / hard), resumable |
 | `build_scenarios.py` | Stage 3 — fold every `graded.jsonl` into `scenarios.json` |
 | `gen_matpower_presets.py` | Stage 4 — emit the frontend presets from that database |
-| `repair_layout.py` | Layout repair — anchored relaxation of the propagated positions (see above); idempotent, run after any rebuild |
+| `repair_layout.py` | Layout repair — identity vetting + 225 kV placement + per-class relaxation (see above); idempotent, run on the raw layouts after any rebuild |
+| `tht_reference.py` | THT ground truth: poste inventory (substation nesting), poste graph, 225 kV site list, generator counts |
+| `identity_vetting.py` | Claim scoring against the THT poste graph, plausibility caps, release policy, conservative 1-hop derivation |
 
 ```bash
 python scripts/game_mode/matpower/build_network.py all           # ~225 s per case
