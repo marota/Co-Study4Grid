@@ -5,7 +5,39 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import { describe, expect, it } from 'vitest';
-import { boostSvgForLargeGrid, boostSvgToElement, processSvg } from './svgBoost';
+import { boostSvgForLargeGrid, boostSvgToElement, computeEdgeWidthPx, processSvg } from './svgBoost';
+
+describe('computeEdgeWidthPx', () => {
+    // App.css puts every NAD stroke in `vector-effect: non-scaling-stroke`, so
+    // pypowsybl's `stroke-width: 5` is 5 rendered PIXELS on every grid however
+    // dense. The width therefore has to follow the voltage-level count.
+    it('leaves the France THT / PyPSA reference grids at pypowsybl\'s own 5 px', () => {
+        expect(computeEdgeWidthPx(1196)).toBe(5);   // pypsa_eur_fr225_400
+        expect(computeEdgeWidthPx(1424)).toBe(5);   // rte7000_tht — the reference
+        expect(computeEdgeWidthPx(1500)).toBe(5);   // exactly at the reference
+    });
+
+    it('thins denser grids as 1/sqrt(vlCount) past the reference', () => {
+        expect(computeEdgeWidthPx(6000)).toBeCloseTo(2.5, 2);  // 4x the VLs -> half
+        expect(computeEdgeWidthPx(6249)).toBeCloseTo(2.45, 2); // rte_matpower
+        expect(computeEdgeWidthPx(5247)).toBeCloseTo(2.67, 2); // European grid
+    });
+
+    it('floors at 1.5 px so lines never vanish on the densest grids', () => {
+        expect(computeEdgeWidthPx(18141)).toBe(1.5); // bare_env operator reference
+        expect(computeEdgeWidthPx(10_000_000)).toBe(1.5);
+    });
+
+    it('falls back to the base width when the VL count is unknown', () => {
+        expect(computeEdgeWidthPx(0)).toBe(5);
+    });
+
+    it('never widens a grid beyond what pypowsybl itself draws', () => {
+        for (const n of [1, 500, 1499, 1500, 1501, 3000, 20000]) {
+            expect(computeEdgeWidthPx(n)).toBeLessThanOrEqual(5);
+        }
+    });
+});
 
 describe('boostSvgForLargeGrid', () => {
     const stableSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"><circle cx="10" cy="10" r="5"/></svg>';
@@ -240,12 +272,14 @@ describe('SVG element-adoption pipeline (D6)', () => {
         expect(out).toBe(notSvg);
     });
 
-    it('boostSvgToElement returns the parsed element unmutated for small grids', () => {
+    it('boostSvgToElement leaves the parsed tree untouched for small grids', () => {
         const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g id="keep"/></svg>';
         const el = boostSvgToElement(svg, { x: 0, y: 0, w: 100, h: 100 }, 100);
         expect(el).not.toBeNull();
         expect(el!.nodeName.toLowerCase()).toBe('svg');
         expect(el!.querySelector('#keep')).not.toBeNull();
+        // Only the root-level width var is written, at its no-op base value.
+        expect(el!.style.getPropertyValue('--nad-edge-w')).toBe('5.00px');
     });
 
     it('boostSvgToElement returns null on a parse error', () => {

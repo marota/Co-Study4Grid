@@ -87,6 +87,25 @@ This file is part of Co-Study4Grid a Power Grid Study tool Assistant Interface t
     vector-effect: non-scaling-stroke;
 }
 
+/* ===== Density-adaptive branch width =====
+   Consequence of the rule above: pypowsybl's `.nad-edge-path { stroke-width: 5 }`
+   is no longer 5 user units but 5 rendered PIXELS, on every grid regardless of
+   how much network it has to fit. At the France THT scale that reads as a clean
+   trace; on a 6 000-voltage-level grid the lines merge into slabs of colour.
+   `svgBoost.computeEdgeWidthPx` writes `--nad-edge-w` on the <svg> root from the
+   voltage-level count (5 px up to the THT reference, then 1/sqrt(vlCount) down
+   to a 1.5 px floor).
+
+   Deliberately NOT `!important`: the overload / action / contingency halo rules
+   further down ARE `!important`, so they keep winning on highlighted branches —
+   this only overrides pypowsybl's own plain declaration. */
+.svg-container svg .nad-branch-edges .nad-edge-path,
+.svg-container svg .nad-3wt-edges .nad-edge-path,
+.svg-container svg .nad-branch-edges .nad-winding,
+.svg-container svg .nad-3wt-nodes .nad-winding {
+    stroke-width: var(--nad-edge-w, 5px);
+}
+
 /* During active pan/zoom interaction disable pointer-events on all SVG
    children to skip expensive hit-testing during drag/zoom. */
 

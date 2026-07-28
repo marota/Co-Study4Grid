@@ -64,6 +64,49 @@ substation's **real RTE busbar count**, which the rebuild replicates — 430 VLs
 `case6515rte`, giving real 4-, 6- and 9-busbar substations instead of a uniform
 double busbar.
 
+### Layout repair (`repair_layout.py`)
+
+The propagated positions — everything that is not an identified 380 kV poste —
+shipped with a tail of geographically impossible placements, which is what drew
+lines across the whole map. Measured against the France THT snapshot, whose map
+reads as neat, by how far each VL sits from the median of its own electrical
+neighbours:
+
+| | p50 | p90 | p99 | max |
+|---|---|---|---|---|
+| France THT (reference) | 5.4 km | 15.0 km | 30.0 km | 45.1 km |
+| Matpower, as reconstructed | 2.8 km | 22.3 km | 91.5 km | 285.4 km |
+| Matpower, after repair | 2.5 km | **12.2 km** | 37.8 km | 150.5 km |
+
+`repair_layout.py` re-places the free voltage levels by an **anchored Laplacian
+relaxation** — minimise total squared branch length plus a locality term that
+keeps each VL near where the reconstruction put it, with the identified postes
+held fixed — solved exactly as one sparse system. On `grid_6be3a179` that takes
+branches longer than 100 km from **265 to 78** and those over 200 km from **53
+to 10**, while the median VL moves only 3.8 km, so the geography survives.
+
+Some anchors are themselves the problem: `SCHEE` claims **52** 380 kV voltage
+levels on that case (`MARSI` 34, `GRAV5` 17), where real French 400 kV postes
+have 4, 6 or 9 nodes — the Rosetta percolation uses a few hub names as a sink,
+and pinning dozens of unrelated buses on one point is what draws 400 km "400 kV
+lines" between two supposedly identified postes. An identity is therefore
+released when it is `loose` **and** contradicted by its own electrical
+neighbourhood by more than 45 km (the THT maximum), re-checked each round
+because moving one poste changes what its neighbours imply. That releases 55 of
+452 on `grid_6be3a179`; every `strict` match keeps its position, and
+`rte_substation_map.json` is not rewritten — only the drawing moves.
+
+The 18–23 branches per case that still exceed 100 km between two anchored postes
+are left alone and reported (`--report-suspect-anchors`): both ends are pinned to
+a position upstream is confident about, so they are a `grid_snapshot_reconstruct`
+matching issue to fix there, not something a layout pass should paper over.
+
+The repair is anchored on the layout it reads, so re-running it on its own output
+would drift. Each grid therefore carries a `layout_repair.json` provenance record
+and is skipped when its `grid_layout.json` still hashes to it;
+`test_repair_layout.py` fails if that record goes stale and holds the committed
+layouts to the table above.
+
 ## Modules
 
 | Module | Role |
@@ -76,10 +119,12 @@ double busbar.
 | `grade.py` | Stage 2 — difficulty grading (easy / medium / hard), resumable |
 | `build_scenarios.py` | Stage 3 — fold every `graded.jsonl` into `scenarios.json` |
 | `gen_matpower_presets.py` | Stage 4 — emit the frontend presets from that database |
+| `repair_layout.py` | Layout repair — anchored relaxation of the propagated positions (see above); idempotent, run after any rebuild |
 
 ```bash
 python scripts/game_mode/matpower/build_network.py all           # ~225 s per case
 python scripts/game_mode/matpower/grade.py all                   # ~14 s per contingency
+python scripts/game_mode/matpower/repair_layout.py               # -> repaired grid_layout.json + layout_repair.json
 python scripts/game_mode/matpower/build_scenarios.py             # -> data/rte_matpower/scenarios.json
 python scripts/game_mode/matpower/gen_matpower_presets.py        # -> frontend/src/game/matpower*
 python scripts/game_mode/gen_network_previews.py                 # -> public/game/preview-matpower.svg
@@ -145,3 +190,14 @@ which keeps the THT ids — and the tests that assert them — unchanged.
 
 The seeded sampler is shared too: `frontend/src/game/sampleScenarios.ts`, used by
 both generated preset modules instead of being emitted twice.
+
+The config-screen map is drawn at **225 kV and above** (`min_kv` in
+`gen_network_previews.py`), which is exactly the two-layer backbone the France
+THT map shows — 1 692 nodes / 2 600 lines against THT's 1 464 / 2 499, so the two
+modes are visually comparable. These cases are full 6 500-bus models that also
+carry the whole 63 / 90 / 150 kV sub-transmission layer: 4 400 of their 6 250
+voltage levels and half their branches, drawn flat green by the map's
+`< 350 kV` rule. Including it produced a hairball that said nothing about the
+grid a player works on, and it is the least trustworthy part of the dataset
+(propagated positions, no identity). Every other family here already contains
+only its EHV levels, hence their threshold of 0.

@@ -257,6 +257,28 @@ describe('UX consistency — overload-halo width is zoom-adaptive (smooth, no ti
         );
     });
 
+    // The BASE branch width has the same screen-space problem for the opposite
+    // reason: non-scaling-stroke pins pypowsybl's `stroke-width: 5` at 5 rendered
+    // px whatever the grid's size, which blankets a dense one. svgBoost writes
+    // `--nad-edge-w` from the VL count; App.css binds it WITHOUT !important so the
+    // !important halo rules still win on highlighted branches.
+    it('drives the base branch width from the --nad-edge-w var, without outranking the halos', () => {
+        const css = readFileSync(resolve(__dirname, 'App.css'), 'utf-8');
+        const body = css.match(/\.nad-branch-edges \.nad-edge-path[^{}]*\{([^}]*)\}/s);
+        expect(body).not.toBeNull();
+        expect(body![1]).toMatch(/stroke-width:\s*var\(--nad-edge-w,\s*5px\)/);
+        expect(body![1]).not.toMatch(/!important/);
+
+        const boost = readFileSync(resolve(__dirname, 'utils/svg/svgBoost.ts'), 'utf-8');
+        expect(boost).toMatch(/setProperty\(\s*['"]--nad-edge-w['"]/s);
+        expect(boost).toMatch(/computeEdgeWidthPx/s);
+
+        // The bitmap-snapshot clone is detached from `.svg-container`, so it must
+        // re-assert the binding or every gesture would thicken the lines back to 5px.
+        const snap = readFileSync(resolve(__dirname, 'utils/svg/bitmapSnapshot.ts'), 'utf-8');
+        expect(snap).toMatch(/--nad-edge-w,\s*5px/);
+    });
+
     it('drives the var continuously from the zoom ratio (no tier-stepped width) in usePanZoom', () => {
         const hook = readFileSync(resolve(__dirname, 'hooks/usePanZoom.ts'), 'utf-8');
         // usePanZoom writes --nad-halo-w from a continuous ratio function, not a

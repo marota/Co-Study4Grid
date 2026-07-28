@@ -36,18 +36,28 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _OUT_DIR = _REPO_ROOT / "frontend" / "public" / "game"
 
-# (tier, grid directory, output filename). Mirrors DIFFICULTY_TIERS in
+# (tier, grid directory, output filename, min kV). Mirrors DIFFICULTY_TIERS in
 # frontend/src/game/presets.ts.
+#
+# ``min kV`` drops the voltage levels below it (and every branch with an end
+# below it) from the map. It exists for the MATPOWER family: those cases are
+# full 6500-bus models that carry the entire 63 / 90 / 150 kV sub-transmission
+# layer — 4 400 of their 6 250 voltage levels and half their branches. Drawing
+# all of it renders a hairball that says nothing about the grid a player works
+# on, and it is also the least trustworthy part of the dataset (those positions
+# are propagated along the graph, not identified). Every other family here
+# already contains only its EHV levels, so their threshold is 0.
 _GRIDS = [
-    ("medium", "data/pypsa_eur_eur220_225_380_400", "preview-medium.svg"),
-    ("high", "data/pypsa_eur_fr225_400", "preview-high.svg"),
+    ("medium", "data/pypsa_eur_eur220_225_380_400", "preview-medium.svg", 0),
+    ("high", "data/pypsa_eur_fr225_400", "preview-high.svg", 0),
     # All 4 France THT grids share the RTE7000 topology, so one preview map
     # (from any of them) represents the whole family.
-    ("tht", "data/rte7000_tht/grids/grid_e4e81e29", "preview-tht.svg"),
+    ("tht", "data/rte7000_tht/grids/grid_e4e81e29", "preview-tht.svg", 0),
     # The 4 MATPOWER RTE cases are 4 operating points of one grid family, so
     # one map covers them too. case6515rte is the largest, hence the fullest
-    # picture of the family's topology.
-    ("matpower", "data/rte_matpower/grids/grid_6be3a179", "preview-matpower.svg"),
+    # picture of the family's topology. Drawn at 225 kV and above, which is
+    # exactly the two-layer backbone the France THT map shows.
+    ("matpower", "data/rte_matpower/grids/grid_6be3a179", "preview-matpower.svg", 200),
 ]
 
 # Voltage colouring: the >= 350 kV backbone (380 / 400 kV) is red, everything
@@ -182,6 +192,21 @@ def _svg_header(height: float) -> str:
     )
 
 
+def _filter_to_min_kv(layout: dict, edges: list[tuple[str, str]],
+                      vmap: dict[str, int] | None, min_kv: int,
+                      ) -> tuple[dict, list[tuple[str, str]]]:
+    """Restrict the map to voltage levels at or above ``min_kv``.
+
+    A branch is kept only when BOTH ends clear the threshold, so a step-down
+    transformer doesn't drag a lone sub-transmission point back onto the map.
+    """
+    if min_kv <= 0:
+        return layout, edges
+    keep = {vl for vl in layout if _kv_of(vl, vmap) >= min_kv}
+    return ({vl: c for vl, c in layout.items() if vl in keep},
+            [(a, b) for a, b in edges if a in keep and b in keep])
+
+
 def _build_edge_map(layout: dict, edges: list[tuple[str, str]],
                     vmap: dict[str, int] | None = None) -> str:
     project, height = _projector(layout)
@@ -255,7 +280,7 @@ def _build_node_scatter(layout: dict, vmap: dict[str, int] | None = None) -> str
 
 def main() -> int:
     _OUT_DIR.mkdir(parents=True, exist_ok=True)
-    for tier, grid_rel, out_name in _GRIDS:
+    for tier, grid_rel, out_name, min_kv in _GRIDS:
         grid_dir = _REPO_ROOT / grid_rel
         layout_path = grid_dir / "grid_layout.json"
         if not layout_path.is_file():
@@ -267,10 +292,12 @@ def main() -> int:
         if xml:
             vmap = _nominal_kv_map(xml)
             edges = _edges(xml)
+            layout, edges = _filter_to_min_kv(layout, edges, vmap, min_kv)
             svg = _build_edge_map(layout, edges, vmap)
-            hv = sum(1 for v in vmap.values() if v >= _HV_THRESHOLD_KV)
+            hv = sum(1 for vl in layout if _kv_of(vl, vmap) >= _HV_THRESHOLD_KV)
             out_path.write_text(svg, encoding="utf-8")
-            print(f"{tier}: {len(layout)} nodes ({hv} HV ≥{_HV_THRESHOLD_KV}kV) → "
+            print(f"{tier}: {len(layout)} nodes ({hv} HV ≥{_HV_THRESHOLD_KV}kV"
+                  f"{f', ≥{min_kv}kV only' if min_kv else ''}) → "
                   f"{out_path.relative_to(_REPO_ROOT)} "
                   f"[edge map, {len(edges)} lines, {len(svg) // 1024} KB]")
         elif out_path.is_file():

@@ -74,6 +74,16 @@ export const collectHighlightCss = (doc: Document = document): string => {
     // is sub-pixel at the base viewBox (≈ invisible). Re-assert it (low
     // specificity, so the !important halo overrides still win).
     let rulesCss = 'path,line,polyline,rect{vector-effect:non-scaling-stroke}\n';
+    // Same story for the density-adaptive branch width: `--nad-edge-w` rides
+    // along on the clone's root style attribute, but the App.css rule that
+    // BINDS it is `.svg-container`-scoped and doesn't. Without this the bitmap
+    // would rasterise at pypowsybl's own 5 px while the live SVG draws thinner,
+    // so the lines would visibly thicken for the duration of every gesture. The
+    // leading `svg ` outranks pypowsybl's own `.nad-branch-edges .nad-edge-path`
+    // (equal specificity otherwise, and its <style> comes after ours).
+    rulesCss += 'svg .nad-branch-edges .nad-edge-path,svg .nad-3wt-edges .nad-edge-path,'
+        + 'svg .nad-branch-edges .nad-winding,svg .nad-3wt-nodes .nad-winding'
+        + '{stroke-width:var(--nad-edge-w,5px)}\n';
     try {
         for (const sheet of Array.from(doc.styleSheets)) {
             let rules: CSSRuleList | null = null;

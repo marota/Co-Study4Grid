@@ -15,6 +15,39 @@ import { declutterEdgeInfoLabels, parseRotateDeg, type EdgeInfoLabel } from './e
 const REFERENCE_SIZE = 1250;
 const BOOST_THRESHOLD = 3;
 
+// === Branch stroke width ===
+// pypowsybl's own stylesheet sets `.nad-edge-path { stroke-width: 5 }` in user
+// units, and App.css puts every NAD stroke in `vector-effect: non-scaling-stroke`
+// so it survives zoom — which makes it 5 *rendered pixels* on every grid,
+// whatever its size. That reads fine on a France THT snapshot (~1 400 voltage
+// levels, ~2 500 branches) but blankets a dense one: the MATPOWER RTE cases
+// carry 6 250 voltage levels and 9 000 branches over the same map, so at 5 px
+// the lines merge into slabs of colour instead of a network.
+//
+// So the width follows the grid's size: full 5 px up to the France THT scale —
+// the reference an operator already reads as neat — then 1/sqrt(vlCount), which
+// is the rate at which the spacing between neighbouring lines shrinks as the
+// same map holds more substations.
+//
+//   grid                              VLs      width
+//   pypsa_eur_fr225_400             1 196     5.00 px  (unchanged)
+//   rte7000_tht                     1 424     5.00 px  (unchanged, the reference)
+//   pypsa_eur_eur220_225_380_400    5 247     2.67 px
+//   rte_matpower                    6 249     2.45 px
+//   bare_env (operator reference)  18 141     1.50 px  (floor)
+const EDGE_WIDTH_BASE_PX = 5;
+const EDGE_WIDTH_REFERENCE_VLS = 1500;
+const EDGE_WIDTH_MIN_PX = 1.5;
+
+/** Rendered branch-stroke width in px for a grid of `vlCount` voltage levels. */
+export const computeEdgeWidthPx = (vlCount: number): number => {
+    if (!vlCount || vlCount <= EDGE_WIDTH_REFERENCE_VLS) return EDGE_WIDTH_BASE_PX;
+    return Math.max(
+        EDGE_WIDTH_MIN_PX,
+        EDGE_WIDTH_BASE_PX * Math.sqrt(EDGE_WIDTH_REFERENCE_VLS / vlCount),
+    );
+};
+
 /**
  * Parse a raw pypowsybl SVG string into a live `SVGSVGElement`, applying the
  * large-grid boost (font / node-radius scaling + flow-value de-clutter) in
@@ -55,6 +88,12 @@ export const boostSvgToElement = (svgString: string, viewBox: ViewBox | null, vl
         console.error('[SVG] Failed to parse SVG:', err);
         return null;
     }
+
+    // Density-adaptive branch width, bound by App.css to `--nad-edge-w`. Set
+    // before the boost gates below so it applies to every NAD (it is a no-op at
+    // or under the reference size anyway), and as an inline style on the root so
+    // the svgPatch `cloneNode` fast path carries it onto the recycled SVG.
+    svgEl.style.setProperty('--nad-edge-w', `${computeEdgeWidthPx(vlCount).toFixed(2)}px`);
 
     // Skip the boost for small grids / narrow viewBoxes — return the parsed
     // element as-is (unmutated, but still an element so ingestion adopts it).
