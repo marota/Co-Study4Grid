@@ -16,6 +16,7 @@
 // live under opaque ids. Non-antenna scenarios only.
 
 import type { GameStudy } from './types';
+import { sampleScenarios } from './sampleScenarios';
 import scenarios from './rte7000Scenarios.json';
 
 export type Rte7000Difficulty = 'easy' | 'medium' | 'hard';
@@ -47,28 +48,11 @@ export const RTE7000_TIERS: Rte7000Tier[] = [
     studies: RTE7000_HARD },
 ];
 
-// Deterministic (seedable) sampler: draw up to `n` scenarios of a difficulty,
-// round-robin across distinct grids first so a small sample spans different
-// operating points. `seed` omitted -> non-deterministic draw.
+// Deterministic (seedable) draw, round-robin across distinct grids first so a
+// small sample spans different operating points. The algorithm is shared with
+// the Matpower family — see ./sampleScenarios.
 export function sampleRte7000(
   difficulty: Rte7000Difficulty, n: number, seed?: number,
 ): GameStudy[] {
-  const pool = [...(BY_DIFFICULTY[difficulty] ?? [])];
-  let s = (seed ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
-  const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-  const byGrid = new Map<string, GameStudy[]>();
-  for (const st of pool) {
-    const g = st.networkPath;
-    if (!byGrid.has(g)) byGrid.set(g, []);
-    byGrid.get(g)!.push(st);
-  }
-  const groups = [...byGrid.values()];
-  const ordered: GameStudy[] = [];
-  while (groups.some((g) => g.length)) {
-    for (const g of groups) { const st = g.pop(); if (st) ordered.push(st); }
-  }
-  return ordered.slice(0, n);
+  return sampleScenarios(BY_DIFFICULTY[difficulty] ?? [], n, seed);
 }

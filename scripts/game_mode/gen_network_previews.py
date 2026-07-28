@@ -44,6 +44,10 @@ _GRIDS = [
     # All 4 France THT grids share the RTE7000 topology, so one preview map
     # (from any of them) represents the whole family.
     ("tht", "data/rte7000_tht/grids/grid_e4e81e29", "preview-tht.svg"),
+    # The 4 MATPOWER RTE cases are 4 operating points of one grid family, so
+    # one map covers them too. case6515rte is the largest, hence the fullest
+    # picture of the family's topology.
+    ("matpower", "data/rte_matpower/grids/grid_6be3a179", "preview-matpower.svg"),
 ]
 
 # Voltage colouring: the >= 350 kV backbone (380 / 400 kV) is red, everything
