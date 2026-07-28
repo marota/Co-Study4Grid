@@ -980,6 +980,28 @@
    "description": "January — Friday evening. Loss of LINE-1535-774 drives a worst-case 110.9% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_6be3a179_2bb0f5",
+   "label": "January — Friday evening — LINE-1615-1312",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-1615-1312",
+   "contingencyLabel": "LINE-1615-1312",
+   "baselineMaxLoadingPct": 202.5,
+   "description": "January — Friday evening. Loss of LINE-1615-1312 drives a worst-case 202.5% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_6be3a179_d2bfce",
+   "label": "January — Friday evening — LINE-1615-333",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-1615-333",
+   "contingencyLabel": "LINE-1615-333",
+   "baselineMaxLoadingPct": 202.1,
+   "description": "January — Friday evening. Loss of LINE-1615-333 drives a worst-case 202.1% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_6be3a179_f62602",
    "label": "January — Friday evening — LINE-1946-264",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -1266,6 +1288,39 @@
    "description": "January — Friday evening. Loss of LINE-3751-1690 drives a worst-case 99.7% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_6be3a179_c17210",
+   "label": "January — Friday evening — LINE-3752-3180",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-3752-3180",
+   "contingencyLabel": "LINE-3752-3180",
+   "baselineMaxLoadingPct": 209.0,
+   "description": "January — Friday evening. Loss of LINE-3752-3180 drives a worst-case 209.0% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_6be3a179_eeb4e3",
+   "label": "January — Friday evening — LINE-3752-3180#0",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-3752-3180#0",
+   "contingencyLabel": "LINE-3752-3180#0",
+   "baselineMaxLoadingPct": 209.0,
+   "description": "January — Friday evening. Loss of LINE-3752-3180#0 drives a worst-case 209.0% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_6be3a179_345658",
+   "label": "January — Friday evening — LINE-3911-2550",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-3911-2550",
+   "contingencyLabel": "LINE-3911-2550",
+   "baselineMaxLoadingPct": 214.8,
+   "description": "January — Friday evening. Loss of LINE-3911-2550 drives a worst-case 214.8% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_6be3a179_3b1b16",
    "label": "January — Friday evening — LINE-4042-131",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -1497,6 +1552,17 @@
    "description": "January — Friday evening. Loss of LINE-5442-523 drives a worst-case 123.4% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_6be3a179_625701",
+   "label": "January — Friday evening — LINE-5667-4444",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-5667-4444",
+   "contingencyLabel": "LINE-5667-4444",
+   "baselineMaxLoadingPct": 210.0,
+   "description": "January — Friday evening. Loss of LINE-5667-4444 drives a worst-case 210.0% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_6be3a179_2a2e22",
    "label": "January — Friday evening — LINE-5724-2590",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -1517,6 +1583,28 @@
    "contingencyLabel": "LINE-5724-4890",
    "baselineMaxLoadingPct": 100.3,
    "description": "January — Friday evening. Loss of LINE-5724-4890 drives a worst-case 100.3% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_6be3a179_1abe6f",
+   "label": "January — Friday evening — LINE-5745-3911",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-5745-3911",
+   "contingencyLabel": "LINE-5745-3911",
+   "baselineMaxLoadingPct": 214.9,
+   "description": "January — Friday evening. Loss of LINE-5745-3911 drives a worst-case 214.9% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_6be3a179_3b8e1a",
+   "label": "January — Friday evening — LINE-5745-5667",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-5745-5667",
+   "contingencyLabel": "LINE-5745-5667",
+   "baselineMaxLoadingPct": 211.9,
+   "description": "January — Friday evening. Loss of LINE-5745-5667 drives a worst-case 211.9% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
    "id": "s_6be3a179_100166",
@@ -2300,6 +2388,17 @@
    "description": "January — Friday evening. Loss of LINE-805-6003 drives a worst-case 201.5% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_b1e24f79_1ff2ab",
+   "label": "January — Tuesday evening — LINE-1207-580",
+   "networkPath": "data/rte_matpower/grids/grid_b1e24f79/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_b1e24f79/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_b1e24f79/grid_layout.json",
+   "contingencyElementId": "LINE-1207-580",
+   "contingencyLabel": "LINE-1207-580",
+   "baselineMaxLoadingPct": 212.3,
+   "description": "January — Tuesday evening. Loss of LINE-1207-580 drives a worst-case 212.3% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_b1e24f79_c6fb0b",
    "label": "January — Tuesday evening — LINE-1264-180",
    "networkPath": "data/rte_matpower/grids/grid_b1e24f79/network.xiidm",
@@ -2674,6 +2773,17 @@
    "description": "January — Tuesday evening. Loss of LINE-3803-1261 drives a worst-case 176.8% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_b1e24f79_eb4527",
+   "label": "January — Tuesday evening — LINE-3903-2543",
+   "networkPath": "data/rte_matpower/grids/grid_b1e24f79/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_b1e24f79/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_b1e24f79/grid_layout.json",
+   "contingencyElementId": "LINE-3903-2543",
+   "contingencyLabel": "LINE-3903-2543",
+   "baselineMaxLoadingPct": 225.1,
+   "description": "January — Tuesday evening. Loss of LINE-3903-2543 drives a worst-case 225.1% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_b1e24f79_57d257",
    "label": "January — Tuesday evening — LINE-4034-131",
    "networkPath": "data/rte_matpower/grids/grid_b1e24f79/network.xiidm",
@@ -2903,6 +3013,17 @@
    "contingencyLabel": "LINE-5714-4880",
    "baselineMaxLoadingPct": 177.0,
    "description": "January — Tuesday evening. Loss of LINE-5714-4880 drives a worst-case 177.0% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_b1e24f79_f2d7d4",
+   "label": "January — Tuesday evening — LINE-5735-3903",
+   "networkPath": "data/rte_matpower/grids/grid_b1e24f79/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_b1e24f79/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_b1e24f79/grid_layout.json",
+   "contingencyElementId": "LINE-5735-3903",
+   "contingencyLabel": "LINE-5735-3903",
+   "baselineMaxLoadingPct": 225.2,
+   "description": "January — Tuesday evening. Loss of LINE-5735-3903 drives a worst-case 225.2% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
    "id": "s_b1e24f79_6fac09",
@@ -3884,6 +4005,17 @@
    "description": "January — Friday night. Loss of LINE-3163-1189#0 drives a worst-case 108.5% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_ca0a1d68_a29d2f",
+   "label": "January — Friday night — LINE-3530-581",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-3530-581",
+   "contingencyLabel": "LINE-3530-581",
+   "baselineMaxLoadingPct": 97.8,
+   "description": "January — Friday night. Loss of LINE-3530-581 drives a worst-case 97.8% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_ca0a1d68_d2fe9b",
    "label": "January — Friday night — LINE-3626-1536",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -3895,6 +4027,28 @@
    "description": "January — Friday night. Loss of LINE-3626-1536 drives a worst-case 109.6% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_ca0a1d68_72a72c",
+   "label": "January — Friday night — LINE-3753-3180",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-3753-3180",
+   "contingencyLabel": "LINE-3753-3180",
+   "baselineMaxLoadingPct": 98.9,
+   "description": "January — Friday night. Loss of LINE-3753-3180 drives a worst-case 98.9% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_c107c9",
+   "label": "January — Friday night — LINE-3753-3180#0",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-3753-3180#0",
+   "contingencyLabel": "LINE-3753-3180#0",
+   "baselineMaxLoadingPct": 98.9,
+   "description": "January — Friday night. Loss of LINE-3753-3180#0 drives a worst-case 98.9% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_ca0a1d68_5440af",
    "label": "January — Friday night — LINE-3812-1265",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -3904,6 +4058,17 @@
    "contingencyLabel": "LINE-3812-1265",
    "baselineMaxLoadingPct": 99.3,
    "description": "January — Friday night. Loss of LINE-3812-1265 drives a worst-case 99.3% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_6dd101",
+   "label": "January — Friday night — LINE-3912-2552",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-3912-2552",
+   "contingencyLabel": "LINE-3912-2552",
+   "baselineMaxLoadingPct": 100.7,
+   "description": "January — Friday night. Loss of LINE-3912-2552 drives a worst-case 100.7% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
    "id": "s_ca0a1d68_664607",
@@ -3937,6 +4102,17 @@
    "contingencyLabel": "LINE-4137-3103",
    "baselineMaxLoadingPct": 119.8,
    "description": "January — Friday night. Loss of LINE-4137-3103 drives a worst-case 119.8% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_7f3b7c",
+   "label": "January — Friday night — LINE-4574-1218",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-4574-1218",
+   "contingencyLabel": "LINE-4574-1218",
+   "baselineMaxLoadingPct": 96.4,
+   "description": "January — Friday night. Loss of LINE-4574-1218 drives a worst-case 96.4% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
    "id": "s_ca0a1d68_1dabc7",
@@ -4005,6 +4181,17 @@
    "description": "January — Friday night. Loss of LINE-5071-5063 drives a worst-case 99.7% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_ca0a1d68_4956dd",
+   "label": "January — Friday night — LINE-5666-4444",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-5666-4444",
+   "contingencyLabel": "LINE-5666-4444",
+   "baselineMaxLoadingPct": 100.4,
+   "description": "January — Friday night. Loss of LINE-5666-4444 drives a worst-case 100.4% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_ca0a1d68_dcb0f8",
    "label": "January — Friday night — LINE-5723-2592",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -4025,6 +4212,50 @@
    "contingencyLabel": "LINE-5723-4885",
    "baselineMaxLoadingPct": 99.8,
    "description": "January — Friday night. Loss of LINE-5723-4885 drives a worst-case 99.8% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_d5db64",
+   "label": "January — Friday night — LINE-5744-3912",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-5744-3912",
+   "contingencyLabel": "LINE-5744-3912",
+   "baselineMaxLoadingPct": 101.4,
+   "description": "January — Friday night. Loss of LINE-5744-3912 drives a worst-case 101.4% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_2831a7",
+   "label": "January — Friday night — LINE-5744-5666",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-5744-5666",
+   "contingencyLabel": "LINE-5744-5666",
+   "baselineMaxLoadingPct": 100.4,
+   "description": "January — Friday night. Loss of LINE-5744-5666 drives a worst-case 100.4% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_e9ba06",
+   "label": "January — Friday night — LINE-5823-3530",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-5823-3530",
+   "contingencyLabel": "LINE-5823-3530",
+   "baselineMaxLoadingPct": 97.8,
+   "description": "January — Friday night. Loss of LINE-5823-3530 drives a worst-case 97.8% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_71c909",
+   "label": "January — Friday night — LINE-5823-4574",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-5823-4574",
+   "contingencyLabel": "LINE-5823-4574",
+   "baselineMaxLoadingPct": 97.9,
+   "description": "January — Friday night. Loss of LINE-5823-4574 drives a worst-case 97.9% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
    "id": "s_ca0a1d68_630fa4",
@@ -5162,6 +5393,28 @@
    "description": "January — Monday morning. Loss of LINE-6102-6057 drives a worst-case 115.5% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_52bf4231_61ae66",
+   "label": "January — Monday morning — LINE-6110-6061",
+   "networkPath": "data/rte_matpower/grids/grid_52bf4231/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_52bf4231/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_52bf4231/grid_layout.json",
+   "contingencyElementId": "LINE-6110-6061",
+   "contingencyLabel": "LINE-6110-6061",
+   "baselineMaxLoadingPct": 205.2,
+   "description": "January — Monday morning. Loss of LINE-6110-6061 drives a worst-case 205.2% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_52bf4231_6effa0",
+   "label": "January — Monday morning — LINE-6110-6061#0",
+   "networkPath": "data/rte_matpower/grids/grid_52bf4231/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_52bf4231/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_52bf4231/grid_layout.json",
+   "contingencyElementId": "LINE-6110-6061#0",
+   "contingencyLabel": "LINE-6110-6061#0",
+   "baselineMaxLoadingPct": 205.2,
+   "description": "January — Monday morning. Loss of LINE-6110-6061#0 drives a worst-case 205.2% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_52bf4231_818828",
    "label": "January — Monday morning — LINE-6115-6028",
    "networkPath": "data/rte_matpower/grids/grid_52bf4231/network.xiidm",
@@ -5426,6 +5679,17 @@
    "description": "January — Monday morning. Loss of LINE-6218-6144 drives a worst-case 114.2% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_52bf4231_5ae49f",
+   "label": "January — Monday morning — LINE-6218-6170",
+   "networkPath": "data/rte_matpower/grids/grid_52bf4231/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_52bf4231/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_52bf4231/grid_layout.json",
+   "contingencyElementId": "LINE-6218-6170",
+   "contingencyLabel": "LINE-6218-6170",
+   "baselineMaxLoadingPct": 114.5,
+   "description": "January — Monday morning. Loss of LINE-6218-6170 drives a worst-case 114.5% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_52bf4231_8cdde1",
    "label": "January — Monday morning — LINE-6238-6144",
    "networkPath": "data/rte_matpower/grids/grid_52bf4231/network.xiidm",
@@ -5611,6 +5875,17 @@
    "contingencyLabel": "LINE-1109-35",
    "baselineMaxLoadingPct": 205.4,
    "description": "January — Friday evening. Loss of LINE-1109-35 drives a worst-case 205.4% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_6be3a179_37ddc2",
+   "label": "January — Friday evening — LINE-1212-580",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-1212-580",
+   "contingencyLabel": "LINE-1212-580",
+   "baselineMaxLoadingPct": 202.4,
+   "description": "January — Friday evening. Loss of LINE-1212-580 drives a worst-case 202.4% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
    "id": "s_6be3a179_f08e3f",
@@ -5800,6 +6075,50 @@
    "description": "January — Friday evening. Loss of LINE-4142-717 drives a worst-case 96.0% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_6be3a179_924681",
+   "label": "January — Friday evening — LINE-4577-3752",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-4577-3752",
+   "contingencyLabel": "LINE-4577-3752",
+   "baselineMaxLoadingPct": 215.4,
+   "description": "January — Friday evening. Loss of LINE-4577-3752 drives a worst-case 215.4% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_6be3a179_19c473",
+   "label": "January — Friday evening — LINE-4577-3752#0",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-4577-3752#0",
+   "contingencyLabel": "LINE-4577-3752#0",
+   "baselineMaxLoadingPct": 215.4,
+   "description": "January — Friday evening. Loss of LINE-4577-3752#0 drives a worst-case 215.4% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_6be3a179_8a9347",
+   "label": "January — Friday evening — LINE-4678-459",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-4678-459",
+   "contingencyLabel": "LINE-4678-459",
+   "baselineMaxLoadingPct": 202.0,
+   "description": "January — Friday evening. Loss of LINE-4678-459 drives a worst-case 202.0% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_6be3a179_4d1a58",
+   "label": "January — Friday evening — LINE-4678-459#0",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-4678-459#0",
+   "contingencyLabel": "LINE-4678-459#0",
+   "baselineMaxLoadingPct": 202.0,
+   "description": "January — Friday evening. Loss of LINE-4678-459#0 drives a worst-case 202.0% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_6be3a179_1617ca",
    "label": "January — Friday evening — LINE-4914-3010",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -5875,6 +6194,17 @@
    "contingencyLabel": "LINE-5646-4952",
    "baselineMaxLoadingPct": 207.5,
    "description": "January — Friday evening. Loss of LINE-5646-4952 drives a worst-case 207.5% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_6be3a179_f5d55c",
+   "label": "January — Friday evening — LINE-580-579",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-580-579",
+   "contingencyLabel": "LINE-580-579",
+   "baselineMaxLoadingPct": 202.2,
+   "description": "January — Friday evening. Loss of LINE-580-579 drives a worst-case 202.2% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
    "id": "s_6be3a179_0fa804",
@@ -6205,6 +6535,17 @@
    "contingencyLabel": "LINE-6056-5990",
    "baselineMaxLoadingPct": 135.1,
    "description": "January — Friday evening. Loss of LINE-6056-5990 drives a worst-case 135.1% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_6be3a179_ed8a39",
+   "label": "January — Friday evening — LINE-6064-6016",
+   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
+   "contingencyElementId": "LINE-6064-6016",
+   "contingencyLabel": "LINE-6064-6016",
+   "baselineMaxLoadingPct": 128.8,
+   "description": "January — Friday evening. Loss of LINE-6064-6016 drives a worst-case 128.8% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
    "id": "s_6be3a179_ab030c",
@@ -8132,6 +8473,17 @@
    "description": "January — Friday night. Loss of LINE-1068-6129 drives a worst-case 115.4% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_ca0a1d68_da108a",
+   "label": "January — Friday night — LINE-1108-35",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-1108-35",
+   "contingencyLabel": "LINE-1108-35",
+   "baselineMaxLoadingPct": 98.9,
+   "description": "January — Friday night. Loss of LINE-1108-35 drives a worst-case 98.9% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_ca0a1d68_be79fe",
    "label": "January — Friday night — LINE-325-6234",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -8143,6 +8495,28 @@
    "description": "January — Friday night. Loss of LINE-325-6234 drives a worst-case 118.3% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_ca0a1d68_11ba61",
+   "label": "January — Friday night — LINE-3581-1495",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-3581-1495",
+   "contingencyLabel": "LINE-3581-1495",
+   "baselineMaxLoadingPct": 99.7,
+   "description": "January — Friday night. Loss of LINE-3581-1495 drives a worst-case 99.7% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_fe5aeb",
+   "label": "January — Friday night — LINE-3582-1108",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-3582-1108",
+   "contingencyLabel": "LINE-3582-1108",
+   "baselineMaxLoadingPct": 98.8,
+   "description": "January — Friday night. Loss of LINE-3582-1108 drives a worst-case 98.8% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_ca0a1d68_9aac35",
    "label": "January — Friday night — LINE-4136-5975",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -8152,6 +8526,72 @@
    "contingencyLabel": "LINE-4136-5975",
    "baselineMaxLoadingPct": 128.4,
    "description": "January — Friday night. Loss of LINE-4136-5975 drives a worst-case 128.4% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_818027",
+   "label": "January — Friday night — LINE-4574-3753",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-4574-3753",
+   "contingencyLabel": "LINE-4574-3753",
+   "baselineMaxLoadingPct": 103.7,
+   "description": "January — Friday night. Loss of LINE-4574-3753 drives a worst-case 103.7% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_55f4e4",
+   "label": "January — Friday night — LINE-4574-3753#0",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-4574-3753#0",
+   "contingencyLabel": "LINE-4574-3753#0",
+   "baselineMaxLoadingPct": 103.8,
+   "description": "January — Friday night. Loss of LINE-4574-3753#0 drives a worst-case 103.8% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_da6cb7",
+   "label": "January — Friday night — LINE-4677-3180",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-4677-3180",
+   "contingencyLabel": "LINE-4677-3180",
+   "baselineMaxLoadingPct": 123.6,
+   "description": "January — Friday night. Loss of LINE-4677-3180 drives a worst-case 123.6% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_849795",
+   "label": "January — Friday night — LINE-4947-6227",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-4947-6227",
+   "contingencyLabel": "LINE-4947-6227",
+   "baselineMaxLoadingPct": 97.2,
+   "description": "January — Friday night. Loss of LINE-4947-6227 drives a worst-case 97.2% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_4ab2e9",
+   "label": "January — Friday night — LINE-5645-3581",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-5645-3581",
+   "contingencyLabel": "LINE-5645-3581",
+   "baselineMaxLoadingPct": 99.7,
+   "description": "January — Friday night. Loss of LINE-5645-3581 drives a worst-case 99.7% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_fecfc0",
+   "label": "January — Friday night — LINE-5645-4947",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-5645-4947",
+   "contingencyLabel": "LINE-5645-4947",
+   "baselineMaxLoadingPct": 99.7,
+   "description": "January — Friday night. Loss of LINE-5645-4947 drives a worst-case 99.7% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
    "id": "s_ca0a1d68_5498d9",
@@ -8759,6 +9199,17 @@
    "description": "January — Friday night. Loss of LINE-6225-6121 drives a worst-case 253.8% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
+   "id": "s_ca0a1d68_222a52",
+   "label": "January — Friday night — LINE-6227-6158",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-6227-6158",
+   "contingencyLabel": "LINE-6227-6158",
+   "baselineMaxLoadingPct": 96.4,
+   "description": "January — Friday night. Loss of LINE-6227-6158 drives a worst-case 96.4% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
    "id": "s_ca0a1d68_5534a2",
    "label": "January — Friday night — LINE-6234-6155",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -8768,6 +9219,17 @@
    "contingencyLabel": "LINE-6234-6155",
    "baselineMaxLoadingPct": 132.9,
    "description": "January — Friday night. Loss of LINE-6234-6155 drives a worst-case 132.9% line loading. Bring every monitored line back under the 95% monitoring limit."
+  },
+  {
+   "id": "s_ca0a1d68_8d6751",
+   "label": "January — Friday night — LINE-6236-6248",
+   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
+   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
+   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
+   "contingencyElementId": "LINE-6236-6248",
+   "contingencyLabel": "LINE-6236-6248",
+   "baselineMaxLoadingPct": 103.0,
+   "description": "January — Friday night. Loss of LINE-6236-6248 drives a worst-case 103.0% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
    "id": "s_ca0a1d68_185c83",
@@ -8893,28 +9355,6 @@
  ],
  "hard": [
   {
-   "id": "s_52bf4231_61ae66",
-   "label": "January — Monday morning — LINE-6110-6061",
-   "networkPath": "data/rte_matpower/grids/grid_52bf4231/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_52bf4231/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_52bf4231/grid_layout.json",
-   "contingencyElementId": "LINE-6110-6061",
-   "contingencyLabel": "LINE-6110-6061",
-   "baselineMaxLoadingPct": 205.2,
-   "description": "January — Monday morning. Loss of LINE-6110-6061 drives a worst-case 205.2% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_52bf4231_6effa0",
-   "label": "January — Monday morning — LINE-6110-6061#0",
-   "networkPath": "data/rte_matpower/grids/grid_52bf4231/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_52bf4231/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_52bf4231/grid_layout.json",
-   "contingencyElementId": "LINE-6110-6061#0",
-   "contingencyLabel": "LINE-6110-6061#0",
-   "baselineMaxLoadingPct": 205.2,
-   "description": "January — Monday morning. Loss of LINE-6110-6061#0 drives a worst-case 205.2% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
    "id": "s_52bf4231_399792",
    "label": "January — Monday morning — LINE-6134-6013",
    "networkPath": "data/rte_matpower/grids/grid_52bf4231/network.xiidm",
@@ -8946,182 +9386,6 @@
    "contingencyLabel": "LINE-6173-6058",
    "baselineMaxLoadingPct": 108.6,
    "description": "January — Monday morning. Loss of LINE-6173-6058 drives a worst-case 108.6% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_52bf4231_5ae49f",
-   "label": "January — Monday morning — LINE-6218-6170",
-   "networkPath": "data/rte_matpower/grids/grid_52bf4231/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_52bf4231/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_52bf4231/grid_layout.json",
-   "contingencyElementId": "LINE-6218-6170",
-   "contingencyLabel": "LINE-6218-6170",
-   "baselineMaxLoadingPct": 114.5,
-   "description": "January — Monday morning. Loss of LINE-6218-6170 drives a worst-case 114.5% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_37ddc2",
-   "label": "January — Friday evening — LINE-1212-580",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-1212-580",
-   "contingencyLabel": "LINE-1212-580",
-   "baselineMaxLoadingPct": 202.4,
-   "description": "January — Friday evening. Loss of LINE-1212-580 drives a worst-case 202.4% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_2bb0f5",
-   "label": "January — Friday evening — LINE-1615-1312",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-1615-1312",
-   "contingencyLabel": "LINE-1615-1312",
-   "baselineMaxLoadingPct": 202.5,
-   "description": "January — Friday evening. Loss of LINE-1615-1312 drives a worst-case 202.5% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_d2bfce",
-   "label": "January — Friday evening — LINE-1615-333",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-1615-333",
-   "contingencyLabel": "LINE-1615-333",
-   "baselineMaxLoadingPct": 202.1,
-   "description": "January — Friday evening. Loss of LINE-1615-333 drives a worst-case 202.1% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_c17210",
-   "label": "January — Friday evening — LINE-3752-3180",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-3752-3180",
-   "contingencyLabel": "LINE-3752-3180",
-   "baselineMaxLoadingPct": 209.0,
-   "description": "January — Friday evening. Loss of LINE-3752-3180 drives a worst-case 209.0% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_eeb4e3",
-   "label": "January — Friday evening — LINE-3752-3180#0",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-3752-3180#0",
-   "contingencyLabel": "LINE-3752-3180#0",
-   "baselineMaxLoadingPct": 209.0,
-   "description": "January — Friday evening. Loss of LINE-3752-3180#0 drives a worst-case 209.0% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_345658",
-   "label": "January — Friday evening — LINE-3911-2550",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-3911-2550",
-   "contingencyLabel": "LINE-3911-2550",
-   "baselineMaxLoadingPct": 214.8,
-   "description": "January — Friday evening. Loss of LINE-3911-2550 drives a worst-case 214.8% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_924681",
-   "label": "January — Friday evening — LINE-4577-3752",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-4577-3752",
-   "contingencyLabel": "LINE-4577-3752",
-   "baselineMaxLoadingPct": 215.4,
-   "description": "January — Friday evening. Loss of LINE-4577-3752 drives a worst-case 215.4% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_19c473",
-   "label": "January — Friday evening — LINE-4577-3752#0",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-4577-3752#0",
-   "contingencyLabel": "LINE-4577-3752#0",
-   "baselineMaxLoadingPct": 215.4,
-   "description": "January — Friday evening. Loss of LINE-4577-3752#0 drives a worst-case 215.4% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_8a9347",
-   "label": "January — Friday evening — LINE-4678-459",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-4678-459",
-   "contingencyLabel": "LINE-4678-459",
-   "baselineMaxLoadingPct": 202.0,
-   "description": "January — Friday evening. Loss of LINE-4678-459 drives a worst-case 202.0% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_4d1a58",
-   "label": "January — Friday evening — LINE-4678-459#0",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-4678-459#0",
-   "contingencyLabel": "LINE-4678-459#0",
-   "baselineMaxLoadingPct": 202.0,
-   "description": "January — Friday evening. Loss of LINE-4678-459#0 drives a worst-case 202.0% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_625701",
-   "label": "January — Friday evening — LINE-5667-4444",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-5667-4444",
-   "contingencyLabel": "LINE-5667-4444",
-   "baselineMaxLoadingPct": 210.0,
-   "description": "January — Friday evening. Loss of LINE-5667-4444 drives a worst-case 210.0% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_1abe6f",
-   "label": "January — Friday evening — LINE-5745-3911",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-5745-3911",
-   "contingencyLabel": "LINE-5745-3911",
-   "baselineMaxLoadingPct": 214.9,
-   "description": "January — Friday evening. Loss of LINE-5745-3911 drives a worst-case 214.9% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_3b8e1a",
-   "label": "January — Friday evening — LINE-5745-5667",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-5745-5667",
-   "contingencyLabel": "LINE-5745-5667",
-   "baselineMaxLoadingPct": 211.9,
-   "description": "January — Friday evening. Loss of LINE-5745-5667 drives a worst-case 211.9% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_f5d55c",
-   "label": "January — Friday evening — LINE-580-579",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-580-579",
-   "contingencyLabel": "LINE-580-579",
-   "baselineMaxLoadingPct": 202.2,
-   "description": "January — Friday evening. Loss of LINE-580-579 drives a worst-case 202.2% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_6be3a179_ed8a39",
-   "label": "January — Friday evening — LINE-6064-6016",
-   "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_6be3a179/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_6be3a179/grid_layout.json",
-   "contingencyElementId": "LINE-6064-6016",
-   "contingencyLabel": "LINE-6064-6016",
-   "baselineMaxLoadingPct": 128.8,
-   "description": "January — Friday evening. Loss of LINE-6064-6016 drives a worst-case 128.8% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
    "id": "s_6be3a179_0f8b41",
@@ -9188,39 +9452,6 @@
    "contingencyLabel": "LINE-6236-6083",
    "baselineMaxLoadingPct": 132.7,
    "description": "January — Friday evening. Loss of LINE-6236-6083 drives a worst-case 132.7% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_b1e24f79_1ff2ab",
-   "label": "January — Tuesday evening — LINE-1207-580",
-   "networkPath": "data/rte_matpower/grids/grid_b1e24f79/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_b1e24f79/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_b1e24f79/grid_layout.json",
-   "contingencyElementId": "LINE-1207-580",
-   "contingencyLabel": "LINE-1207-580",
-   "baselineMaxLoadingPct": 212.3,
-   "description": "January — Tuesday evening. Loss of LINE-1207-580 drives a worst-case 212.3% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_b1e24f79_eb4527",
-   "label": "January — Tuesday evening — LINE-3903-2543",
-   "networkPath": "data/rte_matpower/grids/grid_b1e24f79/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_b1e24f79/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_b1e24f79/grid_layout.json",
-   "contingencyElementId": "LINE-3903-2543",
-   "contingencyLabel": "LINE-3903-2543",
-   "baselineMaxLoadingPct": 225.1,
-   "description": "January — Tuesday evening. Loss of LINE-3903-2543 drives a worst-case 225.1% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_b1e24f79_f2d7d4",
-   "label": "January — Tuesday evening — LINE-5735-3903",
-   "networkPath": "data/rte_matpower/grids/grid_b1e24f79/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_b1e24f79/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_b1e24f79/grid_layout.json",
-   "contingencyElementId": "LINE-5735-3903",
-   "contingencyLabel": "LINE-5735-3903",
-   "baselineMaxLoadingPct": 225.2,
-   "description": "January — Tuesday evening. Loss of LINE-5735-3903 drives a worst-case 225.2% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
    "id": "s_b1e24f79_8d7d02",
@@ -9300,215 +9531,6 @@
    "description": "January — Tuesday evening. Loss of LINE-6226-6073 drives a worst-case 132.4% line loading. Bring every monitored line back under the 95% monitoring limit."
   },
   {
-   "id": "s_ca0a1d68_da108a",
-   "label": "January — Friday night — LINE-1108-35",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-1108-35",
-   "contingencyLabel": "LINE-1108-35",
-   "baselineMaxLoadingPct": 98.9,
-   "description": "January — Friday night. Loss of LINE-1108-35 drives a worst-case 98.9% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_a29d2f",
-   "label": "January — Friday night — LINE-3530-581",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-3530-581",
-   "contingencyLabel": "LINE-3530-581",
-   "baselineMaxLoadingPct": 97.8,
-   "description": "January — Friday night. Loss of LINE-3530-581 drives a worst-case 97.8% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_11ba61",
-   "label": "January — Friday night — LINE-3581-1495",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-3581-1495",
-   "contingencyLabel": "LINE-3581-1495",
-   "baselineMaxLoadingPct": 99.7,
-   "description": "January — Friday night. Loss of LINE-3581-1495 drives a worst-case 99.7% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_fe5aeb",
-   "label": "January — Friday night — LINE-3582-1108",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-3582-1108",
-   "contingencyLabel": "LINE-3582-1108",
-   "baselineMaxLoadingPct": 98.8,
-   "description": "January — Friday night. Loss of LINE-3582-1108 drives a worst-case 98.8% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_72a72c",
-   "label": "January — Friday night — LINE-3753-3180",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-3753-3180",
-   "contingencyLabel": "LINE-3753-3180",
-   "baselineMaxLoadingPct": 98.9,
-   "description": "January — Friday night. Loss of LINE-3753-3180 drives a worst-case 98.9% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_c107c9",
-   "label": "January — Friday night — LINE-3753-3180#0",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-3753-3180#0",
-   "contingencyLabel": "LINE-3753-3180#0",
-   "baselineMaxLoadingPct": 98.9,
-   "description": "January — Friday night. Loss of LINE-3753-3180#0 drives a worst-case 98.9% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_6dd101",
-   "label": "January — Friday night — LINE-3912-2552",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-3912-2552",
-   "contingencyLabel": "LINE-3912-2552",
-   "baselineMaxLoadingPct": 100.7,
-   "description": "January — Friday night. Loss of LINE-3912-2552 drives a worst-case 100.7% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_7f3b7c",
-   "label": "January — Friday night — LINE-4574-1218",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-4574-1218",
-   "contingencyLabel": "LINE-4574-1218",
-   "baselineMaxLoadingPct": 96.4,
-   "description": "January — Friday night. Loss of LINE-4574-1218 drives a worst-case 96.4% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_818027",
-   "label": "January — Friday night — LINE-4574-3753",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-4574-3753",
-   "contingencyLabel": "LINE-4574-3753",
-   "baselineMaxLoadingPct": 103.7,
-   "description": "January — Friday night. Loss of LINE-4574-3753 drives a worst-case 103.7% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_55f4e4",
-   "label": "January — Friday night — LINE-4574-3753#0",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-4574-3753#0",
-   "contingencyLabel": "LINE-4574-3753#0",
-   "baselineMaxLoadingPct": 103.8,
-   "description": "January — Friday night. Loss of LINE-4574-3753#0 drives a worst-case 103.8% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_da6cb7",
-   "label": "January — Friday night — LINE-4677-3180",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-4677-3180",
-   "contingencyLabel": "LINE-4677-3180",
-   "baselineMaxLoadingPct": 123.6,
-   "description": "January — Friday night. Loss of LINE-4677-3180 drives a worst-case 123.6% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_849795",
-   "label": "January — Friday night — LINE-4947-6227",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-4947-6227",
-   "contingencyLabel": "LINE-4947-6227",
-   "baselineMaxLoadingPct": 97.2,
-   "description": "January — Friday night. Loss of LINE-4947-6227 drives a worst-case 97.2% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_4ab2e9",
-   "label": "January — Friday night — LINE-5645-3581",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-5645-3581",
-   "contingencyLabel": "LINE-5645-3581",
-   "baselineMaxLoadingPct": 99.7,
-   "description": "January — Friday night. Loss of LINE-5645-3581 drives a worst-case 99.7% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_fecfc0",
-   "label": "January — Friday night — LINE-5645-4947",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-5645-4947",
-   "contingencyLabel": "LINE-5645-4947",
-   "baselineMaxLoadingPct": 99.7,
-   "description": "January — Friday night. Loss of LINE-5645-4947 drives a worst-case 99.7% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_4956dd",
-   "label": "January — Friday night — LINE-5666-4444",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-5666-4444",
-   "contingencyLabel": "LINE-5666-4444",
-   "baselineMaxLoadingPct": 100.4,
-   "description": "January — Friday night. Loss of LINE-5666-4444 drives a worst-case 100.4% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_d5db64",
-   "label": "January — Friday night — LINE-5744-3912",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-5744-3912",
-   "contingencyLabel": "LINE-5744-3912",
-   "baselineMaxLoadingPct": 101.4,
-   "description": "January — Friday night. Loss of LINE-5744-3912 drives a worst-case 101.4% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_2831a7",
-   "label": "January — Friday night — LINE-5744-5666",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-5744-5666",
-   "contingencyLabel": "LINE-5744-5666",
-   "baselineMaxLoadingPct": 100.4,
-   "description": "January — Friday night. Loss of LINE-5744-5666 drives a worst-case 100.4% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_e9ba06",
-   "label": "January — Friday night — LINE-5823-3530",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-5823-3530",
-   "contingencyLabel": "LINE-5823-3530",
-   "baselineMaxLoadingPct": 97.8,
-   "description": "January — Friday night. Loss of LINE-5823-3530 drives a worst-case 97.8% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_71c909",
-   "label": "January — Friday night — LINE-5823-4574",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-5823-4574",
-   "contingencyLabel": "LINE-5823-4574",
-   "baselineMaxLoadingPct": 97.9,
-   "description": "January — Friday night. Loss of LINE-5823-4574 drives a worst-case 97.9% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
    "id": "s_ca0a1d68_2ad19f",
    "label": "January — Friday night — LINE-6104-5983",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -9551,28 +9573,6 @@
    "contingencyLabel": "LINE-6175-6007",
    "baselineMaxLoadingPct": 122.4,
    "description": "January — Friday night. Loss of LINE-6175-6007 drives a worst-case 122.4% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_222a52",
-   "label": "January — Friday night — LINE-6227-6158",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-6227-6158",
-   "contingencyLabel": "LINE-6227-6158",
-   "baselineMaxLoadingPct": 96.4,
-   "description": "January — Friday night. Loss of LINE-6227-6158 drives a worst-case 96.4% line loading. Bring every monitored line back under the 95% monitoring limit."
-  },
-  {
-   "id": "s_ca0a1d68_8d6751",
-   "label": "January — Friday night — LINE-6236-6248",
-   "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
-   "actionFilePath": "data/rte_matpower/grids/grid_ca0a1d68/actions.json",
-   "layoutPath": "data/rte_matpower/grids/grid_ca0a1d68/grid_layout.json",
-   "contingencyElementId": "LINE-6236-6248",
-   "contingencyLabel": "LINE-6236-6248",
-   "baselineMaxLoadingPct": 103.0,
-   "description": "January — Friday night. Loss of LINE-6236-6248 drives a worst-case 103.0% line loading. Bring every monitored line back under the 95% monitoring limit."
   }
  ]
 }

@@ -3,9 +3,9 @@
  "description": "Difficulty-graded N-1 scenarios on the public MATPOWER RTE cases (case6468/6470/6495/6515rte — real 2013 French EHV operating points), rebuilt as NODE_BREAKER so topological levers exist. Non-antenna only. Difficulty is the expert recommender's solvability at the 95% monitoring factor: easy — a unitary action resolves; medium — a first-identified superposition pair resolves; hard — neither.",
  "monitoring_factor": 0.95,
  "counts": {
-  "easy": 440,
-  "medium": 368,
-  "hard": 62
+  "easy": 461,
+  "medium": 389,
+  "hard": 20
  },
  "n_scenarios": 870,
  "difficulties": [
@@ -1703,7 +1703,7 @@
   {
    "id": "s_52bf4231_61ae66",
    "gridId": "grid_52bf4231",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Monday morning",
    "label": "January — Monday morning — LINE-6110-6061",
    "networkPath": "data/rte_matpower/grids/grid_52bf4231/network.xiidm",
@@ -1718,19 +1718,18 @@
     "LINE-6110-6061#0",
     "LINE-6173-6122"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 373.6,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-6173-6122+disco_LINE-6122-6086",
+    "max_rho": 3.7363114877494343
    }
   },
   {
    "id": "s_52bf4231_6effa0",
    "gridId": "grid_52bf4231",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Monday morning",
    "label": "January — Monday morning — LINE-6110-6061#0",
    "networkPath": "data/rte_matpower/grids/grid_52bf4231/network.xiidm",
@@ -1745,13 +1744,12 @@
     "LINE-6110-6061",
     "LINE-6173-6122"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 373.6,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-6173-6122+disco_LINE-6122-6086",
+    "max_rho": 3.7363114877494343
    }
   },
   {
@@ -3298,7 +3296,7 @@
   {
    "id": "s_52bf4231_5ae49f",
    "gridId": "grid_52bf4231",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Monday morning",
    "label": "January — Monday morning — LINE-6218-6170",
    "networkPath": "data/rte_matpower/grids/grid_52bf4231/network.xiidm",
@@ -3318,13 +3316,12 @@
     "LINE-6285-6150",
     "LINE-6285-6150#0"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 364.8,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-6251-6073+disco_LINE-6170-6051",
+    "max_rho": 3.6477782813069135
    }
   },
   {
@@ -3803,7 +3800,7 @@
    "solution": {
     "kind": "pair",
     "action": "disco_LINE-5886-6024+disco_LINE-5887-5998",
-    "max_rho": 2.331300748354283
+    "max_rho": 2.331300748354376
    }
   },
   {
@@ -4231,7 +4228,7 @@
   {
    "id": "s_6be3a179_37ddc2",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-1212-580",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -4245,13 +4242,12 @@
     "LINE-5522-6197",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 94.9,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-4744-2550+disco_LINE-2550-1433",
+    "max_rho": 0.9489011600316603
    }
   },
   {
@@ -4340,7 +4336,7 @@
   {
    "id": "s_6be3a179_2bb0f5",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-1615-1312",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -4354,19 +4350,18 @@
     "LINE-5522-6197",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 178.5,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_LINE-5522-4744",
+    "max_rho": 1.785093073538895
    }
   },
   {
    "id": "s_6be3a179_d2bfce",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-1615-333",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -4380,13 +4375,12 @@
     "LINE-5522-6197",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 177.4,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_LINE-5522-4744",
+    "max_rho": 1.7743960177595373
    }
   },
   {
@@ -5387,7 +5381,7 @@
   {
    "id": "s_6be3a179_c17210",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-3752-3180",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -5404,19 +5398,18 @@
     "LINE-6239-6018",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 96.5,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_LINE-5522-6197",
+    "max_rho": 0.9645427587180596
    }
   },
   {
    "id": "s_6be3a179_eeb4e3",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-3752-3180#0",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -5433,13 +5426,12 @@
     "LINE-6239-6018",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 96.5,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_LINE-5522-6197",
+    "max_rho": 0.9645427587181091
    }
   },
   {
@@ -5471,7 +5463,7 @@
   {
    "id": "s_6be3a179_345658",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-3911-2550",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -5488,13 +5480,12 @@
     "LINE-6239-6018",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 95.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_LINE-5522-6197",
+    "max_rho": 0.9519303359153264
    }
   },
   {
@@ -5795,7 +5786,7 @@
   {
    "id": "s_6be3a179_924681",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-4577-3752",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -5813,19 +5804,18 @@
     "LINE-6239-6018",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 109.1,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-5522-6197+disco_TWT-6000-6197",
+    "max_rho": 1.0911323695880135
    }
   },
   {
    "id": "s_6be3a179_19c473",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-4577-3752#0",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -5843,19 +5833,18 @@
     "LINE-6239-6018",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 109.0,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-5522-6197+disco_TWT-6000-6197",
+    "max_rho": 1.0896330424633287
    }
   },
   {
    "id": "s_6be3a179_8a9347",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-4678-459",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -5869,19 +5858,18 @@
     "LINE-5522-6197",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 94.9,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-4744-2550+disco_LINE-2550-1433",
+    "max_rho": 0.9489181951143523
    }
   },
   {
    "id": "s_6be3a179_4d1a58",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-4678-459#0",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -5895,13 +5883,12 @@
     "LINE-5522-6197",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 94.9,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-4744-2550+disco_LINE-2550-1433",
+    "max_rho": 0.9489182879625352
    }
   },
   {
@@ -6368,7 +6355,7 @@
   {
    "id": "s_6be3a179_625701",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-5667-4444",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -6385,13 +6372,12 @@
     "LINE-6239-6018",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 95.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_LINE-5522-6197",
+    "max_rho": 0.9519600697351335
    }
   },
   {
@@ -6445,7 +6431,7 @@
   {
    "id": "s_6be3a179_1abe6f",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-5745-3911",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -6462,19 +6448,18 @@
     "LINE-6239-6018",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 95.4,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_LINE-5522-6197",
+    "max_rho": 0.9540080205127677
    }
   },
   {
    "id": "s_6be3a179_3b8e1a",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-5745-5667",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -6491,13 +6476,12 @@
     "LINE-6239-6018",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 95.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_LINE-5522-6197",
+    "max_rho": 0.9519505087257556
    }
   },
   {
@@ -6551,7 +6535,7 @@
   {
    "id": "s_6be3a179_f5d55c",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-580-579",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -6565,13 +6549,12 @@
     "LINE-5522-6197",
     "TWT-6000-6197"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 94.9,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-4744-2550+disco_LINE-2550-1433",
+    "max_rho": 0.9489054515371557
    }
   },
   {
@@ -7806,7 +7789,7 @@
   {
    "id": "s_6be3a179_ed8a39",
    "gridId": "grid_6be3a179",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday evening",
    "label": "January — Friday evening — LINE-6064-6016",
    "networkPath": "data/rte_matpower/grids/grid_6be3a179/network.xiidm",
@@ -7819,13 +7802,12 @@
    "overloadedLines": [
     "LINE-5867-6211"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 473.8,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-6159-6048+open_coupler_VL-2590_2",
+    "max_rho": 4.737647982516026
    }
   },
   {
@@ -10800,7 +10782,7 @@
    "solution": {
     "kind": "pair",
     "action": "redispatch_GEN-6055+redispatch_GEN-5988",
-    "max_rho": 2.62354301442708
+    "max_rho": 2.6235430144277605
    }
   },
   {
@@ -11121,7 +11103,7 @@
   {
    "id": "s_b1e24f79_1ff2ab",
    "gridId": "grid_b1e24f79",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Tuesday evening",
    "label": "January — Tuesday evening — LINE-1207-580",
    "networkPath": "data/rte_matpower/grids/grid_b1e24f79/network.xiidm",
@@ -11135,13 +11117,12 @@
     "LINE-5512-6187",
     "TWT-5990-6187"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 176.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_LINE-5512-4736",
+    "max_rho": 1.7619608678338556
    }
   },
   {
@@ -12211,7 +12192,7 @@
   {
    "id": "s_b1e24f79_eb4527",
    "gridId": "grid_b1e24f79",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Tuesday evening",
    "label": "January — Tuesday evening — LINE-3903-2543",
    "networkPath": "data/rte_matpower/grids/grid_b1e24f79/network.xiidm",
@@ -12228,13 +12209,12 @@
     "LINE-6229-6008",
     "TWT-5990-6187"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 100.0,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_LINE-5990-5989",
+    "max_rho": 1.0004540405617444
    }
   },
   {
@@ -12995,7 +12975,7 @@
   {
    "id": "s_b1e24f79_f2d7d4",
    "gridId": "grid_b1e24f79",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Tuesday evening",
    "label": "January — Tuesday evening — LINE-5735-3903",
    "networkPath": "data/rte_matpower/grids/grid_b1e24f79/network.xiidm",
@@ -13012,13 +12992,12 @@
     "LINE-6229-6008",
     "TWT-5990-6187"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 100.0,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_LINE-5990-5989",
+    "max_rho": 1.0004106308233607
    }
   },
   {
@@ -15652,7 +15631,7 @@
    "solution": {
     "kind": "unitary",
     "action": "disco_LINE-5854-6151",
-    "max_rho": 1.6495906247585834
+    "max_rho": 1.649590624758703
    }
   },
   {
@@ -17607,7 +17586,7 @@
   {
    "id": "s_ca0a1d68_da108a",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-1108-35",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -17622,13 +17601,12 @@
     "LINE-6219-6175",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
+   "nActionsDiscovered": 15,
    "bestAchievableLoadingPct": null,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-2552-1431+disco_LINE-3002-1431",
+    "max_rho": null
    }
   },
   {
@@ -18075,7 +18053,7 @@
   {
    "id": "s_ca0a1d68_a29d2f",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-3530-581",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18089,19 +18067,18 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 92.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_TWT-6001-6198",
+    "max_rho": 0.9215749699852874
    }
   },
   {
    "id": "s_ca0a1d68_11ba61",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-3581-1495",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18116,19 +18093,18 @@
     "LINE-6219-6175",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
+   "nActionsDiscovered": 15,
    "bestAchievableLoadingPct": null,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-2552-1431+disco_LINE-3002-1431",
+    "max_rho": null
    }
   },
   {
    "id": "s_ca0a1d68_fe5aeb",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-3582-1108",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18143,13 +18119,12 @@
     "LINE-6219-6175",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
+   "nActionsDiscovered": 15,
    "bestAchievableLoadingPct": null,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-2552-1431+disco_LINE-3002-1431",
+    "max_rho": null
    }
   },
   {
@@ -18181,7 +18156,7 @@
   {
    "id": "s_ca0a1d68_72a72c",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-3753-3180",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18195,19 +18170,18 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 92.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_TWT-6001-6198",
+    "max_rho": 0.9218256975963537
    }
   },
   {
    "id": "s_ca0a1d68_c107c9",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-3753-3180#0",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18221,13 +18195,12 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 92.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_TWT-6001-6198",
+    "max_rho": 0.9218256975963701
    }
   },
   {
@@ -18257,7 +18230,7 @@
   {
    "id": "s_ca0a1d68_6dd101",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-3912-2552",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18271,13 +18244,12 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 92.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_TWT-6001-6198",
+    "max_rho": 0.9219759969364165
    }
   },
   {
@@ -18381,7 +18353,7 @@
   {
    "id": "s_ca0a1d68_7f3b7c",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-4574-1218",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18395,19 +18367,18 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 92.3,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_TWT-6001-6198",
+    "max_rho": 0.9234853769855417
    }
   },
   {
    "id": "s_ca0a1d68_818027",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-4574-3753",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18421,19 +18392,18 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 107.5,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-2552-1431+disco_LINE-2552-753",
+    "max_rho": 1.0747185594780215
    }
   },
   {
    "id": "s_ca0a1d68_55f4e4",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-4574-3753#0",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18447,19 +18417,18 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 107.5,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-2552-1431+disco_LINE-2552-753",
+    "max_rho": 1.075231996834665
    }
   },
   {
    "id": "s_ca0a1d68_da6cb7",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-4677-3180",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18476,13 +18445,12 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 9,
+   "bestAchievableLoadingPct": 416.8,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "open_coupler_VL-4743+open_coupler_VL-1218",
+    "max_rho": 4.168381395307488
    }
   },
   {
@@ -18585,7 +18553,7 @@
   {
    "id": "s_ca0a1d68_849795",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-4947-6227",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18599,13 +18567,12 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
+   "nActionsDiscovered": 15,
    "bestAchievableLoadingPct": null,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-2552-1431+disco_LINE-3002-1431",
+    "max_rho": null
    }
   },
   {
@@ -18659,7 +18626,7 @@
   {
    "id": "s_ca0a1d68_4ab2e9",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-5645-3581",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18674,19 +18641,18 @@
     "LINE-6219-6175",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
+   "nActionsDiscovered": 15,
    "bestAchievableLoadingPct": null,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-2552-1431+disco_LINE-3002-1431",
+    "max_rho": null
    }
   },
   {
    "id": "s_ca0a1d68_fecfc0",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-5645-4947",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18701,19 +18667,18 @@
     "LINE-6219-6175",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
+   "nActionsDiscovered": 15,
    "bestAchievableLoadingPct": null,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-2552-1431+disco_LINE-3002-1431",
+    "max_rho": null
    }
   },
   {
    "id": "s_ca0a1d68_4956dd",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-5666-4444",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18727,13 +18692,12 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 92.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_TWT-6001-6198",
+    "max_rho": 0.9219238847436804
    }
   },
   {
@@ -18787,7 +18751,7 @@
   {
    "id": "s_ca0a1d68_d5db64",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-5744-3912",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18801,19 +18765,18 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 92.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_TWT-6001-6198",
+    "max_rho": 0.9220073094269104
    }
   },
   {
    "id": "s_ca0a1d68_2831a7",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-5744-5666",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18827,19 +18790,18 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 92.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_TWT-6001-6198",
+    "max_rho": 0.9219232518384286
    }
   },
   {
    "id": "s_ca0a1d68_e9ba06",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-5823-3530",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18853,19 +18815,18 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 92.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_TWT-6001-6198",
+    "max_rho": 0.9215734442937167
    }
   },
   {
    "id": "s_ca0a1d68_71c909",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "easy",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-5823-4574",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -18879,13 +18840,12 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
-   "bestAchievableLoadingPct": null,
+   "nActionsDiscovered": 15,
+   "bestAchievableLoadingPct": 92.2,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "unitary",
+    "action": "disco_TWT-6001-6198",
+    "max_rho": 0.9216258514567057
    }
   },
   {
@@ -22241,13 +22201,13 @@
    "solution": {
     "kind": "pair",
     "action": "disco_LINE-5856-5994+disco_LINE-5857-5968",
-    "max_rho": 2.4098623992159816
+    "max_rho": 2.409862399215906
    }
   },
   {
    "id": "s_ca0a1d68_222a52",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-6227-6158",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -22261,13 +22221,12 @@
     "LINE-5521-6198",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
+   "nActionsDiscovered": 15,
    "bestAchievableLoadingPct": null,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-2552-1431+disco_LINE-3002-1431",
+    "max_rho": null
    }
   },
   {
@@ -22297,7 +22256,7 @@
   {
    "id": "s_ca0a1d68_8d6751",
    "gridId": "grid_ca0a1d68",
-   "difficulty": "hard",
+   "difficulty": "medium",
    "title": "January — Friday night",
    "label": "January — Friday night — LINE-6236-6248",
    "networkPath": "data/rte_matpower/grids/grid_ca0a1d68/network.xiidm",
@@ -22313,13 +22272,12 @@
     "LINE-6219-6175",
     "TWT-6001-6198"
    ],
-   "nActionsDiscovered": 0,
+   "nActionsDiscovered": 15,
    "bestAchievableLoadingPct": null,
    "solution": {
-    "kind": "none",
-    "best_unitary": null,
-    "n_actions": 0,
-    "n_pairs": 0
+    "kind": "pair",
+    "action": "disco_LINE-2552-1431+disco_LINE-3002-1431",
+    "max_rho": null
    }
   },
   {
