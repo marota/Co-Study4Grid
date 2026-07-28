@@ -7,6 +7,19 @@ and the project (informally) follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Game Mode — Matpower dataset re-graded after `expert_op4grid_recommender@0.3.3.post1`
+
+- **Bumped `expert_op4grid_recommender` `0.3.0.post1` → `0.3.3.post1`** (hotfix
+  for the alphaDeesp empty-`red_loops` crash, see
+  ainetus/Expert_op4grid_recommender#124).
+- **Re-graded the France RTE Matpower difficulty dataset** with the fix: the
+  fatal traceback had hit 42 of 901 contingencies (4.7 %), truncating action
+  discovery and overestimating difficulty. Re-grading moved all 42 out of
+  `hard` (`hard → easy` 21, `hard → medium` 21, none the other way). Tier split
+  **440/368/62 → 461/389/20** (easy/medium/hard), same 870 scenarios, identical
+  ids. Player bundle (`frontend/src/game/matpowerScenarios.json`) regenerated;
+  109/109 frontend tests green.
+
 ### Game Mode — unique session names + lever-simulation feedback
 
 - **Duplicate session names are blocked.** `GET /api/game/player-sessions` now
