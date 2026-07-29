@@ -196,6 +196,12 @@ final statistics) and is skipped when its `grid_layout.json` still hashes to
 it; `test_repair_layout.py` fails if that record goes stale and holds the
 committed layouts to the table above.
 
+The durable fix for what the repair only mitigates (identity piles, the
+Paris-ring / Nord coverage holes, the stacked 225 kV placement, foreign
+border equivalents) belongs upstream in `Grid_snapshot_reconstruct` — the
+complete brief, interface contract and acceptance criteria live in
+[`docs/data/matpower-upstream-handoff.md`](../data/matpower-upstream-handoff.md).
+
 ## Modules
 
 | Module | Role |
