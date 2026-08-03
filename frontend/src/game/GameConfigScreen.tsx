@@ -157,7 +157,12 @@ export default function GameConfigScreen({ onStart }: GameConfigScreenProps) {
   const [previewError, setPreviewError] = useState(false);
 
   // Top-level mode: the European demo grid (curated reference studies) vs one
-  // of the difficulty-graded scenario databases (sampled by level).
+  // of the difficulty-graded scenario databases (sampled by level). The demo
+  // grid is the only mode a participant sees by default — France THT and
+  // France EHV (Matpower) stay hidden behind this toggle inside Configure
+  // settings so the landing page doesn't ask newcomers to choose a dataset
+  // family they don't yet have context for.
+  const [showModePicker, setShowModePicker] = useState(false);
   const [mode, setMode] = useState<GameMode>('demo');
   const [thtDifficulty, setThtDifficulty] = useState<Rte7000Difficulty>('easy');
   const [numCases, setNumCases] = useState(5);
@@ -300,39 +305,6 @@ export default function GameConfigScreen({ onStart }: GameConfigScreenProps) {
           name and press start — you can tune the timer, difficulty and studies
           under settings.
         </p>
-
-        {/* Mode: European demo grid vs France THT graded scenarios. */}
-        <div style={card}>
-          <label style={labelStyle}>Mode</label>
-          <div style={{ display: 'flex', gap: space[2] }}>
-            <button data-testid="game-mode-demo"
-              style={{
-                ...btn(mode === 'demo' ? colors.brand : colors.surfaceMuted,
-                       mode === 'demo' ? colors.textOnBrand : colors.textSecondary),
-                flex: 1, padding: `${space[2]} ${space[3]}`, textAlign: 'left',
-              }}
-              onClick={() => setMode('demo')}>
-              🌍 European grid — demo
-              <div style={{ fontSize: text.xs, fontWeight: 400, marginTop: space.half, opacity: 0.85 }}>
-                The pan-European reference studies (and the French worst-case set).
-              </div>
-            </button>
-            {Object.values(GRADED).map((fam) => (
-              <button key={fam.key} data-testid={`game-mode-${fam.key}`}
-                style={{
-                  ...btn(mode === fam.key ? colors.brand : colors.surfaceMuted,
-                         mode === fam.key ? colors.textOnBrand : colors.textSecondary),
-                  flex: 1, padding: `${space[2]} ${space[3]}`, textAlign: 'left',
-                }}
-                onClick={() => setMode(fam.key)}>
-                {fam.button}
-                <div style={{ fontSize: text.xs, fontWeight: 400, marginTop: space.half, opacity: 0.85 }}>
-                  {fam.buttonBlurb}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
 
         {/* Landing — the only things a participant needs to start. */}
         <div style={card}>
@@ -526,18 +498,69 @@ export default function GameConfigScreen({ onStart }: GameConfigScreenProps) {
                   <input type="number" min={1} max={3} value={maxActions} style={{ ...inputStyle, width: 80 }}
                     onChange={(e) => setMaxActions(Math.min(3, Math.max(1, Number(e.target.value))))} />
                 </div>
-                {mode === 'demo' && (
-                  <div style={{ flex: 1, minWidth: 220 }}>
-                    <label style={labelStyle}>Difficulty (network)</label>
-                    <select style={inputStyle} value={difficulty}
-                      onChange={(e) => changeDifficulty(e.target.value as Difficulty)}>
-                      {DIFFICULTY_TIERS.map((t) => (
-                        <option key={t.id} value={t.id}>{t.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                <div>
+                  <label style={labelStyle}>Mode</label>
+                  <button data-testid="game-mode-picker-toggle"
+                    style={{
+                      ...btn(colors.surfaceMuted, colors.textSecondary),
+                      border: `1px solid ${colors.border}`,
+                    }}
+                    onClick={() => setShowModePicker((v) => !v)}>
+                    {showModePicker ? 'Hide other modes ▲' : '🌐 Other modes / regions ▼'}
+                  </button>
+                </div>
               </div>
+
+              {/* Hidden by default — France THT and France EHV (Matpower)
+                  are advanced/graded datasets a newcomer doesn't need to
+                  see on first load. Revealed verbatim (same buttons +
+                  blurbs) by the toggle above. */}
+              {showModePicker && (
+                <div style={{ marginTop: space[3] }}>
+                  <label style={labelStyle}>Mode</label>
+                  <div style={{ display: 'flex', gap: space[2] }}>
+                    <button data-testid="game-mode-demo"
+                      style={{
+                        ...btn(mode === 'demo' ? colors.brand : colors.surfaceMuted,
+                               mode === 'demo' ? colors.textOnBrand : colors.textSecondary),
+                        flex: 1, padding: `${space[2]} ${space[3]}`, textAlign: 'left',
+                      }}
+                      onClick={() => setMode('demo')}>
+                      🌍 European grid — demo
+                      <div style={{ fontSize: text.xs, fontWeight: 400, marginTop: space.half, opacity: 0.85 }}>
+                        The pan-European reference studies (and the French worst-case set).
+                      </div>
+                    </button>
+                    {Object.values(GRADED).map((fam) => (
+                      <button key={fam.key} data-testid={`game-mode-${fam.key}`}
+                        style={{
+                          ...btn(mode === fam.key ? colors.brand : colors.surfaceMuted,
+                                 mode === fam.key ? colors.textOnBrand : colors.textSecondary),
+                          flex: 1, padding: `${space[2]} ${space[3]}`, textAlign: 'left',
+                        }}
+                        onClick={() => setMode(fam.key)}>
+                        {fam.button}
+                        <div style={{ fontSize: text.xs, fontWeight: 400, marginTop: space.half, opacity: 0.85 }}>
+                          {fam.buttonBlurb}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {showModePicker && mode === 'demo' && (
+                <div style={{ marginTop: space[3], maxWidth: 320 }}>
+                  <label style={labelStyle}>Difficulty (network)</label>
+                  <select style={inputStyle} value={difficulty}
+                    onChange={(e) => changeDifficulty(e.target.value as Difficulty)}>
+                    {DIFFICULTY_TIERS.map((t) => (
+                      <option key={t.id} value={t.id}>{t.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <p style={{ color: colors.textTertiary, fontSize: text.xs, margin: `${space[2]} 0 0` }}>
                 {graded ? graded.configHint : tier.blurb}
               </p>
