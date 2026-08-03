@@ -23,6 +23,12 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 const sessionInput = () => screen.getByTestId('game-session-name') as HTMLInputElement;
 
+/** France THT / Matpower live behind Configure settings' mode toggle. */
+const openModePicker = () => {
+  fireEvent.click(screen.getByTestId('game-settings-toggle'));
+  fireEvent.click(screen.getByTestId('game-mode-picker-toggle'));
+};
+
 describe('GameConfigScreen landing', () => {
   it('keeps Start disabled until a player name is entered', () => {
     render(<GameConfigScreen onStart={vi.fn()} />);
@@ -109,13 +115,28 @@ describe('GameConfigScreen landing', () => {
     expect(screen.getByTestId('game-network-preview')).toBeInTheDocument();
   });
 
-  it('hides settings by default and reveals timer / difficulty / studies on toggle', () => {
+  it('hides settings by default and reveals timer / mode toggle / studies on toggle', () => {
     render(<GameConfigScreen onStart={vi.fn()} />);
     expect(screen.queryByText(/Time limit per study/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('game-settings-toggle'));
     expect(screen.getByText(/Time limit per study/)).toBeInTheDocument();
-    expect(screen.getByText(/Difficulty \(network\)/)).toBeInTheDocument();
+    expect(screen.getByTestId('game-mode-picker-toggle')).toBeInTheDocument();
     expect(screen.getByText(/Studies \(/)).toBeInTheDocument();
+  });
+
+  it('keeps other modes and the network-difficulty picker hidden until the mode toggle is used', () => {
+    render(<GameConfigScreen onStart={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('game-settings-toggle'));
+    expect(screen.queryByTestId('game-mode-tht')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('game-mode-matpower')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Difficulty \(network\)/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('game-mode-picker-toggle'));
+    expect(screen.getByTestId('game-mode-demo')).toBeInTheDocument();
+    expect(screen.getByTestId('game-mode-tht')).toBeInTheDocument();
+    expect(screen.getByTestId('game-mode-matpower')).toBeInTheDocument();
+    // Demo is still the active mode, so its network-difficulty select shows too.
+    expect(screen.getByText(/Difficulty \(network\)/)).toBeInTheDocument();
   });
 
   it('starts a session with the entered config', async () => {
@@ -140,6 +161,7 @@ describe('GameConfigScreen — France THT mode', () => {
     render(<GameConfigScreen onStart={vi.fn()} />);
     // Demo is the default: its studies summary + network preview are shown.
     expect(screen.getByTestId('game-studies-summary')).toBeInTheDocument();
+    openModePicker();
     fireEvent.click(screen.getByTestId('game-mode-tht'));
     expect(screen.getByTestId('game-tht-difficulty')).toBeInTheDocument();
     expect(screen.getByTestId('game-tht-count')).toBeInTheDocument();
@@ -156,6 +178,7 @@ describe('GameConfigScreen — France THT mode', () => {
     render(<GameConfigScreen onStart={onStart} />);
     fireEvent.change(screen.getByTestId('game-player'), { target: { value: 'amarot' } });
     await waitFor(() => expect(sessionInput().value).toBe('amarot — session 3'));
+    openModePicker();
     fireEvent.click(screen.getByTestId('game-mode-tht'));
     fireEvent.change(screen.getByTestId('game-tht-count'), { target: { value: '3' } });
     fireEvent.click(screen.getByTestId('game-start'));
@@ -171,6 +194,7 @@ describe('GameConfigScreen — France THT mode', () => {
 
   it('caps the number of cases at the pool size', () => {
     render(<GameConfigScreen onStart={vi.fn()} />);
+    openModePicker();
     fireEvent.click(screen.getByTestId('game-mode-tht'));
     const count = screen.getByTestId('game-tht-count') as HTMLInputElement;
     fireEvent.change(count, { target: { value: '999999' } });
@@ -181,6 +205,7 @@ describe('GameConfigScreen — France THT mode', () => {
 
   it('still requires a player name to start in THT mode', () => {
     render(<GameConfigScreen onStart={vi.fn()} />);
+    openModePicker();
     fireEvent.click(screen.getByTestId('game-mode-tht'));
     expect(screen.getByTestId('game-start')).toBeDisabled();
   });
@@ -189,6 +214,7 @@ describe('GameConfigScreen — France THT mode', () => {
 describe('GameConfigScreen — France EHV (Matpower) mode', () => {
   it('is a third top-level mode, exclusive with demo and France THT', () => {
     render(<GameConfigScreen onStart={vi.fn()} />);
+    openModePicker();
     fireEvent.click(screen.getByTestId('game-mode-matpower'));
     expect(screen.getByTestId('game-matpower-difficulty')).toBeInTheDocument();
     expect(screen.getByTestId('game-matpower-count')).toBeInTheDocument();
@@ -208,6 +234,7 @@ describe('GameConfigScreen — France EHV (Matpower) mode', () => {
     render(<GameConfigScreen onStart={onStart} />);
     fireEvent.change(screen.getByTestId('game-player'), { target: { value: 'amarot' } });
     await waitFor(() => expect(sessionInput().value).toBe('amarot — session 3'));
+    openModePicker();
     fireEvent.click(screen.getByTestId('game-mode-matpower'));
     fireEvent.change(screen.getByTestId('game-matpower-count'), { target: { value: '1' } });
     fireEvent.click(screen.getByTestId('game-start'));
@@ -223,6 +250,7 @@ describe('GameConfigScreen — France EHV (Matpower) mode', () => {
 
   it('still requires a player name to start', () => {
     render(<GameConfigScreen onStart={vi.fn()} />);
+    openModePicker();
     fireEvent.click(screen.getByTestId('game-mode-matpower'));
     expect(screen.getByTestId('game-start')).toBeDisabled();
   });
