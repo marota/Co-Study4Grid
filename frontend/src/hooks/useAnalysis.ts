@@ -206,6 +206,14 @@ export function useAnalysis(): AnalysisState {
         if (event.type === 'pdf') {
           setResult((p: AnalysisResult | null) => ({
             ...(p || {}),
+            // The ``pdf`` event lands BEFORE the ``result`` event, so on a
+            // first analysis `p` is null and the merged object would carry
+            // no `actions` map at all — even though `AnalysisResult` declares
+            // it required. Every consumer that reads `result.actions` without
+            // a guard (the Game Mode snapshot effect, `buildChosenActionRecord`,
+            // `buildSessionResult`) then crashes on this intermediate state.
+            // Seed it so a partial result is always structurally valid.
+            actions: p?.actions ?? {},
             pdf_url: event.pdf_url,
             pdf_path: event.pdf_path,
             // The overflow-graph build time is emitted on the
