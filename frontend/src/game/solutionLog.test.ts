@@ -146,6 +146,16 @@ describe('buildChosenActionRecord', () => {
     expect(rec.effective).toBe(false);
   });
 
+  it('tolerates a partial result with no actions map (pdf-only stream window)', () => {
+    // The step-2 stream publishes the overflow-graph `pdf` event before the
+    // `result` event, so a non-null result with no `actions` map is a real
+    // intermediate state the Game Mode snapshot effect renders through.
+    const partial = { pdf_path: null, pdf_url: '/results/pdf/g.html' } as unknown as AnalysisResult;
+    expect(() => buildChosenActionRecord('a1', partial, 1.2)).not.toThrow();
+    expect(() => buildChosenActionRecord('a1+a2', partial, 1.2)).not.toThrow();
+    expect(buildChosenActionRecord('a1', partial, 1.2).maxRho).toBeNull();
+  });
+
   it('marks an action ineffective when it does not beat the baseline', () => {
     const result = analysisResult({
       // Still overloaded AND worse than doing nothing.

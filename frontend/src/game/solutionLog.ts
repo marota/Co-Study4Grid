@@ -107,7 +107,7 @@ function combinedBeatsUnderlying(
 ): boolean {
   if (!actionId.includes('+')) return true;
   const partRhos = actionId.split('+')
-    .map((part) => result?.actions[part.trim()]?.max_rho)
+    .map((part) => result?.actions?.[part.trim()]?.max_rho)
     .filter((rho): rho is number => typeof rho === 'number');
   if (!partRhos.length) return true;
   return maxRho <= Math.min(...partRhos) - COMBINED_MIN_RHO_GAIN;
@@ -119,7 +119,7 @@ export function buildChosenActionRecord(
   result: AnalysisResult | null,
   baselineMaxRho: number | null,
 ): ChosenActionRecord {
-  const detail = result?.actions[actionId];
+  const detail = result?.actions?.[actionId];
   const maxRho = detail?.max_rho ?? null;
   const after = detail?.lines_overloaded_after;
   const solved = maxRho != null && maxRho < 1.0 && (!after || after.length === 0);

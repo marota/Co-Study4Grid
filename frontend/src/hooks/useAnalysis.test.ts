@@ -299,6 +299,35 @@ describe('useAnalysis', () => {
         expect(result.current.result?.pdf_url).toBe('/results/pdf/graph.pdf');
     });
 
+    it('keeps an `actions` map on the intermediate pdf-only result', async () => {
+        // The ``pdf`` event lands seconds before the ``result`` event (the
+        // overflow graph is written while the recommender still filters
+        // actions). On a first analysis the previous result is null, so the
+        // merged object used to carry NO `actions` key — and every consumer
+        // reading `result.actions` unguarded (Game Mode's snapshot effect
+        // published `Object.keys(result.actions)`) crashed on that window.
+        mockRunAnalysisStep1.mockResolvedValue({
+            can_proceed: true, message: '', lines_overloaded: ['LINE_A'],
+        });
+
+        const pdfEvent = JSON.stringify({
+            type: 'pdf', pdf_url: '/results/pdf/graph.html', pdf_path: '/tmp/graph.html',
+        });
+        mockRunAnalysisStep2Stream.mockResolvedValue({
+            ok: true, body: makeStream(`${pdfEvent}\n`),
+        });
+
+        const { result } = renderHook(() => useAnalysis());
+
+        await act(async () => {
+            await result.current.handleRunAnalysis(['LINE_X'], vi.fn(), vi.fn());
+        });
+
+        expect(result.current.result?.pdf_url).toBe('/results/pdf/graph.html');
+        expect(result.current.result?.actions).toEqual({});
+        expect(() => Object.keys(result.current.result!.actions)).not.toThrow();
+    });
+
     it('sets error on stream error event', async () => {
         const detected = ['LINE_A'];
         mockRunAnalysisStep1.mockResolvedValue({
