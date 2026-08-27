@@ -84,8 +84,9 @@ const GRADED: Record<GradedMode, GradedFamily> = {
     sample: sampleMatpower,
     preview: '/game/preview-matpower.svg',
     previewAlt: 'France EHV (Matpower) network map',
-    previewCaption: 'The MATPOWER RTE 400 kV backbone, positioned on France by electrical-distance '
-      + 'match against a named THT snapshot.',
+    previewCaption: 'The MATPOWER RTE EHV backbone — 400 kV in red, 225 kV in green — positioned '
+      + 'on France by electrical-distance match against a named THT snapshot. The 63 / 90 kV '
+      + 'sub-transmission the cases also carry is left off the map.',
     summaryTail: 'the four MATPOWER RTE operating points',
     configHint: 'France EHV (Matpower): choose the difficulty level and number of cases above; '
       + 'studies are sampled automatically.',

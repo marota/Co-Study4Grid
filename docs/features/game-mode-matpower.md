@@ -64,6 +64,144 @@ substation's **real RTE busbar count**, which the rebuild replicates — 430 VLs
 `case6515rte`, giving real 4-, 6- and 9-busbar substations instead of a uniform
 double busbar.
 
+### Checked against the RTE7000 THT reference
+
+The named snapshot the cases were matched against (`grid_5384e039`) is the ground
+truth for both the coordinate frame and the real substation structure, so the two
+datasets are compared directly (`test_repair_layout.py` pins the results):
+
+**Coordinate frame — identical.** Median translation between the frames is
+0.26 km and the median pairwise-distance ratio is 0.9998, so both layouts are the
+same raw Mercator metres with no offset, scale or rotation to reconcile. Extents:
+THT 1 027 k × 1 056 k units, Matpower 955 k × 994 k — the Matpower set is slightly
+smaller because it reaches 61 % of the THT 400 kV postes, not all of them.
+
+**Voltage levels — the reason the map needed a threshold.** THT is EHV-only;
+73 % of the Matpower voltage levels have no counterpart in it at all:
+
+| kV | RTE7000 THT | Matpower |
+|---|---|---|
+| 380 | 302 | 456 |
+| 225 | 1 081 | 1 236 |
+| 150 / 90 / 63 / 45 | 0 | 67 / 1 100 / 3 048 / 64 |
+| ≤ 24 (auxiliary) | 41 | 278 |
+| **total** | **1 424** | **6 249** |
+
+**Identity positions.** All 449 identities resolvable in the THT layout are
+380 kV, every claimed poste really has a 380 kV level (0 voltage mismatches),
+and as reconstructed each sits 1.9 km (median, max 5.9 km) from it — the
+deliberate jitter that stops a substation's several voltage levels drawing on
+top of each other. The repair keeps every **kept** identity unchanged to the
+metre, `strict` matches included.
+
+**Structure — the over-assignment, confirmed against ground truth.** A real THT
+poste has at most 6 voltage levels at 400 kV (mean 1.5). The Matpower mapping
+claims up to **52**:
+
+| poste | Matpower 380 kV VLs | THT 380 kV VLs | region |
+|---|---|---|---|
+| SCHEE | 52 | 1 | Alsace / eastern border |
+| MARSI | 34 | 1 | Béarn / Spain border |
+| GRAV5 | 17 | 1 | Nord coast |
+| E.HU7 | 16 | 1 | German border |
+| CATG2 | 14 | 1 | Moselle |
+
+No claimed name is bogus (only `MUHLB`, 3 loose claims, matches no THT poste;
+`'CERN '` / `'CBRY '` carry a trailing space that used to break the lookup) —
+the fault is multiplicity: the percolation uses a few hub names as sinks, 14
+piled postes hold 226 of the 452 identities, and the piles sit exactly in the
+regions the operator flagged. Pile members mutually vouch for each other, which
+is why no per-node geometric rule can see them: *clean support* — support from
+a neighbour whose own poste is not over-claimed — collapses at every pile
+(SCHEE 1/52, MARSI 0/34, TRANS 0/12) while staying high everywhere else.
+
+**Coverage holes are the other half.** 77 of the 201 THT 400 kV postes have no
+identity at all, concentrated in the same regions: the whole Paris inner ring
+(TERRI, SAUS5, PENC5, YVE.O, VLEJU, VLEVA, REMIS, N.SE2, BOCTO, CBRY — zero
+identities), 21 postes of the Nord chain, the Loire nuclear corridor
+(Chinon/Dampierre/Belleville/Saint-Laurent), and Cordemais + Blayais in the
+west. Wherever a strict anchor exists the geometry is right; the artifacts live
+where anchors are missing or piled. Filling these holes needs upstream
+re-percolation — a layout pass cannot invent identities (a conservative 1-hop
+derivation recovers ~2 per grid at leave-one-out precision 0.90, e.g. the
+Cordemais hub).
+
+**The 225 kV layer was stacked, not misplaced.** The propagated 225 kV
+positions are individually plausible (median 2.5 km from a real THT 225 kV
+site) but degenerate: ~750 nodes crowd ~277 real sites while most of the real
+1 081-site web has no node at all — site coverage p50 was 14.4 km, *worse than
+a uniform random scatter* (9.7 km). That is exactly "I don't recognize the
+grid": the real regional webs (Brittany, Pays de la Loire, the south-east) sat
+empty while Normandy held 3.3× its real node count.
+
+### Layout repair (`repair_layout.py`)
+
+Three stages, all against the THT ground truth (`tht_reference.py`):
+
+1. **Identity vetting** (`identity_vetting.py`). Every claim is scored on the
+   THT *poste graph*: a claim `v → P` is supported by an identified neighbour
+   `u → Q` only when P and Q are electrical neighbours (or close) in THT.
+   Loose claims are released when their poste is absent from THT, their
+   neighbours contradict them, or their poste exceeds its plausibility cap
+   `ceil(1.5·n380) + n_generator_units` (1.5 = the 456/302 node-split ratio;
+   MATPOWER gives each generator unit its own leaf bus, so plant postes like
+   Gravelines legitimately hold more). `strict` claims are **never** released.
+   ~220 of 452 claims are released per grid; released ex-identities keep only
+   a near-zero locality weight, so the graph re-places them.
+2. **225 kV placement.** Voltage levels hanging by a 400/225 transformer off a
+   kept identity are pinned at that poste's real THT 225 kV position (~82 per
+   grid — a transformer lives inside one substation). The remaining free
+   225 kV nodes are de-stacked by a capacity-limited minimum-cost assignment
+   onto the real THT 225 kV sites (one node per site), iterated with the
+   relaxation on a growing radius (35 → 60 → 90 km) so over-dense regions can
+   export their surplus to the real-but-empty sites further out (~1 013 of
+   1 155 assigned).
+3. **Per-class anchored Laplacian relaxation**, solved exactly as one sparse
+   SPD system per axis: kept identities + 225 kV pins fixed; released
+   ex-identities at λ=0.05; snapped 225 kV nodes pulled to their site at λ=4;
+   everything else keeps λ=1 toward the raw reconstruction.
+
+Shipped results on `grid_6be3a179` (raw → v3; the v1 plain relaxation in
+between is kept for context):
+
+| metric | raw | v1 | v3 |
+|---|---|---|---|
+| branches > 100 km | 265 | 78 | **68** |
+| branches > 200 km | 53 | 10 | **2** |
+| neighbour-offset > 100 km | 51 | 4 | **2** |
+| 225 kV site-coverage p50 | 14.4 km | 13.0 km | **4.4 km** |
+| 225 kV sites covered ≤ 10 km | 40 % | 34 % | **88 %** |
+| 225 kV node → nearest-site p50 | 2.5 km* | 7.0 km | 4.7 km |
+
+\* the raw 2.5 km is an artifact of the stacking — many nodes on few correct
+sites. The v1 relaxation traded it for backbone collapse (7.0 km, coverage
+DOWN); v3 restores both directions at once. Neighbour-offset p90 lands at
+~18 km against the THT reference's own 15.0 km — v1's 12.2 km was *smoother
+than reality*, which is precisely the collapse the operator saw.
+
+The 14–18 branches per case that still exceed 100 km between two kept postes
+are reported (`--report-suspect-anchors`), not hidden: both ends are pinned to
+a position upstream is confident about, so they are `grid_snapshot_reconstruct`
+matching issues. So are the remaining artifacts: the Paris-ring hole, the
+foreign border-equivalent appendices (the 150 kV Pyrenees/Belgium and 45 kV
+Geneva/Jura components, and the German/Swiss cluster at the eastern edge —
+France operates neither 150 kV nor 45 kV transmission), and the ~68 stale
+bus entries in `rte_substation_map.json`. `rte_substation_map.json` is never
+rewritten — only the drawing moves.
+
+The repair is anchored on the layout it reads, so re-running it on its own
+output would drift. Each grid carries a `layout_repair.json` provenance record
+(algorithm, per-class λ, release reasons, derived anchors, pin/snap counts,
+final statistics) and is skipped when its `grid_layout.json` still hashes to
+it; `test_repair_layout.py` fails if that record goes stale and holds the
+committed layouts to the table above.
+
+The durable fix for what the repair only mitigates (identity piles, the
+Paris-ring / Nord coverage holes, the stacked 225 kV placement, foreign
+border equivalents) belongs upstream in `Grid_snapshot_reconstruct` — the
+complete brief, interface contract and acceptance criteria live in
+[`docs/data/matpower-upstream-handoff.md`](../data/matpower-upstream-handoff.md).
+
 ## Modules
 
 | Module | Role |
@@ -76,10 +214,14 @@ double busbar.
 | `grade.py` | Stage 2 — difficulty grading (easy / medium / hard), resumable |
 | `build_scenarios.py` | Stage 3 — fold every `graded.jsonl` into `scenarios.json` |
 | `gen_matpower_presets.py` | Stage 4 — emit the frontend presets from that database |
+| `repair_layout.py` | Layout repair — identity vetting + 225 kV placement + per-class relaxation (see above); idempotent, run on the raw layouts after any rebuild |
+| `tht_reference.py` | THT ground truth: poste inventory (substation nesting), poste graph, 225 kV site list, generator counts |
+| `identity_vetting.py` | Claim scoring against the THT poste graph, plausibility caps, release policy, conservative 1-hop derivation |
 
 ```bash
 python scripts/game_mode/matpower/build_network.py all           # ~225 s per case
 python scripts/game_mode/matpower/grade.py all                   # ~14 s per contingency
+python scripts/game_mode/matpower/repair_layout.py               # -> repaired grid_layout.json + layout_repair.json
 python scripts/game_mode/matpower/build_scenarios.py             # -> data/rte_matpower/scenarios.json
 python scripts/game_mode/matpower/gen_matpower_presets.py        # -> frontend/src/game/matpower*
 python scripts/game_mode/gen_network_previews.py                 # -> public/game/preview-matpower.svg
@@ -145,3 +287,14 @@ which keeps the THT ids — and the tests that assert them — unchanged.
 
 The seeded sampler is shared too: `frontend/src/game/sampleScenarios.ts`, used by
 both generated preset modules instead of being emitted twice.
+
+The config-screen map is drawn at **225 kV and above** (`min_kv` in
+`gen_network_previews.py`), which is exactly the two-layer backbone the France
+THT map shows — 1 692 nodes / 2 600 lines against THT's 1 464 / 2 499, so the two
+modes are visually comparable. These cases are full 6 500-bus models that also
+carry the whole 63 / 90 / 150 kV sub-transmission layer: 4 400 of their 6 250
+voltage levels and half their branches, drawn flat green by the map's
+`< 350 kV` rule. Including it produced a hairball that said nothing about the
+grid a player works on, and it is the least trustworthy part of the dataset
+(propagated positions, no identity). Every other family here already contains
+only its EHV levels, hence their threshold of 0.

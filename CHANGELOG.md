@@ -7,6 +7,109 @@ and the project (informally) follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Game Mode — Matpower layout v3: critical revision of VL coverage, mappings and coordinates
+
+Operator follow-up on the first repair: the 400 kV still looked weird around
+Paris, the Nord, the eastern and Spain borders, and "for the 225 kV I don't
+really recognize the same grid". A three-way audit against the RTE7000 THT
+reference found the mechanisms and the v3 repair addresses what a layout pass
+can; the rest is documented as upstream `grid_snapshot_reconstruct` work.
+
+- **Audit findings** (docs/features/game-mode-matpower.md):
+  (a) *over-claimed identities* — the Rosetta percolation uses hub names as
+  sinks: SCHEE claims 52 voltage levels vs 1 in THT (MARSI 34, GRAV5 17…);
+  14 piles hold 226/452 identities, sitting exactly in the complaint regions,
+  and pile members mutually vouch for each other so per-node geometry cannot
+  see them; (b) *coverage holes* — 77/201 THT 400 kV postes have no identity,
+  including the ENTIRE Paris inner ring, 21 Nord postes, the Loire nuclear
+  corridor and Cordemais/Blayais; (c) *a stacked 225 kV layer* — positions
+  individually plausible (p50 2.5 km from a real site) but ~750 nodes crowd
+  ~277 sites, leaving site coverage worse than random scatter — and the v1
+  relaxation made the 225 layer WORSE (node→site p50 2.5→7.0 km, coverage
+  down), collapsing it onto the 380 backbone; (d) data bugs — trailing-space
+  poste names ('CERN ', 'CBRY '), MUHLB absent from THT, 68 stale map entries.
+- **v3 repair** (`repair_layout.py` + new `tht_reference.py` /
+  `identity_vetting.py`): identity vetting on the THT poste graph (release
+  loose claims that are contradicted, over their plausibility cap
+  `ceil(1.5·n380)+n_generator_units`, or name a non-THT poste; strict never
+  released; ~220/452 released per grid at near-zero locality weight),
+  transformer-implied 225 kV pins at the claimed poste's real THT 225 site
+  (~82/grid), a capacity-limited minimum-cost de-stacking of the free 225 kV
+  layer onto the 1 081 real THT sites iterated on a growing radius
+  (~1 013/1 155 assigned), a conservative 1-hop derived anchor for the
+  unclaimed Cordemais hub (LOO precision 0.90), and a per-class λ relaxation.
+- **Shipped numbers** (grid_6be3a179, raw → v1 → v3): branches >200 km
+  53→10→**2**; neighbour-offsets >100 km 51→4→**2**; 225 kV site-coverage p50
+  14.4→13.0→**4.4 km**, sites covered ≤10 km 40→34→**88 %**. Offset p90 lands
+  at 18 km vs the THT reference's own 15.0 — v1's 12.2 was smoother than
+  reality (the backbone collapse the operator saw). All four grids move
+  uniformly; kept identities stay unchanged to the metre.
+- **Upstream handoff** (reported, deliberately not papered over): re-percolate
+  the ~220 released members against the 77 unclaimed postes (Paris ring, Nord
+  chain, Loire corridor), fix MUHLB + the stale bus entries, tag the foreign
+  border-equivalent networks (150 kV Pyrenees/Belgium, 45 kV Geneva/Jura,
+  the German/Swiss cluster at the eastern edge) so they can be drawn outside
+  the France hull.
+- **NAD comet-tail fix**: `nad_render.augment_layout_with_boundary_nodes` pins
+  dangling-line boundary nodes (the 35 THT interconnector stubs) at their host
+  voltage level's position, so the France THT NAD no longer stretches its
+  viewBox to 2.2× height with lines running off the map.
+
+### Game Mode — the France EHV (Matpower) grid now reads like the THT one
+
+Operator report: the Matpower map "does not really look like the one from
+RTE7000, it is not really neat and there are probably some issues", and in the
+app "the thickness of the lines looks too bold". Three causes, three fixes.
+
+- **Repaired the committed grid layouts**
+  (`scripts/game_mode/matpower/repair_layout.py`, new). The positions that
+  `grid_snapshot_reconstruct` propagates along the graph — everything that is
+  not an identified 380 kV poste — had a tail of impossible placements: 63 kV
+  "lines" spanning 334 km, 265 branches over 100 km on `grid_6be3a179`. The
+  free voltage levels are re-placed by an anchored Laplacian relaxation
+  (identified postes held fixed, locality term keeping the reconstruction's
+  geography), solved exactly as one sparse system. Branches over 100 km
+  **265 → 78**, over 200 km **53 → 10**, offset from a VL's own electrical
+  neighbourhood p90 **22.3 → 12.2 km** (France THT reference: 15.0 km), while
+  the median VL moves 3.8 km. Idempotent via a per-grid `layout_repair.json`
+  provenance record.
+- **Released the identities the topology contradicts.** `SCHEE` claimed 52
+  380 kV voltage levels on `grid_6be3a179` (`MARSI` 34, `GRAV5` 17) where real
+  French 400 kV postes have 4, 6 or 9 — the Rosetta percolation uses a few hub
+  names as a sink, and pinning dozens of unrelated buses on one point is what
+  drew 400 km "400 kV lines". A `loose` match contradicted by its own
+  neighbourhood by more than 45 km (the THT maximum) is now released; every
+  `strict` match keeps its position and `rte_substation_map.json` is untouched.
+  The 18–23 remaining long branches between two anchored postes are reported
+  (`--report-suspect-anchors`) as an upstream matching issue, not papered over.
+- **Config-screen map drawn at 225 kV and above.** The Matpower cases carry the
+  whole 63 / 90 / 150 kV sub-transmission layer — 4 400 of 6 250 voltage levels,
+  flat green under the map's `< 350 kV` rule — which made the preview a
+  hairball. `gen_network_previews.py` takes a per-family `min_kv`; the Matpower
+  map is now 1 692 nodes / 2 600 lines against France THT's 1 464 / 2 499.
+  Caption updated to say what is drawn.
+- **Cross-checked both grids against the RTE7000 THT reference** and pinned the
+  result in `test_repair_layout.py`. The two datasets share one coordinate frame
+  (median translation 0.26 km, pairwise-distance ratio 0.9998 — no offset, scale
+  or rotation), every claimed poste really carries a 380 kV level (0 voltage
+  mismatches over 449 identities), and anchored identities sit 1.9 km from their
+  poste (max 5.9 km) **before and after** the repair — `strict` matches included.
+  The 55 released ones move a median of 50 km (max 241 km), which is the price
+  and why only `loose`, topology-contradicted matches are eligible. The
+  over-assignment is confirmed against ground truth: a real THT poste has at most
+  6 voltage levels at 400 kV (mean 1.5) where the mapping claims up to 52, and
+  31 postes over-claim by ≥ 3. The release rule never consults that table yet
+  lands on the same places — 37 of the 55 released (67 %) sit at one of them.
+- **NAD branch width now follows grid density.** App.css puts every NAD stroke
+  in `vector-effect: non-scaling-stroke`, so pypowsybl's `stroke-width: 5` was
+  5 *rendered pixels* on every grid however dense — fine on France THT, a
+  blanket of colour on a 6 250-VL one. `svgBoost.computeEdgeWidthPx` writes
+  `--nad-edge-w` from the voltage-level count: 5 px up to the THT reference
+  (so `rte7000_tht` and `pypsa_eur_fr225_400` are unchanged), then
+  `1/sqrt(vlCount)` down to a 1.5 px floor — 2.45 px on `rte_matpower`, 2.67 px
+  on the European grid. Re-asserted in the bitmap-snapshot clone so a pan/zoom
+  gesture doesn't thicken the lines back.
+
 ### Game Mode — Matpower dataset re-graded after `expert_op4grid_recommender@0.3.3.post1`
 
 - **Bumped `expert_op4grid_recommender` `0.3.0.post1` → `0.3.3.post1`** (hotfix
